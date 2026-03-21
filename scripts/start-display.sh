@@ -3,9 +3,8 @@
 #
 # Runs on the Raspberry Pi HOST (not inside Docker).
 # Detects display mode and launches the appropriate UI:
-#   kiosk       — Chromium in kiosk mode (X11/Wayland available)
-#   framebuffer — Chromium on framebuffer (no X, but /dev/fb0 exists)
-#   tty         — Python TUI with QR code on TTY1
+#   kiosk       — cage + Chromium in kiosk mode (Wayland, no DE needed)
+#   tty         — Python TUI with QR code + split-panel status on TTY1
 #   headless    — nothing (connect via browser over network)
 #
 # Called by smarthome-display.service after Docker is up and healthy.
@@ -13,74 +12,65 @@
 set -euo pipefail
 
 UI_URL="${SELENA_UI_URL:-http://localhost:8080}"
-SELENA_DIR="${SELENA_DIR:-/opt/selena-core}"
+COMPOSE_FILE="${COMPOSE_FILE:-/home/selena/SelenaCore/docker-compose.yml}"
 LOG="${SELENA_LOG_DIR:-/var/log/selena}/display.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
 
-# ── Wait for UI to be reachable ─────────────────────────────────────────────
+# ── Wait for core container ─────────────────────────────────────────────
+wait_for_core() {
+    log "Waiting for core container..."
+    for i in $(seq 1 30); do
+        docker compose -f "$COMPOSE_FILE" ps core 2>/dev/null | grep -qE "running|healthy" && return 0
+        log "waiting... ($i)"
+        sleep 3
+    done
+    log "ERROR: core container not ready after 90s"
+    return 1
+}
+
+# ── Wait for UI HTTP ─────────────────────────────────────────────────────
 wait_for_ui() {
-    local tries=0
     log "Waiting for UI at $UI_URL ..."
-    until curl -sf "$UI_URL" >/dev/null 2>&1; do
-        tries=$((tries + 1))
-        if [[ $tries -ge 30 ]]; then
-            log "ERROR: UI not reachable after 30 attempts. Giving up."
-            exit 1
+    for i in $(seq 1 30); do
+        if curl -sf -o /dev/null "$UI_URL" 2>/dev/null; then
+            log "UI is up."
+            return 0
         fi
         sleep 2
     done
-    log "UI is up."
+    log "WARNING: UI not reachable after 60s, proceeding anyway"
 }
 
-# ── Display mode detection ───────────────────────────────────────────────────
+# ── Display mode detection ───────────────────────────────────────────────
 detect_mode() {
-    # X11 / Wayland available → kiosk
-    if [[ -n "${DISPLAY:-}" ]] || [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
-        echo "kiosk"
-        return
+    # Check if cage + chromium are installed AND a GPU/DRM card exists
+    if command -v cage >/dev/null 2>&1 && command -v chromium >/dev/null 2>&1; then
+        if ls /dev/dri/card* >/dev/null 2>&1; then
+            echo "kiosk"
+            return
+        fi
     fi
 
-    # Framebuffer exists
+    # Check for framebuffer or connected display
     if [[ -e /dev/fb0 ]]; then
-        echo "framebuffer"
-        return
-    fi
-
-    # HDMI/DRM connected but no X11
-    for edid in /sys/class/drm/*/edid; do
-        if [[ -f "$edid" ]] && [[ -s "$edid" ]]; then
-            echo "framebuffer"
+        # Still need cage for browser rendering
+        if command -v cage >/dev/null 2>&1 && command -v chromium >/dev/null 2>&1; then
+            echo "kiosk"
             return
         fi
-    done
-
-    # Terminal available
-    if [[ -t 1 ]]; then
-        echo "tty"
-        return
     fi
 
-    echo "headless"
+    # Terminal/TTY available
+    echo "tty"
 }
 
-# ── Find Chromium binary ─────────────────────────────────────────────────────
-find_chromium() {
-    for bin in chromium-browser chromium google-chrome; do
-        if command -v "$bin" &>/dev/null; then
-            echo "$bin"
-            return
-        fi
-    done
-    echo ""
-}
-
-# ── Launch ───────────────────────────────────────────────────────────────────
+# ── Launch ───────────────────────────────────────────────────────────────
 main() {
     mkdir -p "$(dirname "$LOG")"
     log "SelenaCore display launcher starting..."
 
-    wait_for_ui
+    wait_for_core || true
 
     local mode
     mode="$(detect_mode)"
@@ -88,70 +78,52 @@ main() {
 
     case "$mode" in
         kiosk)
-            local chromium
-            chromium="$(find_chromium)"
-            if [[ -z "$chromium" ]]; then
-                log "No Chromium found — falling back to tty mode"
-                mode="tty"
-            else
-                log "Launching kiosk: $chromium --kiosk $UI_URL"
-                exec "$chromium" \
-                    --kiosk \
-                    --no-sandbox \
-                    --disable-infobars \
-                    --disable-session-crashed-bubble \
-                    --disable-restore-session-state \
-                    --noerrdialogs \
-                    --autoplay-policy=no-user-gesture-required \
-                    "$UI_URL"
-            fi
-            ;;&
+            wait_for_ui
 
-        framebuffer)
-            local chromium
-            chromium="$(find_chromium)"
-            if [[ -z "$chromium" ]]; then
-                log "No Chromium found — falling back to tty mode"
-                mode="tty"
-            else
-                log "Launching framebuffer: $chromium --ozone-platform=drm $UI_URL"
-                exec "$chromium" \
-                    --ozone-platform=drm \
-                    --kiosk \
-                    --no-sandbox \
-                    --disable-infobars \
-                    --disable-session-crashed-bubble \
-                    --disable-restore-session-state \
-                    --noerrdialogs \
-                    "$UI_URL"
-            fi
-            ;;&
+            log "Launching kiosk: cage + chromium → $UI_URL"
+
+            # Chromium flags for embedded kiosk
+            local -a CHROMIUM_FLAGS=(
+                --kiosk
+                --no-sandbox
+                --noerrdialogs
+                --disable-infobars
+                --disable-session-crashed-bubble
+                --disable-translate
+                --no-first-run
+                --disable-features=Translate
+                --check-for-update-interval=31536000
+                --autoplay-policy=no-user-gesture-required
+                --disable-pinch
+                --overscroll-history-navigation=0
+                --no-default-browser-check
+                --disable-component-update
+                --disable-background-networking
+                --disable-sync
+                --ozone-platform=wayland
+                --enable-features=OverlayScrollbar
+                --hide-scrollbars
+                --start-fullscreen
+                --user-data-dir=/tmp/chromium-kiosk
+                --disable-gpu-sandbox
+            )
+
+            # Use direct DRM backend if no logind session
+            export WLR_BACKENDS=drm
+            export WLR_LIBINPUT_NO_DEVICES=1
+            export LIBSEAT_BACKEND=noop
+            export WLR_SESSION=noop
+
+            exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"
+            ;;
 
         tty|*)
-            log "Launching TTY status / QR wizard screen..."
-            if [[ -d "$SELENA_DIR" ]]; then
-                cd "$SELENA_DIR"
-                local python="${SELENA_DIR}/.venv/bin/python"
-                [[ -x "$python" ]] || python="python3"
-                exec "$python" -m system_modules.ui_core.tty_status
-            else
-                log "WARNING: SELENA_DIR=$SELENA_DIR not found. Install SelenaCore first."
-                # Minimal fallback: just show IP + URL
-                local ip
-                ip="$(hostname -I | awk '{print $1}')"
-                while true; do
-                    clear
-                    echo ""
-                    echo "  ╔══════════════════════════════════════════╗"
-                    echo "  ║   SelenaCore — первый запуск             ║"
-                    echo "  ╚══════════════════════════════════════════╝"
-                    echo ""
-                    echo "  Откройте в браузере:"
-                    echo "  http://${ip}:8080"
-                    echo ""
-                    sleep 10
-                done
-            fi
+            log "Launching TTY status / QR wizard screen on tty1..."
+            local HOST_IP
+            HOST_IP=$(hostname -I | awk '{print $1}')
+            exec docker compose -f "$COMPOSE_FILE" \
+                exec -T -e HOST_IP="$HOST_IP" core \
+                python -m system_modules.ui_core.tty_status
             ;;
     esac
 }
