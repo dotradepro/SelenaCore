@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
@@ -106,6 +106,11 @@ export default function Wizard() {
   const [wifiConnecting, setWifiConnecting] = useState(false);
   const [wifiConnected, setWifiConnected] = useState(false);
   const [wifiConnectedSsid, setWifiConnectedSsid] = useState<string | null>(null);
+  const [apActive, setApActive] = useState(false);
+  const [apSsid, setApSsid] = useState('');
+  const [apPassword, setApPassword] = useState('');
+  const [apIp, setApIp] = useState('');
+  const [apStarting, setApStarting] = useState(false);
   const [sttModels, setSttModels] = useState<SttModel[]>([]);
   const [sttRamInfo, setSttRamInfo] = useState({ total: 0, available: 0 });
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
@@ -146,8 +151,27 @@ export default function Wizard() {
       setHasInternet(data.internet ?? false);
       setWifiEnabled(data.wifi?.enabled ?? false);
       setWifiAdapterFound(data.wifi?.adapter_found ?? false);
+
+      // Check AP status
+      try {
+        const apRes = await fetch('/api/ui/setup/ap/status');
+        const apData = await apRes.json();
+        if (apData.active) {
+          setApActive(true);
+          setApSsid(apData.ssid);
+          setApPassword(apData.password);
+          setApIp(apData.ip);
+          return; // AP is active, skip WiFi scan
+        }
+      } catch { /* ap status unavailable */ }
+
       if (data.wifi?.enabled) {
         fetchWifiNetworks();
+      }
+
+      // Auto-start AP when no connectivity at all
+      if (!data.ethernet?.connected && !data.wifi?.connected && data.wifi?.adapter_found) {
+        startAp();
       }
     } catch {
       // fallback — try wifi scan directly
@@ -172,6 +196,11 @@ export default function Wizard() {
   const toggleWifi = async (enable: boolean) => {
     setWifiToggling(true);
     try {
+      // Stop AP first if active — AP and client mode are mutually exclusive
+      if (enable && apActive) {
+        await fetch('/api/ui/setup/ap/stop', { method: 'POST' });
+        setApActive(false);
+      }
       const res = await fetch('/api/ui/setup/wifi/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -229,6 +258,7 @@ export default function Wizard() {
     if (!formData.wifi) return;
     setWifiConnecting(true);
     setError(null);
+    const wasApActive = apActive;
     try {
       const res = await fetch('/api/ui/setup/wifi/connect', {
         method: 'POST',
@@ -239,16 +269,45 @@ export default function Wizard() {
       if (res.ok && data.status === 'connected') {
         setWifiConnected(true);
         setWifiConnectedSsid(formData.wifi);
+        setApActive(false);
       } else {
         setError(data.detail || t('wizard.wifiConnectFailed'));
         setWifiConnected(false);
+        if (wasApActive) await startAp();
       }
     } catch {
       setError(t('wizard.wifiConnectFailed'));
       setWifiConnected(false);
+      if (wasApActive) await startAp();
     } finally {
       setWifiConnecting(false);
     }
+  };
+
+  const startAp = async () => {
+    setApStarting(true);
+    try {
+      const res = await fetch('/api/ui/setup/ap/start', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.status === 'active') {
+        setApActive(true);
+        setApSsid(data.ssid);
+        setApPassword(data.password);
+        setApIp(data.ip);
+        setWifiEnabled(false);
+      }
+    } catch { /* AP start failed silently */ }
+    finally { setApStarting(false); }
+  };
+
+  const stopAp = async () => {
+    try {
+      await fetch('/api/ui/setup/ap/stop', { method: 'POST' });
+      setApActive(false);
+      setApSsid('');
+      setApPassword('');
+      setApIp('');
+    } catch { /* AP stop failed silently */ }
   };
 
   const previewVoice = async (voiceId: string) => {
@@ -424,8 +483,85 @@ export default function Wizard() {
                   <h2 className="text-base font-medium">{t('wizard.wifiTitle')}</h2>
                   <p className="text-zinc-400 text-xs">{t('wizard.wifiDesc')}</p>
 
-                  {/* Ethernet status banner */}
-                  {ethernetConnected && (
+                  {/* AP Mode panel — when active */}
+                  {apActive && (
+                    <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-3 py-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Radio size={16} className="text-cyan-400" />
+                          <span className="font-medium text-xs text-cyan-400">{t('wizard.apActive')}</span>
+                        </div>
+                        <button
+                          onClick={stopAp}
+                          className="text-[10px] text-zinc-400 hover:text-zinc-200 transition-colors"
+                        >
+                          {t('wizard.apStopBtn')}
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <div><span className="text-zinc-500">{t('wizard.apNetwork')}:</span> <span className="text-zinc-200 font-mono">{apSsid}</span></div>
+                        <div><span className="text-zinc-500">{t('wizard.apPassword')}:</span> <span className="text-zinc-200 font-mono">{apPassword}</span></div>
+                      </div>
+                      <div className="text-[10px] text-zinc-400">
+                        {t('wizard.apOpenUrl')}: <span className="text-cyan-400 font-mono">http://{apIp}:8080</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WiFi toggle — hidden when AP is active */}
+                  {!apActive && (
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-zinc-800 bg-zinc-900">
+                      <div className="flex items-center gap-2">
+                        {wifiEnabled ? <Wifi size={16} className="text-emerald-500" /> : <WifiOff size={16} className="text-zinc-500" />}
+                        <div>
+                          <span className="font-medium text-xs">{t('wizard.wifiAdapter')}</span>
+                          <p className="text-[10px] text-zinc-500">
+                            {!wifiAdapterFound ? t('wizard.wifiAdapterNotFound') : wifiEnabled ? t('wizard.wifiAdapterOn') : t('wizard.wifiAdapterOff')}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleWifi(!wifiEnabled)}
+                        disabled={wifiToggling || !wifiAdapterFound}
+                        className={cn(
+                          "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+                          wifiEnabled ? "bg-emerald-500" : "bg-zinc-600",
+                          (wifiToggling || !wifiAdapterFound) && "opacity-50 cursor-not-allowed"
+                        )}
+                        role="switch"
+                        aria-checked={wifiEnabled}
+                      >
+                        <span className={cn(
+                          "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out",
+                          wifiEnabled ? "translate-x-[22px]" : "translate-x-[3px]"
+                        )} />
+                        {wifiToggling && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <span className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* AP start button — when no connectivity and not yet active */}
+                  {!apActive && wifiAdapterFound && !wifiEnabled && !ethernetConnected && (
+                    <button
+                      onClick={startAp}
+                      disabled={apStarting}
+                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-cyan-500/30 bg-cyan-500/5 hover:border-cyan-500/50 transition-colors disabled:opacity-50"
+                    >
+                      <Radio size={16} className="text-cyan-400 shrink-0" />
+                      <div className="text-left flex-1">
+                        <span className="font-medium text-xs text-cyan-400">{t('wizard.apTitle')}</span>
+                        <p className="text-[10px] text-zinc-500">{t('wizard.apDesc')}</p>
+                      </div>
+                      {apStarting && <span className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin shrink-0" />}
+                    </button>
+                  )}
+
+                  {/* Ethernet status banner — hidden when WiFi adapter is active or AP active */}
+                  {!wifiEnabled && !apActive && ethernetConnected && (
                     <div className="flex items-center gap-2 text-xs bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
                       <Cable size={14} className="text-emerald-500 shrink-0" />
                       <div>
@@ -435,48 +571,14 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {/* WiFi toggle — always shown */}
-                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-zinc-800 bg-zinc-900">
-                    <div className="flex items-center gap-2">
-                      {wifiEnabled ? <Wifi size={16} className="text-emerald-500" /> : <WifiOff size={16} className="text-zinc-500" />}
-                      <div>
-                        <span className="font-medium text-xs">{t('wizard.wifiAdapter')}</span>
-                        <p className="text-[10px] text-zinc-500">
-                          {!wifiAdapterFound ? t('wizard.wifiAdapterNotFound') : wifiEnabled ? t('wizard.wifiAdapterOn') : t('wizard.wifiAdapterOff')}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => toggleWifi(!wifiEnabled)}
-                      disabled={wifiToggling || !wifiAdapterFound}
-                      className={cn(
-                        "relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-                        wifiEnabled ? "bg-emerald-500" : "bg-zinc-600",
-                        (wifiToggling || !wifiAdapterFound) && "opacity-50 cursor-not-allowed"
-                      )}
-                      role="switch"
-                      aria-checked={wifiEnabled}
-                    >
-                      <span className={cn(
-                        "pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out",
-                        wifiEnabled ? "translate-x-[22px]" : "translate-x-[3px]"
-                      )} />
-                      {wifiToggling && (
-                        <span className="absolute inset-0 flex items-center justify-center">
-                          <span className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        </span>
-                      )}
-                    </button>
-                  </div>
-
-                  {!wifiAdapterFound && !ethernetConnected && (
+                  {!wifiAdapterFound && !ethernetConnected && !apActive && (
                     <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
                       {t('wizard.wifiNotAvailable')}
                     </div>
                   )}
 
-                  {/* WiFi networks list — only when enabled */}
-                  {wifiEnabled && (
+                  {/* WiFi networks list — only when enabled and AP not active */}
+                  {wifiEnabled && !apActive && (
                     <>
                       <div className="flex justify-end">
                         <button onClick={fetchWifiNetworks} disabled={wifiLoading}

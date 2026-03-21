@@ -199,6 +199,15 @@ const uk = {
             wifiVerified: 'Успішно підключено',
             ethernetConnected: 'Ethernet підключено',
             ethernetSkipHint: 'Інтернет доступний через кабель. Ви можете пропустити Wi-Fi або налаштувати як резерв.',
+            apTitle: 'Налаштування з телефону',
+            apDesc: 'Запустіть точку доступу для налаштування з телефону.',
+            apStartBtn: 'Запустити точку доступу',
+            apStopBtn: 'Зупинити',
+            apActive: 'Точка доступу активна',
+            apNetwork: 'Мережа',
+            apPassword: 'Пароль',
+            apOpenUrl: 'Відкрийте в браузері',
+            apStarting: 'Запуск…',
 
             // Step 3 - Device name
             deviceNameTitle: 'Назва пристрою',

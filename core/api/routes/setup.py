@@ -151,6 +151,10 @@ async def wifi_connect(req: WifiConnectRequest) -> dict[str, Any]:
 
 def _connect_wifi_sync(ssid: str, password: str) -> dict[str, Any]:
     """Connect to WiFi via nmcli."""
+    # Stop hotspot if active (AP and client mode are mutually exclusive on wlan0)
+    if _is_ap_active():
+        _stop_ap_sync()
+
     cmd = ["nmcli", "dev", "wifi", "connect", ssid]
     if password:
         cmd += ["password", password]
@@ -323,6 +327,98 @@ def _get_interface_ip(interface: str) -> str | None:
         return match.group(1) if match else None
     except Exception:
         return None
+
+
+# ================================================================== #
+#  Access Point (Hotspot) for initial setup                            #
+# ================================================================== #
+
+AP_SSID = "Selena-Setup"
+AP_PASSWORD = "selena1234"
+AP_INTERFACE = "wlan0"
+
+
+def _is_ap_active() -> bool:
+    """Check if the hotspot connection is currently active."""
+    try:
+        proc = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in proc.stdout.strip().splitlines():
+            if "Hotspot" in line:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _start_ap_sync() -> dict[str, Any]:
+    """Start WiFi hotspot via nmcli."""
+    # Stop any existing hotspot first
+    subprocess.run(
+        ["nmcli", "connection", "down", "Hotspot"],
+        capture_output=True, text=True, timeout=10,
+    )
+    proc = subprocess.run(
+        ["nmcli", "device", "wifi", "hotspot", "ifname", AP_INTERFACE,
+         "ssid", AP_SSID, "password", AP_PASSWORD, "band", "bg"],
+        capture_output=True, text=True, timeout=15,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"Failed to start AP: {proc.stderr.strip()}")
+
+    ip = _get_interface_ip(AP_INTERFACE) or "10.42.0.1"
+    return {"status": "active", "ssid": AP_SSID, "password": AP_PASSWORD, "ip": ip}
+
+
+def _stop_ap_sync() -> None:
+    """Stop WiFi hotspot."""
+    subprocess.run(
+        ["nmcli", "connection", "down", "Hotspot"],
+        capture_output=True, text=True, timeout=10,
+    )
+
+
+@router.get("/ap/status")
+async def ap_status() -> dict[str, Any]:
+    """Check if the WiFi hotspot is currently active."""
+    if not _nmcli_available():
+        return {"active": False}
+    loop = asyncio.get_event_loop()
+    active = await loop.run_in_executor(None, _is_ap_active)
+    if active:
+        ip = await loop.run_in_executor(None, _get_interface_ip, AP_INTERFACE)
+        return {"active": True, "ssid": AP_SSID, "password": AP_PASSWORD, "ip": ip or "10.42.0.1"}
+    return {"active": False}
+
+
+@router.post("/ap/start")
+async def ap_start() -> dict[str, Any]:
+    """Start WiFi access point for phone-based setup."""
+    if not _nmcli_available():
+        raise HTTPException(status_code=503, detail="NetworkManager not available")
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, _start_ap_sync)
+        return result
+    except Exception as exc:
+        logger.error("AP start failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/ap/stop")
+async def ap_stop() -> dict[str, Any]:
+    """Stop WiFi access point."""
+    if not _nmcli_available():
+        raise HTTPException(status_code=503, detail="NetworkManager not available")
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _stop_ap_sync)
+        return {"status": "stopped"}
+    except Exception as exc:
+        logger.error("AP stop failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ================================================================== #

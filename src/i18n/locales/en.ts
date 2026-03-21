@@ -199,6 +199,15 @@ const en = {
             wifiVerified: 'Connected successfully',
             ethernetConnected: 'Ethernet connected',
             ethernetSkipHint: 'Internet available via cable. You can skip Wi-Fi setup or configure it as backup.',
+            apTitle: 'Setup from phone',
+            apDesc: 'Start access point to configure from your phone.',
+            apStartBtn: 'Start Access Point',
+            apStopBtn: 'Stop',
+            apActive: 'Access Point Active',
+            apNetwork: 'Network',
+            apPassword: 'Password',
+            apOpenUrl: 'Open in browser',
+            apStarting: 'Starting…',
 
             // Step 3 - Device name
             deviceNameTitle: 'Device name',
