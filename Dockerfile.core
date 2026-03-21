@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2-dev \
     libsndfile1-dev \
     libspeex-dev \
+    network-manager \
+    rfkill \
+    iputils-ping \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

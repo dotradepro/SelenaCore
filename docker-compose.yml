@@ -15,6 +15,7 @@ services:
       - selena_secure:/secure
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log/selena:/var/log/selena
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
       - ./core:/opt/selena-core/core
       - ./system_modules:/opt/selena-core/system_modules
       - ./agent:/opt/selena-core/agent
