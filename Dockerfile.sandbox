@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/selena-sandbox
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Network isolated sandbox for module validation
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+CMD ["python", "-c", "import sys; sys.exit(0)"]

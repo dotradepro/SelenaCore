@@ -1,0 +1,25 @@
+[Unit]
+Description=SelenaCore — Integrity Agent
+After=smarthome-core.service
+Requires=smarthome-core.service
+
+[Service]
+Type=simple
+User=selena
+Group=selena
+WorkingDirectory=/opt/selena-core
+ExecStart=/opt/selena-core/.venv/bin/python -m agent.integrity_agent
+Restart=always
+RestartSec=10
+
+# Very restricted — agent must not be tampered with
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/log/selena
+ReadOnlyPaths=/opt/selena-core /secure /var/lib/selena
+
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/selena-core/.env
+
+[Install]
+WantedBy=multi-user.target

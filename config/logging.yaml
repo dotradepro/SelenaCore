@@ -1,0 +1,53 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s [%(levelname)s] %(name)s [%(request_id)s]: %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+  json:
+    "()": "pythonjsonlogger.jsonlogger.JsonFormatter"
+    format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: /var/log/selena/core.log
+    maxBytes: 10485760  # 10 MB
+    backupCount: 5
+
+  integrity_file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: /var/log/selena/integrity.log
+    maxBytes: 5242880   # 5 MB
+    backupCount: 3
+
+loggers:
+  core:
+    level: INFO
+    handlers: [console, file]
+    propagate: false
+
+  agent:
+    level: INFO
+    handlers: [console, integrity_file]
+    propagate: false
+
+  uvicorn:
+    level: WARNING
+    handlers: [console]
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console]

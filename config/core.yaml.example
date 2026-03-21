@@ -1,0 +1,62 @@
+# SelenaCore — конфигурация ядра
+version: "0.3.0-beta"
+
+core:
+  host: "0.0.0.0"
+  port: 7070
+  data_dir: "/var/lib/selena"
+  secure_dir: "/secure"
+  log_level: "INFO"
+  debug: false
+
+ui:
+  host: "0.0.0.0"
+  port: 8080
+  https: true
+
+agent:
+  check_interval_sec: 30
+  max_restore_attempts: 3
+  core_files_glob: "/opt/selena-core/core/**/*.py"
+  manifest_path: "/secure/core.manifest"
+  master_hash_path: "/secure/master.hash"
+  backup_dir: "/secure/core_backup/v0.3.0/"
+  log_path: "/var/log/selena/integrity.log"
+
+modules:
+  container_image: "smarthome-modules:latest"
+  sandbox_image: "smarthome-sandbox:latest"
+  port_range_start: 8100
+  port_range_end: 8200
+
+voice:
+  wake_word_sensitivity: 0.5
+  stt_model: "base"        # tiny | base | small | medium
+  tts_voice: "ru_RU-ruslan-medium"
+  audio_force_input: null
+  audio_force_output: null
+  privacy_gpio_pin: null   # null = только голосовая команда
+
+llm:
+  enabled: true
+  provider: "ollama"
+  ollama_url: "http://localhost:11434"
+  default_model: "phi-3-mini"
+  min_ram_gb: 5
+  timeout_sec: 30
+
+platform:
+  api_url: "https://smarthome-lk.com/api/v1"
+  device_hash: ""
+  heartbeat_interval_sec: 60
+  mock: false
+
+wizard:
+  completed: false
+  current_step: null
+
+system:
+  device_name: "SelenaCore"
+  language: "ru"
+  timezone: "Europe/Moscow"
+  initialized: false

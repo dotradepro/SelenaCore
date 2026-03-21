@@ -1,0 +1,31 @@
+[Unit]
+Description=SelenaCore — SmartHome LK Core API
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=notify
+User=selena
+Group=selena
+WorkingDirectory=/opt/selena-core
+ExecStart=/opt/selena-core/.venv/bin/python -m uvicorn core.main:app \
+    --host 0.0.0.0 \
+    --port 7070 \
+    --log-config /opt/selena-core/config/logging.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+WatchdogSec=60
+NotifyAccess=main
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/selena /var/log/selena
+ReadOnlyPaths=/opt/selena-core /secure
+
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/selena-core/.env
+
+[Install]
+WantedBy=multi-user.target

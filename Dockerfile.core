@@ -1,0 +1,29 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/selena-core
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY core/ ./core/
+COPY system_modules/ ./system_modules/
+COPY agent/ ./agent/
+COPY config/ ./config/
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CORE_PORT=7070 \
+    CORE_DATA_DIR=/var/lib/selena \
+    CORE_SECURE_DIR=/secure \
+    CORE_LOG_LEVEL=INFO
+
+EXPOSE 7070
+
+CMD ["python", "-m", "uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "7070"]

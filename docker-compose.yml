@@ -1,0 +1,69 @@
+version: "3.9"
+
+services:
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    container_name: selena-core
+    restart: unless-stopped
+    ports:
+      - "7070:7070"
+      - "8080:8080"
+    volumes:
+      - selena_data:/var/lib/selena
+      - selena_secure:/secure
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/selena:/var/log/selena
+    env_file:
+      - .env
+    networks:
+      - selena_internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7070/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    container_name: selena-agent
+    restart: unless-stopped
+    command: ["python", "-m", "agent.integrity_agent"]
+    volumes:
+      - selena_data:/var/lib/selena
+      - selena_secure:/secure:ro
+      - /opt/selena-core:/opt/selena-core:ro
+      - /var/log/selena:/var/log/selena
+    env_file:
+      - .env
+    networks:
+      - selena_internal
+    depends_on:
+      - core
+
+  modules:
+    image: smarthome-modules:latest
+    container_name: selena-modules
+    restart: unless-stopped
+    ports:
+      - "8100-8200:8100-8200"
+    volumes:
+      - selena_data:/var/lib/selena:ro
+    networks:
+      - selena_internal
+      - selena_external
+
+networks:
+  selena_internal:
+    driver: bridge
+    internal: true
+  selena_external:
+    driver: bridge
+
+volumes:
+  selena_data:
+  selena_secure:
