@@ -11,4 +11,3 @@ __pycache__/
 *.pyc
 .pytest_cache/
 token git
-AGENTS.md
