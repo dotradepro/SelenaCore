@@ -4,9 +4,14 @@ WORKDIR /opt/selena-core
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     libffi-dev \
     libssl-dev \
     ffmpeg \
+    portaudio19-dev \
+    libasound2-dev \
+    libsndfile1-dev \
+    libspeex-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
