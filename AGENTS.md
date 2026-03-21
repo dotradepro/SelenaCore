@@ -1186,8 +1186,9 @@ git push origin main
 
 ### Деплой в контейнер (ОБЯЗАТЕЛЬНО после каждого push)
 
-> ⛔ После `git push` изменения НЕ попадают в контейнер автоматически.
-> Агент ОБЯЗАН выполнить деплой, чтобы обновления были видны в браузере и на устройстве.
+> Исходный код Python (core/, system_modules/, agent/, tests/) монтируется в контейнер через volume mounts.
+> После изменения Python-файлов достаточно перезапустить контейнер.
+> `docker cp` НЕ нужен для этих директорий.
 
 ```bash
 # 1. Пересобрать фронтенд
@@ -1196,22 +1197,19 @@ npx vite build
 # 2. Скопировать собранные статические файлы в контейнер
 docker cp system_modules/ui_core/static/. selena-core:/opt/selena-core/system_modules/ui_core/static/
 
-# 3. Скопировать обновлённый бэкенд-код в контейнер
-docker cp core/. selena-core:/opt/selena-core/core/
-
-# 4. Перезапустить контейнер
+# 3. Перезапустить контейнер (Python-код подхватится через volume mounts)
 docker restart selena-core
 
-# 5. Проверить что всё работает
+# 4. Проверить что всё работает
 sleep 3
 curl -s http://localhost:7070/api/v1/health | python3 -m json.tool
 curl -s -o /dev/null -w "UI :8080 → HTTP %{http_code}\n" http://localhost:8080/
 
-# 6. Обновить экран устройства (kiosk Chromium)
+# 5. Обновить экран устройства (kiosk Chromium)
 sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 ```
 
-> **Почему шаг 6 обязателен:** Экран устройства — это Chromium в kiosk-режиме
+> **Почему шаг 5 обязателен:** Экран устройства — это Chromium в kiosk-режиме
 > внутри Wayland-композитора `cage` (systemd: `smarthome-display.service`).
 > `docker restart` перезапускает бэкенд и UI-сервер, но НЕ перезагружает браузер.
 > Chromium с флагами `--disable-background-networking` кеширует старую страницу.
@@ -1227,17 +1225,16 @@ sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 |-----|-----------------|-----------|
 | `npx vite build` | Фронтенд (React SPA) | — |
 | `docker cp static/` | UI в контейнере | Браузер `:8080` |
-| `docker cp core/` | Бэкенд Python | API `:7070` |
 | `docker restart` | Перезагрузка FastAPI + UI | Сервер |
 | `wtype -k F5` | Обновление страницы в kiosk | Экран устройства |
 
 **Правила:**
 
-- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 4, 5, 6
-- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5, 6
-- Если изменения в обоих — все 6 шагов
-- ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 5
-- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 6)
+- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 3, 4, 5
+- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5 (volume mount — автоматически)
+- Если изменения в обоих — все 5 шагов
+- ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 4
+- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 5)
 
 ---
 
@@ -1321,6 +1318,8 @@ in-progress / blocked / needs-review
 ⛔ eval() / exec() в любом коде
 ⛔ Модифицировать файлы ядра без обновления core.manifest
 ⛔ Коммит с сообщением "fix", "update", "wip", "."
+⛔ Создавать virtualenv / venv внутри Docker-контейнера (зависимости ставятся глобально через pip)
+⛔ Использовать docker cp для обновления core/ или system_modules/ (используются volume mounts)
 ```
 
 ---
