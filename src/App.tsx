@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import Wizard from './components/Wizard';
-import SetupLanding from './components/SetupLanding';
+import LanguageSelect from './components/LanguageSelect';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
@@ -25,10 +25,9 @@ export default function App() {
 
   if (wizardLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="min-h-screen bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-zinc-400">
           <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Загрузка SelenaCore...</span>
         </div>
       </div>
     );
@@ -42,7 +41,15 @@ export default function App() {
     if (setupStage === 'wizard') {
       return <Wizard />;
     }
-    return <SetupLanding onStartWizard={() => setSetupStage('wizard')} />;
+    return (
+      <LanguageSelect
+        onSelect={(lang) => {
+          // Store chosen language for wizard
+          useStore.getState().setSelectedLanguage(lang);
+          setSetupStage('wizard');
+        }}
+      />
+    );
   }
 
   return (

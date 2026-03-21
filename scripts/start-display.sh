@@ -106,13 +106,13 @@ main() {
                 --start-fullscreen
                 --user-data-dir=/tmp/chromium-kiosk
                 --disable-gpu-sandbox
+                --cursor-style=custom
+                --custom-cursor-size=1
             )
 
-            # Use direct DRM backend if no logind session
-            export WLR_BACKENDS=drm
-            export WLR_LIBINPUT_NO_DEVICES=1
-            export LIBSEAT_BACKEND=noop
-            export WLR_SESSION=noop
+            # DRM for display output, libinput for touch/keyboard/mouse
+            export WLR_BACKENDS=drm,libinput
+            export LIBSEAT_BACKEND=builtin
 
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"
             ;;

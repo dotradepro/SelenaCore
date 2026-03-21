@@ -58,6 +58,7 @@ interface AppState {
   isConfigured: boolean;
   wizardLoading: boolean;
   setupStage: 'landing' | 'wizard';
+  selectedLanguage: string;
   wizardRequirements: WizardRequirements | null;
   user: { name: string; role: string } | null;
   health: Health | null;
@@ -69,6 +70,7 @@ interface AppState {
   setConfigured: (status: boolean) => void;
   setUser: (user: { name: string; role: string }) => void;
   setSetupStage: (stage: 'landing' | 'wizard') => void;
+  setSelectedLanguage: (lang: string) => void;
   fetchWizardStatus: () => Promise<void>;
   fetchWizardRequirements: () => Promise<void>;
   fetchHealth: () => Promise<void>;
@@ -92,6 +94,7 @@ export const useStore = create<AppState>((set, get) => ({
   isConfigured: false,
   wizardLoading: true,
   setupStage: 'landing',
+  selectedLanguage: 'ru',
   wizardRequirements: null,
   user: null,
   health: null,
@@ -104,6 +107,7 @@ export const useStore = create<AppState>((set, get) => ({
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
   setSetupStage: (stage) => set({ setupStage: stage }),
+  setSelectedLanguage: (lang) => set({ selectedLanguage: lang }),
 
   fetchWizardStatus: async () => {
     set({ wizardLoading: true });

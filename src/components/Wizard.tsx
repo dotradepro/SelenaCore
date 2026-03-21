@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../store/useStore';
 import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STEPS = [
-  { id: 1, title: 'Язык', icon: Globe },
   { id: 2, title: 'Wi-Fi', icon: Wifi },
   { id: 3, title: 'Имя дома', icon: HomeIcon },
   { id: 4, title: 'Часовой пояс', icon: Globe },
@@ -48,14 +47,15 @@ function HomeIcon(props: any) {
 }
 
 export default function Wizard() {
-  const [step, setStep] = useState(1);
+  const selectedLanguage = useStore((state) => state.selectedLanguage);
+  const [step, setStep] = useState(2); // Start at step 2 — language already chosen
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setConfigured = useStore((state) => state.setConfigured);
   const setUser = useStore((state) => state.setUser);
 
   const [formData, setFormData] = useState<FormData>({
-    lang: 'ru',
+    lang: selectedLanguage,
     wifi: '',
     wifiPassword: '',
     name: 'Умный дом',
@@ -67,6 +67,15 @@ export default function Wizard() {
     platformHash: '',
     importSource: '',
   });
+
+  // Submit language step to backend on mount
+  useEffect(() => {
+    fetch('/api/ui/wizard/step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: 'language', data: { language: selectedLanguage } }),
+    }).catch(() => {});
+  }, [selectedLanguage]);
 
   const nextStep = async () => {
     const mapping = STEP_MAP[step];
@@ -146,7 +155,7 @@ export default function Wizard() {
             <motion.div
               className="h-full bg-emerald-500"
               initial={{ width: 0 }}
-              animate={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }}
+              animate={{ width: `${((step - 2) / (STEPS.length - 1)) * 100}%` }}
               transition={{ duration: 0.3 }}
             />
           </div>
@@ -185,33 +194,6 @@ export default function Wizard() {
               transition={{ duration: 0.2 }}
               className="flex-1"
             >
-              {step === 1 && (
-                <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Выберите язык интерфейса</h2>
-                  <div className="grid grid-cols-3 gap-4">
-                    {[
-                      { id: 'ru', label: 'Русский', flag: '🇷🇺' },
-                      { id: 'uk', label: 'Українська', flag: '🇺🇦' },
-                      { id: 'en', label: 'English', flag: '🇬🇧' }
-                    ].map(l => (
-                      <button
-                        key={l.id}
-                        onClick={() => setFormData({ ...formData, lang: l.id })}
-                        className={cn(
-                          "p-6 rounded-xl border flex flex-col items-center gap-3 transition-all",
-                          formData.lang === l.id
-                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
-                            : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                        )}
-                      >
-                        <span className="text-3xl">{l.flag}</span>
-                        <span className="font-medium">{l.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {step === 2 && (
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">Подключение к Wi-Fi</h2>
@@ -425,12 +407,17 @@ export default function Wizard() {
             )}
             <div className="flex items-center justify-between">
               <button
-                onClick={() => { setStep(s => Math.max(1, s - 1)); setError(null); }}
+                onClick={() => {
+                  if (step === 2) {
+                    // Go back to language selection
+                    useStore.getState().setSetupStage('landing');
+                  } else {
+                    setStep(s => Math.max(2, s - 1));
+                  }
+                  setError(null);
+                }}
                 disabled={submitting}
-                className={cn(
-                  "px-6 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  step === 1 ? "opacity-0 pointer-events-none" : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 disabled:opacity-50"
-                )}
+                className="px-6 py-2.5 rounded-lg text-sm font-medium transition-colors text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 disabled:opacity-50"
               >
                 Назад
               </button>

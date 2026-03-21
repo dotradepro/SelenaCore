@@ -9,6 +9,13 @@ body {
   @apply bg-zinc-950 text-zinc-50 antialiased;
 }
 
+/* Hide cursor on kiosk touchscreen */
+@media (pointer: coarse) {
+  *, *::before, *::after {
+    cursor: none !important;
+  }
+}
+
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 8px;
