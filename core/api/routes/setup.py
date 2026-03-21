@@ -453,22 +453,24 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
 
 
 # ================================================================== #
-#  STT Models (Whisper)                                                #
+#  STT Models (Vosk)                                                   #
 # ================================================================== #
 
 STT_MODELS = [
-    {"id": "tiny", "name": "Tiny", "ram_mb": 150, "size_mb": 75, "quality": "basic"},
-    {"id": "base", "name": "Base", "ram_mb": 250, "size_mb": 142, "quality": "good"},
-    {"id": "small", "name": "Small", "ram_mb": 500, "size_mb": 466, "quality": "high"},
-    {"id": "medium", "name": "Medium", "ram_mb": 1500, "size_mb": 1500, "quality": "very_high"},
+    {"id": "vosk-model-small-uk", "name": "Ukrainian (small)", "lang": "uk", "ram_mb": 150, "size_mb": 133, "quality": "good"},
+    {"id": "vosk-model-small-ru", "name": "Russian (small)", "lang": "ru", "ram_mb": 150, "size_mb": 45, "quality": "good"},
+    {"id": "vosk-model-small-en-us", "name": "English (small)", "lang": "en", "ram_mb": 150, "size_mb": 40, "quality": "good"},
+    {"id": "vosk-model-uk", "name": "Ukrainian (large)", "lang": "uk", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
+    {"id": "vosk-model-ru", "name": "Russian (large)", "lang": "ru", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
+    {"id": "vosk-model-en-us", "name": "English (large)", "lang": "en", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
 ]
 
 
 @router.get("/stt/models")
 async def stt_models() -> dict[str, Any]:
-    """List available Whisper STT models with installed status."""
-    models_dir = Path(os.environ.get("WHISPER_MODELS_DIR", "/var/lib/selena/models/whisper"))
-    active_model = get_value("voice", "stt_model", os.environ.get("WHISPER_MODEL", "base"))
+    """List available Vosk STT models with installed status."""
+    models_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
+    active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk"))
 
     # Check system RAM
     ram_total_mb = 0
@@ -483,10 +485,10 @@ async def stt_models() -> dict[str, Any]:
 
     result = []
     for m in STT_MODELS:
-        model_file = models_dir / f"ggml-{m['id']}.bin"
+        model_path = models_dir / m["id"]
         result.append({
             **m,
-            "installed": model_file.exists(),
+            "installed": model_path.is_dir(),
             "active": m["id"] == active_model,
             "fits_ram": ram_available_mb >= m["ram_mb"] if ram_available_mb else True,
         })
@@ -501,13 +503,13 @@ async def stt_models() -> dict[str, Any]:
 
 @router.post("/stt/select")
 async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
-    """Select and persist STT model choice."""
+    """Select and persist Vosk STT model choice."""
     valid_ids = {m["id"] for m in STT_MODELS}
     if req.model not in valid_ids:
         raise HTTPException(status_code=422, detail=f"Invalid model. Valid: {valid_ids}")
 
     update_config("voice", "stt_model", req.model)
-    os.environ["WHISPER_MODEL"] = req.model
+    os.environ["VOSK_MODEL"] = req.model
     logger.info("STT model set to %s", req.model)
     return {"status": "ok", "model": req.model}
 
@@ -517,6 +519,8 @@ async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
 # ================================================================== #
 
 TTS_VOICES = [
+    {"id": "uk_UA-ukrainian_tts-medium", "name": "Tetiana", "language": "uk", "gender": "female", "size_mb": 55},
+    {"id": "uk_UA-lada-medium", "name": "Lada", "language": "uk", "gender": "female", "size_mb": 50},
     {"id": "ru_RU-irina-medium", "name": "Irina", "language": "ru", "gender": "female", "size_mb": 50},
     {"id": "ru_RU-ruslan-medium", "name": "Ruslan", "language": "ru", "gender": "male", "size_mb": 50},
     {"id": "en_US-amy-medium", "name": "Amy", "language": "en", "gender": "female", "size_mb": 50},

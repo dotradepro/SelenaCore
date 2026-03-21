@@ -113,7 +113,7 @@ const uk = {
             llmActive: 'Активно',
 
             // STT / TTS
-            sttModel: 'Модель STT (Whisper)',
+            sttModel: 'Модель STT (Vosk)',
             ttsVoice: 'Голос TTS (Piper)',
             installed: 'Встановлено',
             playing: 'Відтворення…',
@@ -222,14 +222,14 @@ const uk = {
             timezoneSelected: 'Обрано',
 
             // Step 5 - STT
-            sttTitle: 'Голосова модель STT (Whisper)',
-            sttDesc: 'Оберіть модель розпізнавання мовлення. Працює повністю локально.',
-            sttTiny: 'Tiny',
-            sttTinyDesc: 'Найшвидша. Рекомендовано для Pi 4.',
-            sttBase: 'Base',
-            sttBaseDesc: 'Оптимальний баланс швидкості та якості.',
-            sttSmall: 'Small',
-            sttSmallDesc: 'Висока якість. Тільки для Pi 5.',
+            sttTitle: 'Розпізнавання мовлення (Vosk)',
+            sttDesc: 'Оберіть модель Vosk для офлайн-розпізнавання мовлення. Vosk встановлено, потрібно лише завантажити модель.',
+            sttSmallUk: 'Українська — компактна, швидка',
+            sttSmallRu: 'Російська — компактна, швидка',
+            sttSmallEn: 'Англійська — компактна, швидка',
+            sttLargeUk: 'Українська — висока точність, повільніша',
+            sttLargeRu: 'Російська — висока точність, повільніша',
+            sttLargeEn: 'Англійська — висока точність, повільніша',
             sttInstalled: 'Встановлено',
             sttNoRam: 'Недостатньо RAM',
             sttAvailable: 'доступно',
@@ -237,11 +237,7 @@ const uk = {
 
             // Step 6 - TTS
             ttsTitle: 'Голос асистента (Piper TTS)',
-            ttsDesc: 'Оберіть голос для відповідей. Модель буде завантажена (~50 MB).',
-            ttsIrina: 'Ірина (Жіночий)',
-            ttsDmitry: 'Дмитро (Чоловічий)',
-            ttsRuslan: 'Руслан (Чоловічий)',
-            ttsKseniya: 'Ксенія (Жіночий)',
+            ttsDesc: 'Оберіть голос для відповідей. Piper встановлено, потрібно лише завантажити модель голосу (~50 MB).',
             ttsFemale: 'Жіночий',
             ttsMale: 'Чоловічий',
             ttsPreview: 'Прослухати',

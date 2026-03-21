@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff } from 'lucide-react';
 import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
 
@@ -45,6 +45,7 @@ interface WifiNetwork {
 interface SttModel {
   id: string;
   name: string;
+  lang: string;
   ram_mb: number;
   size_mb: number;
   quality: string;
@@ -125,8 +126,8 @@ export default function Wizard() {
     wifiPassword: '',
     name: t('wizard.defaultHomeName'),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
-    stt: 'base',
-    tts: 'ru_RU-irina-medium',
+    stt: 'vosk-model-small-uk',
+    tts: 'uk_UA-ukrainian_tts-medium',
     username: 'admin',
     pin: '',
     platformHash: '',
@@ -138,9 +139,18 @@ export default function Wizard() {
   const [kbTarget, setKbTarget] = useState<KbTarget>(null);
   const kbInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  const [showPassword, setShowPassword] = useState(false);
 
   const openKb = useCallback((target: KbTarget) => {
-    if (isTouchDevice) setKbTarget(target);
+    if (isTouchDevice) {
+      setKbTarget(target);
+      setShowPassword(false);
+      // Scroll the input into view above the keyboard
+      setTimeout(() => {
+        const el = kbInputRefs.current[target ?? ''];
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
   }, [isTouchDevice]);
 
   const closeKb = useCallback(() => setKbTarget(null), []);
@@ -688,16 +698,27 @@ export default function Wizard() {
                         <div className="space-y-2">
                           <div>
                             <label className="block text-xs font-medium text-zinc-400 mb-1">{t('wizard.wifiPassword')}</label>
-                            <input
-                              ref={el => { kbInputRefs.current['wifiPassword'] = el; }}
-                              type="password"
-                              value={formData.wifiPassword}
-                              onChange={(e) => { setFormData({ ...formData, wifiPassword: e.target.value }); setWifiConnected(false); }}
-                              onFocus={() => openKb('wifiPassword')}
-                              readOnly={isTouchDevice}
-                              className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all", kbTarget === 'wifiPassword' && 'border-emerald-500 ring-1 ring-emerald-500')}
-                              placeholder={t('wizard.wifiPasswordPlaceholder')}
-                            />
+                            <div className="relative">
+                              <input
+                                ref={el => { kbInputRefs.current['wifiPassword'] = el; }}
+                                type={showPassword && kbTarget === 'wifiPassword' ? 'text' : 'password'}
+                                value={formData.wifiPassword}
+                                onChange={(e) => { setFormData({ ...formData, wifiPassword: e.target.value }); setWifiConnected(false); }}
+                                onFocus={() => openKb('wifiPassword')}
+                                readOnly={isTouchDevice}
+                                className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 pr-9 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all", kbTarget === 'wifiPassword' && 'border-emerald-500 ring-1 ring-emerald-500')}
+                                placeholder={t('wizard.wifiPasswordPlaceholder')}
+                              />
+                              {formData.wifiPassword && (
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => { e.preventDefault(); setShowPassword(p => !p); }}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                >
+                                  {showPassword && kbTarget === 'wifiPassword' ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                              )}
+                            </div>
                           </div>
                           {wifiConnected && wifiConnectedSsid === formData.wifi ? (
                             <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
@@ -794,9 +815,12 @@ export default function Wizard() {
                   )}
                   <div className="space-y-2">
                     {(sttModels.length > 0 ? sttModels : [
-                      { id: 'tiny', name: 'Tiny', ram_mb: 150, size_mb: 75, quality: 'basic', installed: false, active: false, fits_ram: true },
-                      { id: 'base', name: 'Base', ram_mb: 250, size_mb: 142, quality: 'good', installed: false, active: false, fits_ram: true },
-                      { id: 'small', name: 'Small', ram_mb: 500, size_mb: 466, quality: 'high', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-small-uk', name: 'Ukrainian (small)', lang: 'uk', ram_mb: 200, size_mb: 133, quality: 'good', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-small-ru', name: 'Russian (small)', lang: 'ru', ram_mb: 150, size_mb: 45, quality: 'good', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-small-en-us', name: 'English (small)', lang: 'en', ram_mb: 150, size_mb: 40, quality: 'good', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-uk', name: 'Ukrainian (large)', lang: 'uk', ram_mb: 1800, size_mb: 1600, quality: 'high', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-ru', name: 'Russian (large)', lang: 'ru', ram_mb: 1800, size_mb: 1600, quality: 'high', installed: false, active: false, fits_ram: true },
+                      { id: 'vosk-model-en-us', name: 'English (large)', lang: 'en', ram_mb: 1800, size_mb: 1600, quality: 'high', installed: false, active: false, fits_ram: true },
                     ]).map(m => (
                       <button
                         key={m.id}
@@ -813,12 +837,12 @@ export default function Wizard() {
                         <div>
                           <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
                             {m.name}
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">~{m.ram_mb}MB</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{m.size_mb} MB</span>
                             {m.installed && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">{t('wizard.sttInstalled')}</span>}
                             {!m.fits_ram && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400">{t('wizard.sttNoRam')}</span>}
                           </div>
                           <div className="text-xs text-zinc-400 mt-0.5">
-                            {m.id === 'tiny' ? t('wizard.sttTinyDesc') : m.id === 'base' ? t('wizard.sttBaseDesc') : m.id === 'small' ? t('wizard.sttSmallDesc') : m.quality}
+                            {m.quality === 'high' ? t('wizard.sttLarge' + m.lang.charAt(0).toUpperCase() + m.lang.slice(1)) : t('wizard.sttSmall' + m.lang.charAt(0).toUpperCase() + m.lang.slice(1))}
                           </div>
                         </div>
                         {formData.stt === m.id && <Check size={16} className="text-emerald-500" />}
@@ -834,6 +858,8 @@ export default function Wizard() {
                   <p className="text-zinc-400 text-xs">{t('wizard.ttsDesc')}</p>
                   <div className="grid grid-cols-2 gap-2">
                     {(ttsVoices.length > 0 ? ttsVoices : [
+                      { id: 'uk_UA-ukrainian_tts-medium', name: 'Tetiana', language: 'uk', gender: 'female', size_mb: 50, installed: false, active: false },
+                      { id: 'uk_UA-lada-medium', name: 'Lada', language: 'uk', gender: 'female', size_mb: 50, installed: false, active: false },
                       { id: 'ru_RU-irina-medium', name: 'Irina', language: 'ru', gender: 'female', size_mb: 50, installed: false, active: false },
                       { id: 'ru_RU-ruslan-medium', name: 'Ruslan', language: 'ru', gender: 'male', size_mb: 50, installed: false, active: false },
                       { id: 'en_US-amy-medium', name: 'Amy', language: 'en', gender: 'female', size_mb: 50, installed: false, active: false },
@@ -895,17 +921,28 @@ export default function Wizard() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-400 mb-1">{t('wizard.userPin')}</label>
-                      <input
-                        ref={el => { kbInputRefs.current['pin'] = el; }}
-                        type="password"
-                        maxLength={8}
-                        value={formData.pin}
-                        onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
-                        onFocus={() => openKb('pin')}
-                        readOnly={isTouchDevice}
-                        className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all tracking-widest font-mono", kbTarget === 'pin' && 'border-emerald-500 ring-1 ring-emerald-500')}
-                        placeholder={t('wizard.userPinPlaceholder')}
-                      />
+                      <div className="relative">
+                        <input
+                          ref={el => { kbInputRefs.current['pin'] = el; }}
+                          type={showPassword && kbTarget === 'pin' ? 'text' : 'password'}
+                          maxLength={8}
+                          value={formData.pin}
+                          onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
+                          onFocus={() => openKb('pin')}
+                          readOnly={isTouchDevice}
+                          className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 pr-9 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all tracking-widest font-mono", kbTarget === 'pin' && 'border-emerald-500 ring-1 ring-emerald-500')}
+                          placeholder={t('wizard.userPinPlaceholder')}
+                        />
+                        {formData.pin && (
+                          <button
+                            type="button"
+                            onPointerDown={(e) => { e.preventDefault(); setShowPassword(p => !p); }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                          >
+                            {showPassword && kbTarget === 'pin' ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -987,7 +1024,7 @@ export default function Wizard() {
                     {t('common.skip')}
                   </button>
                 )}
-                {step === 2 && !wifiAdapterFound && ethernetConnected && (
+                {step === 2 && !wifiEnabled && ethernetConnected && hasInternet && (
                   <button
                     onClick={skipStep}
                     disabled={submitting}
@@ -1000,7 +1037,7 @@ export default function Wizard() {
                   onClick={nextStep}
                   disabled={
                     submitting ||
-                    (step === 2 && !(wifiConnected && wifiConnectedSsid === formData.wifi) && !(ethernetConnected && !wifiAdapterFound)) ||
+                    (step === 2 && !(wifiConnected && wifiConnectedSsid === formData.wifi) && !(!wifiEnabled && ethernetConnected && hasInternet)) ||
                     (step === 7 && (!formData.username || formData.pin.length < 4))
                   }
                   className="px-5 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] justify-center"
@@ -1028,6 +1065,10 @@ export default function Wizard() {
         onClose={closeKb}
         lang={formData.lang}
         numericOnly={kbTarget === 'pin'}
+        inputValue={kbTarget === 'wifiPassword' ? formData.wifiPassword : kbTarget === 'pin' ? formData.pin : kbTarget === 'name' ? formData.name : kbTarget === 'username' ? formData.username : kbTarget === 'tzSearch' ? tzSearch : ''}
+        isPassword={kbTarget === 'wifiPassword' || kbTarget === 'pin'}
+        passwordVisible={showPassword}
+        onToggleVisibility={() => setShowPassword(p => !p)}
       />
     </div>
   );

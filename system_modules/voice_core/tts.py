@@ -19,11 +19,13 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")
-DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "ru_RU-irina-medium")
+DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
 PIPER_BIN = os.environ.get("PIPER_BIN", "piper")
 
 # Available voices and their model files
 AVAILABLE_VOICES: dict[str, str] = {
+    "uk_UA-ukrainian_tts-medium": "uk_UA-ukrainian_tts-medium.onnx",
+    "uk_UA-lada-medium": "uk_UA-lada-medium.onnx",
     "ru_RU-irina-medium": "ru_RU-irina-medium.onnx",
     "ru_RU-ruslan-medium": "ru_RU-ruslan-medium.onnx",
     "en_US-amy-medium": "en_US-amy-medium.onnx",

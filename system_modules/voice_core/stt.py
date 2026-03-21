@@ -1,52 +1,52 @@
 """
-system_modules/voice_core/stt.py — Whisper.cpp STT wrapper
+system_modules/voice_core/stt.py — Vosk STT wrapper
 
 Supports:
-  - Local transcription via pywhispercpp
+  - Local transcription via vosk
   - Streaming chunks via async generator
-  - Model selection: tiny, base, small, medium, large
-  - Language: ru (default), en, auto
+  - Model selection: vosk-model-small-uk, vosk-model-small-ru, vosk-model-small-en-us, etc.
+  - Language: uk (default), ru, en
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-import tempfile
 from pathlib import Path
 from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = os.environ.get("WHISPER_MODELS_DIR", "/var/lib/selena/models/whisper")
-DEFAULT_MODEL = os.environ.get("WHISPER_MODEL", "base")
-DEFAULT_LANG = os.environ.get("WHISPER_LANGUAGE", "ru")
+MODELS_DIR = os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk")
+DEFAULT_MODEL = os.environ.get("VOSK_MODEL", "vosk-model-small-uk")
 
 
 class STTEngine:
-    """Whisper.cpp STT wrapper using pywhispercpp."""
+    """Vosk STT wrapper — offline speech recognition."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, language: str = DEFAULT_LANG) -> None:
+    def __init__(self, model: str = DEFAULT_MODEL) -> None:
         self.model_name = model
-        self.language = language
-        self._whisper = None
+        self._model = None
         self._lock = asyncio.Lock()
 
     def _load(self) -> None:
-        if self._whisper is not None:
+        if self._model is not None:
             return
-        model_path = Path(MODELS_DIR) / f"ggml-{self.model_name}.bin"
+        model_path = Path(MODELS_DIR) / self.model_name
         try:
-            from pywhispercpp.model import Model
-            self._whisper = Model(
-                str(model_path) if model_path.exists() else self.model_name,
-                n_threads=os.cpu_count() or 4,
-            )
-            logger.info("Whisper model '%s' loaded", self.model_name)
+            from vosk import Model, SetLogLevel
+            SetLogLevel(-1)  # suppress verbose logs
+            if model_path.is_dir():
+                self._model = Model(str(model_path))
+            else:
+                # Vosk can download by model name
+                self._model = Model(model_name=self.model_name)
+            logger.info("Vosk model '%s' loaded", self.model_name)
         except ImportError:
-            logger.warning("pywhispercpp not installed — STT unavailable")
+            logger.warning("vosk not installed — STT unavailable")
         except Exception as e:
-            logger.error("Failed to load Whisper model: %s", e)
+            logger.error("Failed to load Vosk model: %s", e)
 
     async def transcribe(self, audio_bytes: bytes, sample_rate: int = 16000) -> str:
         """Transcribe PCM audio bytes to text.
@@ -59,31 +59,18 @@ class STTEngine:
 
     def _transcribe_sync(self, audio_bytes: bytes, sample_rate: int) -> str:
         self._load()
-        if self._whisper is None:
+        if self._model is None:
             return ""
 
-        # Write to temp WAV file for whisper
-        import wave
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp_path = tmp.name
-
         try:
-            with wave.open(tmp_path, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)  # 16-bit
-                wf.setframerate(sample_rate)
-                wf.writeframes(audio_bytes)
-
-            segments = self._whisper.transcribe(
-                tmp_path,
-                language=self.language if self.language != "auto" else None,
-            )
-            return " ".join(s.text.strip() for s in segments).strip()
+            from vosk import KaldiRecognizer
+            rec = KaldiRecognizer(self._model, sample_rate)
+            rec.AcceptWaveform(audio_bytes)
+            result = json.loads(rec.FinalResult())
+            return result.get("text", "").strip()
         except Exception as e:
             logger.error("STT transcription error: %s", e)
             return ""
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
 
     async def stream_transcribe(
         self, audio_stream: AsyncGenerator[bytes, None], chunk_sec: float = 3.0, sample_rate: int = 16000
@@ -111,8 +98,8 @@ class STTEngine:
 _stt: STTEngine | None = None
 
 
-def get_stt(model: str = DEFAULT_MODEL, language: str = DEFAULT_LANG) -> STTEngine:
+def get_stt(model: str = DEFAULT_MODEL) -> STTEngine:
     global _stt
     if _stt is None:
-        _stt = STTEngine(model=model, language=language)
+        _stt = STTEngine(model=model)
     return _stt
