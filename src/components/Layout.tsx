@@ -40,8 +40,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 to={item.path}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                  isActive 
-                    ? "bg-zinc-800 text-zinc-50" 
+                  isActive
+                    ? "bg-zinc-800 text-zinc-50"
                     : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800/50"
                 )}
               >

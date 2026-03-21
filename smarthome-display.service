@@ -1,0 +1,35 @@
+[Unit]
+Description=SelenaCore — Display launcher (kiosk / framebuffer / TTY QR)
+After=network.target docker.service selena-core.service
+Requires=docker.service
+Wants=selena-core.service
+
+[Service]
+Type=simple
+User=selena
+Group=selena
+WorkingDirectory=/opt/selena-core
+
+# Give Docker and Core API time to start before we try to open a browser
+ExecStartPre=/bin/sleep 10
+
+ExecStart=/opt/selena-core/scripts/start-display.sh
+Restart=on-failure
+RestartSec=10
+
+# Pass display environment (set by the display manager or getty)
+PassEnvironment=DISPLAY WAYLAND_DISPLAY XAUTHORITY
+
+Environment=SELENA_DIR=/opt/selena-core
+Environment=SELENA_UI_URL=http://localhost:8080
+Environment=SELENA_LOG_DIR=/var/log/selena
+EnvironmentFile=-/opt/selena-core/.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=selena-display
+
+[Install]
+WantedBy=graphical.target
+# For headless / TTY-only systems, also install on multi-user.target:
+# WantedBy=multi-user.target

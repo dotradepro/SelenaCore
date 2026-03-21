@@ -44,6 +44,7 @@ export interface Health {
 
 interface AppState {
   isConfigured: boolean;
+  wizardLoading: boolean;
   user: { name: string; role: string } | null;
   health: Health | null;
   stats: SystemStats | null;
@@ -53,6 +54,7 @@ interface AppState {
   modulesLoading: boolean;
   setConfigured: (status: boolean) => void;
   setUser: (user: { name: string; role: string }) => void;
+  fetchWizardStatus: () => Promise<void>;
   fetchHealth: () => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchDevices: () => Promise<void>;
@@ -71,8 +73,9 @@ async function apiFetch(path: string, opts?: RequestInit) {
 }
 
 export const useStore = create<AppState>((set, get) => ({
-  isConfigured: true, // Skip wizard for now — jump straight to dashboard
-  user: { name: 'Admin', role: 'admin' },
+  isConfigured: false,
+  wizardLoading: true,
+  user: null,
   health: null,
   stats: null,
   devices: [],
@@ -83,11 +86,24 @@ export const useStore = create<AppState>((set, get) => ({
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
 
+  fetchWizardStatus: async () => {
+    set({ wizardLoading: true });
+    try {
+      const data = await apiFetch('/api/ui/wizard/status');
+      set({ isConfigured: data?.completed === true });
+    } catch (e) {
+      console.error('fetchWizardStatus failed', e);
+      set({ isConfigured: false });
+    } finally {
+      set({ wizardLoading: false });
+    }
+  },
+
   fetchHealth: async () => {
     try {
       const data = await apiFetch('/api/ui/system');
       if (data?.core) {
-        set({ health: data.core, isConfigured: true });
+        set({ health: data.core });
       }
     } catch (e) {
       console.error('fetchHealth failed', e);

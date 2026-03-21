@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STEPS = [
@@ -16,32 +16,115 @@ const STEPS = [
   { id: 9, title: 'Импорт', icon: Download },
 ];
 
+// Map frontend step number to backend step name + data builder
+const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Record<string, string> }> = {
+  1: { name: 'language', buildData: (f) => ({ language: f.lang }) },
+  2: { name: 'wifi', buildData: (f) => ({ ssid: f.wifi, password: f.wifiPassword }) },
+  3: { name: 'device_name', buildData: (f) => ({ name: f.name }) },
+  4: { name: 'timezone', buildData: (f) => ({ timezone: f.timezone }) },
+  5: { name: 'stt_model', buildData: (f) => ({ model: f.stt }) },
+  6: { name: 'tts_voice', buildData: (f) => ({ voice: f.tts }) },
+  7: { name: 'admin_user', buildData: (f) => ({ username: f.username, pin: f.pin }) },
+  8: { name: 'platform', buildData: (f) => ({ device_hash: f.platformHash }) },
+  9: { name: 'import', buildData: (f) => ({ source: f.importSource }) },
+};
+
+interface FormData {
+  lang: string;
+  wifi: string;
+  wifiPassword: string;
+  name: string;
+  timezone: string;
+  stt: string;
+  tts: string;
+  username: string;
+  pin: string;
+  platformHash: string;
+  importSource: string;
+}
+
 function HomeIcon(props: any) {
-  return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>;
+  return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
 }
 
 export default function Wizard() {
   const [step, setStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const setConfigured = useStore((state) => state.setConfigured);
   const setUser = useStore((state) => state.setUser);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     lang: 'ru',
     wifi: '',
+    wifiPassword: '',
     name: 'Умный дом',
     timezone: 'Europe/Moscow',
     stt: 'base',
     tts: 'ru_irina',
     username: 'admin',
     pin: '',
+    platformHash: '',
+    importSource: '',
   });
 
-  const nextStep = () => {
-    if (step === 9) {
-      setUser({ name: formData.username, role: 'admin' });
-      setConfigured(true);
-    } else {
-      setStep(s => s + 1);
+  const nextStep = async () => {
+    const mapping = STEP_MAP[step];
+    if (!mapping) return;
+
+    setError(null);
+    setSubmitting(true);
+    try {
+      const resp = await fetch('/api/ui/wizard/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: mapping.name, data: mapping.buildData(formData) }),
+      });
+      if (!resp.ok && resp.status !== 409) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body?.detail ?? `Ошибка ${resp.status}`);
+      }
+      if (step === 9) {
+        setUser({ name: formData.username, role: 'admin' });
+        setConfigured(true);
+      } else {
+        setStep(s => s + 1);
+      }
+    } catch (e: any) {
+      setError(e.message ?? 'Неизвестная ошибка');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const skipStep = async () => {
+    // Steps 8 and 9 can be skipped — send empty data
+    const mapping = STEP_MAP[step];
+    if (!mapping) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await fetch('/api/ui/wizard/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ step: mapping.name, data: {} }),
+      });
+      if (step === 9) {
+        setUser({ name: formData.username || 'Admin', role: 'admin' });
+        setConfigured(true);
+      } else {
+        setStep(s => s + 1);
+      }
+    } catch {
+      // skip anyway
+      if (step === 9) {
+        setUser({ name: formData.username || 'Admin', role: 'admin' });
+        setConfigured(true);
+      } else {
+        setStep(s => s + 1);
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -60,7 +143,7 @@ export default function Wizard() {
         {/* Progress Bar */}
         <div className="flex items-center justify-between mb-12 relative">
           <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-zinc-800 -z-10 rounded-full overflow-hidden">
-            <motion.div 
+            <motion.div
               className="h-full bg-emerald-500"
               initial={{ width: 0 }}
               animate={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }}
@@ -75,8 +158,8 @@ export default function Wizard() {
                 <div className={cn(
                   "w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-colors border-2",
                   isActive ? "bg-zinc-900 border-emerald-500 text-emerald-500" :
-                  isPast ? "bg-emerald-500 border-emerald-500 text-zinc-950" :
-                  "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    isPast ? "bg-emerald-500 border-emerald-500 text-zinc-950" :
+                      "bg-zinc-900 border-zinc-800 text-zinc-500"
                 )}>
                   {isPast ? <Check size={18} /> : s.id}
                 </div>
@@ -116,8 +199,8 @@ export default function Wizard() {
                         onClick={() => setFormData({ ...formData, lang: l.id })}
                         className={cn(
                           "p-6 rounded-xl border flex flex-col items-center gap-3 transition-all",
-                          formData.lang === l.id 
-                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500" 
+                          formData.lang === l.id
+                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
@@ -140,8 +223,8 @@ export default function Wizard() {
                         onClick={() => setFormData({ ...formData, wifi: net })}
                         className={cn(
                           "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
-                          formData.wifi === net 
-                            ? "border-emerald-500 bg-emerald-500/10" 
+                          formData.wifi === net
+                            ? "border-emerald-500 bg-emerald-500/10"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
@@ -153,6 +236,18 @@ export default function Wizard() {
                       </button>
                     ))}
                   </div>
+                  {formData.wifi && (
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Пароль сети</label>
+                      <input
+                        type="password"
+                        value={formData.wifiPassword}
+                        onChange={(e) => setFormData({ ...formData, wifiPassword: e.target.value })}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                        placeholder="Пароль Wi-Fi"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -160,8 +255,8 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">Имя устройства</h2>
                   <p className="text-zinc-400 text-sm">Как будет называться этот хаб? Это имя используется в платформе и голосовых ответах.</p>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
@@ -174,7 +269,7 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">Часовой пояс</h2>
                   <p className="text-zinc-400 text-sm">Необходим для корректной работы автоматизаций по времени.</p>
-                  <select 
+                  <select
                     value={formData.timezone}
                     onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all appearance-none"
@@ -201,8 +296,8 @@ export default function Wizard() {
                         onClick={() => setFormData({ ...formData, stt: m.id })}
                         className={cn(
                           "w-full p-4 rounded-xl border flex items-center justify-between text-left transition-all",
-                          formData.stt === m.id 
-                            ? "border-emerald-500 bg-emerald-500/10" 
+                          formData.stt === m.id
+                            ? "border-emerald-500 bg-emerald-500/10"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
@@ -236,8 +331,8 @@ export default function Wizard() {
                         onClick={() => setFormData({ ...formData, tts: v.id })}
                         className={cn(
                           "p-4 rounded-xl border flex items-center justify-between transition-all",
-                          formData.tts === v.id 
-                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500" 
+                          formData.tts === v.id
+                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
@@ -255,8 +350,8 @@ export default function Wizard() {
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-zinc-400 mb-1.5">Имя</label>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={formData.username}
                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all"
@@ -264,8 +359,8 @@ export default function Wizard() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-zinc-400 mb-1.5">PIN-код (4-8 цифр)</label>
-                      <input 
-                        type="password" 
+                      <input
+                        type="password"
                         maxLength={8}
                         value={formData.pin}
                         onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
@@ -285,12 +380,12 @@ export default function Wizard() {
                     <div className="w-48 h-48 bg-white rounded-xl p-2 mb-4 flex items-center justify-center">
                       {/* Mock QR Code */}
                       <div className="w-full h-full bg-zinc-200 grid grid-cols-5 grid-rows-5 gap-1 p-1">
-                        {Array.from({length: 25}).map((_, i) => (
+                        {Array.from({ length: 25 }).map((_, i) => (
                           <div key={i} className={Math.random() > 0.5 ? "bg-black" : "bg-transparent"} />
                         ))}
                       </div>
                     </div>
-                    <p className="text-sm text-zinc-400 text-center">Отсканируйте QR-код через приложение<br/>или нажмите "Пропустить"</p>
+                    <p className="text-sm text-zinc-400 text-center">Отсканируйте QR-код через приложение<br />или нажмите "Пропустить"</p>
                   </div>
                 </div>
               )}
@@ -321,33 +416,49 @@ export default function Wizard() {
           </AnimatePresence>
 
           {/* Footer Actions */}
-          <div className="mt-8 pt-6 border-t border-zinc-800 flex items-center justify-between">
-            <button 
-              onClick={() => setStep(s => Math.max(1, s - 1))}
-              className={cn(
-                "px-6 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                step === 1 ? "opacity-0 pointer-events-none" : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
-              )}
-            >
-              Назад
-            </button>
-            <div className="flex items-center gap-3">
-              {(step === 8 || step === 9) && (
-                <button 
-                  onClick={nextStep}
-                  className="px-6 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 transition-colors"
-                >
-                  Пропустить
-                </button>
-              )}
-              <button 
-                onClick={nextStep}
-                disabled={step === 7 && (!formData.username || formData.pin.length < 4)}
-                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          <div className="mt-8 pt-6 border-t border-zinc-800 space-y-3">
+            {error && (
+              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-2.5">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => { setStep(s => Math.max(1, s - 1)); setError(null); }}
+                disabled={submitting}
+                className={cn(
+                  "px-6 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  step === 1 ? "opacity-0 pointer-events-none" : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 disabled:opacity-50"
+                )}
               >
-                {step === 9 ? 'Завершить' : 'Далее'}
-                {step !== 9 && <ChevronRight size={16} />}
+                Назад
               </button>
+              <div className="flex items-center gap-3">
+                {(step === 8 || step === 9) && (
+                  <button
+                    onClick={skipStep}
+                    disabled={submitting}
+                    className="px-6 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                  >
+                    Пропустить
+                  </button>
+                )}
+                <button
+                  onClick={nextStep}
+                  disabled={submitting || (step === 7 && (!formData.username || formData.pin.length < 4))}
+                  className="px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px] justify-center"
+                >
+                  {submitting ? (
+                    <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      {step === 9 ? 'Завершить' : 'Далее'}
+                      {step !== 9 && <ChevronRight size={16} />}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
