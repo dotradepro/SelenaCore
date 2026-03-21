@@ -9,13 +9,6 @@ body {
   @apply bg-zinc-950 text-zinc-50 antialiased;
 }
 
-/* Hide cursor globally — kiosk touchscreen.
-   Touch events still work; only the visible pointer is hidden. */
-html,
-html * {
-  cursor: none !important;
-}
-
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
   width: 8px;
