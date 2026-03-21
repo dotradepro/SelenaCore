@@ -21,7 +21,7 @@ services:
       - selena_internal
       - selena_external
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7070/api/v1/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7070/api/v1/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

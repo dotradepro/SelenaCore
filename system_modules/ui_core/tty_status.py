@@ -46,7 +46,7 @@ def _get_local_ip() -> str:
     When running inside Docker, reads HOST_IP env var set by the systemd service.
     Falls back to socket detection (returns container IP inside Docker).
     """
-    host_ip = os.environ.get("HOST_IP", "").strip()
+    host_ip = os.environ.get("HOST_IP", "").strip().split()[0] if os.environ.get("HOST_IP", "").strip() else ""
     if host_ip and host_ip != "127.0.0.1":
         return host_ip
     try:
