@@ -11,7 +11,8 @@ body {
 
 /* Hide cursor globally — kiosk touchscreen.
    Touch events still work; only the visible pointer is hidden. */
-html, html * {
+html,
+html * {
   cursor: none !important;
 }
 

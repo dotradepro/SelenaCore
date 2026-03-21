@@ -9,8 +9,10 @@ import socket
 import subprocess
 from pathlib import Path
 
+import os
+
 import qrcode
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
@@ -90,18 +92,41 @@ self.addEventListener('fetch', e => {
 """
 
 
+def _get_ui_url(request: Request) -> str:
+    """Build the UI URL from the incoming request Host header or env override."""
+    host_env = os.environ.get("HOST_IP", "").strip()
+    if host_env:
+        return f"http://{host_env}:8080"
+    host_header = request.headers.get("host", "").strip()
+    if host_header:
+        # host_header may already include port (e.g. 192.168.8.123:8080)
+        host_no_port = host_header.split(":")[0]
+        return f"http://{host_no_port}:8080"
+    return f"http://{_get_local_ip()}:8080"
+
+
+@router.get("/api/ui/setup/qr", tags=["ap-mode"])
+async def get_setup_qr_json(request: Request) -> JSONResponse:
+    """Return QR code as JSON matrix for the SVG renderer on the welcome screen."""
+    url = _get_ui_url(request)
+    qr_obj = qrcode.QRCode(border=0)
+    qr_obj.add_data(url)
+    qr_obj.make(fit=True)
+    matrix = qr_obj.get_matrix()
+    return JSONResponse({
+        "url": url,
+        "matrix": matrix,
+        "size": len(matrix),
+    })
+
+
 @router.get("/api/ui/ap-qr", tags=["ap-mode"])
-async def get_ap_qr_code() -> Response:
+async def get_ap_qr_code(request: Request) -> Response:
     """Generate a QR code for the AP mode Wi-Fi connection URL.
 
     Returns PNG image of the QR code pointing to the local UI.
     """
-    try:
-        local_ip = _get_local_ip()
-    except Exception:
-        local_ip = "192.168.4.1"
-
-    url = f"http://{local_ip}:8080"
+    url = _get_ui_url(request)
     img = qrcode.make(url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")

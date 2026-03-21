@@ -5,6 +5,7 @@ import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity,
 import { cn } from '../lib/utils';
 
 const STEPS = [
+  { id: 1, title: 'Язык', icon: Globe },
   { id: 2, title: 'Wi-Fi', icon: Wifi },
   { id: 3, title: 'Имя дома', icon: HomeIcon },
   { id: 4, title: 'Часовой пояс', icon: Globe },
@@ -48,7 +49,8 @@ function HomeIcon(props: any) {
 
 export default function Wizard() {
   const selectedLanguage = useStore((state) => state.selectedLanguage);
-  const [step, setStep] = useState(2); // Start at step 2 — language already chosen
+  const setSelectedLanguage = useStore((state) => state.setSelectedLanguage);
+  const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setConfigured = useStore((state) => state.setConfigured);
@@ -68,14 +70,7 @@ export default function Wizard() {
     importSource: '',
   });
 
-  // Submit language step to backend on mount
-  useEffect(() => {
-    fetch('/api/ui/wizard/step', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ step: 'language', data: { language: selectedLanguage } }),
-    }).catch(() => { });
-  }, [selectedLanguage]);
+
 
   const nextStep = async () => {
     const mapping = STEP_MAP[step];
@@ -155,7 +150,7 @@ export default function Wizard() {
             <motion.div
               className="h-full bg-emerald-500"
               initial={{ width: 0 }}
-              animate={{ width: `${((step - 2) / (STEPS.length - 1)) * 100}%` }}
+              animate={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }}
               transition={{ duration: 0.3 }}
             />
           </div>
@@ -194,6 +189,34 @@ export default function Wizard() {
               transition={{ duration: 0.2 }}
               className="flex-1"
             >
+              {step === 1 && (
+                <div className="space-y-6">
+                  <h2 className="text-xl font-medium">Выберите язык</h2>
+                  <p className="text-zinc-400 text-sm">Язык интерфейса и голосового ассистента.</p>
+                  <div className="space-y-3">
+                    {[
+                      { id: 'ru', name: 'Русский' },
+                      { id: 'uk', name: 'Українська' },
+                      { id: 'en', name: 'English' },
+                    ].map(lang => (
+                      <button
+                        key={lang.id}
+                        onClick={() => { setFormData({ ...formData, lang: lang.id }); setSelectedLanguage(lang.id); }}
+                        className={cn(
+                          "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
+                          formData.lang === lang.id
+                            ? "border-emerald-500 bg-emerald-500/10"
+                            : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                        )}
+                      >
+                        <span className="font-medium">{lang.name}</span>
+                        {formData.lang === lang.id && <Check size={20} className="text-emerald-500" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {step === 2 && (
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">Подключение к Wi-Fi</h2>
@@ -408,11 +431,10 @@ export default function Wizard() {
             <div className="flex items-center justify-between">
               <button
                 onClick={() => {
-                  if (step === 2) {
-                    // Go back to language selection
+                  if (step === 1) {
                     useStore.getState().setSetupStage('landing');
                   } else {
-                    setStep(s => Math.max(2, s - 1));
+                    setStep(s => Math.max(1, s - 1));
                   }
                   setError(null);
                 }}

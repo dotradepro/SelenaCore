@@ -91,7 +91,7 @@ main() {
                 --disable-session-crashed-bubble
                 --disable-translate
                 --no-first-run
-                --disable-features=Translate
+                --disable-features=Translate,TranslateUI,ChromeTranslatePopup
                 --check-for-update-interval=31536000
                 --autoplay-policy=no-user-gesture-required
                 --disable-pinch
@@ -106,14 +106,21 @@ main() {
                 --start-fullscreen
                 --user-data-dir=/tmp/chromium-kiosk
                 --disable-gpu-sandbox
+                --lang=ru
+                --disable-popup-blocking
+                --disable-prompt-on-repost
+                --disable-hang-monitor
             )
 
             # DRM for display output, libinput for touch/keyboard/mouse
             export WLR_BACKENDS=drm,libinput
             export LIBSEAT_BACKEND=builtin
-            # Hide hardware cursor (touch still works via libinput)
+            # Hide cursor completely using transparent cursor theme
             export WLR_NO_HARDWARE_CURSORS=1
-            export WLR_XCURSOR_SIZE=1
+            local SCRIPT_DIR
+            SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+            export XCURSOR_THEME=transparent
+            export XCURSOR_PATH="${SCRIPT_DIR}/cursors"
             export XCURSOR_SIZE=1
 
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"

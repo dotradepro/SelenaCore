@@ -43,11 +43,7 @@ export default function App() {
     }
     return (
       <LanguageSelect
-        onSelect={(lang) => {
-          // Store chosen language for wizard
-          useStore.getState().setSelectedLanguage(lang);
-          setSetupStage('wizard');
-        }}
+        onContinue={() => setSetupStage('wizard')}
       />
     );
   }
