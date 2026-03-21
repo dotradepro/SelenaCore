@@ -106,13 +106,15 @@ main() {
                 --start-fullscreen
                 --user-data-dir=/tmp/chromium-kiosk
                 --disable-gpu-sandbox
-                --cursor-style=custom
-                --custom-cursor-size=1
             )
 
             # DRM for display output, libinput for touch/keyboard/mouse
             export WLR_BACKENDS=drm,libinput
             export LIBSEAT_BACKEND=builtin
+            # Hide hardware cursor (touch still works via libinput)
+            export WLR_NO_HARDWARE_CURSORS=1
+            export WLR_XCURSOR_SIZE=1
+            export XCURSOR_SIZE=1
 
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"
             ;;

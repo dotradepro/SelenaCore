@@ -74,7 +74,7 @@ export default function Wizard() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ step: 'language', data: { language: selectedLanguage } }),
-    }).catch(() => {});
+    }).catch(() => { });
   }, [selectedLanguage]);
 
   const nextStep = async () => {
