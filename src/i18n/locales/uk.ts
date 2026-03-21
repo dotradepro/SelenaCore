@@ -193,6 +193,10 @@ const uk = {
             wifiNotAvailable: 'Wi-Fi адаптер не знайдено і Ethernet не підключено.',
             wifiNoNetworks: 'Мережі не знайдено. Оновіть.',
             wifiConnected: 'Підключено',
+            wifiConnectBtn: 'Підключити',
+            wifiConnecting: 'Підключення…',
+            wifiConnectFailed: 'Не вдалося підключитися. Перевірте пароль і спробуйте знову.',
+            wifiVerified: 'Успішно підключено',
             ethernetConnected: 'Ethernet підключено',
             ethernetSkipHint: 'Інтернет доступний через кабель. Ви можете пропустити Wi-Fi або налаштувати як резерв.',
 

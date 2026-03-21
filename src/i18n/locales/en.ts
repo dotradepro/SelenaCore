@@ -193,6 +193,10 @@ const en = {
             wifiNotAvailable: 'No Wi-Fi adapter detected and no Ethernet connected.',
             wifiNoNetworks: 'No networks found. Pull to refresh.',
             wifiConnected: 'Connected',
+            wifiConnectBtn: 'Connect',
+            wifiConnecting: 'Connecting…',
+            wifiConnectFailed: 'Connection failed. Check password and try again.',
+            wifiVerified: 'Connected successfully',
             ethernetConnected: 'Ethernet connected',
             ethernetSkipHint: 'Internet available via cable. You can skip Wi-Fi setup or configure it as backup.',
 
