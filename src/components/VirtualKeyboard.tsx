@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { cn } from '../lib/utils';
-import { Delete, CornerDownLeft, ChevronUp, Globe, X } from 'lucide-react';
+import { Delete, CornerDownLeft, ChevronUp, Globe, X, Eye, EyeOff } from 'lucide-react';
 
 type KeyboardLayout = 'en' | 'uk';
 type KeyboardMode = 'lower' | 'upper' | 'symbols';
@@ -56,9 +56,13 @@ interface VirtualKeyboardProps {
     onClose: () => void;
     lang?: string;
     numericOnly?: boolean;
+    inputValue?: string;
+    isPassword?: boolean;
+    onToggleVisibility?: () => void;
+    passwordVisible?: boolean;
 }
 
-export default function VirtualKeyboard({ visible, onKeyPress, onBackspace, onEnter, onClose, lang = 'en', numericOnly = false }: VirtualKeyboardProps) {
+export default function VirtualKeyboard({ visible, onKeyPress, onBackspace, onEnter, onClose, lang = 'en', numericOnly = false, inputValue, isPassword, onToggleVisibility, passwordVisible }: VirtualKeyboardProps) {
     const [layout, setLayout] = useState<KeyboardLayout>(lang === 'uk' ? 'uk' : 'en');
     const [mode, setMode] = useState<KeyboardMode>('lower');
     const kbRef = useRef<HTMLDivElement>(null);
@@ -110,8 +114,17 @@ export default function VirtualKeyboard({ visible, onKeyPress, onBackspace, onEn
         return (
             <div ref={kbRef} className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900/98 border-t border-zinc-700 px-2 pb-2 pt-1.5 backdrop-blur-sm">
                 <div className="flex justify-between items-center mb-1.5 px-1">
-                    <span className="text-[10px] text-zinc-500">PIN</span>
-                    <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors">
+                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                        <div className="flex-1 bg-zinc-800 rounded px-2 py-1 text-sm text-zinc-100 font-mono tracking-[0.3em] truncate min-h-[28px]">
+                            {inputValue ? (passwordVisible ? inputValue : '•'.repeat(inputValue.length)) : <span className="text-zinc-600">PIN</span>}
+                        </div>
+                        {isPassword && inputValue && (
+                            <button onPointerDown={(e) => { e.preventDefault(); onToggleVisibility?.(); }} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
+                                {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                        )}
+                    </div>
+                    <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors shrink-0 ml-1">
                         <X size={14} />
                     </button>
                 </div>
@@ -145,9 +158,21 @@ export default function VirtualKeyboard({ visible, onKeyPress, onBackspace, onEn
 
     return (
         <div ref={kbRef} className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900/98 border-t border-zinc-700 px-1 pb-1.5 pt-1 backdrop-blur-sm">
-            <div className="flex justify-between items-center mb-1 px-1">
-                <span className="text-[10px] text-zinc-500">{layout.toUpperCase()}</span>
-                <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors">
+            <div className="flex justify-between items-center mb-1 px-1 gap-1">
+                <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] text-zinc-500 shrink-0">{layout.toUpperCase()}</span>
+                    {inputValue !== undefined && (
+                        <div className="flex-1 bg-zinc-800 rounded px-2 py-0.5 text-sm text-zinc-100 truncate min-h-[24px] flex items-center">
+                            {inputValue ? (isPassword ? (passwordVisible ? inputValue : '•'.repeat(inputValue.length)) : inputValue) : <span className="text-zinc-600">...</span>}
+                        </div>
+                    )}
+                    {isPassword && inputValue && (
+                        <button onPointerDown={(e) => { e.preventDefault(); onToggleVisibility?.(); }} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
+                            {passwordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                    )}
+                </div>
+                <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-300 transition-colors shrink-0">
                     <X size={14} />
                 </button>
             </div>

@@ -1,34 +1,19 @@
 import { useEffect, useState } from 'react';
-import { Search, RefreshCw, Thermometer, Zap, Cpu, Radio, ToggleLeft, ToggleRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import type { Device } from '../store/useStore';
-import { cn } from '../lib/utils';
 
-const TYPE_ICON: Record<string, React.ElementType> = {
-    sensor: Thermometer,
-    actuator: Zap,
-    controller: Cpu,
-    virtual: Radio,
-};
-
-const TYPE_LABEL_KEYS: Record<string, string> = {
-    sensor: 'devices.sensor',
-    actuator: 'devices.actuator',
-    controller: 'devices.controller',
-    virtual: 'devices.virtual',
-};
-
+/* ── helpers ──────────────────────────────────────── */
 function deviceIsOn(device: Device): boolean | null {
     const s = device.state as Record<string, unknown>;
     if (s.on !== undefined) return Boolean(s.on);
     if (s.power !== undefined) return Boolean(s.power);
     if (s.active !== undefined) return Boolean(s.active);
     if (s.state !== undefined) return s.state === 'on' || s.state === true;
-    return null; // no clear on/off state
+    return null;
 }
 
-function formatLastSeen(ts: number | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+function formatLastSeen(ts: number | null, t: (k: string, o?: Record<string, unknown>) => string): string {
     if (!ts) return t('common.never');
     const diff = Math.floor(Date.now() / 1000 - ts);
     if (diff < 60) return t('common.secondsAgo', { count: diff });
@@ -37,18 +22,26 @@ function formatLastSeen(ts: number | null, t: (key: string, opts?: Record<string
     return t('common.daysAgo', { count: Math.floor(diff / 86400) });
 }
 
-function StatePreview({ state }: { state: Record<string, unknown> }) {
-    const { t } = useTranslation();
+function statePreview(state: Record<string, unknown>): string {
     const entries = Object.entries(state).slice(0, 3);
-    if (entries.length === 0)
-        return <span className="text-zinc-600 italic">{t('common.noData')}</span>;
-    return (
-        <span className="font-mono text-zinc-400 text-xs">
-            {entries.map(([k, v]) => `${k}:${JSON.stringify(v)}`).join(' · ')}
-        </span>
-    );
+    if (!entries.length) return '';
+    return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ');
 }
 
+const TYPE_COLOR: Record<string, { fg: string; bg: string }> = {
+    sensor: { fg: 'var(--accent)', bg: 'var(--blue-bg)' },
+    actuator: { fg: 'var(--amber)', bg: 'var(--amber-bg)' },
+    controller: { fg: 'var(--purple)', bg: 'var(--purple-bg)' },
+    virtual: { fg: 'var(--teal)', bg: 'var(--teal-bg)' },
+};
+const TYPE_ICON_PATH: Record<string, string> = {
+    sensor: 'M7 2a3 3 0 00-3 3v5a3 3 0 006 0V5a3 3 0 00-3-3z M4.5 13c.8 1.2 2.2 2 3.5 2s2.7-.8 3.5-2',
+    actuator: 'M7 2l1.5 3h3L9 7l1 3-3-2-3 2 1-3-2.5-2h3L7 2z',
+    controller: 'M3 7h8M3 10h8M9 4l3 3-3 3',
+    virtual: 'M7 2a5 5 0 100 10A5 5 0 007 2zm0 0v5m0 0l3-2',
+};
+
+/* ── Main component ─────────────────────────────── */
 export default function Devices() {
     const { t } = useTranslation();
     const devices = useStore((s) => s.devices);
@@ -56,141 +49,151 @@ export default function Devices() {
     const fetchDevices = useStore((s) => s.fetchDevices);
     const updateDeviceState = useStore((s) => s.updateDeviceState);
     const [search, setSearch] = useState('');
-    const [typeFilter, setTypeFilter] = useState<string>('all');
+    const [typeFilter, setTypeFilter] = useState('all');
 
-    useEffect(() => {
-        fetchDevices();
-    }, [fetchDevices]);
+    useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
+    const types = ['all', ...Array.from(new Set(devices.map((d) => d.type)))];
     const filtered = devices.filter((d) => {
-        const matchSearch =
-            d.name.toLowerCase().includes(search.toLowerCase()) ||
-            d.protocol.toLowerCase().includes(search.toLowerCase());
+        const q = search.toLowerCase();
+        const matchSearch = d.name.toLowerCase().includes(q) || d.protocol.toLowerCase().includes(q);
         const matchType = typeFilter === 'all' || d.type === typeFilter;
         return matchSearch && matchType;
     });
 
-    const types = ['all', ...Array.from(new Set(devices.map((d) => d.type)))];
-
     return (
-        <div className="max-w-6xl mx-auto space-y-8">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-3xl font-semibold tracking-tight">{t('devices.title')}</h1>
-                    <p className="text-zinc-400 mt-1">
-                        Device Registry — {t('devices.registryInfo', { count: devices.length })}
-                    </p>
+        <div className="thin-scroll" style={{ height: '100%', overflowY: 'auto', padding: 14 }}>
+
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{t('devices.title')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                        {t('devices.registryInfo', { count: devices.length })}
+                    </div>
                 </div>
-                <button
-                    onClick={() => fetchDevices()}
-                    className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-lg transition-colors"
-                    title="Refresh"
-                >
-                    <RefreshCw size={18} className={devicesLoading ? 'animate-spin' : ''} />
+                <button onClick={() => fetchDevices()} style={{
+                    background: 'var(--surface2)', border: '1px solid var(--border)',
+                    borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer',
+                }}>
+                    {devicesLoading ? '…' : '↺ Refresh'}
                 </button>
             </div>
 
-            {/* Filters */}
-            <div className="flex items-center gap-4 flex-wrap">
-                <div className="relative flex-1 max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+            {/* Filter + search row */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+                    <svg viewBox="0 0 14 14" fill="none" width="13" height="13"
+                        style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }}>
+                        <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.3" />
+                        <path d="M9 9l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                    </svg>
                     <input
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder={t('devices.searchPlaceholder')}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-colors"
+                        style={{
+                            width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
+                            borderRadius: 8, padding: '6px 10px 6px 28px', fontSize: 11,
+                            color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
+                        }}
                     />
                 </div>
-                <div className="flex gap-2">
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {types.map((tp) => (
-                        <button
-                            key={tp}
-                            onClick={() => setTypeFilter(tp)}
-                            className={cn(
-                                'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                                typeFilter === tp
-                                    ? 'bg-zinc-700 text-zinc-50'
-                                    : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-50'
-                            )}
-                        >
-                            {tp === 'all' ? t('common.all') : (TYPE_LABEL_KEYS[tp] ? t(TYPE_LABEL_KEYS[tp]) : tp)}
+                        <button key={tp} onClick={() => setTypeFilter(tp)} style={{
+                            padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                            background: typeFilter === tp ? 'var(--surface3)' : 'var(--surface2)',
+                            border: `1px solid ${typeFilter === tp ? 'var(--border2)' : 'var(--border)'}`,
+                            color: typeFilter === tp ? 'var(--text)' : 'var(--text2)',
+                        }}>
+                            {tp === 'all' ? t('common.all') : tp}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Device list */}
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
-                {devicesLoading && filtered.length === 0 && (
-                    <div className="p-10 text-center text-zinc-500 text-sm">{t('common.loading')}</div>
-                )}
-                {!devicesLoading && filtered.length === 0 && (
-                    <div className="p-10 text-center text-zinc-500 text-sm">
-                        {devices.length === 0
-                            ? t('devices.noDevicesRegistered')
-                            : t('devices.noFilterResults')}
-                    </div>
-                )}
-
-                <div className="divide-y divide-zinc-800">
-                    {filtered.map((device) => {
-                        const Icon = TYPE_ICON[device.type] ?? Radio;
-                        const on = deviceIsOn(device);
-                        return (
-                            <div
-                                key={device.device_id}
-                                className="p-4 flex items-center justify-between hover:bg-zinc-800/20 transition-colors"
-                            >
-                                <div className="flex items-center gap-4 min-w-0">
-                                    <div className="w-10 h-10 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-400 shrink-0">
-                                        <Icon size={18} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <div className="font-medium text-sm flex items-center gap-2">
-                                            {device.name}
-                                            <span className="text-xs px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-400 border border-zinc-700">
-                                                {device.protocol}
-                                            </span>
-                                            <span className="text-xs text-zinc-600">
-                                                {TYPE_LABEL_KEYS[device.type] ? t(TYPE_LABEL_KEYS[device.type]) : device.type}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-zinc-500 mt-1 truncate">
-                                            <StatePreview state={device.state as Record<string, unknown>} />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-4 shrink-0 ml-4">
-                                    <span className="text-xs text-zinc-600 hidden md:block whitespace-nowrap">
-                                        {formatLastSeen(device.last_seen, t)}
-                                    </span>
-
-                                    {on !== null ? (
-                                        <button
-                                            onClick={() =>
-                                                updateDeviceState(device.device_id, { on: !on })
-                                            }
-                                            className={cn(
-                                                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                                                on
-                                                    ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
-                                                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-                                            )}
-                                        >
-                                            {on ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                                            {on ? t('common.on') : t('common.off')}
-                                        </button>
-                                    ) : (
-                                        <span className="text-xs text-zinc-600 px-3 py-1.5">—</span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
+            {/* Empty states */}
+            {devicesLoading && filtered.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)', fontSize: 12 }}>
+                    {t('common.loading')}
                 </div>
+            )}
+            {!devicesLoading && filtered.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)', fontSize: 12 }}>
+                    {devices.length === 0 ? t('devices.noDevicesRegistered') : t('devices.noFilterResults')}
+                </div>
+            )}
+
+            {/* Device list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {filtered.map((device) => {
+                    const col = TYPE_COLOR[device.type] ?? { fg: 'var(--text3)', bg: 'var(--surface3)' };
+                    const path = TYPE_ICON_PATH[device.type] ?? TYPE_ICON_PATH.virtual;
+                    const on = deviceIsOn(device);
+                    const preview = statePreview(device.state as Record<string, unknown>);
+                    return (
+                        <div key={device.device_id} style={{
+                            background: 'var(--surface)', border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-sm)', padding: '10px 12px',
+                            display: 'flex', alignItems: 'center', gap: 10,
+                        }}>
+                            {/* Type icon */}
+                            <div style={{
+                                width: 34, height: 34, borderRadius: 9, background: col.bg,
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                            }}>
+                                <svg viewBox="0 0 14 14" fill="none" width="14" height="14" style={{ color: col.fg }}>
+                                    <path d={path} stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            </div>
+
+                            {/* Info */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                    <span style={{
+                                        fontSize: 12, fontWeight: 500, color: 'var(--text)',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                    }}>
+                                        {device.name}
+                                    </span>
+                                    <span style={{
+                                        fontSize: 9, padding: '2px 6px', borderRadius: 4,
+                                        background: 'var(--surface3)', color: 'var(--text3)', flexShrink: 0,
+                                    }}>{device.protocol}</span>
+                                    <span style={{ fontSize: 9, color: col.fg, flexShrink: 0 }}>{device.type}</span>
+                                </div>
+                                {preview && (
+                                    <div style={{
+                                        fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                    }}>
+                                        {preview}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Last seen */}
+                            <div style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
+                                {formatLastSeen(device.last_seen, t)}
+                            </div>
+
+                            {/* Toggle / state indicator */}
+                            {on !== null ? (
+                                <div className={`toggle-switch ${on ? 'on' : 'off'}`}
+                                    onClick={() => updateDeviceState(device.device_id, { on: !on })}>
+                                    <div className="toggle-knob" />
+                                </div>
+                            ) : (
+                                <div style={{ width: 32, textAlign: 'center', fontSize: 11, color: 'var(--text3)' }}>—</div>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
 }
+
+

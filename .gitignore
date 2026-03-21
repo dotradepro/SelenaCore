@@ -11,3 +11,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 token git
+
+# Local docs snapshot
+_docs/
+config/core.yaml

@@ -493,7 +493,7 @@ function SystemSettings() {
     try {
       const res = await fetch('/api/ui/wizard/reset', { method: 'POST' });
       if (res.ok) {
-        window.location.reload();
+        window.location.href = '/';
       }
     } catch { /* ignore */ } finally {
       setResetting(false);

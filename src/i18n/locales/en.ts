@@ -266,6 +266,21 @@ const en = {
             importCloud: 'Cloud',
 
             unknownError: 'Unknown error',
+
+            // Provisioning
+            provisionTitle: 'Setting up your system…',
+            provisionDesc: 'Downloading models and applying configuration. This may take a few minutes.',
+            provisionDone: 'Setup complete!',
+            provisionDoneDesc: 'All components are installed and configured. Your smart home is ready.',
+            provisionFailed: 'Setup encountered errors',
+            provisionFailedDesc: 'Some tasks failed. You can retry or continue to the dashboard.',
+            provisionContinue: 'Go to Dashboard',
+            provisionRetry: 'Retry',
+            provTask_apply_config: 'Applying configuration',
+            provTask_download_stt: 'Downloading speech recognition model',
+            provTask_download_tts: 'Downloading voice model',
+            provTask_download_llm: 'Downloading language model',
+            provTask_finalize: 'Finalizing setup',
         },
 
         // ── Language Select ──

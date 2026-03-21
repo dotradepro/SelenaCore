@@ -266,6 +266,21 @@ const uk = {
             importCloud: 'Хмара',
 
             unknownError: 'Невідома помилка',
+
+            // Provisioning
+            provisionTitle: 'Налаштування системи…',
+            provisionDesc: 'Завантаження моделей та застосування конфігурації. Це може зайняти кілька хвилин.',
+            provisionDone: 'Налаштування завершено!',
+            provisionDoneDesc: 'Усі компоненти встановлені та налаштовані. Ваш розумний дім готовий.',
+            provisionFailed: 'Під час налаштування виникли помилки',
+            provisionFailedDesc: 'Деякі завдання не вдалися. Можете повторити або перейти до головного меню.',
+            provisionContinue: 'Перейти до головного меню',
+            provisionRetry: 'Повторити',
+            provTask_apply_config: 'Застосування конфігурації',
+            provTask_download_stt: 'Завантаження моделі розпізнавання мовлення',
+            provTask_download_tts: 'Завантаження голосової моделі',
+            provTask_download_llm: 'Завантаження мовної моделі',
+            provTask_finalize: 'Завершення налаштування',
         },
 
         // ── Language Select ──

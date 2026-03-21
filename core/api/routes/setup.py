@@ -66,6 +66,49 @@ class ConfigUpdateRequest(BaseModel):
 
 
 # ================================================================== #
+#  Provision — background task state                                   #
+# ================================================================== #
+
+class _ProvisionState:
+    """In-memory state for the provisioning pipeline."""
+
+    def __init__(self) -> None:
+        self.running = False
+        self.done = False
+        self.failed = False
+        self.error: str | None = None
+        self.current_task: str = ""
+        self.tasks: list[dict[str, Any]] = []
+        self.completed: int = 0
+        self.total: int = 0
+
+    def reset(self) -> None:
+        self.running = False
+        self.done = False
+        self.failed = False
+        self.error = None
+        self.current_task = ""
+        self.tasks = []
+        self.completed = 0
+        self.total = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "running": self.running,
+            "done": self.done,
+            "failed": self.failed,
+            "error": self.error,
+            "current_task": self.current_task,
+            "tasks": self.tasks,
+            "completed": self.completed,
+            "total": self.total,
+        }
+
+
+_provision = _ProvisionState()
+
+
+# ================================================================== #
 #  Wi-Fi                                                               #
 # ================================================================== #
 
@@ -457,12 +500,13 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
 # ================================================================== #
 
 STT_MODELS = [
-    {"id": "vosk-model-small-uk", "name": "Ukrainian (small)", "lang": "uk", "ram_mb": 150, "size_mb": 133, "quality": "good"},
+    {"id": "vosk-model-small-uk-v3-nano", "name": "Ukrainian (nano)", "lang": "uk", "ram_mb": 80, "size_mb": 73, "quality": "ok"},
+    {"id": "vosk-model-small-uk-v3-small", "name": "Ukrainian (small)", "lang": "uk", "ram_mb": 150, "size_mb": 133, "quality": "good"},
     {"id": "vosk-model-small-ru", "name": "Russian (small)", "lang": "ru", "ram_mb": 150, "size_mb": 45, "quality": "good"},
     {"id": "vosk-model-small-en-us", "name": "English (small)", "lang": "en", "ram_mb": 150, "size_mb": 40, "quality": "good"},
-    {"id": "vosk-model-uk", "name": "Ukrainian (large)", "lang": "uk", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
-    {"id": "vosk-model-ru", "name": "Russian (large)", "lang": "ru", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
-    {"id": "vosk-model-en-us", "name": "English (large)", "lang": "en", "ram_mb": 500, "size_mb": 1600, "quality": "high"},
+    {"id": "vosk-model-uk-v3-lgraph", "name": "Ukrainian (large)", "lang": "uk", "ram_mb": 500, "size_mb": 325, "quality": "high"},
+    {"id": "vosk-model-ru", "name": "Russian (large)", "lang": "ru", "ram_mb": 600, "size_mb": 1800, "quality": "high"},
+    {"id": "vosk-model-en-us", "name": "English (graph)", "lang": "en", "ram_mb": 350, "size_mb": 128, "quality": "good"},
 ]
 
 
@@ -470,7 +514,7 @@ STT_MODELS = [
 async def stt_models() -> dict[str, Any]:
     """List available Vosk STT models with installed status."""
     models_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
-    active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk"))
+    active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk-v3-small"))
 
     # Check system RAM
     ram_total_mb = 0
@@ -520,7 +564,7 @@ async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
 
 TTS_VOICES = [
     {"id": "uk_UA-ukrainian_tts-medium", "name": "Tetiana", "language": "uk", "gender": "female", "size_mb": 55},
-    {"id": "uk_UA-lada-medium", "name": "Lada", "language": "uk", "gender": "female", "size_mb": 50},
+    {"id": "uk_UA-lada-x_low", "name": "Lada", "language": "uk", "gender": "female", "size_mb": 21},
     {"id": "ru_RU-irina-medium", "name": "Irina", "language": "ru", "gender": "female", "size_mb": 50},
     {"id": "ru_RU-ruslan-medium", "name": "Ruslan", "language": "ru", "gender": "male", "size_mb": 50},
     {"id": "en_US-amy-medium", "name": "Amy", "language": "en", "gender": "female", "size_mb": 50},
@@ -835,3 +879,242 @@ async def update_config_endpoint(req: ConfigUpdateRequest) -> dict[str, Any]:
 
     update_config(req.section, req.key, req.value)
     return {"status": "ok", "section": req.section, "key": req.key}
+
+
+# ================================================================== #
+#  Provision — download models & apply configuration                   #
+# ================================================================== #
+
+VOSK_DOWNLOAD_URLS: dict[str, str] = {
+    "vosk-model-small-uk-v3-nano": "https://alphacephei.com/vosk/models/vosk-model-small-uk-v3-nano.zip",
+    "vosk-model-small-uk-v3-small": "https://alphacephei.com/vosk/models/vosk-model-small-uk-v3-small.zip",
+    "vosk-model-small-ru": "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
+    "vosk-model-small-en-us": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+    "vosk-model-uk-v3-lgraph": "https://alphacephei.com/vosk/models/vosk-model-uk-v3-lgraph.zip",
+    "vosk-model-ru": "https://alphacephei.com/vosk/models/vosk-model-ru-0.42.zip",
+    "vosk-model-en-us": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
+}
+
+PIPER_DOWNLOAD_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+
+PIPER_VOICE_URLS: dict[str, list[str]] = {
+    "uk_UA-ukrainian_tts-medium": [
+        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/ukrainian_tts/medium/uk_UA-ukrainian_tts-medium.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/ukrainian_tts/medium/uk_UA-ukrainian_tts-medium.onnx.json",
+    ],
+    "uk_UA-lada-x_low": [
+        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/lada/x_low/uk_UA-lada-x_low.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/lada/x_low/uk_UA-lada-x_low.onnx.json",
+    ],
+    "ru_RU-irina-medium": [
+        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json",
+    ],
+    "ru_RU-ruslan-medium": [
+        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json",
+    ],
+    "en_US-amy-medium": [
+        f"{PIPER_DOWNLOAD_BASE}/en/en_US/amy/medium/en_US-amy-medium.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+    ],
+    "en_US-ryan-high": [
+        f"{PIPER_DOWNLOAD_BASE}/en/en_US/ryan/high/en_US-ryan-high.onnx",
+        f"{PIPER_DOWNLOAD_BASE}/en/en_US/ryan/high/en_US-ryan-high.onnx.json",
+    ],
+}
+
+
+@router.post("/provision")
+async def start_provision() -> dict[str, Any]:
+    """Start the provisioning pipeline: download STT model, TTS voice, apply config."""
+    if _provision.running:
+        return {"status": "already_running", **_provision.to_dict()}
+
+    config = read_config()
+    stt_model = config.get("voice", {}).get("stt_model", "vosk-model-small-uk-v3-small")
+    tts_voice = config.get("voice", {}).get("tts_voice", "uk_UA-ukrainian_tts-medium")
+    llm_model = config.get("llm", {}).get("default_model")
+
+    _provision.reset()
+    _provision.running = True
+
+    # Build task list
+    tasks: list[dict[str, Any]] = []
+    tasks.append({"id": "apply_config", "label": "apply_config", "status": "pending"})
+
+    # Check if STT model needs downloading
+    vosk_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
+    if not (vosk_dir / stt_model).is_dir():
+        tasks.append({"id": "download_stt", "label": "download_stt", "status": "pending", "model": stt_model})
+
+    # Check if TTS voice needs downloading
+    piper_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
+    if not (piper_dir / f"{tts_voice}.onnx").exists():
+        tasks.append({"id": "download_tts", "label": "download_tts", "status": "pending", "voice": tts_voice})
+
+    # Check if LLM model needs downloading
+    if llm_model:
+        tasks.append({"id": "download_llm", "label": "download_llm", "status": "pending", "model": llm_model})
+
+    tasks.append({"id": "finalize", "label": "finalize", "status": "pending"})
+
+    _provision.tasks = tasks
+    _provision.total = len(tasks)
+    _provision.completed = 0
+
+    asyncio.create_task(_run_provision(stt_model, tts_voice, llm_model))
+    return {"status": "started", **_provision.to_dict()}
+
+
+@router.get("/provision/status")
+async def provision_status() -> dict[str, Any]:
+    """Poll current provisioning progress."""
+    return _provision.to_dict()
+
+
+async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) -> None:
+    """Execute provisioning tasks sequentially."""
+    try:
+        for task in _provision.tasks:
+            task["status"] = "running"
+            _provision.current_task = task["id"]
+            logger.info("Provision: starting %s", task["id"])
+
+            try:
+                if task["id"] == "apply_config":
+                    await _provision_apply_config()
+                elif task["id"] == "download_stt":
+                    await _provision_download_stt(stt_model)
+                elif task["id"] == "download_tts":
+                    await _provision_download_tts(tts_voice)
+                elif task["id"] == "download_llm":
+                    await _provision_download_llm(llm_model or "")
+                elif task["id"] == "finalize":
+                    await _provision_finalize()
+
+                task["status"] = "done"
+                _provision.completed += 1
+                logger.info("Provision: completed %s", task["id"])
+            except Exception as exc:
+                logger.error("Provision task %s failed: %s", task["id"], exc)
+                task["status"] = "error"
+                task["error"] = str(exc)
+                # Non-critical tasks: continue anyway (except finalize)
+                _provision.completed += 1
+
+        _provision.done = True
+        _provision.running = False
+        _provision.current_task = ""
+        logger.info("Provision: all tasks completed")
+
+    except Exception as exc:
+        logger.error("Provision pipeline failed: %s", exc)
+        _provision.failed = True
+        _provision.error = str(exc)
+        _provision.running = False
+
+
+async def _provision_apply_config() -> None:
+    """Apply saved configuration (timezone, etc.)."""
+    config = read_config()
+    tz = config.get("system", {}).get("timezone")
+    if tz:
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _apply_timezone_sync, tz)
+        except Exception:
+            pass
+    # Small delay so the user sees the step
+    await asyncio.sleep(1)
+
+
+async def _provision_download_stt(model_id: str) -> None:
+    """Download Vosk STT model."""
+    import httpx
+    import zipfile
+
+    url = VOSK_DOWNLOAD_URLS.get(model_id)
+    if not url:
+        logger.warning("No download URL for STT model %s, skipping", model_id)
+        return
+
+    vosk_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
+    vosk_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = vosk_dir / f"{model_id}.zip"
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
+            async with client.stream("GET", url, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(zip_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        f.write(chunk)
+
+        # Extract zip
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _extract_vosk_zip, zip_path, vosk_dir, model_id)
+    finally:
+        zip_path.unlink(missing_ok=True)
+
+
+def _extract_vosk_zip(zip_path: Path, dest_dir: Path, model_id: str) -> None:
+    """Extract Vosk model zip and rename to expected directory name."""
+    import zipfile
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(dest_dir)
+
+    # Vosk zips often have a root folder with a different name — rename to model_id
+    extracted_dirs = [d for d in dest_dir.iterdir() if d.is_dir() and d.name != model_id]
+    target = dest_dir / model_id
+    if not target.exists() and extracted_dirs:
+        # Find the most likely match
+        for d in extracted_dirs:
+            if model_id.replace("-", "") in d.name.replace("-", "") or d.name.startswith("vosk-model"):
+                d.rename(target)
+                break
+
+
+async def _provision_download_tts(voice_id: str) -> None:
+    """Download Piper TTS voice model (.onnx + .onnx.json)."""
+    import httpx
+
+    urls = PIPER_VOICE_URLS.get(voice_id)
+    if not urls:
+        logger.warning("No download URL for TTS voice %s, skipping", voice_id)
+        return
+
+    piper_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
+    piper_dir.mkdir(parents=True, exist_ok=True)
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
+        for url in urls:
+            filename = url.rsplit("/", 1)[-1]
+            dest = piper_dir / filename
+            if dest.exists():
+                continue
+            async with client.stream("GET", url, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(dest, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        f.write(chunk)
+    logger.info("TTS voice %s downloaded to %s", voice_id, piper_dir)
+
+
+async def _provision_download_llm(model_id: str) -> None:
+    """Download LLM model via Ollama pull."""
+    if not model_id:
+        return
+    try:
+        from system_modules.llm_engine.model_manager import get_model_manager
+        manager = get_model_manager()
+        await manager.download(model_id)
+    except Exception as exc:
+        logger.warning("LLM model download failed (non-critical): %s", exc)
+
+
+async def _provision_finalize() -> None:
+    """Mark wizard as completed in config."""
+    update_config("wizard", "completed", True)
+    update_config("wizard", "provisioned", True)
+    await asyncio.sleep(0.5)
