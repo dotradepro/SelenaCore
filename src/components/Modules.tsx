@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Search, Download, Trash2, Play, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
 
 export default function Modules() {
+  const { t } = useTranslation();
   const modules = useStore((state) => state.modules);
   const modulesLoading = useStore((state) => state.modulesLoading);
   const fetchModules = useStore((state) => state.fetchModules);
@@ -24,12 +26,12 @@ export default function Modules() {
     <div className="max-w-6xl mx-auto space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Модули</h1>
-          <p className="text-zinc-400 mt-1">Управление плагинами и интеграциями (Plugin Manager).</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{t('modules.title')}</h1>
+          <p className="text-zinc-400 mt-1">{t('modules.subtitle')}</p>
         </div>
         <button className="bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-4 py-2 rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
           <Download size={16} />
-          Маркетплейс
+          {t('modules.marketplace')}
         </button>
       </div>
 
@@ -41,7 +43,7 @@ export default function Modules() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск модулей..."
+              placeholder={t('modules.searchPlaceholder')}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-colors"
             />
           </div>
@@ -49,10 +51,10 @@ export default function Modules() {
 
         <div className="divide-y divide-zinc-800">
           {modulesLoading && filtered.length === 0 && (
-            <div className="p-8 text-center text-zinc-500 text-sm">Загрузка...</div>
+            <div className="p-8 text-center text-zinc-500 text-sm">{t('common.loading')}</div>
           )}
           {!modulesLoading && filtered.length === 0 && (
-            <div className="p-8 text-center text-zinc-500 text-sm">Нет установленных модулей.</div>
+            <div className="p-8 text-center text-zinc-500 text-sm">{t('modules.noModulesInstalled')}</div>
           )}
           {filtered.map((mod) => {
             const running = mod.status.toUpperCase() === 'RUNNING';
@@ -83,14 +85,14 @@ export default function Modules() {
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 mr-4">
                     <div className={cn('w-2 h-2 rounded-full', running ? 'bg-emerald-500' : 'bg-zinc-600')} />
-                    <span className="text-sm text-zinc-400">{running ? 'Работает' : mod.status}</span>
+                    <span className="text-sm text-zinc-400">{running ? t('modules.running') : mod.status}</span>
                   </div>
 
                   {running ? (
                     <button
                       onClick={() => stopModule(mod.name)}
                       className="p-2 text-zinc-400 hover:text-amber-400 hover:bg-zinc-800 rounded-lg transition-colors"
-                      title="Остановить"
+                      title={t('modules.stop')}
                     >
                       <Square size={18} />
                     </button>
@@ -98,7 +100,7 @@ export default function Modules() {
                     <button
                       onClick={() => startModule(mod.name)}
                       className="p-2 text-zinc-400 hover:text-emerald-400 hover:bg-zinc-800 rounded-lg transition-colors"
-                      title="Запустить"
+                      title={t('modules.start')}
                     >
                       <Play size={18} />
                     </button>
@@ -108,7 +110,7 @@ export default function Modules() {
                     onClick={() => removeModule(mod.name)}
                     className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={mod.type === 'SYSTEM'}
-                    title={mod.type === 'SYSTEM' ? 'Системный модуль нельзя удалить' : 'Удалить'}
+                    title={mod.type === 'SYSTEM' ? t('modules.systemModuleCannotDelete') : t('common.delete')}
                   >
                     <Trash2 size={18} />
                   </button>

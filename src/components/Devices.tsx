@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Search, RefreshCw, Thermometer, Zap, Cpu, Radio, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import type { Device } from '../store/useStore';
 import { cn } from '../lib/utils';
@@ -11,11 +12,11 @@ const TYPE_ICON: Record<string, React.ElementType> = {
     virtual: Radio,
 };
 
-const TYPE_LABEL: Record<string, string> = {
-    sensor: 'Сенсор',
-    actuator: 'Исполнитель',
-    controller: 'Контроллер',
-    virtual: 'Виртуальный',
+const TYPE_LABEL_KEYS: Record<string, string> = {
+    sensor: 'devices.sensor',
+    actuator: 'devices.actuator',
+    controller: 'devices.controller',
+    virtual: 'devices.virtual',
 };
 
 function deviceIsOn(device: Device): boolean | null {
@@ -27,19 +28,20 @@ function deviceIsOn(device: Device): boolean | null {
     return null; // no clear on/off state
 }
 
-function formatLastSeen(ts: number | null): string {
-    if (!ts) return 'Никогда';
+function formatLastSeen(ts: number | null, t: (key: string, opts?: Record<string, unknown>) => string): string {
+    if (!ts) return t('common.never');
     const diff = Math.floor(Date.now() / 1000 - ts);
-    if (diff < 60) return `${diff}с назад`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}м назад`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}ч назад`;
-    return `${Math.floor(diff / 86400)}д назад`;
+    if (diff < 60) return t('common.secondsAgo', { count: diff });
+    if (diff < 3600) return t('common.minutesAgo', { count: Math.floor(diff / 60) });
+    if (diff < 86400) return t('common.hoursAgo', { count: Math.floor(diff / 3600) });
+    return t('common.daysAgo', { count: Math.floor(diff / 86400) });
 }
 
 function StatePreview({ state }: { state: Record<string, unknown> }) {
+    const { t } = useTranslation();
     const entries = Object.entries(state).slice(0, 3);
     if (entries.length === 0)
-        return <span className="text-zinc-600 italic">нет данных</span>;
+        return <span className="text-zinc-600 italic">{t('common.noData')}</span>;
     return (
         <span className="font-mono text-zinc-400 text-xs">
             {entries.map(([k, v]) => `${k}:${JSON.stringify(v)}`).join(' · ')}
@@ -48,6 +50,7 @@ function StatePreview({ state }: { state: Record<string, unknown> }) {
 }
 
 export default function Devices() {
+    const { t } = useTranslation();
     const devices = useStore((s) => s.devices);
     const devicesLoading = useStore((s) => s.devicesLoading);
     const fetchDevices = useStore((s) => s.fetchDevices);
@@ -73,15 +76,15 @@ export default function Devices() {
         <div className="max-w-6xl mx-auto space-y-8">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-semibold tracking-tight">Устройства</h1>
+                    <h1 className="text-3xl font-semibold tracking-tight">{t('devices.title')}</h1>
                     <p className="text-zinc-400 mt-1">
-                        Device Registry — {devices.length} устройств зарегистрировано.
+                        Device Registry — {t('devices.registryInfo', { count: devices.length })}
                     </p>
                 </div>
                 <button
                     onClick={() => fetchDevices()}
                     className="p-2 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 rounded-lg transition-colors"
-                    title="Обновить"
+                    title="Refresh"
                 >
                     <RefreshCw size={18} className={devicesLoading ? 'animate-spin' : ''} />
                 </button>
@@ -95,23 +98,23 @@ export default function Devices() {
                         type="text"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Поиск по имени или протоколу..."
+                        placeholder={t('devices.searchPlaceholder')}
                         className="w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-9 pr-4 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-colors"
                     />
                 </div>
                 <div className="flex gap-2">
-                    {types.map((t) => (
+                    {types.map((tp) => (
                         <button
-                            key={t}
-                            onClick={() => setTypeFilter(t)}
+                            key={tp}
+                            onClick={() => setTypeFilter(tp)}
                             className={cn(
                                 'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                                typeFilter === t
+                                typeFilter === tp
                                     ? 'bg-zinc-700 text-zinc-50'
                                     : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-50'
                             )}
                         >
-                            {t === 'all' ? 'Все' : (TYPE_LABEL[t] ?? t)}
+                            {tp === 'all' ? t('common.all') : (TYPE_LABEL_KEYS[tp] ? t(TYPE_LABEL_KEYS[tp]) : tp)}
                         </button>
                     ))}
                 </div>
@@ -120,13 +123,13 @@ export default function Devices() {
             {/* Device list */}
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 {devicesLoading && filtered.length === 0 && (
-                    <div className="p-10 text-center text-zinc-500 text-sm">Загрузка...</div>
+                    <div className="p-10 text-center text-zinc-500 text-sm">{t('common.loading')}</div>
                 )}
                 {!devicesLoading && filtered.length === 0 && (
                     <div className="p-10 text-center text-zinc-500 text-sm">
                         {devices.length === 0
-                            ? 'Нет зарегистрированных устройств. Добавьте устройства через Core API.'
-                            : 'Ничего не найдено по фильтру.'}
+                            ? t('devices.noDevicesRegistered')
+                            : t('devices.noFilterResults')}
                     </div>
                 )}
 
@@ -150,7 +153,7 @@ export default function Devices() {
                                                 {device.protocol}
                                             </span>
                                             <span className="text-xs text-zinc-600">
-                                                {TYPE_LABEL[device.type] ?? device.type}
+                                                {TYPE_LABEL_KEYS[device.type] ? t(TYPE_LABEL_KEYS[device.type]) : device.type}
                                             </span>
                                         </div>
                                         <div className="text-xs text-zinc-500 mt-1 truncate">
@@ -161,7 +164,7 @@ export default function Devices() {
 
                                 <div className="flex items-center gap-4 shrink-0 ml-4">
                                     <span className="text-xs text-zinc-600 hidden md:block whitespace-nowrap">
-                                        {formatLastSeen(device.last_seen)}
+                                        {formatLastSeen(device.last_seen, t)}
                                     </span>
 
                                     {on !== null ? (
@@ -177,7 +180,7 @@ export default function Devices() {
                                             )}
                                         >
                                             {on ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
-                                            {on ? 'Вкл' : 'Выкл'}
+                                            {on ? t('common.on') : t('common.off')}
                                         </button>
                                     ) : (
                                         <span className="text-xs text-zinc-600 px-3 py-1.5">—</span>

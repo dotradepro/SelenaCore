@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { changeLanguage } from '../i18n/i18n';
 
 export interface Device {
   device_id: string;
@@ -94,7 +95,7 @@ export const useStore = create<AppState>((set, get) => ({
   isConfigured: false,
   wizardLoading: true,
   setupStage: 'landing',
-  selectedLanguage: 'ru',
+  selectedLanguage: localStorage.getItem('selena-lang') || 'en',
   wizardRequirements: null,
   user: null,
   health: null,
@@ -107,7 +108,10 @@ export const useStore = create<AppState>((set, get) => ({
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
   setSetupStage: (stage) => set({ setupStage: stage }),
-  setSelectedLanguage: (lang) => set({ selectedLanguage: lang }),
+  setSelectedLanguage: (lang) => {
+    changeLanguage(lang);
+    set({ selectedLanguage: lang });
+  },
 
   fetchWizardStatus: async () => {
     set({ wizardLoading: true });

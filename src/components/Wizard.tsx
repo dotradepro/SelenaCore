@@ -1,20 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-const STEPS = [
-  { id: 1, title: 'Язык', icon: Globe },
-  { id: 2, title: 'Wi-Fi', icon: Wifi },
-  { id: 3, title: 'Имя дома', icon: HomeIcon },
-  { id: 4, title: 'Часовой пояс', icon: Globe },
-  { id: 5, title: 'STT Модель', icon: Mic },
-  { id: 6, title: 'TTS Голос', icon: Mic },
-  { id: 7, title: 'Пользователь', icon: User },
-  { id: 8, title: 'Платформа', icon: Cloud },
-  { id: 9, title: 'Импорт', icon: Download },
-];
+const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
 
 // Map frontend step number to backend step name + data builder
 const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Record<string, string> }> = {
@@ -48,6 +39,7 @@ function HomeIcon(props: any) {
 }
 
 export default function Wizard() {
+  const { t } = useTranslation();
   const selectedLanguage = useStore((state) => state.selectedLanguage);
   const setSelectedLanguage = useStore((state) => state.setSelectedLanguage);
   const [step, setStep] = useState(1);
@@ -60,8 +52,8 @@ export default function Wizard() {
     lang: selectedLanguage,
     wifi: '',
     wifiPassword: '',
-    name: 'Умный дом',
-    timezone: 'Europe/Moscow',
+    name: t('wizard.defaultHomeName'),
+    timezone: 'Europe/Kyiv',
     stt: 'base',
     tts: 'ru_irina',
     username: 'admin',
@@ -86,7 +78,7 @@ export default function Wizard() {
       });
       if (!resp.ok && resp.status !== 409) {
         const body = await resp.json().catch(() => ({}));
-        throw new Error(body?.detail ?? `Ошибка ${resp.status}`);
+        throw new Error(body?.detail ?? `${t('common.error')} ${resp.status}`);
       }
       if (step === 9) {
         setUser({ name: formData.username, role: 'admin' });
@@ -95,7 +87,7 @@ export default function Wizard() {
         setStep(s => s + 1);
       }
     } catch (e: any) {
-      setError(e.message ?? 'Неизвестная ошибка');
+      setError(e.message ?? t('wizard.unknownError'));
     } finally {
       setSubmitting(false);
     }
@@ -140,8 +132,8 @@ export default function Wizard() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-500 mb-6">
             <Activity size={32} />
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight mb-2">SmartHome LK Core</h1>
-          <p className="text-zinc-400">Первоначальная настройка системы</p>
+          <h1 className="text-3xl font-semibold tracking-tight mb-2">{t('wizard.coreTitle')}</h1>
+          <p className="text-zinc-400">{t('wizard.initialSetup')}</p>
         </div>
 
         {/* Progress Bar */}
@@ -150,28 +142,30 @@ export default function Wizard() {
             <motion.div
               className="h-full bg-emerald-500"
               initial={{ width: 0 }}
-              animate={{ width: `${((step - 1) / (STEPS.length - 1)) * 100}%` }}
+              animate={{ width: `${((step - 1) / (STEP_ICONS.length - 1)) * 100}%` }}
               transition={{ duration: 0.3 }}
             />
           </div>
-          {STEPS.map((s) => {
-            const isActive = s.id === step;
-            const isPast = s.id < step;
+          {STEP_ICONS.map((Icon, idx) => {
+            const sid = idx + 1;
+            const isActive = sid === step;
+            const isPast = sid < step;
+            const stepTitleKeys = ['stepLanguage', 'stepWifi', 'stepHomeName', 'stepTimezone', 'stepStt', 'stepTts', 'stepUser', 'stepPlatform', 'stepImport'];
             return (
-              <div key={s.id} className="flex flex-col items-center gap-2">
+              <div key={sid} className="flex flex-col items-center gap-2">
                 <div className={cn(
                   "w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-colors border-2",
                   isActive ? "bg-zinc-900 border-emerald-500 text-emerald-500" :
                     isPast ? "bg-emerald-500 border-emerald-500 text-zinc-950" :
                       "bg-zinc-900 border-zinc-800 text-zinc-500"
                 )}>
-                  {isPast ? <Check size={18} /> : s.id}
+                  {isPast ? <Check size={18} /> : sid}
                 </div>
                 <span className={cn(
                   "text-xs font-medium absolute mt-12 w-20 text-center",
                   isActive ? "text-zinc-50" : "text-zinc-500"
                 )}>
-                  {isActive && s.title}
+                  {isActive && t(`wizard.${stepTitleKeys[idx]}`)}
                 </span>
               </div>
             );
@@ -191,11 +185,10 @@ export default function Wizard() {
             >
               {step === 1 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Выберите язык</h2>
-                  <p className="text-zinc-400 text-sm">Язык интерфейса и голосового ассистента.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.selectLanguage')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.languageDesc')}</p>
                   <div className="space-y-3">
                     {[
-                      { id: 'ru', name: 'Русский' },
                       { id: 'uk', name: 'Українська' },
                       { id: 'en', name: 'English' },
                     ].map(lang => (
@@ -219,8 +212,8 @@ export default function Wizard() {
 
               {step === 2 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Подключение к Wi-Fi</h2>
-                  <p className="text-zinc-400 text-sm">Выберите сеть для подключения Raspberry Pi к интернету.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.wifiTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.wifiDesc')}</p>
                   <div className="space-y-3">
                     {['Home_Network_5G', 'Keenetic-1234', 'Guest_Net'].map(net => (
                       <button
@@ -243,13 +236,13 @@ export default function Wizard() {
                   </div>
                   {formData.wifi && (
                     <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Пароль сети</label>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.wifiPassword')}</label>
                       <input
                         type="password"
                         value={formData.wifiPassword}
                         onChange={(e) => setFormData({ ...formData, wifiPassword: e.target.value })}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                        placeholder="Пароль Wi-Fi"
+                        placeholder={t('wizard.wifiPasswordPlaceholder')}
                       />
                     </div>
                   )}
@@ -258,22 +251,22 @@ export default function Wizard() {
 
               {step === 3 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Имя устройства</h2>
-                  <p className="text-zinc-400 text-sm">Как будет называться этот хаб? Это имя используется в платформе и голосовых ответах.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.deviceNameTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.deviceNameDesc')}</p>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                    placeholder="Например: Умный дом — кухня"
+                    placeholder={t('wizard.deviceNamePlaceholder')}
                   />
                 </div>
               )}
 
               {step === 4 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Часовой пояс</h2>
-                  <p className="text-zinc-400 text-sm">Необходим для корректной работы автоматизаций по времени.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.timezoneTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.timezoneDesc')}</p>
                   <select
                     value={formData.timezone}
                     onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
@@ -288,13 +281,13 @@ export default function Wizard() {
 
               {step === 5 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Голосовая модель STT (Whisper)</h2>
-                  <p className="text-zinc-400 text-sm">Выберите модель распознавания речи. Работает полностью локально.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.sttTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.sttDesc')}</p>
                   <div className="space-y-3">
                     {[
-                      { id: 'tiny', name: 'Tiny', desc: 'Самая быстрая. Рекомендуется для Pi 4.', ram: '~150 MB' },
-                      { id: 'base', name: 'Base', desc: 'Оптимальный баланс скорости и качества.', ram: '~250 MB' },
-                      { id: 'small', name: 'Small', desc: 'Высокое качество. Только для Pi 5.', ram: '~500 MB' },
+                      { id: 'tiny', name: t('wizard.sttTiny'), desc: t('wizard.sttTinyDesc'), ram: '~150 MB' },
+                      { id: 'base', name: t('wizard.sttBase'), desc: t('wizard.sttBaseDesc'), ram: '~250 MB' },
+                      { id: 'small', name: t('wizard.sttSmall'), desc: t('wizard.sttSmallDesc'), ram: '~500 MB' },
                     ].map(m => (
                       <button
                         key={m.id}
@@ -322,14 +315,14 @@ export default function Wizard() {
 
               {step === 6 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Голос ассистента (Piper TTS)</h2>
-                  <p className="text-zinc-400 text-sm">Выберите голос для ответов. Модель будет скачана (~50 MB).</p>
+                  <h2 className="text-xl font-medium">{t('wizard.ttsTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.ttsDesc')}</p>
                   <div className="grid grid-cols-2 gap-4">
                     {[
-                      { id: 'ru_irina', name: 'Ирина (Женский)' },
-                      { id: 'ru_dmitry', name: 'Дмитрий (Мужской)' },
-                      { id: 'ru_ruslan', name: 'Руслан (Мужской)' },
-                      { id: 'ru_kseniya', name: 'Ксения (Женский)' },
+                      { id: 'ru_irina', name: t('wizard.ttsIrina') },
+                      { id: 'ru_dmitry', name: t('wizard.ttsDmitry') },
+                      { id: 'ru_ruslan', name: t('wizard.ttsRuslan') },
+                      { id: 'ru_kseniya', name: t('wizard.ttsKseniya') },
                     ].map(v => (
                       <button
                         key={v.id}
@@ -350,11 +343,11 @@ export default function Wizard() {
 
               {step === 7 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Первый пользователь (Admin)</h2>
-                  <p className="text-zinc-400 text-sm">Создайте профиль администратора. PIN-код нужен для доступа к настройкам.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.userTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.userDesc')}</p>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Имя</label>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.userName')}</label>
                       <input
                         type="text"
                         value={formData.username}
@@ -363,14 +356,14 @@ export default function Wizard() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">PIN-код (4-8 цифр)</label>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.userPin')}</label>
                       <input
                         type="password"
                         maxLength={8}
                         value={formData.pin}
                         onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all tracking-widest font-mono"
-                        placeholder="••••"
+                        placeholder={t('wizard.userPinPlaceholder')}
                       />
                     </div>
                   </div>
@@ -379,8 +372,8 @@ export default function Wizard() {
 
               {step === 8 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Регистрация на платформе</h2>
-                  <p className="text-zinc-400 text-sm">Подключите хаб к облаку SmartHome LK для удаленного доступа и маркетплейса модулей. Можно пропустить.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.platformTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.platformDesc')}</p>
                   <div className="flex flex-col items-center justify-center p-8 border border-zinc-800 border-dashed rounded-xl bg-zinc-900/50">
                     <div className="w-48 h-48 bg-white rounded-xl p-2 mb-4 flex items-center justify-center">
                       {/* Mock QR Code */}
@@ -390,21 +383,21 @@ export default function Wizard() {
                         ))}
                       </div>
                     </div>
-                    <p className="text-sm text-zinc-400 text-center">Отсканируйте QR-код через приложение<br />или нажмите "Пропустить"</p>
+                    <p className="text-sm text-zinc-400 text-center">{t('wizard.platformQrHint')}</p>
                   </div>
                 </div>
               )}
 
               {step === 9 && (
                 <div className="space-y-6">
-                  <h2 className="text-xl font-medium">Импорт устройств</h2>
-                  <p className="text-zinc-400 text-sm">У вас уже есть умный дом? Импортируйте устройства из других систем.</p>
+                  <h2 className="text-xl font-medium">{t('wizard.importTitle')}</h2>
+                  <p className="text-zinc-400 text-sm">{t('wizard.importDesc')}</p>
                   <div className="grid grid-cols-2 gap-4">
                     {[
-                      { id: 'ha', name: 'Home Assistant', desc: 'Локально' },
-                      { id: 'tuya', name: 'Tuya / SmartLife', desc: 'Облако' },
-                      { id: 'hue', name: 'Philips Hue', desc: 'Локально' },
-                      { id: 'mqtt', name: 'MQTT Broker', desc: 'Локально' },
+                      { id: 'ha', name: t('wizard.importHa'), desc: t('wizard.importLocal') },
+                      { id: 'tuya', name: t('wizard.importTuya'), desc: t('wizard.importCloud') },
+                      { id: 'hue', name: t('wizard.importHue'), desc: t('wizard.importLocal') },
+                      { id: 'mqtt', name: t('wizard.importMqtt'), desc: t('wizard.importLocal') },
                     ].map(sys => (
                       <button
                         key={sys.id}
@@ -441,7 +434,7 @@ export default function Wizard() {
                 disabled={submitting}
                 className="px-6 py-2.5 rounded-lg text-sm font-medium transition-colors text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 disabled:opacity-50"
               >
-                Назад
+                {t('common.back')}
               </button>
               <div className="flex items-center gap-3">
                 {(step === 8 || step === 9) && (
@@ -450,7 +443,7 @@ export default function Wizard() {
                     disabled={submitting}
                     className="px-6 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 transition-colors disabled:opacity-50"
                   >
-                    Пропустить
+                    {t('common.skip')}
                   </button>
                 )}
                 <button
@@ -462,7 +455,7 @@ export default function Wizard() {
                     <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
-                      {step === 9 ? 'Завершить' : 'Далее'}
+                      {step === 9 ? t('common.finish') : t('common.next')}
                       {step !== 9 && <ChevronRight size={16} />}
                     </>
                   )}

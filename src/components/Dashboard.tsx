@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Activity, Cpu, HardDrive, Thermometer, Power, ToggleLeft, ToggleRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import { cn } from '../lib/utils';
 import type { Device } from '../store/useStore';
@@ -13,17 +14,18 @@ function deviceIsOn(device: Device): boolean {
   return false;
 }
 
-function formatUptime(seconds: number): string {
+function formatUptime(seconds: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   if (!seconds) return '—';
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (d > 0) return `${d}д ${h}ч`;
-  if (h > 0) return `${h}ч ${m}м`;
-  return `${m}м`;
+  if (d > 0) return `${t('common.days', { count: d })} ${t('common.hours', { count: h })}`;
+  if (h > 0) return `${t('common.hours', { count: h })} ${t('common.minutes', { count: m })}`;
+  return t('common.minutes', { count: m });
 }
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const stats = useStore((s) => s.stats);
   const modules = useStore((s) => s.modules);
   const devices = useStore((s) => s.devices);
@@ -55,11 +57,11 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">Добро пожаловать домой</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">{t('dashboard.welcomeHome')}</h1>
         <p className="text-zinc-400 mt-1">
           {stats?.mode === 'safe_mode'
-            ? '⚠ Система в безопасном режиме'
-            : 'Все системы работают в штатном режиме.'}
+            ? t('dashboard.safeModeWarning')
+            : t('dashboard.allSystemsNormal')}
         </p>
       </div>
 
@@ -69,7 +71,7 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-medium flex items-center gap-2">
               <Activity size={18} className="text-emerald-500" />
-              Ядро системы
+              {t('dashboard.systemCore')}
             </h2>
             <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">
               {stats?.version ?? 'v0.3-beta'}
@@ -80,7 +82,7 @@ export default function Dashboard() {
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-zinc-400 flex items-center gap-2">
-                  <Thermometer size={14} /> CPU Temp
+                  <Thermometer size={14} /> {t('dashboard.cpuTemp')}
                 </span>
                 <span className={cn('font-mono', cpuTemp > 80 ? 'text-red-400' : 'text-zinc-50')}>
                   {cpuTemp > 0 ? `${cpuTemp.toFixed(1)}°C` : '—'}
@@ -97,7 +99,7 @@ export default function Dashboard() {
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-zinc-400 flex items-center gap-2">
-                  <Cpu size={14} /> RAM
+                  <Cpu size={14} /> {t('dashboard.ram')}
                 </span>
                 <span className={cn('font-mono', ramPct > 85 ? 'text-red-400' : 'text-zinc-50')}>
                   {ramUsed} / {ramTotal} MB
@@ -114,7 +116,7 @@ export default function Dashboard() {
             <div>
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-zinc-400 flex items-center gap-2">
-                  <HardDrive size={14} /> Диск
+                  <HardDrive size={14} /> {t('dashboard.disk')}
                 </span>
                 <span className="font-mono text-zinc-50">
                   {diskUsed.toFixed(1)} / {diskTotal.toFixed(1)} GB
@@ -129,13 +131,13 @@ export default function Dashboard() {
             </div>
 
             <div className="pt-2 border-t border-zinc-800 text-xs text-zinc-500 flex justify-between">
-              <span>Uptime: {formatUptime(stats?.uptime ?? 0)}</span>
+              <span>{t('dashboard.uptime')}: {formatUptime(stats?.uptime ?? 0, t)}</span>
               <span
                 className={cn(
                   stats?.integrity === 'ok' ? 'text-emerald-500' : 'text-red-400'
                 )}
               >
-                Integrity: {stats?.integrity ?? '—'}
+                {t('dashboard.integrity')}: {stats?.integrity ?? '—'}
               </span>
             </div>
           </div>
@@ -143,12 +145,12 @@ export default function Dashboard() {
 
         {/* Quick Actions — real actuator devices */}
         <div className="col-span-1 md:col-span-2">
-          <h2 className="font-medium mb-4">Быстрые действия</h2>
+          <h2 className="font-medium mb-4">{t('dashboard.quickActions')}</h2>
           {actuators.length === 0 ? (
             <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-8 text-center text-zinc-500 text-sm">
-              Нет устройств типа actuator / virtual.
+              {t('dashboard.noActuators')}
               <br />
-              Добавьте устройства через Core API.
+              {t('dashboard.addDevicesViaApi')}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -182,7 +184,7 @@ export default function Dashboard() {
                         {device.name}
                       </div>
                       <div className="text-xs text-zinc-500 mt-0.5">
-                        {on ? 'Включено' : 'Выключено'}
+                        {on ? t('dashboard.turnedOn') : t('dashboard.turnedOff')}
                       </div>
                     </div>
                   </button>
@@ -196,10 +198,10 @@ export default function Dashboard() {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: 'Устройств', value: devices.length, icon: Power },
-          { label: 'Модулей', value: modules.length, icon: Activity },
+          { label: t('dashboard.deviceCount'), value: devices.length, icon: Power },
+          { label: t('dashboard.moduleCount'), value: modules.length, icon: Activity },
           {
-            label: 'Активных',
+            label: t('dashboard.activeCount'),
             value: modules.filter(
               (m) => m.status.toUpperCase() === 'RUNNING'
             ).length,
@@ -223,10 +225,10 @@ export default function Dashboard() {
 
       {/* Active Modules */}
       <div>
-        <h2 className="font-medium mb-4">Активные модули</h2>
+        <h2 className="font-medium mb-4">{t('dashboard.activeModules')}</h2>
         {modules.length === 0 ? (
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-8 text-center text-zinc-500 text-sm">
-            Нет установленных модулей.
+            {t('dashboard.noModulesInstalled')}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

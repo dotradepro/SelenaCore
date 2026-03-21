@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, XCircle, Wifi, Shield, Cpu, Cloud, Loader2, QrCode } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import type { StepStatus } from '../store/useStore';
 
@@ -49,6 +50,7 @@ function QrSvg({ matrix, size }: { matrix: boolean[][]; size: number }) {
 }
 
 function StepRow({ id, step }: { id: string; step: StepStatus }) {
+    const { t } = useTranslation();
     const Icon = STEP_ICONS[id] ?? Shield;
     return (
         <div className="flex items-center gap-3 py-2">
@@ -64,7 +66,7 @@ function StepRow({ id, step }: { id: string; step: StepStatus }) {
                 <XCircle className={`w-5 h-5 shrink-0 ${step.required ? 'text-red-400' : 'text-slate-600'}`} />
             )}
             {step.required && !step.done && (
-                <span className="text-xs text-red-400 font-medium">обязательно</span>
+                <span className="text-xs text-red-400 font-medium">{t('common.required')}</span>
             )}
         </div>
     );
@@ -75,6 +77,7 @@ interface Props {
 }
 
 export default function SetupLanding({ onStartWizard }: Props) {
+    const { t } = useTranslation();
     const { wizardRequirements, fetchWizardRequirements, isConfigured } = useStore();
     const [qrData, setQrData] = useState<QrData | null>(null);
     const [qrError, setQrError] = useState(false);
@@ -104,7 +107,7 @@ export default function SetupLanding({ onStartWizard }: Props) {
                 {/* ── LEFT PANEL: QR ── */}
                 <div className="md:w-2/5 bg-slate-900 flex flex-col items-center justify-center gap-6 p-10 border-b md:border-b-0 md:border-r border-slate-800">
                     <p className="text-slate-500 text-xs uppercase tracking-widest font-semibold">
-                        Мобильная настройка
+                        {t('setupLanding.mobileSetup')}
                     </p>
 
                     <div className="flex items-center justify-center">
@@ -113,7 +116,7 @@ export default function SetupLanding({ onStartWizard }: Props) {
                         ) : qrError ? (
                             <div className="w-44 h-44 rounded-xl bg-slate-800 flex flex-col items-center justify-center gap-2 text-slate-500">
                                 <QrCode className="w-10 h-10" />
-                                <span className="text-xs text-center">QR недоступен</span>
+                                <span className="text-xs text-center">{t('setupLanding.qrUnavailable')}</span>
                             </div>
                         ) : (
                             <div className="w-44 h-44 rounded-xl bg-slate-800 flex items-center justify-center">
@@ -123,7 +126,7 @@ export default function SetupLanding({ onStartWizard }: Props) {
                     </div>
 
                     <div className="text-center">
-                        <p className="text-white font-semibold text-sm">Отсканируйте для настройки</p>
+                        <p className="text-white font-semibold text-sm">{t('setupLanding.scanForSetup')}</p>
                         {qrData && (
                             <p className="text-slate-500 text-xs mt-1 font-mono">{qrData.url}</p>
                         )}
@@ -134,26 +137,26 @@ export default function SetupLanding({ onStartWizard }: Props) {
                 <div className="md:w-3/5 bg-slate-950 flex flex-col justify-center gap-6 p-10">
                     <div>
                         <p className="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-2">
-                            SelenaCore
+                            {t('setupLanding.selenaCore')}
                         </p>
                         <h1 className="text-2xl font-bold text-white leading-tight">
-                            Продолжить настройку<br />на устройстве
+                            {t('setupLanding.continueSetup')}
                         </h1>
                         <p className="text-slate-400 text-sm mt-2">
-                            Используйте мастер настройки прямо здесь или отсканируйте QR-код со смартфона.
+                            {t('setupLanding.setupDescription')}
                         </p>
                     </div>
 
                     {/* Requirements checklist */}
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <p className="text-slate-500 text-xs uppercase tracking-widest font-semibold mb-3">
-                            Статус настройки
+                            {t('setupLanding.setupStatus')}
                         </p>
 
                         {reqLoading ? (
                             <div className="flex items-center gap-2 text-slate-500 py-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                <span className="text-sm">Проверка…</span>
+                                <span className="text-sm">{t('setupLanding.checking')}</span>
                             </div>
                         ) : (
                             <div className="divide-y divide-slate-800">
@@ -170,7 +173,7 @@ export default function SetupLanding({ onStartWizard }: Props) {
                             onClick={onStartWizard}
                             className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold text-sm transition-colors"
                         >
-                            Настроить здесь
+                            {t('setupLanding.setupHere')}
                         </button>
 
                         {isConfigured && canProceed && (
@@ -178,13 +181,13 @@ export default function SetupLanding({ onStartWizard }: Props) {
                                 onClick={() => (window.location.href = '/')}
                                 className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 font-semibold text-sm transition-colors border border-slate-700"
                             >
-                                Перейти в главное меню
+                                {t('setupLanding.goToDashboard')}
                             </button>
                         )}
 
                         {isConfigured && !canProceed && (
                             <p className="text-center text-xs text-red-400">
-                                Не все обязательные шаги выполнены. Завершите настройку для продолжения.
+                                {t('setupLanding.requiredStepsIncomplete')}
                             </p>
                         )}
                     </div>

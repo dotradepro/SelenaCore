@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 
 const GREETINGS = [
     'Привет', 'Hello', 'Привіт', 'Hola', 'Hallo',
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export default function LanguageSelect({ onContinue }: Props) {
+    const { t } = useTranslation();
     const [gi, setGi] = useState(0);
     const [qr, setQr] = useState<QrData | null>(null);
 
@@ -67,7 +69,7 @@ export default function LanguageSelect({ onContinue }: Props) {
                             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
                         </div>
                     )}
-                    <p className="text-zinc-400 text-sm font-medium mt-4">Отсканируйте для настройки с телефона</p>
+                    <p className="text-zinc-400 text-sm font-medium mt-4">{t('languageSelect.scanForSetup')}</p>
                     {qr && <p className="text-zinc-700 text-xs mt-1 font-mono">{qr.url}</p>}
                 </motion.div>
 
@@ -94,7 +96,7 @@ export default function LanguageSelect({ onContinue }: Props) {
                     transition={{ delay: 2, duration: 1 }}
                     className="text-zinc-500 text-sm"
                 >
-                    Нажмите на экран для продолжения настройки
+                    {t('languageSelect.tapToContinue')}
                 </motion.p>
             </div>
         </div>

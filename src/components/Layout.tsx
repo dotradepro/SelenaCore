@@ -1,18 +1,20 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Settings, Box, Activity, Mic, ShieldAlert, Server } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const user = useStore((state) => state.user);
 
   const navItems = [
-    { icon: Home, label: 'Дашборд', path: '/' },
-    { icon: Server, label: 'Устройства', path: '/devices' },
-    { icon: Box, label: 'Модули', path: '/modules' },
-    { icon: Settings, label: 'Настройки', path: '/settings' },
+    { icon: Home, label: t('nav.dashboard'), path: '/' },
+    { icon: Server, label: t('nav.devices'), path: '/devices' },
+    { icon: Box, label: t('nav.modules'), path: '/modules' },
+    { icon: Settings, label: t('nav.settings'), path: '/settings' },
   ];
 
   return (
@@ -72,7 +74,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm text-zinc-400">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Система активна
+              {t('common.systemActive')}
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -81,7 +83,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
             <button className="p-2 text-zinc-400 hover:text-emerald-400 transition-colors rounded-full hover:bg-zinc-800 flex items-center gap-2">
               <Mic size={20} />
-              <span className="text-sm font-medium">Слушаю</span>
+              <span className="text-sm font-medium">{t('common.listening')}</span>
             </button>
           </div>
         </header>
