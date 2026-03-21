@@ -1453,5 +1453,109 @@ MOCK_PLATFORM=false                       # для локальной разра
 
 ---
 
+## 16. БЕЗОПАСНОСТЬ СЕРВЕРА И DOCKER
+
+### 16.1 Изоляция портов (САМОЕ ВАЖНОЕ)
+
+Docker по умолчанию **игнорирует UFW** и напрямую открывает порты через iptables.
+Базы данных и внутренние сервисы **никогда** не должны быть доступны снаружи.
+
+```yaml
+# ❌ Неправильно — открыто всему интернету
+services:
+  redis:
+    ports:
+      - "6379:6379"
+  postgres:
+    ports:
+      - "5432:5432"
+
+# ✅ Правильно — доступно только внутри сервера
+services:
+  redis:
+    command: redis-server --requirepass СЛОЖНЫЙ_ПАРОЛЬ
+    ports:
+      - "127.0.0.1:6379:6379"
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: СЛОЖНЫЙ_ПАРОЛЬ
+    ports:
+      - "127.0.0.1:5432:5432"
+```
+
+> Контейнеры внутри одного `docker-compose` всё равно общаются между собой по именам сервисов (`redis:6379`) — проброс наружу им не нужен.
+
+**Для SelenaCore** — в `docker-compose.yml` порты Core API (7070) и UI (8080) должны быть привязаны к `127.0.0.1` если доступ снаружи не требуется.
+
+### 16.2 Настройка UFW (системный Firewall)
+
+```bash
+sudo ufw default deny incoming   # запретить все входящие по умолчанию
+sudo ufw default allow outgoing  # разрешить серверу выходить в интернет
+sudo ufw allow 22/tcp            # SSH — обязательно, иначе потеряете доступ!
+sudo ufw allow 80/tcp            # HTTP
+sudo ufw allow 443/tcp           # HTTPS
+sudo ufw enable                  # включить
+sudo ufw status verbose          # проверить статус
+```
+
+### 16.3 Никакого dev-режима в production
+
+`npm run dev` небезопасен: много памяти, медленно, открывает отладочные порты (возможен RCE).
+
+```bash
+# ✅ Правильно для Node.js / Next.js / Vite
+npm run build
+npm run start
+
+# ✅ В Dockerfile
+RUN npm run build
+CMD ["npm", "run", "start"]
+```
+
+В SelenaCore `npx vite build` — только для сборки статики. Собранные файлы раздаются через FastAPI `StaticFiles`. В production контейнере `npm` вообще не запускается.
+
+### 16.4 Защита SSH
+
+```bash
+# Проверить authorized_keys на посторонние ключи
+cat ~/.ssh/authorized_keys
+
+# Если нашли чужие ключи — удалить их
+nano ~/.ssh/authorized_keys
+
+# Сменить пароль root
+passwd root
+```
+
+### 16.5 Регулярная проверка
+
+```bash
+# Нагрузка системы
+htop
+
+# Статистика контейнеров (CPU / RAM)
+docker stats
+
+# Обновление системы (закрывает уязвимости)
+sudo apt update && sudo apt upgrade -y
+
+# Проверить открытые порты
+ss -tlnp
+```
+
+### 16.6 Правила для агента
+
+```
+⛔ Нельзя маппить DB-порты без 127.0.0.1: prefix
+⛔ Нельзя запускать npm run dev в production-контейнере
+⛔ Нельзя хранить пароли БД в открытом виде (только через .env / secrets)
+⛔ Нельзя добавлять SSH-ключи в authorized_keys без явного запроса пользователя
+✅ Все новые сервисы в docker-compose — проверять биндинг портов
+✅ После изменения docker-compose — проверять sudo ufw status
+```
+
+---
+
 *SelenaCore · AGENTS.md · SmartHome LK · Open Source MIT*
 *Репозиторий: https://github.com/dotradepro/SelenaCore*
