@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio } from 'lucide-react';
 import { cn } from '../lib/utils';
+import VirtualKeyboard from './VirtualKeyboard';
 
 const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
 
@@ -118,6 +119,67 @@ export default function Wizard() {
   const [tzSearch, setTzSearch] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
+  // Virtual keyboard state
+  type KbTarget = 'wifiPassword' | 'name' | 'tzSearch' | 'username' | 'pin' | null;
+  const [kbTarget, setKbTarget] = useState<KbTarget>(null);
+  const kbInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+
+  const openKb = useCallback((target: KbTarget) => {
+    if (isTouchDevice) setKbTarget(target);
+  }, [isTouchDevice]);
+
+  const closeKb = useCallback(() => setKbTarget(null), []);
+
+  const kbKeyPress = useCallback((key: string) => {
+    if (!kbTarget) return;
+    switch (kbTarget) {
+      case 'wifiPassword':
+        setFormData(prev => ({ ...prev, wifiPassword: prev.wifiPassword + key }));
+        setWifiConnected(false);
+        break;
+      case 'name':
+        setFormData(prev => ({ ...prev, name: prev.name + key }));
+        break;
+      case 'tzSearch':
+        setTzSearch(prev => prev + key);
+        break;
+      case 'username':
+        setFormData(prev => ({ ...prev, username: prev.username + key }));
+        break;
+      case 'pin':
+        if (/\d/.test(key) && formData.pin.length < 8)
+          setFormData(prev => ({ ...prev, pin: prev.pin + key }));
+        break;
+    }
+  }, [kbTarget, formData.pin.length]);
+
+  const kbBackspace = useCallback(() => {
+    if (!kbTarget) return;
+    switch (kbTarget) {
+      case 'wifiPassword':
+        setFormData(prev => ({ ...prev, wifiPassword: prev.wifiPassword.slice(0, -1) }));
+        setWifiConnected(false);
+        break;
+      case 'name':
+        setFormData(prev => ({ ...prev, name: prev.name.slice(0, -1) }));
+        break;
+      case 'tzSearch':
+        setTzSearch(prev => prev.slice(0, -1));
+        break;
+      case 'username':
+        setFormData(prev => ({ ...prev, username: prev.username.slice(0, -1) }));
+        break;
+      case 'pin':
+        setFormData(prev => ({ ...prev, pin: prev.pin.slice(0, -1) }));
+        break;
+    }
+  }, [kbTarget]);
+
+  const kbEnter = useCallback(() => {
+    closeKb();
+  }, [closeKb]);
+
   const [formData, setFormData] = useState<FormData>({
     lang: selectedLanguage,
     wifi: '',
@@ -134,6 +196,7 @@ export default function Wizard() {
 
   // Fetch WiFi networks when entering step 2
   useEffect(() => {
+    closeKb(); // close keyboard on step change
     if (step === 2) {
       fetchNetworkStatus();
     }
@@ -398,7 +461,7 @@ export default function Wizard() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-50 flex flex-col items-center p-3 pt-4 font-sans">
+    <div className={cn("min-h-screen bg-zinc-950 text-zinc-50 flex flex-col items-center p-3 pt-4 font-sans transition-[padding]", kbTarget && "pb-52")}>
       <div className="w-full max-w-3xl">
         {/* Header — compact for 7" */}
         <div className="flex items-center justify-center gap-3 mb-3">
@@ -626,10 +689,13 @@ export default function Wizard() {
                           <div>
                             <label className="block text-xs font-medium text-zinc-400 mb-1">{t('wizard.wifiPassword')}</label>
                             <input
+                              ref={el => { kbInputRefs.current['wifiPassword'] = el; }}
                               type="password"
                               value={formData.wifiPassword}
                               onChange={(e) => { setFormData({ ...formData, wifiPassword: e.target.value }); setWifiConnected(false); }}
-                              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                              onFocus={() => openKb('wifiPassword')}
+                              readOnly={isTouchDevice}
+                              className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all", kbTarget === 'wifiPassword' && 'border-emerald-500 ring-1 ring-emerald-500')}
                               placeholder={t('wizard.wifiPasswordPlaceholder')}
                             />
                           </div>
@@ -663,10 +729,13 @@ export default function Wizard() {
                   <h2 className="text-base font-medium">{t('wizard.deviceNameTitle')}</h2>
                   <p className="text-zinc-400 text-xs">{t('wizard.deviceNameDesc')}</p>
                   <input
+                    ref={el => { kbInputRefs.current['name'] = el; }}
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                    onFocus={() => openKb('name')}
+                    readOnly={isTouchDevice}
+                    className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all", kbTarget === 'name' && 'border-emerald-500 ring-1 ring-emerald-500')}
                     placeholder={t('wizard.deviceNamePlaceholder')}
                   />
                 </div>
@@ -677,10 +746,13 @@ export default function Wizard() {
                   <h2 className="text-base font-medium">{t('wizard.timezoneTitle')}</h2>
                   <p className="text-zinc-400 text-xs">{t('wizard.timezoneDesc')}</p>
                   <input
+                    ref={el => { kbInputRefs.current['tzSearch'] = el; }}
                     type="text"
                     value={tzSearch}
                     onChange={(e) => setTzSearch(e.target.value)}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all"
+                    onFocus={() => openKb('tzSearch')}
+                    readOnly={isTouchDevice}
+                    className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all", kbTarget === 'tzSearch' && 'border-emerald-500 ring-1 ring-emerald-500')}
                     placeholder={t('wizard.timezoneSearch')}
                   />
                   <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
@@ -812,20 +884,26 @@ export default function Wizard() {
                     <div>
                       <label className="block text-xs font-medium text-zinc-400 mb-1">{t('wizard.userName')}</label>
                       <input
+                        ref={el => { kbInputRefs.current['username'] = el; }}
                         type="text"
                         value={formData.username}
                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all"
+                        onFocus={() => openKb('username')}
+                        readOnly={isTouchDevice}
+                        className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all", kbTarget === 'username' && 'border-emerald-500 ring-1 ring-emerald-500')}
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-zinc-400 mb-1">{t('wizard.userPin')}</label>
                       <input
+                        ref={el => { kbInputRefs.current['pin'] = el; }}
                         type="password"
                         maxLength={8}
                         value={formData.pin}
                         onChange={(e) => setFormData({ ...formData, pin: e.target.value.replace(/\D/g, '') })}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all tracking-widest font-mono"
+                        onFocus={() => openKb('pin')}
+                        readOnly={isTouchDevice}
+                        className={cn("w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all tracking-widest font-mono", kbTarget === 'pin' && 'border-emerald-500 ring-1 ring-emerald-500')}
                         placeholder={t('wizard.userPinPlaceholder')}
                       />
                     </div>
@@ -941,6 +1019,16 @@ export default function Wizard() {
           </div>
         </div>
       </div>
+      {/* Virtual keyboard for touch input */}
+      <VirtualKeyboard
+        visible={kbTarget !== null}
+        onKeyPress={kbKeyPress}
+        onBackspace={kbBackspace}
+        onEnter={kbEnter}
+        onClose={closeKb}
+        lang={formData.lang}
+        numericOnly={kbTarget === 'pin'}
+      />
     </div>
   );
 }
