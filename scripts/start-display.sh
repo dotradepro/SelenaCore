@@ -70,6 +70,14 @@ main() {
     mkdir -p "$(dirname "$LOG")"
     log "SelenaCore display launcher starting..."
 
+    # Ensure XDG_RUNTIME_DIR exists (not created automatically for root without login session)
+    export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/0}"
+    if [[ ! -d "$XDG_RUNTIME_DIR" ]]; then
+        mkdir -p "$XDG_RUNTIME_DIR"
+        chmod 0700 "$XDG_RUNTIME_DIR"
+        log "Created XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+    fi
+
     wait_for_core || true
 
     local mode
