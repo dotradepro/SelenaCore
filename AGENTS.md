@@ -1206,7 +1206,20 @@ docker restart selena-core
 sleep 3
 curl -s http://localhost:7070/api/v1/health | python3 -m json.tool
 curl -s -o /dev/null -w "UI :8080 → HTTP %{http_code}\n" http://localhost:8080/
+
+# 6. Обновить экран устройства (kiosk Chromium)
+sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 ```
+
+> **Почему шаг 6 обязателен:** Экран устройства — это Chromium в kiosk-режиме
+> внутри Wayland-композитора `cage` (systemd: `smarthome-display.service`).
+> `docker restart` перезапускает бэкенд и UI-сервер, но НЕ перезагружает браузер.
+> Chromium с флагами `--disable-background-networking` кеширует старую страницу.
+> Команда `wtype -k F5` отправляет нажатие F5 через Wayland-протокол в Chromium.
+>
+> Если `wtype` недоступен или не работает — альтернатива:
+> `sudo systemctl restart smarthome-display.service`
+> (перезапускает cage + chromium полностью, медленнее но надёжнее)
 
 **Что обновляется:**
 
@@ -1215,14 +1228,16 @@ curl -s -o /dev/null -w "UI :8080 → HTTP %{http_code}\n" http://localhost:8080
 | `npx vite build` | Фронтенд (React SPA) | — |
 | `docker cp static/` | UI в контейнере | Браузер `:8080` |
 | `docker cp core/` | Бэкенд Python | API `:7070` |
-| `docker restart` | Перезагрузка FastAPI + UI | Браузер + устройство |
+| `docker restart` | Перезагрузка FastAPI + UI | Сервер |
+| `wtype -k F5` | Обновление страницы в kiosk | Экран устройства |
 
 **Правила:**
 
-- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 4, 5
-- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5
-- Если изменения в обоих — все 5 шагов
+- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 4, 5, 6
+- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5, 6
+- Если изменения в обоих — все 6 шагов
 - ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 5
+- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 6)
 
 ---
 
