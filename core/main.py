@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
-from core.api.routes import devices, events, integrity, modules, system
+from core.api.routes import devices, events, integrity, modules, system, ui
 from core.config import get_settings
 from core.cloud_sync.sync import get_cloud_sync
 from core.eventbus.bus import get_event_bus
@@ -115,6 +115,9 @@ def create_app() -> FastAPI:
     app.include_router(events.router, prefix=api_prefix)
     app.include_router(integrity.router, prefix=api_prefix)
     app.include_router(modules.router, prefix=api_prefix)
+
+    # UI routes (no auth — localhost only, protected by iptables)
+    app.include_router(ui.router, prefix="/api/ui")
 
     return app
 
