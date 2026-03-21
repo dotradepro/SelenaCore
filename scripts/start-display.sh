@@ -120,8 +120,18 @@ main() {
             local SCRIPT_DIR
             SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
             export XCURSOR_THEME=transparent
-            export XCURSOR_PATH="${SCRIPT_DIR}/cursors"
-            export XCURSOR_SIZE=1
+            export XCURSOR_PATH="${SCRIPT_DIR}/cursors:/usr/share/icons"
+            export XCURSOR_SIZE=24
+
+            # Move cursor off-screen after cage starts (background helper)
+            (
+                sleep 5
+                # Move cursor far off-screen (negative = top-left corner beyond display)
+                export WAYLAND_DISPLAY="${XDG_RUNTIME_DIR:-/run/user/0}/wayland-0"
+                if command -v wtype >/dev/null 2>&1; then
+                    wtype -M 0 0 -m 32767 32767 2>/dev/null || true
+                fi
+            ) &
 
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"
             ;;
