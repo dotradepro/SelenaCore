@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
 from core.api.routes import devices, events, integrity, modules, system
 from core.config import get_settings
+from core.cloud_sync.sync import get_cloud_sync
 from core.eventbus.bus import get_event_bus
 from core.eventbus.types import CORE_STARTUP, CORE_SHUTDOWN
 from core.registry.models import Base
@@ -71,12 +72,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         payload={"version": "0.3.0-beta"},
     )
 
+    # Start CloudSync
+    cloud_sync = get_cloud_sync()
+    await cloud_sync.start()
+
     logger.info("SelenaCore ready on port %s", settings.core_port)
 
     yield  # App is running
 
     # Shutdown
     logger.info("SelenaCore shutting down...")
+    await cloud_sync.stop()
     await bus.publish(
         type=CORE_SHUTDOWN,
         source="core",
