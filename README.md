@@ -227,6 +227,29 @@ pytest tests/ --cov=core --cov-report=term-missing
 
 ---
 
+## Support the Project
+
+SmartHome LK is built by a solo developer. If you believe in what we're building — smart home infrastructure with autonomous AI development — consider sponsoring.
+
+**Your support funds:**
+- LLM API costs for the AI coding agents
+- Docker sandbox hosting for secure module testing
+- 6 months of production infrastructure
+- Full-time development focus
+
+| Platform | Link | Notes |
+|---|---|---|
+| Ko-fi | [ko-fi.com/smarthome_lk](https://ko-fi.com/smarthome_lk) | One-time · Goal tracker · All tiers |
+| GitHub Sponsors | [github.com/sponsors/dotradepro](https://github.com/sponsors/dotradepro) | Monthly or one-time |
+
+**Tiers:** Supporter $10 · Early Adopter $50 · Developer $100 (PRO 6mo) · Partner $500 (UNLIMITED forever) · Founding Sponsor $1000+
+
+See [SPONSORS.md](SPONSORS.md) for the full list of supporters and tier benefits.
+
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/smarthome_lk)
+
+---
+
 ## Security
 
 - **Integrity Agent** — SHA256 check of core files every 30 sec
