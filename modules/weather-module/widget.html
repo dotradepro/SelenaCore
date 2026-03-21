@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: transparent;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 14px;
+            cursor: pointer;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        /* ── Top row: city + expand button ── */
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .city {
+            font-size: 13px;
+            font-weight: 500;
+            color: #9ca3af;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 80%;
+        }
+
+        .expand-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            border-radius: 6px;
+            color: #6b7280;
+            font-size: 13px;
+            padding: 3px 7px;
+            cursor: pointer;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .expand-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* ── Main: emoji + temperature ── */
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .emoji {
+            font-size: 52px;
+            line-height: 1;
+        }
+
+        .temp {
+            font-size: 40px;
+            font-weight: 700;
+            letter-spacing: -1.5px;
+            line-height: 1;
+        }
+
+        .condition {
+            font-size: 12px;
+            color: #9ca3af;
+            text-align: center;
+            margin-top: 2px;
+        }
+
+        /* ── Details row: 3 columns ── */
+        .details {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .detail {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 6px 4px;
+        }
+
+        .detail-val {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .detail-lbl {
+            font-size: 10px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        /* ── Footer: last updated ── */
+        .updated {
+            font-size: 10px;
+            color: #4b5563;
+            text-align: center;
+            margin-top: 6px;
+        }
+
+        /* ── States ── */
+        .loading,
+        .error {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="top">
+        <span class="city" id="city">—</span>
+        <button class="expand-btn" id="expand-btn" title="Відкрити деталі">↗</button>
+    </div>
+
+    <div class="main" id="main">
+        <div class="loading">Завантаження...</div>
+    </div>
+
+    <div class="details" id="details" style="display:none"></div>
+    <div class="updated" id="updated"></div>
+
+    <script>
+        const BASE = 'http://localhost:8100';
+
+        function openDetails(e) {
+            if (e) e.stopPropagation();
+            window.parent.postMessage({ type: 'openSettings', module: 'weather-module' }, '*');
+        }
+
+        document.getElementById('expand-btn').addEventListener('click', openDetails);
+        document.body.addEventListener('click', openDetails);
+
+        async function load() {
+            try {
+                const [wResp, cfgResp] = await Promise.all([
+                    fetch(BASE + '/api/weather'),
+                    fetch(BASE + '/api/config'),
+                ]);
+                if (!wResp.ok) throw new Error('weather ' + wResp.status);
+                const w = await wResp.json();
+                const cfg = cfgResp.ok ? await cfgResp.json() : {};
+
+                const lang = cfg.lang || 'uk';
+                const unit = (cfg.units === 'fahrenheit') ? '°F' : '°C';
+                const cond = lang === 'uk' ? w.condition_uk : w.condition_en;
+                const sign = w.temperature > 0 ? '+' : '';
+                const flSign = w.feels_like > 0 ? '+' : '';
+
+                document.getElementById('city').textContent = w.city || '—';
+
+                document.getElementById('main').innerHTML = `
+          <div class="emoji">${w.emoji}</div>
+          <div class="temp">${sign}${w.temperature}${unit}</div>
+          <div class="condition">${cond}</div>
+        `;
+
+                const flLabel = lang === 'uk' ? 'Відчув.' : 'Feels';
+                const humLabel = lang === 'uk' ? 'Вологість' : 'Humidity';
+                const windLabel = lang === 'uk' ? 'Вітер' : 'Wind';
+
+                document.getElementById('details').innerHTML = `
+          <div class="detail">
+            <div class="detail-val">${flSign}${w.feels_like}${unit}</div>
+            <div class="detail-lbl">${flLabel}</div>
+          </div>
+          <div class="detail">
+            <div class="detail-val">${w.humidity}%</div>
+            <div class="detail-lbl">${humLabel}</div>
+          </div>
+          <div class="detail">
+            <div class="detail-val">${w.wind_speed}&nbsp;м/с</div>
+            <div class="detail-lbl">${windLabel}</div>
+          </div>
+        `;
+                document.getElementById('details').style.display = 'grid';
+
+                const updTime = new Date(w.updated_at * 1000)
+                    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('updated').textContent =
+                    lang === 'uk' ? `Оновлено ${updTime}` : `Updated ${updTime}`;
+
+            } catch (err) {
+                document.getElementById('main').innerHTML =
+                    '<div class="error">⚠️ Дані недоступні</div>';
+                document.getElementById('details').style.display = 'none';
+                document.getElementById('updated').textContent = '';
+            }
+        }
+
+        load();
+        setInterval(load, 10 * 60 * 1000);   // refresh every 10 minutes
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Погода / Weather</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #0f0f1a;
+            --card: #1a1a2e;
+            --card2: #16213e;
+            --accent: #7c3aed;
+            --accent2: #6d28d9;
+            --text: #f9fafb;
+            --muted: #9ca3af;
+            --dim: #4b5563;
+            --border: rgba(255, 255, 255, 0.07);
+            --blue: #60a5fa;
+            --green: #22c55e;
+            --red: #ef4444;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            font-size: 14px;
+        }
+
+        /* ── Tab bar ── */
+        .tab-bar {
+            display: flex;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            padding: 0 4px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .tab-bar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 13px;
+            padding: 12px 14px;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: color .15s, border-color .15s;
+        }
+
+        .tab.active {
+            color: var(--text);
+            border-bottom-color: var(--accent);
+        }
+
+        .tab:hover:not(.active) {
+            color: var(--text);
+        }
+
+        /* ── Panels ── */
+        .panel {
+            display: none;
+            padding: 16px;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        /* ── Messages ── */
+        .msg-loading {
+            color: var(--dim);
+            text-align: center;
+            padding: 40px 16px;
+        }
+
+        .msg-error {
+            color: var(--red);
+            text-align: center;
+            padding: 40px 16px;
+            font-size: 13px;
+        }
+
+        /* ── TODAY tab — hourly table ── */
+        .hourly-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .hourly-table th {
+            color: var(--muted);
+            font-weight: 500;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            padding: 0 8px 8px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hourly-table td {
+            padding: 9px 8px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .hourly-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .hourly-table tbody tr:hover td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .hourly-table .emoji-cell {
+            font-size: 18px;
+        }
+
+        .hourly-table .temp-cell {
+            font-weight: 600;
+        }
+
+        .hourly-table .rain-cell {
+            color: var(--blue);
+        }
+
+        .hourly-table .wind-cell {
+            color: var(--muted);
+        }
+
+        /* ── DAILY tabs — card grid ── */
+        .daily-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .day-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 14px;
+            background: var(--card);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .day-name-block {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .day-name {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .day-cond {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .day-emoji {
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .day-precip {
+            font-size: 12px;
+            color: var(--blue);
+            min-width: 34px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .day-temps {
+            font-size: 13px;
+            text-align: right;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .day-max {
+            font-weight: 700;
+        }
+
+        .day-min {
+            color: var(--muted);
+            margin-left: 5px;
+        }
+
+        /* ── SETTINGS tab ── */
+        .settings-section {
+            margin-bottom: 22px;
+        }
+
+        .settings-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        /* city search */
+        .search-wrap {
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+            transition: border-color .15s;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent);
+        }
+
+        .search-input::placeholder {
+            color: var(--dim);
+        }
+
+        .suggestions {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: var(--card2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            z-index: 20;
+            max-height: 220px;
+            overflow-y: auto;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+        }
+
+        .suggestion-item {
+            padding: 10px 14px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .suggestion-item .sug-country {
+            color: var(--dim);
+            font-size: 12px;
+        }
+
+        .selected-city-hint {
+            font-size: 12px;
+            color: var(--dim);
+            margin-top: 6px;
+            min-height: 16px;
+        }
+
+        /* toggle buttons */
+        .toggle-group {
+            display: flex;
+            gap: 4px;
+        }
+
+        .toggle-btn {
+            padding: 8px 18px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 13px;
+            transition: background .15s, color .15s, border-color .15s;
+        }
+
+        .toggle-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .toggle-btn:hover:not(.active) {
+            color: var(--text);
+            background: rgba(255, 255, 255, 0.07);
+        }
+
+        /* save button */
+        .save-btn {
+            width: 100%;
+            padding: 13px;
+            background: var(--accent);
+            border: none;
+            border-radius: 9px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background .15s;
+        }
+
+        .save-btn:hover {
+            background: var(--accent2);
+        }
+
+        .save-btn.success {
+            background: var(--green);
+        }
+
+        /* toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--green);
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity .25s, transform .25s;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+        <button class="tab active" data-tab="today">🕐 Сьогодні</button>
+        <button class="tab" data-tab="week">📅 7 днів</button>
+        <button class="tab" data-tab="ten">📆 10 днів</button>
+        <button class="tab" data-tab="settings">⚙️ Налаштування</button>
+    </div>
+
+    <!-- Today (hourly) -->
+    <div class="panel active" id="panel-today">
+        <div class="msg-loading">Завантаження...</div>
+    </div>
+
+    <!-- 7 days -->
+    <div class="panel" id="panel-week">
+        <div class="msg-loading">Завантаження...</div>
+    </div>
+
+    <!-- 10 days -->
+    <div class="panel" id="panel-ten">
+        <div class="msg-loading">Завантаження...</div>
+    </div>
+
+    <!-- Settings -->
+    <div class="panel" id="panel-settings">
+
+        <div class="settings-section">
+            <div class="settings-label">Місто / City</div>
+            <div class="search-wrap">
+                <input id="city-input" class="search-input" type="text" placeholder="Пошук міста..." autocomplete="off"
+                    spellcheck="false">
+                <div id="suggestions" class="suggestions" style="display:none"></div>
+            </div>
+            <div id="city-hint" class="selected-city-hint"></div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-label">Температура</div>
+            <div class="toggle-group">
+                <button class="toggle-btn active" id="btn-celsius" onclick="setUnit('celsius')">°C Цельсій</button>
+                <button class="toggle-btn" id="btn-fahrenheit" onclick="setUnit('fahrenheit')">°F Фаренгейт</button>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <div class="settings-label">Мова голосових відповідей</div>
+            <div class="toggle-group">
+                <button class="toggle-btn" id="btn-uk" onclick="setLang('uk')">🇺🇦 Українська</button>
+                <button class="toggle-btn" id="btn-en" onclick="setLang('en')">🇬🇧 English</button>
+            </div>
+        </div>
+
+        <button class="save-btn" id="save-btn" onclick="saveConfig()">Зберегти</button>
+    </div>
+
+    <div class="toast" id="toast">✓ Збережено</div>
+
+    <script>
+        const BASE = 'http://localhost:8100';
+        // ui_token from URL (for future Core API calls; currently read-only via module API)
+        const uiToken = new URLSearchParams(location.search).get('ui_token') || '';
+
+        let cfg = {};
+        let forecastData = null;
+        let selectedCity = null;
+
+        // ── Tab switching ─────────────────────────────────────────────────────────
+        const tabBtns = document.querySelectorAll('.tab');
+        const tabPanels = document.querySelectorAll('.panel');
+
+        tabBtns.forEach(btn => btn.addEventListener('click', () => {
+            const name = btn.dataset.tab;
+            tabBtns.forEach(b => b.classList.toggle('active', b === btn));
+            tabPanels.forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+            if (name !== 'settings') ensureForecast(name);
+        }));
+
+        // ── Helpers ───────────────────────────────────────────────────────────────
+        function sign(n) { return n > 0 ? '+' : ''; }
+
+        function dayLabel(dateStr, lang) {
+            const d = new Date(dateStr + 'T12:00:00');
+            const todayStr = new Date().toISOString().slice(0, 10);
+            if (dateStr === todayStr) return lang === 'uk' ? 'Сьогодні' : 'Today';
+            const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+            if (dateStr === tomorrow.toISOString().slice(0, 10))
+                return lang === 'uk' ? 'Завтра' : 'Tomorrow';
+            const days = {
+                uk: ['Нд', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+                en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+            };
+            const months = {
+                uk: ['Січ', 'Лют', 'Бер', 'Квіт', 'Трав', 'Черв', 'Лип', 'Серп', 'Вер', 'Жовт', 'Лист', 'Груд'],
+                en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+            };
+            const l = lang || 'uk';
+            return `${days[l][d.getDay()]}, ${d.getDate()} ${months[l][d.getMonth()]}`;
+        }
+
+        function fmtTime(iso) { return iso.split('T')[1]?.slice(0, 5) || iso; }
+
+        // ── Load config ───────────────────────────────────────────────────────────
+        async function loadConfig() {
+            try {
+                cfg = await fetch(BASE + '/api/config').then(r => r.json());
+            } catch { cfg = {}; }
+
+            document.getElementById('city-input').value = cfg.city || '';
+            document.getElementById('city-hint').textContent =
+                cfg.city ? `${cfg.city}, ${cfg.country || ''} · ${cfg.lat?.toFixed(2)}, ${cfg.lon?.toFixed(2)}` : '';
+
+            selectedCity = {
+                name: cfg.city, country: cfg.country,
+                lat: cfg.lat, lon: cfg.lon,
+            };
+            applyUnitUI(cfg.units || 'celsius');
+            applyLangUI(cfg.lang || 'uk');
+        }
+
+        function applyUnitUI(u) {
+            document.getElementById('btn-celsius').classList.toggle('active', u === 'celsius');
+            document.getElementById('btn-fahrenheit').classList.toggle('active', u === 'fahrenheit');
+            cfg.units = u;
+        }
+        function applyLangUI(l) {
+            document.getElementById('btn-uk').classList.toggle('active', l === 'uk');
+            document.getElementById('btn-en').classList.toggle('active', l === 'en');
+            cfg.lang = l;
+        }
+        function setUnit(u) { applyUnitUI(u); }
+        function setLang(l) { applyLangUI(l); }
+
+        // ── City search ───────────────────────────────────────────────────────────
+        let searchTimer = null;
+        document.getElementById('city-input').addEventListener('input', function () {
+            clearTimeout(searchTimer);
+            const q = this.value.trim();
+            if (q.length < 2) { closeSuggestions(); return; }
+            searchTimer = setTimeout(() => doSearch(q), 400);
+        });
+
+        async function doSearch(q) {
+            try {
+                const data = await fetch(`${BASE}/api/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+                const list = data.results || [];
+                const el = document.getElementById('suggestions');
+                if (!list.length) { closeSuggestions(); return; }
+                el.innerHTML = list.map((c, i) =>
+                    `<div class="suggestion-item" data-idx="${i}">
+             <span>${c.name}${c.admin1 ? ', ' + c.admin1 : ''}</span>
+             <span class="sug-country">${c.country}</span>
+           </div>`
+                ).join('');
+                el.style.display = 'block';
+                // store results for click handler
+                el._results = list;
+                el.querySelectorAll('.suggestion-item').forEach((row, i) => {
+                    row.addEventListener('click', () => selectCity(el._results[i]));
+                });
+            } catch { closeSuggestions(); }
+        }
+
+        function selectCity(c) {
+            selectedCity = c;
+            cfg.city = c.name;
+            cfg.country = c.country;
+            cfg.lat = c.lat;
+            cfg.lon = c.lon;
+            document.getElementById('city-input').value = c.name;
+            document.getElementById('city-hint').textContent =
+                `${c.display || c.name} · ${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}`;
+            closeSuggestions();
+        }
+
+        function closeSuggestions() {
+            document.getElementById('suggestions').style.display = 'none';
+        }
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.search-wrap')) closeSuggestions();
+        });
+
+        // ── Save config ───────────────────────────────────────────────────────────
+        async function saveConfig() {
+            const btn = document.getElementById('save-btn');
+            btn.disabled = true;
+            try {
+                await fetch(`${BASE}/api/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        city: cfg.city,
+                        country: cfg.country,
+                        lat: cfg.lat,
+                        lon: cfg.lon,
+                        units: cfg.units,
+                        lang: cfg.lang,
+                    }),
+                });
+                // Reset forecast cache so next tab load shows fresh data
+                forecastData = null;
+                showToast();
+            } catch {
+                alert('Помилка збереження. Перевірте підключення.');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function showToast() {
+            const t = document.getElementById('toast');
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2400);
+        }
+
+        // ── Forecast data ─────────────────────────────────────────────────────────
+        async function ensureForecast(tab) {
+            if (!forecastData) {
+                try {
+                    forecastData = await fetch(`${BASE}/api/forecast`).then(r => r.json());
+                } catch {
+                    ['today', 'week', 'ten'].forEach(id => {
+                        const el = document.getElementById('panel-' + id);
+                        if (el) el.innerHTML = '<div class="msg-error">⚠️ Не вдалося завантажити прогноз</div>';
+                    });
+                    return;
+                }
+            }
+            renderTab(tab);
+        }
+
+        function renderTab(tab) {
+            const lang = cfg.lang || 'uk';
+            const unit = cfg.units === 'fahrenheit' ? '°F' : '°C';
+            if (tab === 'today') renderToday(lang, unit);
+            else if (tab === 'week') renderDaily('panel-week', forecastData.daily_7, lang, unit);
+            else if (tab === 'ten') renderDaily('panel-ten', forecastData.daily_10, lang, unit);
+        }
+
+        function renderToday(lang, unit) {
+            const hours = forecastData?.hourly_today || [];
+            if (!hours.length) {
+                document.getElementById('panel-today').innerHTML =
+                    '<div class="msg-error">Немає погодинних даних</div>';
+                return;
+            }
+            const tHeader = lang === 'uk' ? 'Час' : 'Time';
+            const tTemp = lang === 'uk' ? 'Темп.' : 'Temp.';
+
+            const rows = hours.map(h =>
+                `<tr>
+          <td>${fmtTime(h.time)}</td>
+          <td class="emoji-cell">${h.emoji}</td>
+          <td class="temp-cell">${sign(h.temperature)}${h.temperature}${unit}</td>
+          <td class="rain-cell">${h.precip_prob}%&nbsp;💧</td>
+          <td class="wind-cell">${h.wind_speed}&nbsp;м/с</td>
+        </tr>`
+            ).join('');
+
+            document.getElementById('panel-today').innerHTML = `
+        <table class="hourly-table">
+          <thead>
+            <tr>
+              <th>${tHeader}</th>
+              <th></th>
+              <th>${tTemp}</th>
+              <th>Опади</th>
+              <th>Вітер</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+        }
+
+        function renderDaily(panelId, days, lang, unit) {
+            if (!days?.length) {
+                document.getElementById(panelId).innerHTML =
+                    '<div class="msg-error">Немає даних</div>';
+                return;
+            }
+            const cards = days.map(d => {
+                const cond = lang === 'uk' ? d.condition_uk : d.condition_en;
+                return `
+          <div class="day-card">
+            <div class="day-name-block">
+              <div class="day-name">${dayLabel(d.date, lang)}</div>
+              <div class="day-cond">${cond}</div>
+            </div>
+            <div class="day-emoji">${d.emoji}</div>
+            <div class="day-precip">${d.precip_prob}%&nbsp;💧</div>
+            <div class="day-temps">
+              <span class="day-max">${sign(d.temp_max)}${d.temp_max}${unit}</span>
+              <span class="day-min">${sign(d.temp_min)}${d.temp_min}${unit}</span>
+            </div>
+          </div>`;
+            }).join('');
+
+            document.getElementById(panelId).innerHTML =
+                `<div class="daily-list">${cards}</div>`;
+        }
+
+        // ── Init ──────────────────────────────────────────────────────────────────
+        (async () => {
+            await loadConfig();
+            await ensureForecast('today');
+        })();
+    </script>
+</body>
+
+</html>

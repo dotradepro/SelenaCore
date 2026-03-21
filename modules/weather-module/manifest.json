@@ -1,0 +1,56 @@
+{
+    "name": "weather-module",
+    "version": "1.0.0",
+    "description": "Current weather and 10-day forecast via Open-Meteo. Voice-enabled weather queries in Ukrainian and English.",
+    "type": "UI",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "port": 8100,
+    "permissions": [
+        "device.read",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2"
+        },
+        "settings": "settings.html"
+    },
+    "intents": [
+        {
+            "patterns": {
+                "uk": [
+                    "погода",
+                    "прогноз",
+                    "дощ",
+                    "сніг",
+                    "температур",
+                    "яка погода",
+                    "яке небо"
+                ],
+                "en": [
+                    "weather",
+                    "forecast",
+                    "rain",
+                    "snow",
+                    "temperatur",
+                    "what.*weather",
+                    "how.*weather",
+                    "is it raining"
+                ]
+            },
+            "description": "Answer questions about current weather and forecast",
+            "endpoint": "/api/intent"
+        }
+    ],
+    "resources": {
+        "memory_mb": 128,
+        "cpu": 0.25
+    },
+    "author": "SelenaCore",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}
