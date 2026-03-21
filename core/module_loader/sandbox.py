@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
+import sys
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -41,15 +43,21 @@ class ModuleInfo:
     container_id: str | None = None
     error: str | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
+    module_dir: str | None = None
 
 
 class DockerSandbox:
     """Manages module containers via Docker SDK."""
 
     def __init__(self) -> None:
-        import docker
-        self._client = docker.DockerClient(base_url=f"unix://{DOCKER_SOCKET}")
+        try:
+            import docker
+            self._client = docker.DockerClient(base_url=f"unix://{DOCKER_SOCKET}")
+        except Exception:
+            self._client = None
+            logger.warning("Docker SDK unavailable — only local module execution supported")
         self._modules: dict[str, ModuleInfo] = {}
+        self._processes: dict[str, subprocess.Popen] = {}
 
     def list_modules(self) -> list[ModuleInfo]:
         return list(self._modules.values())
@@ -57,7 +65,9 @@ class DockerSandbox:
     def get_module(self, name: str) -> ModuleInfo | None:
         return self._modules.get(name)
 
-    def register_from_manifest(self, manifest: dict[str, Any]) -> ModuleInfo:
+    def register_from_manifest(
+        self, manifest: dict[str, Any], module_dir: Path | None = None,
+    ) -> ModuleInfo:
         """Register a module from a parsed manifest (no ZIP extraction).
 
         Used by auto-discovery to register modules found on disk.
@@ -76,6 +86,7 @@ class DockerSandbox:
             port=manifest["port"],
             installed_at=datetime.now(timezone.utc).timestamp(),
             manifest=manifest,
+            module_dir=str(module_dir) if module_dir else None,
         )
         self._modules[name] = info
         logger.info("Registered module '%s' v%s (port %d)", name, info.version, info.port)
@@ -108,10 +119,69 @@ class DockerSandbox:
 
         return info
 
+    async def start_local(self, name: str) -> ModuleInfo:
+        """Start a locally-discovered module as a subprocess."""
+        info = self._modules.get(name)
+        if info is None:
+            raise KeyError(f"Module not found: {name}")
+        if not info.module_dir:
+            raise ValueError(f"Module {name} has no module_dir — cannot start locally")
+
+        module_dir = info.module_dir
+        project_root = str(Path(module_dir).parent.parent)
+        env = {**os.environ, "PYTHONPATH": f"{project_root}:{module_dir}"}
+
+        proc = subprocess.Popen(
+            [
+                sys.executable, "-m", "uvicorn", "main:app",
+                "--host", "127.0.0.1", "--port", str(info.port),
+            ],
+            cwd=module_dir,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self._processes[name] = proc
+
+        # Poll for health readiness
+        import httpx
+        for _ in range(30):
+            await asyncio.sleep(0.5)
+            if proc.poll() is not None:
+                stderr = proc.stderr.read().decode() if proc.stderr else ""
+                info.status = ModuleStatus.ERROR
+                info.error = f"Process exited: {stderr[:500]}"
+                logger.error("Module %s process exited: %s", name, info.error)
+                return info
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"http://127.0.0.1:{info.port}/health", timeout=2.0,
+                    )
+                    if resp.status_code == 200:
+                        info.status = ModuleStatus.RUNNING
+                        logger.info(
+                            "Local module %s started on port %d (pid=%d)",
+                            name, info.port, proc.pid,
+                        )
+                        return info
+            except Exception:
+                pass
+
+        info.status = ModuleStatus.ERROR
+        info.error = "Startup timeout (15s)"
+        proc.terminate()
+        logger.error("Module %s startup timed out", name)
+        return info
+
     async def start(self, name: str) -> ModuleInfo:
         info = self._modules.get(name)
         if info is None:
             raise KeyError(f"Module not found: {name}")
+
+        # Local module — start as subprocess
+        if info.module_dir:
+            return await self.start_local(name)
 
         info.status = ModuleStatus.RUNNING
         loop = asyncio.get_event_loop()
@@ -159,6 +229,19 @@ class DockerSandbox:
         if info.type == "SYSTEM":
             raise PermissionError("Cannot stop SYSTEM modules")
 
+        # Stop local subprocess
+        if name in self._processes:
+            proc = self._processes.pop(name)
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            info.status = ModuleStatus.STOPPED
+            logger.info("Local module %s stopped (pid=%d)", name, proc.pid)
+            return info
+
+        # Stop Docker container
         loop = asyncio.get_event_loop()
         if info.container_id:
             try:

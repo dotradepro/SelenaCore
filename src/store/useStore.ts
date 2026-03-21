@@ -21,6 +21,11 @@ export interface Module {
   runtime_mode: string;
   port: number;
   installed_at: number;
+  ui?: {
+    icon?: string;
+    widget?: { file?: string; size?: string };
+    settings?: string;
+  };
 }
 
 export interface SystemStats {
@@ -82,6 +87,8 @@ interface AppState {
   startModule: (name: string) => Promise<void>;
   removeModule: (name: string) => Promise<void>;
   updateDeviceState: (deviceId: string, state: Record<string, unknown>) => Promise<void>;
+  voiceStatus: 'idle' | 'listening' | 'speaking';
+  setVoiceStatus: (status: 'idle' | 'listening' | 'speaking') => void;
 }
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -104,10 +111,12 @@ export const useStore = create<AppState>((set, get) => ({
   modules: [],
   devicesLoading: false,
   modulesLoading: false,
+  voiceStatus: 'idle' as 'idle' | 'listening' | 'speaking',
 
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
   setSetupStage: (stage) => set({ setupStage: stage }),
+  setVoiceStatus: (voiceStatus: 'idle' | 'listening' | 'speaking') => set({ voiceStatus }),
   setSelectedLanguage: (lang) => {
     changeLanguage(lang);
     set({ selectedLanguage: lang });

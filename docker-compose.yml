@@ -22,6 +22,7 @@ services:
       - ./tests:/opt/selena-core/tests
       - ./config:/opt/selena-core/config
       - ./modules:/opt/selena-core/modules
+      - ./sdk:/opt/selena-core/sdk
     env_file:
       - .env
     networks:

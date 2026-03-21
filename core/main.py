@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from core.module_loader.loader import get_plugin_manager
     manager = get_plugin_manager()
     modules_dir = Path("/opt/selena-core/modules")
-    manager.scan_local_modules(modules_dir)
+    await manager.scan_local_modules(modules_dir)
 
     logger.info("SelenaCore ready on port %s", settings.core_port)
 

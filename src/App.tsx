@@ -5,9 +5,11 @@ import Wizard from './components/Wizard';
 import LanguageSelect from './components/LanguageSelect';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
-import Settings from './components/Settings';
 import Modules from './components/Modules';
-import Devices from './components/Devices';
+import ModuleDetail from './components/ModuleDetail';
+import SystemPage from './components/SystemPage';
+import IntegrityPage from './components/IntegrityPage';
+import Settings from './components/Settings';
 
 // Hide cursor when running on kiosk device (?kiosk=1)
 const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
@@ -41,7 +43,6 @@ export default function App() {
     );
   }
 
-  // Block dashboard if wizard not done OR required steps missing
   const canProceed = wizardRequirements?.can_proceed ?? false;
   const shouldBlock = !isConfigured || !canProceed;
 
@@ -61,8 +62,10 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/devices" element={<Devices />} />
           <Route path="/modules" element={<Modules />} />
+          <Route path="/modules/:name" element={<ModuleDetail />} />
+          <Route path="/system" element={<SystemPage />} />
+          <Route path="/integrity" element={<IntegrityPage />} />
           <Route path="/settings/*" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

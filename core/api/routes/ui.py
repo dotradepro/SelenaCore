@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from core.config import get_settings, get_yaml_config
@@ -194,6 +195,7 @@ async def ui_list_modules() -> dict[str, Any]:
                     "runtime_mode": m.runtime_mode,
                     "port": m.port,
                     "installed_at": m.installed_at,
+                    "ui": m.manifest.get("ui"),
                 }
                 for m in modules_list
             ]
@@ -237,6 +239,100 @@ async def ui_remove_module(name: str) -> None:
     if module.type == "SYSTEM":
         raise HTTPException(status_code=403, detail="Cannot remove SYSTEM modules")
     await manager.remove(name)
+
+
+# ---------- Module Content Proxy ----------
+
+def _get_module_or_404(name: str):
+    from core.module_loader.loader import get_plugin_manager
+    manager = get_plugin_manager()
+    module = manager.get_module(name)
+    if module is None:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return module
+
+
+@router.get("/modules/{name}/widget")
+async def ui_module_widget(name: str) -> HTMLResponse:
+    """Serve module widget HTML with proxy-rewritten URLs."""
+    module = _get_module_or_404(name)
+    if not module.module_dir:
+        raise HTTPException(status_code=404, detail="Module directory not available")
+    widget_file = module.manifest.get("ui", {}).get("widget", {}).get("file", "widget.html")
+    fpath = Path(module.module_dir) / widget_file
+    if not fpath.is_file():
+        raise HTTPException(status_code=404, detail="Widget file not found")
+    content = fpath.read_text(encoding="utf-8")
+    content = content.replace(
+        f"http://localhost:{module.port}",
+        f"/api/ui/modules/{name}/proxy",
+    )
+    return HTMLResponse(content)
+
+
+@router.get("/modules/{name}/settings")
+async def ui_module_settings(name: str) -> HTMLResponse:
+    """Serve module settings HTML with proxy-rewritten URLs."""
+    module = _get_module_or_404(name)
+    if not module.module_dir:
+        raise HTTPException(status_code=404, detail="Module directory not available")
+    settings_file = module.manifest.get("ui", {}).get("settings", "settings.html")
+    fpath = Path(module.module_dir) / settings_file
+    if not fpath.is_file():
+        raise HTTPException(status_code=404, detail="Settings file not found")
+    content = fpath.read_text(encoding="utf-8")
+    content = content.replace(
+        f"http://localhost:{module.port}",
+        f"/api/ui/modules/{name}/proxy",
+    )
+    return HTMLResponse(content)
+
+
+@router.get("/modules/{name}/icon")
+async def ui_module_icon(name: str) -> Response:
+    """Serve module icon file."""
+    module = _get_module_or_404(name)
+    if not module.module_dir:
+        raise HTTPException(status_code=404, detail="Module directory not available")
+    icon_file = module.manifest.get("ui", {}).get("icon", "icon.svg")
+    fpath = Path(module.module_dir) / icon_file
+    if not fpath.is_file():
+        raise HTTPException(status_code=404, detail="Icon file not found")
+    return Response(content=fpath.read_bytes(), media_type="image/svg+xml")
+
+
+@router.api_route(
+    "/modules/{name}/proxy/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def ui_module_proxy(name: str, path: str, request: Request) -> Response:
+    """Reverse-proxy requests to a running module subprocess."""
+    module = _get_module_or_404(name)
+    if module.status.value != "RUNNING":
+        raise HTTPException(status_code=503, detail="Module is not running")
+    import httpx
+    target_url = f"http://127.0.0.1:{module.port}/{path}"
+    body = await request.body()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                content=body if body else None,
+                headers={
+                    k: v for k, v in request.headers.items()
+                    if k.lower() not in ("host", "transfer-encoding")
+                },
+                params=dict(request.query_params),
+            )
+    except httpx.ConnectError:
+        raise HTTPException(status_code=502, detail="Module unreachable")
+    # Pass through response, filtering hop-by-hop headers
+    excluded = {"transfer-encoding", "content-encoding", "content-length"}
+    headers = {
+        k: v for k, v in resp.headers.items() if k.lower() not in excluded
+    }
+    return Response(content=resp.content, status_code=resp.status_code, headers=headers)
 
 
 # ---------- Wizard ----------
