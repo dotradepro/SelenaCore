@@ -76,6 +76,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cloud_sync = get_cloud_sync()
     await cloud_sync.start()
 
+    # Auto-discover modules from local directory
+    from core.module_loader.loader import get_plugin_manager
+    manager = get_plugin_manager()
+    modules_dir = Path("/opt/selena-core/modules")
+    manager.scan_local_modules(modules_dir)
+
     logger.info("SelenaCore ready on port %s", settings.core_port)
 
     yield  # App is running

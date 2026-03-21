@@ -57,6 +57,30 @@ class DockerSandbox:
     def get_module(self, name: str) -> ModuleInfo | None:
         return self._modules.get(name)
 
+    def register_from_manifest(self, manifest: dict[str, Any]) -> ModuleInfo:
+        """Register a module from a parsed manifest (no ZIP extraction).
+
+        Used by auto-discovery to register modules found on disk.
+        Skips modules that are already registered.
+        """
+        name = manifest["name"]
+        if name in self._modules:
+            return self._modules[name]
+
+        info = ModuleInfo(
+            name=name,
+            version=manifest["version"],
+            type=manifest["type"],
+            status=ModuleStatus.READY,
+            runtime_mode=manifest.get("runtime_mode", "always_on"),
+            port=manifest["port"],
+            installed_at=datetime.now(timezone.utc).timestamp(),
+            manifest=manifest,
+        )
+        self._modules[name] = info
+        logger.info("Registered module '%s' v%s (port %d)", name, info.version, info.port)
+        return info
+
     async def install(self, zip_path: Path, manifest: dict[str, Any]) -> ModuleInfo:
         """Extract ZIP and prepare module, then start container."""
         name = manifest["name"]

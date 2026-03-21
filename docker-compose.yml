@@ -21,6 +21,7 @@ services:
       - ./agent:/opt/selena-core/agent
       - ./tests:/opt/selena-core/tests
       - ./config:/opt/selena-core/config
+      - ./modules:/opt/selena-core/modules
     env_file:
       - .env
     networks:
