@@ -186,6 +186,7 @@ const en = {
             wifiAdapter: 'Wi-Fi',
             wifiAdapterOn: 'Adapter enabled — scanning for networks',
             wifiAdapterOff: 'Adapter disabled',
+            wifiAdapterNotFound: 'Wi-Fi adapter not detected',
             wifiPassword: 'Network password',
             wifiPasswordPlaceholder: 'Wi-Fi password',
             wifiScanning: 'Scanning networks…',

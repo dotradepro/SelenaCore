@@ -186,6 +186,7 @@ const uk = {
             wifiAdapter: 'Wi-Fi',
             wifiAdapterOn: 'Адаптер увімкнено — сканування мереж',
             wifiAdapterOff: 'Адаптер вимкнено',
+            wifiAdapterNotFound: 'Wi-Fi адаптер не знайдено',
             wifiPassword: 'Пароль мережі',
             wifiPasswordPlaceholder: 'Пароль Wi-Fi',
             wifiScanning: 'Сканування мереж…',

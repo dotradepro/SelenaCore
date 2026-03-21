@@ -412,37 +412,37 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {/* WiFi toggle */}
-                  {wifiAdapterFound && (
-                    <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-800 bg-zinc-900">
-                      <div className="flex items-center gap-3">
-                        {wifiEnabled ? <Wifi size={20} className="text-emerald-500" /> : <WifiOff size={20} className="text-zinc-500" />}
-                        <div>
-                          <span className="font-medium text-sm">{t('wizard.wifiAdapter')}</span>
-                          <p className="text-xs text-zinc-500">{wifiEnabled ? t('wizard.wifiAdapterOn') : t('wizard.wifiAdapterOff')}</p>
-                        </div>
+                  {/* WiFi toggle — always shown */}
+                  <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-800 bg-zinc-900">
+                    <div className="flex items-center gap-3">
+                      {wifiEnabled ? <Wifi size={20} className="text-emerald-500" /> : <WifiOff size={20} className="text-zinc-500" />}
+                      <div>
+                        <span className="font-medium text-sm">{t('wizard.wifiAdapter')}</span>
+                        <p className="text-xs text-zinc-500">
+                          {!wifiAdapterFound ? t('wizard.wifiAdapterNotFound') : wifiEnabled ? t('wizard.wifiAdapterOn') : t('wizard.wifiAdapterOff')}
+                        </p>
                       </div>
-                      <button
-                        onClick={() => toggleWifi(!wifiEnabled)}
-                        disabled={wifiToggling}
-                        className={cn(
-                          "relative w-12 h-7 rounded-full transition-colors duration-200 focus:outline-none",
-                          wifiEnabled ? "bg-emerald-500" : "bg-zinc-700",
-                          wifiToggling && "opacity-50"
-                        )}
-                      >
-                        <span className={cn(
-                          "absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200",
-                          wifiEnabled ? "translate-x-5" : "translate-x-0.5"
-                        )} />
-                        {wifiToggling && (
-                          <span className="absolute inset-0 flex items-center justify-center">
-                            <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          </span>
-                        )}
-                      </button>
                     </div>
-                  )}
+                    <button
+                      onClick={() => toggleWifi(!wifiEnabled)}
+                      disabled={wifiToggling || !wifiAdapterFound}
+                      className={cn(
+                        "relative w-12 h-7 rounded-full transition-colors duration-200 focus:outline-none",
+                        wifiEnabled ? "bg-emerald-500" : "bg-zinc-700",
+                        (wifiToggling || !wifiAdapterFound) && "opacity-50"
+                      )}
+                    >
+                      <span className={cn(
+                        "absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200",
+                        wifiEnabled ? "translate-x-5" : "translate-x-0.5"
+                      )} />
+                      {wifiToggling && (
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        </span>
+                      )}
+                    </button>
+                  </div>
 
                   {!wifiAdapterFound && !ethernetConnected && (
                     <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5">
