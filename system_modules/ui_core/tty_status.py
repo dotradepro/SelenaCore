@@ -42,7 +42,13 @@ def _core_headers() -> dict[str, str]:
 
 
 def _get_local_ip() -> str:
-    """Return best-guess local IP address (non-loopback)."""
+    """Return the host's real IP address.
+    When running inside Docker, reads HOST_IP env var set by the systemd service.
+    Falls back to socket detection (returns container IP inside Docker).
+    """
+    host_ip = os.environ.get("HOST_IP", "").strip()
+    if host_ip and host_ip != "127.0.0.1":
+        return host_ip
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
