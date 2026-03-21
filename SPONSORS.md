@@ -3,7 +3,7 @@
 SmartHome LK is built by a solo developer. If you find this project valuable, consider supporting its development.
 
 **Support the project:**
-- [Ko-fi](https://ko-fi.com/smarthome_lk) — one-time or monthly donations
+- [Ko-fi](https://ko-fi.com/dotradepro) — one-time or monthly donations
 - [GitHub Sponsors](https://github.com/sponsors/dotradepro) — via GitHub
 
 ---

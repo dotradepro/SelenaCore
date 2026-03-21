@@ -239,14 +239,14 @@ SmartHome LK is built by a solo developer. If you believe in what we're building
 
 | Platform | Link | Notes |
 |---|---|---|
-| Ko-fi | [ko-fi.com/smarthome_lk](https://ko-fi.com/smarthome_lk) | One-time · Goal tracker · All tiers |
+| Ko-fi | [ko-fi.com/dotradepro](https://ko-fi.com/dotradepro) | One-time · Goal tracker · All tiers |
 | GitHub Sponsors | [github.com/sponsors/dotradepro](https://github.com/sponsors/dotradepro) | Monthly or one-time |
 
 **Tiers:** Supporter $10 · Early Adopter $50 · Developer $100 (PRO 6mo) · Partner $500 (UNLIMITED forever) · Founding Sponsor $1000+
 
 See [SPONSORS.md](SPONSORS.md) for the full list of supporters and tier benefits.
 
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/smarthome_lk)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/dotradepro)
 
 ---
 
