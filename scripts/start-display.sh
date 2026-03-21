@@ -132,14 +132,8 @@ main() {
             export XCURSOR_SIZE=24
 
             # Move cursor off-screen after cage starts (background helper)
-            (
-                sleep 5
-                # Move cursor far off-screen (negative = top-left corner beyond display)
-                export WAYLAND_DISPLAY="${XDG_RUNTIME_DIR:-/run/user/0}/wayland-0"
-                if command -v wtype >/dev/null 2>&1; then
-                    wtype -M 0 0 -m 32767 32767 2>/dev/null || true
-                fi
-            ) &
+            # Hide cursor after 0.1s of inactivity
+            unclutter -idle 0.1 &
 
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1"
             ;;
