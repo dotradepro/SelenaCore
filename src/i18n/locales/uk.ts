@@ -177,14 +177,19 @@ const uk = {
             languageDesc: 'Мова інтерфейсу та голосового асистента.',
 
             // Step 2 - Wi-Fi
-            wifiTitle: 'Підключення до Wi-Fi',
-            wifiDesc: 'Оберіть мережу для підключення Raspberry Pi до інтернету.',
+            wifiTitle: 'Підключення до інтернету',
+            wifiDesc: 'Підключіться через Ethernet-кабель або мережу Wi-Fi.',
+            wifiAdapter: 'Wi-Fi',
+            wifiAdapterOn: 'Адаптер увімкнено — сканування мереж',
+            wifiAdapterOff: 'Адаптер вимкнено',
             wifiPassword: 'Пароль мережі',
             wifiPasswordPlaceholder: 'Пароль Wi-Fi',
             wifiScanning: 'Сканування мереж…',
-            wifiNotAvailable: 'Керування Wi-Fi недоступне.',
+            wifiNotAvailable: 'Wi-Fi адаптер не знайдено і Ethernet не підключено.',
             wifiNoNetworks: 'Мережі не знайдено. Оновіть.',
             wifiConnected: 'Підключено',
+            ethernetConnected: 'Ethernet підключено',
+            ethernetSkipHint: 'Інтернет доступний через кабель. Ви можете пропустити Wi-Fi або налаштувати як резерв.',
 
             // Step 3 - Device name
             deviceNameTitle: 'Назва пристрою',

@@ -177,14 +177,19 @@ const en = {
             languageDesc: 'Interface and voice assistant language.',
 
             // Step 2 - Wi-Fi
-            wifiTitle: 'Connect to Wi-Fi',
-            wifiDesc: 'Select a network to connect Raspberry Pi to the internet.',
+            wifiTitle: 'Internet connection',
+            wifiDesc: 'Connect with Ethernet cable or Wi-Fi network.',
+            wifiAdapter: 'Wi-Fi',
+            wifiAdapterOn: 'Adapter enabled — scanning for networks',
+            wifiAdapterOff: 'Adapter disabled',
             wifiPassword: 'Network password',
             wifiPasswordPlaceholder: 'Wi-Fi password',
             wifiScanning: 'Scanning networks…',
-            wifiNotAvailable: 'Wi-Fi management is not available.',
+            wifiNotAvailable: 'No Wi-Fi adapter detected and no Ethernet connected.',
             wifiNoNetworks: 'No networks found. Pull to refresh.',
             wifiConnected: 'Connected',
+            ethernetConnected: 'Ethernet connected',
+            ethernetSkipHint: 'Internet available via cable. You can skip Wi-Fi setup or configure it as backup.',
 
             // Step 3 - Device name
             deviceNameTitle: 'Device name',

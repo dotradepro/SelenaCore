@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
@@ -97,6 +97,12 @@ export default function Wizard() {
   const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
   const [wifiLoading, setWifiLoading] = useState(false);
   const [wifiAvailable, setWifiAvailable] = useState(true);
+  const [wifiEnabled, setWifiEnabled] = useState(false);
+  const [wifiToggling, setWifiToggling] = useState(false);
+  const [wifiAdapterFound, setWifiAdapterFound] = useState(true);
+  const [ethernetConnected, setEthernetConnected] = useState(false);
+  const [ethernetIp, setEthernetIp] = useState<string | null>(null);
+  const [hasInternet, setHasInternet] = useState(false);
   const [sttModels, setSttModels] = useState<SttModel[]>([]);
   const [sttRamInfo, setSttRamInfo] = useState({ total: 0, available: 0 });
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
@@ -120,11 +126,31 @@ export default function Wizard() {
 
   // Fetch WiFi networks when entering step 2
   useEffect(() => {
-    if (step === 2) fetchWifiNetworks();
+    if (step === 2) {
+      fetchNetworkStatus();
+    }
     if (step === 4 && !tzData) fetchTimezones();
     if (step === 5 && sttModels.length === 0) fetchSttModels();
     if (step === 6 && ttsVoices.length === 0) fetchTtsVoices();
   }, [step]);
+
+  const fetchNetworkStatus = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/network/status');
+      const data = await res.json();
+      setEthernetConnected(data.ethernet?.connected ?? false);
+      setEthernetIp(data.ethernet?.ip ?? null);
+      setHasInternet(data.internet ?? false);
+      setWifiEnabled(data.wifi?.enabled ?? false);
+      setWifiAdapterFound(data.wifi?.adapter_found ?? false);
+      if (data.wifi?.enabled) {
+        fetchWifiNetworks();
+      }
+    } catch {
+      // fallback — try wifi scan directly
+      fetchWifiNetworks();
+    }
+  };
 
   const fetchWifiNetworks = async () => {
     setWifiLoading(true);
@@ -137,6 +163,32 @@ export default function Wizard() {
       setWifiNetworks([]);
     } finally {
       setWifiLoading(false);
+    }
+  };
+
+  const toggleWifi = async (enable: boolean) => {
+    setWifiToggling(true);
+    try {
+      const res = await fetch('/api/ui/setup/wifi/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable }),
+      });
+      if (res.ok) {
+        setWifiEnabled(enable);
+        if (enable) {
+          // Wait a moment for the adapter to come up, then scan
+          await new Promise(r => setTimeout(r, 2000));
+          await fetchWifiNetworks();
+        } else {
+          setWifiNetworks([]);
+          setFormData(prev => ({ ...prev, wifi: '', wifiPassword: '' }));
+        }
+      }
+    } catch {
+      // toggle failed silently
+    } finally {
+      setWifiToggling(false);
     }
   };
 
@@ -227,7 +279,7 @@ export default function Wizard() {
   };
 
   const skipStep = async () => {
-    // Steps 8 and 9 can be skipped — send empty data
+    // Steps 2, 8 and 9 can be skipped
     const mapping = STEP_MAP[step];
     if (!mapping) return;
     setError(null);
@@ -347,63 +399,114 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">{t('wizard.wifiTitle')}</h2>
                   <p className="text-zinc-400 text-sm">{t('wizard.wifiDesc')}</p>
-                  {!wifiAvailable && (
+
+                  {/* Ethernet status banner */}
+                  {ethernetConnected && (
+                    <div className="flex items-center gap-3 text-sm bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-4 py-3">
+                      <Cable size={18} className="text-emerald-500 shrink-0" />
+                      <div>
+                        <span className="text-emerald-400 font-medium">{t('wizard.ethernetConnected')}</span>
+                        {ethernetIp && <span className="text-zinc-400 ml-2">IP: {ethernetIp}</span>}
+                        <p className="text-zinc-500 text-xs mt-0.5">{t('wizard.ethernetSkipHint')}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* WiFi toggle */}
+                  {wifiAdapterFound && (
+                    <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-800 bg-zinc-900">
+                      <div className="flex items-center gap-3">
+                        {wifiEnabled ? <Wifi size={20} className="text-emerald-500" /> : <WifiOff size={20} className="text-zinc-500" />}
+                        <div>
+                          <span className="font-medium text-sm">{t('wizard.wifiAdapter')}</span>
+                          <p className="text-xs text-zinc-500">{wifiEnabled ? t('wizard.wifiAdapterOn') : t('wizard.wifiAdapterOff')}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleWifi(!wifiEnabled)}
+                        disabled={wifiToggling}
+                        className={cn(
+                          "relative w-12 h-7 rounded-full transition-colors duration-200 focus:outline-none",
+                          wifiEnabled ? "bg-emerald-500" : "bg-zinc-700",
+                          wifiToggling && "opacity-50"
+                        )}
+                      >
+                        <span className={cn(
+                          "absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform duration-200",
+                          wifiEnabled ? "translate-x-5" : "translate-x-0.5"
+                        )} />
+                        {wifiToggling && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {!wifiAdapterFound && !ethernetConnected && (
                     <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5">
                       {t('wizard.wifiNotAvailable')}
                     </div>
                   )}
-                  <div className="flex justify-end">
-                    <button onClick={fetchWifiNetworks} disabled={wifiLoading}
-                      className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors">
-                      <RefreshCw size={14} className={wifiLoading ? 'animate-spin' : ''} />
-                      {t('common.refresh')}
-                    </button>
-                  </div>
-                  {wifiLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                      <span className="ml-3 text-sm text-zinc-400">{t('wizard.wifiScanning')}</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
-                      {wifiNetworks.length > 0 ? wifiNetworks.map(net => (
-                        <button
-                          key={net.ssid}
-                          onClick={() => setFormData({ ...formData, wifi: net.ssid })}
-                          className={cn(
-                            "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
-                            formData.wifi === net.ssid
-                              ? "border-emerald-500 bg-emerald-500/10"
-                              : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Wifi size={20} className={formData.wifi === net.ssid ? "text-emerald-500" : "text-zinc-400"} />
-                            <span className="font-medium">{net.ssid}</span>
-                            {net.security && <Lock size={14} className="text-zinc-500" />}
-                            {net.connected && <span className="text-xs text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">{t('wizard.wifiConnected')}</span>}
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <SignalBars signal={net.signal} />
-                            {formData.wifi === net.ssid && <Check size={20} className="text-emerald-500" />}
-                          </div>
+
+                  {/* WiFi networks list — only when enabled */}
+                  {wifiEnabled && (
+                    <>
+                      <div className="flex justify-end">
+                        <button onClick={fetchWifiNetworks} disabled={wifiLoading}
+                          className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors">
+                          <RefreshCw size={14} className={wifiLoading ? 'animate-spin' : ''} />
+                          {t('common.refresh')}
                         </button>
-                      )) : (
-                        <div className="text-center py-8 text-zinc-500 text-sm">{t('wizard.wifiNoNetworks')}</div>
+                      </div>
+                      {wifiLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                          <span className="ml-3 text-sm text-zinc-400">{t('wizard.wifiScanning')}</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                          {wifiNetworks.length > 0 ? wifiNetworks.map(net => (
+                            <button
+                              key={net.ssid}
+                              onClick={() => setFormData({ ...formData, wifi: net.ssid })}
+                              className={cn(
+                                "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
+                                formData.wifi === net.ssid
+                                  ? "border-emerald-500 bg-emerald-500/10"
+                                  : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                              )}
+                            >
+                              <div className="flex items-center gap-3">
+                                <Wifi size={20} className={formData.wifi === net.ssid ? "text-emerald-500" : "text-zinc-400"} />
+                                <span className="font-medium">{net.ssid}</span>
+                                {net.security && <Lock size={14} className="text-zinc-500" />}
+                                {net.connected && <span className="text-xs text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">{t('wizard.wifiConnected')}</span>}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <SignalBars signal={net.signal} />
+                                {formData.wifi === net.ssid && <Check size={20} className="text-emerald-500" />}
+                              </div>
+                            </button>
+                          )) : (
+                            <div className="text-center py-8 text-zinc-500 text-sm">{t('wizard.wifiNoNetworks')}</div>
+                          )}
+                        </div>
                       )}
-                    </div>
-                  )}
-                  {formData.wifi && (
-                    <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.wifiPassword')}</label>
-                      <input
-                        type="password"
-                        value={formData.wifiPassword}
-                        onChange={(e) => setFormData({ ...formData, wifiPassword: e.target.value })}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                        placeholder={t('wizard.wifiPasswordPlaceholder')}
-                      />
-                    </div>
+                      {formData.wifi && (
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.wifiPassword')}</label>
+                          <input
+                            type="password"
+                            value={formData.wifiPassword}
+                            onChange={(e) => setFormData({ ...formData, wifiPassword: e.target.value })}
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+                            placeholder={t('wizard.wifiPasswordPlaceholder')}
+                          />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -650,7 +753,7 @@ export default function Wizard() {
                 {t('common.back')}
               </button>
               <div className="flex items-center gap-3">
-                {(step === 8 || step === 9) && (
+                {(step === 2 || step === 8 || step === 9) && (
                   <button
                     onClick={skipStep}
                     disabled={submitting}

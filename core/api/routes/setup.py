@@ -199,6 +199,132 @@ async def wifi_status() -> dict[str, Any]:
     return {"connected": ip != "unknown", "ssid": ssid, "ip": ip}
 
 
+@router.get("/wifi/enabled")
+async def wifi_enabled() -> dict[str, Any]:
+    """Check if the WiFi adapter is enabled."""
+    if not _nmcli_available():
+        return {"enabled": False, "adapter_found": False}
+    try:
+        proc = subprocess.run(
+            ["nmcli", "-t", "-f", "TYPE,STATE", "device"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in proc.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2 and parts[0] == "wifi":
+                state = parts[1].strip()
+                return {
+                    "enabled": state not in ("unavailable", "unmanaged"),
+                    "adapter_found": True,
+                    "state": state,
+                }
+        return {"enabled": False, "adapter_found": False}
+    except Exception as exc:
+        logger.warning("WiFi enabled check failed: %s", exc)
+        return {"enabled": False, "adapter_found": False}
+
+
+@router.post("/wifi/toggle")
+async def wifi_toggle(data: dict[str, Any]) -> dict[str, Any]:
+    """Enable or disable the WiFi adapter via nmcli."""
+    if not _nmcli_available():
+        raise HTTPException(status_code=503, detail="NetworkManager not available")
+
+    enable = bool(data.get("enable", True))
+    action = "on" if enable else "off"
+
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _toggle_wifi_sync, action)
+        return {"enabled": enable, "message": f"WiFi turned {action}"}
+    except Exception as exc:
+        logger.error("WiFi toggle failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+def _toggle_wifi_sync(action: str) -> None:
+    """Enable/disable WiFi via nmcli radio."""
+    proc = subprocess.run(
+        ["nmcli", "radio", "wifi", action],
+        capture_output=True, text=True, timeout=10,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"nmcli radio wifi {action} failed: {proc.stderr.strip()}")
+
+
+@router.get("/network/status")
+async def network_status() -> dict[str, Any]:
+    """Full network status: ethernet, WiFi, internet connectivity."""
+    result: dict[str, Any] = {
+        "internet": False,
+        "ethernet": {"connected": False, "ip": None, "interface": None},
+        "wifi": {"connected": False, "ssid": None, "ip": None, "enabled": False, "adapter_found": False},
+    }
+
+    # Check internet connectivity
+    try:
+        proc = subprocess.run(
+            ["ping", "-c", "1", "-W", "2", "8.8.8.8"],
+            capture_output=True, timeout=5,
+        )
+        result["internet"] = proc.returncode == 0
+    except Exception:
+        pass
+
+    if not _nmcli_available():
+        # Fallback: still try to detect IP
+        ip = _get_current_ip()
+        if ip != "unknown":
+            result["ethernet"]["connected"] = True
+            result["ethernet"]["ip"] = ip
+        return result
+
+    # Parse nmcli device status
+    try:
+        proc = subprocess.run(
+            ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in proc.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) < 3:
+                continue
+            dev, dtype, state = parts[0], parts[1], parts[2]
+            conn = parts[3] if len(parts) > 3 else ""
+
+            if dtype == "ethernet" and state == "connected":
+                eth_ip = _get_interface_ip(dev)
+                result["ethernet"] = {
+                    "connected": True,
+                    "ip": eth_ip,
+                    "interface": dev,
+                }
+            elif dtype == "wifi":
+                result["wifi"]["adapter_found"] = True
+                result["wifi"]["enabled"] = state not in ("unavailable", "unmanaged")
+                if state == "connected":
+                    result["wifi"]["connected"] = True
+                    result["wifi"]["ssid"] = conn
+                    result["wifi"]["ip"] = _get_interface_ip(dev)
+    except Exception as exc:
+        logger.warning("Network status check failed: %s", exc)
+
+    return result
+
+
+def _get_interface_ip(interface: str) -> str | None:
+    """Get IP address of a specific network interface."""
+    try:
+        proc = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", interface],
+            capture_output=True, text=True, timeout=5,
+        )
+        match = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", proc.stdout)
+        return match.group(1) if match else None
+    except Exception:
+        return None
+
+
 # ================================================================== #
 #  Audio Devices                                                       #
 # ================================================================== #
