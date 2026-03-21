@@ -119,6 +119,20 @@ export default function Wizard() {
   const [tzSearch, setTzSearch] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
+  const [formData, setFormData] = useState<FormData>({
+    lang: selectedLanguage,
+    wifi: '',
+    wifiPassword: '',
+    name: t('wizard.defaultHomeName'),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
+    stt: 'base',
+    tts: 'ru_RU-irina-medium',
+    username: 'admin',
+    pin: '',
+    platformHash: '',
+    importSource: '',
+  });
+
   // Virtual keyboard state
   type KbTarget = 'wifiPassword' | 'name' | 'tzSearch' | 'username' | 'pin' | null;
   const [kbTarget, setKbTarget] = useState<KbTarget>(null);
@@ -148,11 +162,11 @@ export default function Wizard() {
         setFormData(prev => ({ ...prev, username: prev.username + key }));
         break;
       case 'pin':
-        if (/\d/.test(key) && formData.pin.length < 8)
-          setFormData(prev => ({ ...prev, pin: prev.pin + key }));
+        if (/\d/.test(key))
+          setFormData(prev => prev.pin.length < 8 ? ({ ...prev, pin: prev.pin + key }) : prev);
         break;
     }
-  }, [kbTarget, formData.pin.length]);
+  }, [kbTarget]);
 
   const kbBackspace = useCallback(() => {
     if (!kbTarget) return;
@@ -179,20 +193,6 @@ export default function Wizard() {
   const kbEnter = useCallback(() => {
     closeKb();
   }, [closeKb]);
-
-  const [formData, setFormData] = useState<FormData>({
-    lang: selectedLanguage,
-    wifi: '',
-    wifiPassword: '',
-    name: t('wizard.defaultHomeName'),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
-    stt: 'base',
-    tts: 'ru_RU-irina-medium',
-    username: 'admin',
-    pin: '',
-    platformHash: '',
-    importSource: '',
-  });
 
   // Fetch WiFi networks when entering step 2
   useEffect(() => {
