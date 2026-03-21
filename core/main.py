@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
-from core.api.routes import devices, events, integrity, system
+from core.api.routes import devices, events, integrity, modules, system
 from core.config import get_settings
 from core.eventbus.bus import get_event_bus
 from core.eventbus.types import CORE_STARTUP, CORE_SHUTDOWN
@@ -108,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(devices.router, prefix=api_prefix)
     app.include_router(events.router, prefix=api_prefix)
     app.include_router(integrity.router, prefix=api_prefix)
+    app.include_router(modules.router, prefix=api_prefix)
 
     return app
 
