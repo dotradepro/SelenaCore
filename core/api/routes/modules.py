@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -201,11 +201,11 @@ async def start_module(
     return {"name": name, "status": ModuleStatus.RUNNING}
 
 
-@router.delete("/{name}", status_code=204)
+@router.delete("/{name}")
 async def remove_module(
     name: str,
     _token: str = Depends(verify_module_token),
-) -> None:
+) -> Response:
     sandbox = get_sandbox()
     info = sandbox.get_module(name)
     if info is None:
@@ -218,3 +218,4 @@ async def remove_module(
     await bus.publish(
         type=MODULE_REMOVED, source="core.module_loader", payload={"name": name}
     )
+    return Response(status_code=204)
