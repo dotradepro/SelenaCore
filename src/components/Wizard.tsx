@@ -807,7 +807,7 @@ export default function Wizard() {
                     {t('common.skip')}
                   </button>
                 )}
-                {step === 2 && ethernetConnected && (
+                {step === 2 && !wifiAdapterFound && ethernetConnected && (
                   <button
                     onClick={skipStep}
                     disabled={submitting}
@@ -820,7 +820,7 @@ export default function Wizard() {
                   onClick={nextStep}
                   disabled={
                     submitting ||
-                    (step === 2 && !ethernetConnected && !(wifiConnected && wifiConnectedSsid === formData.wifi)) ||
+                    (step === 2 && !(wifiConnected && wifiConnectedSsid === formData.wifi) && !(ethernetConnected && !wifiAdapterFound)) ||
                     (step === 7 && (!formData.username || formData.pin.length < 4))
                   }
                   className="px-5 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] justify-center"
