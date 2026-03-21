@@ -4,7 +4,11 @@ system_modules/ui_core/routes/dashboard.py — Dashboard API routes
 Provides:
   - GET /api/ui/dashboard — aggregated dashboard state
   - GET /api/ui/devices — proxied device list from Core API
+  - PATCH /api/ui/devices/{device_id}/state — update device state
   - GET /api/ui/modules — proxied module list from Core API
+  - POST /api/ui/modules/{name}/stop — stop module
+  - POST /api/ui/modules/{name}/start — start module
+  - DELETE /api/ui/modules/{name} — remove module
   - GET /api/ui/system — system health and hardware info
 """
 from __future__ import annotations
@@ -15,8 +19,8 @@ import platform as _platform
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ui", tags=["dashboard"])
@@ -46,6 +50,46 @@ async def _core_get(path: str) -> Any:
             resp = await client.get(url, headers=_core_headers())
             resp.raise_for_status()
             return resp.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Core API unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+
+
+async def _core_post(path: str, body: Any = None) -> Any:
+    url = f"{CORE_API}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(url, headers=_core_headers(), json=body)
+            resp.raise_for_status()
+            if resp.status_code == 204:
+                return None
+            return resp.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Core API unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+
+
+async def _core_patch(path: str, body: Any) -> Any:
+    url = f"{CORE_API}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.patch(url, headers=_core_headers(), json=body)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Core API unreachable: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=str(e))
+
+
+async def _core_delete(path: str) -> None:
+    url = f"{CORE_API}{path}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.delete(url, headers=_core_headers())
+            resp.raise_for_status()
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Core API unreachable: {e}")
     except httpx.HTTPStatusError as e:
@@ -126,3 +170,32 @@ async def get_system_info() -> JSONResponse:
         pass
 
     return JSONResponse({"hardware": hw, "core": health})
+
+
+@router.patch("/devices/{device_id}/state")
+async def update_device_state(device_id: str, request: Request) -> JSONResponse:
+    """Proxy PATCH /api/v1/devices/{device_id}/state to Core API."""
+    body = await request.json()
+    data = await _core_patch(f"/devices/{device_id}/state", body)
+    return JSONResponse(data)
+
+
+@router.post("/modules/{name}/stop")
+async def stop_module(name: str) -> JSONResponse:
+    """Proxy POST /api/v1/modules/{name}/stop to Core API."""
+    data = await _core_post(f"/modules/{name}/stop")
+    return JSONResponse(data or {"name": name, "status": "STOPPED"})
+
+
+@router.post("/modules/{name}/start")
+async def start_module(name: str) -> JSONResponse:
+    """Proxy POST /api/v1/modules/{name}/start to Core API."""
+    data = await _core_post(f"/modules/{name}/start")
+    return JSONResponse(data or {"name": name, "status": "RUNNING"})
+
+
+@router.delete("/modules/{name}")
+async def remove_module(name: str) -> Response:
+    """Proxy DELETE /api/v1/modules/{name} to Core API."""
+    await _core_delete(f"/modules/{name}")
+    return Response(status_code=204)

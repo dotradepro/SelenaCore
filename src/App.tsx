@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import Modules from './components/Modules';
+import Devices from './components/Devices';
 
 export default function App() {
   const isConfigured = useStore((state) => state.isConfigured);
@@ -18,6 +19,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/devices" element={<Devices />} />
           <Route path="/modules" element={<Modules />} />
           <Route path="/settings/*" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />

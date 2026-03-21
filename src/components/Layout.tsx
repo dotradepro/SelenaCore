@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Settings, Box, Activity, Mic, ShieldAlert } from 'lucide-react';
+import { Home, Settings, Box, Activity, Mic, ShieldAlert, Server } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 
@@ -10,6 +10,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { icon: Home, label: 'Дашборд', path: '/' },
+    { icon: Server, label: 'Устройства', path: '/devices' },
     { icon: Box, label: 'Модули', path: '/modules' },
     { icon: Settings, label: 'Настройки', path: '/settings' },
   ];
@@ -30,7 +31,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         <nav className="flex-1 px-4 space-y-1">
           {navItems.map((item) => {
-            const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
+            const isActive = item.path === '/'
+              ? location.pathname === '/'
+              : location.pathname === item.path || location.pathname.startsWith(item.path + '/');
             return (
               <Link
                 key={item.path}
