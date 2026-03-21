@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,7 +69,7 @@ class DeviceListResponse(BaseModel):
 
 # --- Dependency helpers ---
 
-async def get_db_session(request) -> AsyncSession:
+async def get_db_session(request: Request) -> AsyncSession:
     """Get database session from app state."""
     from sqlalchemy.ext.asyncio import async_sessionmaker
     factory: async_sessionmaker = request.app.state.db_session_factory
@@ -78,7 +78,7 @@ async def get_db_session(request) -> AsyncSession:
 
 
 async def get_registry(
-    request,
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> DeviceRegistry:
     return DeviceRegistry(session)
@@ -98,7 +98,7 @@ async def list_devices(
 @router.post("", response_model=DeviceResponse, status_code=201)
 async def create_device(
     body: DeviceCreate,
-    request,
+    request: Request,
     _token: str = Depends(verify_module_token),
 ) -> DeviceResponse:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -138,7 +138,7 @@ async def get_device(
 async def update_device_state(
     device_id: str,
     body: StateUpdate,
-    request,
+    request: Request,
     _token: str = Depends(verify_module_token),
 ) -> DeviceResponse:
     from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -170,7 +170,7 @@ async def update_device_state(
 @router.delete("/{device_id}")
 async def delete_device(
     device_id: str,
-    request,
+    request: Request,
     _token: str = Depends(verify_module_token),
 ) -> Response:
     from sqlalchemy.ext.asyncio import async_sessionmaker
