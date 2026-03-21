@@ -42,9 +42,23 @@ export interface Health {
   integrity: string;
 }
 
+export interface StepStatus {
+  required: boolean;
+  done: boolean;
+  label: string;
+}
+
+export interface WizardRequirements {
+  can_proceed: boolean;
+  wizard_completed: boolean;
+  steps: Record<string, StepStatus>;
+}
+
 interface AppState {
   isConfigured: boolean;
   wizardLoading: boolean;
+  setupStage: 'landing' | 'wizard';
+  wizardRequirements: WizardRequirements | null;
   user: { name: string; role: string } | null;
   health: Health | null;
   stats: SystemStats | null;
@@ -54,7 +68,9 @@ interface AppState {
   modulesLoading: boolean;
   setConfigured: (status: boolean) => void;
   setUser: (user: { name: string; role: string }) => void;
+  setSetupStage: (stage: 'landing' | 'wizard') => void;
   fetchWizardStatus: () => Promise<void>;
+  fetchWizardRequirements: () => Promise<void>;
   fetchHealth: () => Promise<void>;
   fetchStats: () => Promise<void>;
   fetchDevices: () => Promise<void>;
@@ -75,6 +91,8 @@ async function apiFetch(path: string, opts?: RequestInit) {
 export const useStore = create<AppState>((set, get) => ({
   isConfigured: false,
   wizardLoading: true,
+  setupStage: 'landing',
+  wizardRequirements: null,
   user: null,
   health: null,
   stats: null,
@@ -85,6 +103,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
+  setSetupStage: (stage) => set({ setupStage: stage }),
 
   fetchWizardStatus: async () => {
     set({ wizardLoading: true });
@@ -96,6 +115,15 @@ export const useStore = create<AppState>((set, get) => ({
       set({ isConfigured: false });
     } finally {
       set({ wizardLoading: false });
+    }
+  },
+
+  fetchWizardRequirements: async () => {
+    try {
+      const data: WizardRequirements = await apiFetch('/api/ui/wizard/requirements');
+      set({ wizardRequirements: data });
+    } catch (e) {
+      console.error('fetchWizardRequirements failed', e);
     }
   },
 

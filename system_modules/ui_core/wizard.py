@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -116,6 +118,63 @@ async def wizard_reset() -> dict:
     if WIZARD_STATE_FILE.exists():
         WIZARD_STATE_FILE.unlink()
     return {"status": "reset", "message": "Wizard state cleared"}
+
+
+@router.get("/requirements")
+async def wizard_requirements() -> dict:
+    """Return per-step completion status and whether setup can be skipped."""
+    state = _load_state()
+    step_data = state.get("data", {})
+
+    def _internet_ok() -> bool:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2)
+            s.connect(("8.8.8.8", 53))
+            s.close()
+            return True
+        except Exception:
+            return False
+
+    admin_d = step_data.get("admin_user", {})
+    admin_done = bool(admin_d.get("username") and admin_d.get("pin"))
+
+    device_d = step_data.get("device_name", {})
+    device_done = bool(device_d.get("name"))
+
+    platform_d = step_data.get("platform", {})
+    platform_done = bool(platform_d.get("device_hash"))
+
+    steps = {
+        "internet": {
+            "required": False,
+            "done": _internet_ok(),
+            "label": "Подключение к сети",
+        },
+        "admin_user": {
+            "required": True,
+            "done": admin_done,
+            "label": "Учётная запись администратора",
+        },
+        "device_name": {
+            "required": False,
+            "done": device_done,
+            "label": "Имя устройства",
+        },
+        "platform": {
+            "required": False,
+            "done": platform_done,
+            "label": "Платформа SmartHome LK",
+        },
+    }
+
+    can_proceed = all(v["done"] for v in steps.values() if v["required"])
+
+    return {
+        "can_proceed": can_proceed,
+        "wizard_completed": state.get("completed", False),
+        "steps": steps,
+    }
 
 
 # ------------------------------------------------------------------ #

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import Wizard from './components/Wizard';
+import SetupLanding from './components/SetupLanding';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
@@ -11,11 +12,16 @@ import Devices from './components/Devices';
 export default function App() {
   const isConfigured = useStore((state) => state.isConfigured);
   const wizardLoading = useStore((state) => state.wizardLoading);
+  const setupStage = useStore((state) => state.setupStage);
+  const wizardRequirements = useStore((state) => state.wizardRequirements);
+  const setSetupStage = useStore((state) => state.setSetupStage);
   const fetchWizardStatus = useStore((state) => state.fetchWizardStatus);
+  const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
 
   useEffect(() => {
     fetchWizardStatus();
-  }, [fetchWizardStatus]);
+    fetchWizardRequirements();
+  }, [fetchWizardStatus, fetchWizardRequirements]);
 
   if (wizardLoading) {
     return (
@@ -28,8 +34,15 @@ export default function App() {
     );
   }
 
-  if (!isConfigured) {
-    return <Wizard />;
+  // Block dashboard if wizard not done OR required steps missing
+  const canProceed = wizardRequirements?.can_proceed ?? false;
+  const shouldBlock = !isConfigured || !canProceed;
+
+  if (shouldBlock) {
+    if (setupStage === 'wizard') {
+      return <Wizard />;
+    }
+    return <SetupLanding onStartWizard={() => setSetupStage('wizard')} />;
   }
 
   return (

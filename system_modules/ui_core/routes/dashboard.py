@@ -199,3 +199,42 @@ async def remove_module(name: str) -> Response:
     """Proxy DELETE /api/v1/modules/{name} to Core API."""
     await _core_delete(f"/modules/{name}")
     return Response(status_code=204)
+
+
+@router.get("/setup/qr")
+async def get_setup_qr() -> JSONResponse:
+    """
+    Return QR code data (URL + matrix) for the setup landing screen.
+    The matrix is a list of bool rows that the frontend renders as an inline SVG.
+    HOST_IP env var is set by the systemd display service so the URL is correct
+    even when running inside Docker.
+    """
+    import socket as _socket
+
+    host_ip = os.environ.get("HOST_IP", "").strip()
+    if not host_ip or host_ip == "127.0.0.1":
+        try:
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                host_ip = s.getsockname()[0]
+        except Exception:
+            host_ip = "127.0.0.1"
+
+    ui_url = f"http://{host_ip}:8080"
+
+    try:
+        import qrcode  # type: ignore
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=2,
+        )
+        qr.add_data(ui_url)
+        qr.make(fit=True)
+        matrix = [[bool(cell) for cell in row] for row in qr.get_matrix()]
+        return JSONResponse({"url": ui_url, "matrix": matrix, "size": len(matrix)})
+    except Exception as e:
+        logger.error("QR generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
