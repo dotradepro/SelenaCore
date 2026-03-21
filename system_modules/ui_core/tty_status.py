@@ -88,49 +88,162 @@ def _qr_ascii(url: str) -> list[str]:
             lines.append(line)
         return lines
     except ImportError:
-        # Fallback: simple box with URL if qrcode not installed
         url_str = f"  {url}  "
         border = "+" + "-" * len(url_str) + "+"
         return [border, f"|{url_str}|", border]
 
 
+def _fetch_requirements() -> dict[str, Any]:
+    """Fetch wizard requirements synchronously (for TTY render)."""
+    import json as _json
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            "http://localhost:8080/api/ui/wizard/requirements",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return _json.loads(resp.read())
+    except Exception:
+        return {}
+
+
+# ── ANSI helpers ──────────────────────────────────────────────────
+
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_WHITE = "\033[97m"
+_GRAY = "\033[90m"
+_GREEN = "\033[32m"
+_RED = "\033[31m"
+_BLUE = "\033[34m"
+_CYAN = "\033[36m"
+_BG_DARK = "\033[48;5;234m"  # dark gray bg
+_BG_DARKER = "\033[48;5;232m"  # near-black bg
+
+
+def _pad(text: str, width: int) -> str:
+    """Pad text to width accounting for ANSI escape codes."""
+    visible = len(text.encode("utf-8").decode("utf-8"))
+    # strip ansi for length calc
+    import re
+    clean = re.sub(r"\033\[[0-9;]*m", "", text)
+    pad_needed = width - len(clean)
+    return text + " " * max(0, pad_needed)
+
+
 async def render_setup_screen() -> None:
     """
-    First-run setup screen — shown on TTY when wizard is not completed.
-    Displays a QR code, local IP, and instructions to open the browser.
+    First-run setup screen — split-panel layout matching browser SetupLanding.
+
+    Left panel:  QR code + "Отсканируйте для настройки"
+    Right panel: Status checklist + URL + instructions
     """
     hostname = os.uname().nodename
     local_ip = _get_local_ip()
     ui_url = UI_URL_BASE.replace("localhost", local_ip).replace("127.0.0.1", local_ip)
 
+    LEFT_W = 62   # left panel inner width
+    RIGHT_W = 62  # right panel inner width
+
     while True:
-        # Re-check on each refresh so we switch to stats once wizard completes
         if _is_wizard_done():
             return
 
         qr_lines = _qr_ascii(ui_url)
+        requirements = _fetch_requirements()
+        steps = requirements.get("steps", {})
+
+        # ── Build left panel lines ──
+        left: list[str] = []
+        left.append("")
+        left.append(f"{_DIM}МОБИЛЬНАЯ НАСТРОЙКА{_RESET}")
+        left.append("")
+
+        # Center QR block
+        for ql in qr_lines:
+            left.append(ql)
+
+        left.append("")
+        left.append(f"{_BOLD}{_WHITE}Отсканируйте для настройки{_RESET}")
+        left.append(f"{_DIM}{ui_url}{_RESET}")
+        left.append("")
+
+        # ── Build right panel lines ──
+        right: list[str] = []
+        right.append("")
+        right.append(f"{_DIM}SELENACORE{_RESET}")
+        right.append("")
+        right.append(f"{_BOLD}{_WHITE}Продолжить настройку{_RESET}")
+        right.append(f"{_BOLD}{_WHITE}на устройстве{_RESET}")
+        right.append("")
+        right.append(f"{_DIM}Откройте браузер или отсканируйте QR{_RESET}")
+        right.append("")
+        right.append(f"{_DIM}── СТАТУС НАСТРОЙКИ ──{_RESET}")
+        right.append("")
+
+        # Checklist
+        step_icons = {
+            "internet": "◉ Сеть",
+            "admin_user": "◉ Администратор",
+            "device_name": "◉ Имя устройства",
+            "platform": "◉ Платформа",
+        }
+        for sid, info in steps.items():
+            label = step_icons.get(sid, f"◉ {info.get('label', sid)}")
+            done = info.get("done", False)
+            required = info.get("required", False)
+            if done:
+                icon = f"{_GREEN}✔{_RESET}"
+                text = f"{_WHITE}{label}{_RESET}"
+            elif required:
+                icon = f"{_RED}✘{_RESET}"
+                text = f"{_RED}{label}{_RESET}  {_DIM}{_RED}← обязательно{_RESET}"
+            else:
+                icon = f"{_DIM}○{_RESET}"
+                text = f"{_DIM}{label}{_RESET}"
+            right.append(f"  {icon} {text}")
+
+        right.append("")
+        right.append(f"{_DIM}─────────────────────────────────{_RESET}")
+        right.append("")
+        right.append(f"  {_CYAN}▸{_RESET} {_WHITE}{ui_url}{_RESET}")
+        right.append(f"  {_DIM}IP: {local_ip}{_RESET}")
+        right.append("")
+        right.append(f"{_DIM}Экран обновится автоматически{_RESET}")
+        right.append(f"{_DIM}после завершения настройки.{_RESET}")
+        right.append("")
+
+        # ── Equalize heights ──
+        max_h = max(len(left), len(right))
+        while len(left) < max_h:
+            left.append("")
+        while len(right) < max_h:
+            right.append("")
+
+        # ── Render ──
         _clear()
-        print("╔══════════════════════════════════════════════════════════╗")
-        print(f"║   SelenaCore  •  {hostname:<37}  ║")
-        print("╚══════════════════════════════════════════════════════════╝")
-        print()
-        print("  ┌─────────────────────────────────────────┐")
-        print("  │   ПЕРВЫЙ ЗАПУСК — НАСТРОЙКА СИСТЕМЫ    │")
-        print("  └─────────────────────────────────────────┘")
-        print()
-        print("  Отсканируйте QR-код для настройки через браузер:")
-        print()
-        for line in qr_lines:
-            print(f"    {line}")
-        print()
-        print(f"  Или откройте в браузере:  {ui_url}")
-        print(f"  IP адрес устройства    :  {local_ip}")
-        print()
-        print("  ─────────────────────────────────────────────────────────")
-        print("  Следуйте инструкциям мастера настройки в браузере.")
-        print("  Этот экран обновится автоматически после завершения.")
-        print()
-        print(f"  ─── {time.strftime('%H:%M:%S')} ───")
+
+        # Top bar
+        total_w = LEFT_W + RIGHT_W + 3  # 3 = "│" separators
+        top = f"{'─' * total_w}"
+        print(f"{_DIM}{top}{_RESET}")
+        title = f"  SelenaCore  •  {hostname}  •  Первый запуск"
+        print(f"{_BOLD}{_WHITE}{_pad(title, total_w)}{_RESET}")
+        print(f"{_DIM}{top}{_RESET}")
+
+        # Side-by-side panels
+        sep = f"{_DIM}│{_RESET}"
+        for i in range(max_h):
+            l_line = _pad(f"  {left[i]}", LEFT_W)
+            r_line = _pad(f"  {right[i]}", RIGHT_W)
+            print(f"{sep}{l_line}{sep}{r_line}{sep}")
+
+        # Bottom bar
+        print(f"{_DIM}{top}{_RESET}")
+        ts = time.strftime("%H:%M:%S")
+        print(f"{_DIM}  Обновлено: {ts}{_RESET}")
 
         await asyncio.sleep(REFRESH_SEC)
 
