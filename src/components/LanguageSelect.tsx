@@ -43,7 +43,7 @@ export default function LanguageSelect({ onContinue }: Props) {
     useEffect(() => {
         fetch('/api/ui/setup/qr')
             .then(r => r.json())
-            .then(setQr)
+            .then(data => { if (data?.matrix && data?.size) setQr(data); })
             .catch(() => { });
     }, []);
 

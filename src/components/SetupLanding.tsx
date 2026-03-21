@@ -86,7 +86,7 @@ export default function SetupLanding({ onStartWizard }: Props) {
     useEffect(() => {
         fetch('/api/ui/setup/qr')
             .then((r) => r.json())
-            .then(setQrData)
+            .then((data) => { if (data?.matrix && data?.size) setQrData(data); else setQrError(true); })
             .catch(() => setQrError(true));
 
         setReqLoading(true);

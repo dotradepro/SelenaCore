@@ -425,7 +425,23 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:
 async def ui_setup_qr() -> dict[str, Any]:
     """Generate QR data for initial device setup (AP mode)."""
     settings = get_settings()
-    return {
-        "qr_data": f"http://192.168.4.1:{settings.ui_port}",
-        "ssid": "Selena-Setup",
-    }
+    url = f"http://192.168.4.1:{settings.ui_port}"
+    try:
+        import qrcode
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(url)
+        qr.make(fit=True)
+        matrix = qr.get_matrix()
+        return {
+            "url": url,
+            "matrix": matrix,
+            "size": len(matrix),
+            "ssid": "Selena-Setup",
+        }
+    except ImportError:
+        return {
+            "url": url,
+            "matrix": None,
+            "size": 0,
+            "ssid": "Selena-Setup",
+        }

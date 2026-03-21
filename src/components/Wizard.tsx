@@ -451,7 +451,7 @@ export default function Wizard() {
                           <span className="font-medium text-sm">{tz.replace(/_/g, ' ')}</span>
                           {formData.timezone === tz && <Check size={18} className="text-emerald-500" />}
                         </button>
-                    ))}
+                      ))}
                   </div>
                   {formData.timezone && (
                     <div className="text-sm text-zinc-400">
@@ -483,9 +483,9 @@ export default function Wizard() {
                         className={cn(
                           "w-full p-4 rounded-xl border flex items-center justify-between text-left transition-all",
                           !m.fits_ram ? "border-zinc-800 bg-zinc-900/50 opacity-50 cursor-not-allowed" :
-                          formData.stt === m.id
-                            ? "border-emerald-500 bg-emerald-500/10"
-                            : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                            formData.stt === m.id
+                              ? "border-emerald-500 bg-emerald-500/10"
+                              : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
                         <div>

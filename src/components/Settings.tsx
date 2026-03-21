@@ -287,7 +287,7 @@ function AudioSettings() {
       setOutputs(data.outputs || []);
       if (data.inputs?.length) setSelectedInput(data.inputs[0].id);
       if (data.outputs?.length) setSelectedOutput(data.outputs[0].id);
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   const saveAudio = async () => {
@@ -454,7 +454,7 @@ function NetworkSettings() {
         {selectedSsid && (
           <div className="mt-4 space-y-3">
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder={t('settings.wifiPassword')} 
+              placeholder={t('settings.wifiPassword')}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
             {connectError && <div className="text-xs text-red-400">{connectError}</div>}
             <button onClick={connectWifi} disabled={connecting !== null}
