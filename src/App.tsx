@@ -9,6 +9,14 @@ import Settings from './components/Settings';
 import Modules from './components/Modules';
 import Devices from './components/Devices';
 
+// Hide cursor when running on kiosk device (?kiosk=1)
+const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
+if (isKiosk) {
+  const style = document.createElement('style');
+  style.textContent = 'html, html * { cursor: none !important; }';
+  document.head.appendChild(style);
+}
+
 export default function App() {
   const isConfigured = useStore((state) => state.isConfigured);
   const wizardLoading = useStore((state) => state.wizardLoading);

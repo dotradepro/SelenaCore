@@ -141,7 +141,7 @@ main() {
                 fi
             ) &
 
-            exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "$UI_URL"
+            exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1"
             ;;
 
         tty|*)
