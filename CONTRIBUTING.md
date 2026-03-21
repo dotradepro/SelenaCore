@@ -60,7 +60,7 @@ python -m mypy core/           # типизация
 
 ## Безопасность
 
-Если нашёл уязвимость — **не создавай публичный Issue**. Напиши на security@smarthome-lk.com или через [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
+Если нашёл уязвимость — **не создавай публичный Issue**. Напиши на security@selenehome.tech или через [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
 
 ## Запрещено
 

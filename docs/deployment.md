@@ -77,7 +77,7 @@ CORE_LOG_LEVEL=INFO
 DEBUG=false
 
 # Для платформенного подключения (опционально):
-PLATFORM_API_URL=https://smarthome-lk.com/api/v1
+PLATFORM_API_URL=https://selenehome.tech/api/v1
 PLATFORM_DEVICE_HASH=           # заполняется при регистрации на платформе
 ```
 
