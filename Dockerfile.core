@@ -21,6 +21,8 @@ COPY core/ ./core/
 COPY system_modules/ ./system_modules/
 COPY agent/ ./agent/
 COPY config/ ./config/
+COPY scripts/start.sh ./start.sh
+RUN chmod +x ./start.sh
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -29,6 +31,6 @@ ENV PYTHONUNBUFFERED=1 \
     CORE_SECURE_DIR=/secure \
     CORE_LOG_LEVEL=INFO
 
-EXPOSE 7070
+EXPOSE 7070 8080
 
-CMD ["python", "-m", "uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "7070"]
+CMD ["/bin/bash", "/opt/selena-core/start.sh"]
