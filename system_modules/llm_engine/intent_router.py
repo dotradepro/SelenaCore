@@ -37,8 +37,18 @@ class IntentRouter:
     def __init__(self) -> None:
         self._system_prompt: str | None = None
 
-    async def route(self, text: str, user_id: str | None = None) -> IntentResult:
+    async def route(
+        self,
+        text: str,
+        user_id: str | None = None,
+        lang: str = "en",
+    ) -> IntentResult:
         """Route user text to the appropriate intent handler.
+
+        Resolution order:
+          Tier 1: Fast Matcher (keyword/regex YAML rules) — zero latency
+          Tier 2: Module Intents (registered via /api/v1/intents) — no LLM cost
+          Tier 3: Ollama LLM — dynamic understanding, disabled when RAM < 5GB
 
         Returns IntentResult with the resolved intent, response, and action.
         """
@@ -60,7 +70,35 @@ class IntentRouter:
             await self._publish_event(result)
             return result
 
-        # Tier 2: LLM
+        # Tier 2: Module Intents — ask registered modules before hitting LLM
+        try:
+            from core.api.routes.intents import find_module_for_text
+            module_match = find_module_for_text(text, lang)
+            if module_match is not None:
+                module_name, port, endpoint = module_match
+                import httpx
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    resp = await client.post(
+                        f"http://localhost:{port}{endpoint}",
+                        json={"text": text, "lang": lang, "context": {"user_id": user_id}},
+                    )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("handled"):
+                        result = IntentResult(
+                            intent=f"module.{module_name}",
+                            response=data.get("tts_text", ""),
+                            action=data.get("data"),
+                            source="module_intent",
+                            latency_ms=int(time.time() * 1000) - start_ms,
+                            user_id=user_id,
+                        )
+                        await self._publish_event(result)
+                        return result
+        except Exception as exc:
+            logger.warning("Module intent Tier 2 error: %s", exc)
+
+        # Tier 3: LLM
         from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
         if _should_use_llm():
             try:

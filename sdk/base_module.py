@@ -11,6 +11,13 @@ import logging
 import os
 from typing import Any, Callable, TypeVar
 
+try:
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+except ImportError:  # FastAPI may not be installed in all SDK use cases
+    Request = Any  # type: ignore[assignment,misc]
+    JSONResponse = Any  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -63,6 +70,7 @@ class SmartHomeModule:
         self._event_handlers: dict[str, Callable] = {}
         self._core_token = MODULE_TOKEN
         self._log = logging.getLogger(self.name)
+        self._should_register_intents: bool = False
         self._discover_handlers()
 
     def _discover_handlers(self) -> None:
@@ -85,6 +93,9 @@ class SmartHomeModule:
             if callable(method) and hasattr(method, "_schedule"):
                 task = asyncio.create_task(self._run_scheduled(method, method._schedule))
                 self._tasks.append(task)
+        # Register @intent patterns with Core API if setup_intent_routes() was called
+        if self._should_register_intents and self._intent_handlers:
+            await self._register_intents_with_core()
 
     async def stop(self) -> None:
         """Called to gracefully stop the module."""
@@ -100,6 +111,82 @@ class SmartHomeModule:
 
     async def on_stop(self) -> None:
         """Override in subclass: called when module stops."""
+
+    def setup_intent_routes(self, app: Any) -> None:
+        """Register POST /api/intent endpoint on the module's FastAPI app.
+
+        Call this once from startup before module.start().
+        Only needed for modules that use @intent decorators.
+        The endpoint is used by IntentRouter Tier 2 to forward matched queries.
+        """
+        if not self._intent_handlers:
+            return
+
+        module_self = self
+
+        @app.post("/api/intent", response_class=JSONResponse)
+        async def _intent_webhook(request: Request) -> None:  # type: ignore[valid-type]
+            body = await request.json()
+            text = body.get("text", "")
+            lang = body.get("lang", "en")
+            context: dict[str, Any] = body.get("context", {})
+            result = await module_self._dispatch_intent(text, lang, context)
+            return JSONResponse(content=result)
+
+        self._should_register_intents = True
+        self._log.debug("Intent webhook /api/intent registered")
+
+    async def _dispatch_intent(self, text: str, lang: str, context: dict[str, Any]) -> dict[str, Any]:
+        """Dispatch intent text to matching @intent handler and return structured result.
+
+        Puts lang into context["_lang"] so handlers can access it.
+        Returns {"handled": True/False, ...handler_result}.
+        """
+        context["_lang"] = lang
+        result = await self.handle_intent(text, context)
+        if result is None:
+            return {"handled": False}
+        return {"handled": True, **result}
+
+    async def _register_intents_with_core(self) -> None:
+        """POST @intent patterns to Core API /api/v1/intents/register.
+
+        Uses all regex patterns from @intent decorators, sent for all languages
+        (the same regex covers multi-language patterns in one expression).
+        Fails silently — module still works without Core API connectivity.
+        """
+        import httpx
+
+        patterns = list(self._intent_handlers.keys())
+        port = int(os.environ.get("SELENA_MODULE_PORT", "8100"))
+        payload = {
+            "module": self.name,
+            "port": port,
+            "intents": [
+                {
+                    "patterns": {"en": patterns, "uk": patterns, "ru": patterns},
+                    "description": f"{self.name} voice intents",
+                    "endpoint": "/api/intent",
+                }
+            ],
+        }
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{CORE_API_BASE}/intents/register",
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self._core_token}"},
+                )
+                if resp.status_code == 201:
+                    self._log.info(
+                        "Registered %d intent pattern(s) with Core API (port %d)",
+                        len(patterns),
+                        port,
+                    )
+                else:
+                    self._log.warning("Intent registration failed: HTTP %s", resp.status_code)
+        except Exception as exc:
+            self._log.warning("Intent registration error (Core API unreachable?): %s", exc)
 
     async def handle_intent(self, intent_text: str, context: dict[str, Any]) -> dict[str, Any] | None:
         """Dispatch intent to registered handlers (exact or regex match)."""
