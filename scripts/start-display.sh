@@ -131,10 +131,6 @@ main() {
             export XCURSOR_PATH="${SCRIPT_DIR}/cursors:/usr/share/icons"
             export XCURSOR_SIZE=24
 
-            # Move cursor off-screen after cage starts (background helper)
-            # Hide cursor after 0.1s of inactivity
-            unclutter -idle 0.1 &
-
             exec cage -s -- chromium "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1"
             ;;
 
