@@ -154,6 +154,10 @@ const uk = {
             degradationStrategy: 'Стратегія деградації',
             autoStopAutomation: 'Автозупинка AUTOMATION при RAM < 150 MB',
             stopLlmOnHighTemp: 'Зупинити LLM Engine при CPU > 90°C',
+            resetWizardTitle: 'Початкове налаштування',
+            resetWizardDesc: 'Скинути майстер налаштувань для повторного проходження початкової конфігурації.',
+            resetWizardBtn: 'Скинути майстер налаштувань',
+            resetWizardConfirm: 'Скинути майстер налаштувань? Сторінка перезавантажиться і ви почнете з кроку 1.',
         },
 
         // ── Wizard ──

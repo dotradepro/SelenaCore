@@ -272,7 +272,7 @@ WIZARD_STEPS = {
 
 @router.get("/wizard/status")
 async def ui_wizard_status() -> dict[str, Any]:
-    yaml_cfg = get_yaml_config()
+    yaml_cfg = read_config()
     wizard_cfg = yaml_cfg.get("wizard", {})
     completed = wizard_cfg.get("completed", False) or _wizard_state["completed"]
     return {"completed": completed}
@@ -280,7 +280,7 @@ async def ui_wizard_status() -> dict[str, Any]:
 
 @router.get("/wizard/requirements")
 async def ui_wizard_requirements() -> dict[str, Any]:
-    yaml_cfg = get_yaml_config()
+    yaml_cfg = read_config()
     wizard_cfg = yaml_cfg.get("wizard", {})
     completed = wizard_cfg.get("completed", False) or _wizard_state["completed"]
     done_steps = _wizard_state.get("steps", {})
@@ -354,6 +354,25 @@ def _persist_wizard_completed() -> None:
         logger.info("Wizard completed, persisted to config")
     except Exception as exc:
         logger.error("Failed to persist wizard state: %s", exc)
+
+
+@router.post("/wizard/reset")
+async def ui_wizard_reset() -> dict[str, Any]:
+    """Reset wizard state — allows re-running the initial setup."""
+    _wizard_state["completed"] = False
+    _wizard_state["steps"] = {}
+    try:
+        config = read_config()
+        config["wizard"] = {"completed": False}
+        write_config(config)
+        # Invalidate the cached yaml config so subsequent reads pick up the reset
+        import core.config as _cfg
+        _cfg._yaml_config = None
+        logger.info("Wizard state reset")
+    except Exception as exc:
+        logger.error("Failed to reset wizard state: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+    return {"status": "ok", "message": "Wizard reset. Reload the page to start setup."}
 
 
 async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:

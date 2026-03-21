@@ -476,6 +476,7 @@ function SystemSettings() {
   const { t } = useTranslation();
   const [autoStopRam, setAutoStopRam] = useState(true);
   const [stopLlmTemp, setStopLlmTemp] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   const saveSetting = async (key: string, value: boolean) => {
     try {
@@ -484,6 +485,19 @@ function SystemSettings() {
         body: JSON.stringify({ section: 'system', key, value }),
       });
     } catch { /* ignore */ }
+  };
+
+  const resetWizard = async () => {
+    if (!confirm(t('settings.resetWizardConfirm'))) return;
+    setResetting(true);
+    try {
+      const res = await fetch('/api/ui/wizard/reset', { method: 'POST' });
+      if (res.ok) {
+        window.location.reload();
+      }
+    } catch { /* ignore */ } finally {
+      setResetting(false);
+    }
   };
 
   return (
@@ -508,6 +522,17 @@ function SystemSettings() {
             <span className="text-sm text-zinc-300">{t('settings.stopLlmOnHighTemp')}</span>
           </label>
         </div>
+      </div>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <h4 className="font-medium mb-2">{t('settings.resetWizardTitle')}</h4>
+        <p className="text-sm text-zinc-400 mb-4">{t('settings.resetWizardDesc')}</p>
+        <button
+          onClick={resetWizard}
+          disabled={resetting}
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+        >
+          {resetting ? t('common.loading') : t('settings.resetWizardBtn')}
+        </button>
       </div>
     </div>
   );

@@ -154,6 +154,10 @@ const en = {
             degradationStrategy: 'Degradation strategy',
             autoStopAutomation: 'Auto-stop AUTOMATION when RAM < 150 MB',
             stopLlmOnHighTemp: 'Stop LLM Engine when CPU > 90°C',
+            resetWizardTitle: 'Initial setup',
+            resetWizardDesc: 'Reset the setup wizard to re-run the initial configuration from scratch.',
+            resetWizardBtn: 'Reset setup wizard',
+            resetWizardConfirm: 'Reset the setup wizard? The page will reload and you will start from step 1.',
         },
 
         // ── Wizard ──
