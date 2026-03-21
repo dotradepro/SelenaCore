@@ -19,6 +19,7 @@ services:
       - .env
     networks:
       - selena_internal
+      - selena_external
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7070/api/v1/health"]
       interval: 30s
@@ -60,7 +61,6 @@ services:
 networks:
   selena_internal:
     driver: bridge
-    internal: true
   selena_external:
     driver: bridge
 
