@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
@@ -34,8 +34,53 @@ interface FormData {
   importSource: string;
 }
 
+interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  security: string;
+  connected: boolean;
+}
+
+interface SttModel {
+  id: string;
+  name: string;
+  ram_mb: number;
+  size_mb: number;
+  quality: string;
+  installed: boolean;
+  active: boolean;
+  fits_ram: boolean;
+}
+
+interface TtsVoice {
+  id: string;
+  name: string;
+  language: string;
+  gender: string;
+  size_mb: number;
+  installed: boolean;
+  active: boolean;
+}
+
+interface TimezoneData {
+  timezones: string[];
+  common: string[];
+  current: string;
+}
+
 function HomeIcon(props: any) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
+}
+
+function SignalBars({ signal }: { signal: number }) {
+  const bars = signal > 75 ? 4 : signal > 50 ? 3 : signal > 25 ? 2 : 1;
+  return (
+    <div className="flex items-end gap-0.5 h-4">
+      {[1, 2, 3, 4].map(b => (
+        <div key={b} className={cn("w-1 rounded-sm", b <= bars ? "bg-emerald-500" : "bg-zinc-700")} style={{ height: `${b * 25}%` }} />
+      ))}
+    </div>
+  );
 }
 
 export default function Wizard() {
@@ -48,19 +93,107 @@ export default function Wizard() {
   const setConfigured = useStore((state) => state.setConfigured);
   const setUser = useStore((state) => state.setUser);
 
+  // Real API data
+  const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
+  const [wifiLoading, setWifiLoading] = useState(false);
+  const [wifiAvailable, setWifiAvailable] = useState(true);
+  const [sttModels, setSttModels] = useState<SttModel[]>([]);
+  const [sttRamInfo, setSttRamInfo] = useState({ total: 0, available: 0 });
+  const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>([]);
+  const [tzData, setTzData] = useState<TimezoneData | null>(null);
+  const [tzSearch, setTzSearch] = useState('');
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+
   const [formData, setFormData] = useState<FormData>({
     lang: selectedLanguage,
     wifi: '',
     wifiPassword: '',
     name: t('wizard.defaultHomeName'),
-    timezone: 'Europe/Kyiv',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
     stt: 'base',
-    tts: 'ru_irina',
+    tts: 'ru_RU-irina-medium',
     username: 'admin',
     pin: '',
     platformHash: '',
     importSource: '',
   });
+
+  // Fetch WiFi networks when entering step 2
+  useEffect(() => {
+    if (step === 2) fetchWifiNetworks();
+    if (step === 4 && !tzData) fetchTimezones();
+    if (step === 5 && sttModels.length === 0) fetchSttModels();
+    if (step === 6 && ttsVoices.length === 0) fetchTtsVoices();
+  }, [step]);
+
+  const fetchWifiNetworks = async () => {
+    setWifiLoading(true);
+    try {
+      const res = await fetch('/api/ui/setup/wifi/scan');
+      const data = await res.json();
+      setWifiNetworks(data.networks || []);
+      setWifiAvailable(data.available !== false);
+    } catch {
+      setWifiNetworks([]);
+    } finally {
+      setWifiLoading(false);
+    }
+  };
+
+  const fetchTimezones = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/timezones');
+      const data: TimezoneData = await res.json();
+      setTzData(data);
+      if (data.current && !formData.timezone) {
+        setFormData(prev => ({ ...prev, timezone: data.current }));
+      }
+    } catch { /* fallback to hardcoded list */ }
+  };
+
+  const fetchSttModels = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/stt/models');
+      const data = await res.json();
+      setSttModels(data.models || []);
+      setSttRamInfo({ total: data.ram_total_mb || 0, available: data.ram_available_mb || 0 });
+      if (data.active) setFormData(prev => ({ ...prev, stt: data.active }));
+    } catch { /* use defaults */ }
+  };
+
+  const fetchTtsVoices = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/tts/voices');
+      const data = await res.json();
+      setTtsVoices(data.voices || []);
+      if (data.active) setFormData(prev => ({ ...prev, tts: data.active }));
+    } catch { /* use defaults */ }
+  };
+
+  const previewVoice = async (voiceId: string) => {
+    if (previewingVoice) return;
+    setPreviewingVoice(voiceId);
+    try {
+      const sampleText = formData.lang === 'uk' ? 'Привіт, я ваш голосовий асистент.' : 'Hello, I am your voice assistant.';
+      const res = await fetch('/api/ui/setup/tts/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: sampleText, voice: voiceId }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => { URL.revokeObjectURL(url); setPreviewingVoice(null); };
+        audio.onerror = () => { URL.revokeObjectURL(url); setPreviewingVoice(null); };
+        await audio.play();
+      } else {
+        setPreviewingVoice(null);
+      }
+    } catch {
+      setPreviewingVoice(null);
+    }
+  };
 
 
 
@@ -214,26 +347,52 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">{t('wizard.wifiTitle')}</h2>
                   <p className="text-zinc-400 text-sm">{t('wizard.wifiDesc')}</p>
-                  <div className="space-y-3">
-                    {['Home_Network_5G', 'Keenetic-1234', 'Guest_Net'].map(net => (
-                      <button
-                        key={net}
-                        onClick={() => setFormData({ ...formData, wifi: net })}
-                        className={cn(
-                          "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
-                          formData.wifi === net
-                            ? "border-emerald-500 bg-emerald-500/10"
-                            : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Wifi size={20} className={formData.wifi === net ? "text-emerald-500" : "text-zinc-400"} />
-                          <span className="font-medium">{net}</span>
-                        </div>
-                        {formData.wifi === net && <Check size={20} className="text-emerald-500" />}
-                      </button>
-                    ))}
+                  {!wifiAvailable && (
+                    <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-2.5">
+                      {t('wizard.wifiNotAvailable')}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button onClick={fetchWifiNetworks} disabled={wifiLoading}
+                      className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors">
+                      <RefreshCw size={14} className={wifiLoading ? 'animate-spin' : ''} />
+                      {t('common.refresh')}
+                    </button>
                   </div>
+                  {wifiLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                      <span className="ml-3 text-sm text-zinc-400">{t('wizard.wifiScanning')}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                      {wifiNetworks.length > 0 ? wifiNetworks.map(net => (
+                        <button
+                          key={net.ssid}
+                          onClick={() => setFormData({ ...formData, wifi: net.ssid })}
+                          className={cn(
+                            "w-full p-4 rounded-xl border flex items-center justify-between transition-all",
+                            formData.wifi === net.ssid
+                              ? "border-emerald-500 bg-emerald-500/10"
+                              : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Wifi size={20} className={formData.wifi === net.ssid ? "text-emerald-500" : "text-zinc-400"} />
+                            <span className="font-medium">{net.ssid}</span>
+                            {net.security && <Lock size={14} className="text-zinc-500" />}
+                            {net.connected && <span className="text-xs text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded">{t('wizard.wifiConnected')}</span>}
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <SignalBars signal={net.signal} />
+                            {formData.wifi === net.ssid && <Check size={20} className="text-emerald-500" />}
+                          </div>
+                        </button>
+                      )) : (
+                        <div className="text-center py-8 text-zinc-500 text-sm">{t('wizard.wifiNoNetworks')}</div>
+                      )}
+                    </div>
+                  )}
                   {formData.wifi && (
                     <div>
                       <label className="block text-sm font-medium text-zinc-400 mb-1.5">{t('wizard.wifiPassword')}</label>
@@ -267,15 +426,38 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">{t('wizard.timezoneTitle')}</h2>
                   <p className="text-zinc-400 text-sm">{t('wizard.timezoneDesc')}</p>
-                  <select
-                    value={formData.timezone}
-                    onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all appearance-none"
-                  >
-                    <option value="Europe/Moscow">Europe/Moscow (MSK)</option>
-                    <option value="Europe/Kyiv">Europe/Kyiv (EET)</option>
-                    <option value="Europe/London">Europe/London (GMT)</option>
-                  </select>
+                  <input
+                    type="text"
+                    value={tzSearch}
+                    onChange={(e) => setTzSearch(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-zinc-50 focus:outline-none focus:border-emerald-500 transition-all"
+                    placeholder={t('wizard.timezoneSearch')}
+                  />
+                  <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    {(tzData?.timezones || ['Europe/Kyiv', 'Europe/Moscow', 'Europe/London', 'America/New_York', 'UTC'])
+                      .filter(tz => !tzSearch || tz.toLowerCase().includes(tzSearch.toLowerCase()))
+                      .slice(0, 50)
+                      .map(tz => (
+                        <button
+                          key={tz}
+                          onClick={() => { setFormData({ ...formData, timezone: tz }); setTzSearch(''); }}
+                          className={cn(
+                            "w-full p-3 rounded-xl border flex items-center justify-between transition-all text-left",
+                            formData.timezone === tz
+                              ? "border-emerald-500 bg-emerald-500/10"
+                              : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+                          )}
+                        >
+                          <span className="font-medium text-sm">{tz.replace(/_/g, ' ')}</span>
+                          {formData.timezone === tz && <Check size={18} className="text-emerald-500" />}
+                        </button>
+                    ))}
+                  </div>
+                  {formData.timezone && (
+                    <div className="text-sm text-zinc-400">
+                      {t('wizard.timezoneSelected')}: <span className="text-zinc-200">{formData.timezone}</span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -283,17 +465,24 @@ export default function Wizard() {
                 <div className="space-y-6">
                   <h2 className="text-xl font-medium">{t('wizard.sttTitle')}</h2>
                   <p className="text-zinc-400 text-sm">{t('wizard.sttDesc')}</p>
+                  {sttRamInfo.available > 0 && (
+                    <div className="text-xs text-zinc-500">
+                      RAM: {sttRamInfo.available} MB {t('wizard.sttAvailable')} / {sttRamInfo.total} MB {t('wizard.sttTotal')}
+                    </div>
+                  )}
                   <div className="space-y-3">
-                    {[
-                      { id: 'tiny', name: t('wizard.sttTiny'), desc: t('wizard.sttTinyDesc'), ram: '~150 MB' },
-                      { id: 'base', name: t('wizard.sttBase'), desc: t('wizard.sttBaseDesc'), ram: '~250 MB' },
-                      { id: 'small', name: t('wizard.sttSmall'), desc: t('wizard.sttSmallDesc'), ram: '~500 MB' },
-                    ].map(m => (
+                    {(sttModels.length > 0 ? sttModels : [
+                      { id: 'tiny', name: 'Tiny', ram_mb: 150, size_mb: 75, quality: 'basic', installed: false, active: false, fits_ram: true },
+                      { id: 'base', name: 'Base', ram_mb: 250, size_mb: 142, quality: 'good', installed: false, active: false, fits_ram: true },
+                      { id: 'small', name: 'Small', ram_mb: 500, size_mb: 466, quality: 'high', installed: false, active: false, fits_ram: true },
+                    ]).map(m => (
                       <button
                         key={m.id}
                         onClick={() => setFormData({ ...formData, stt: m.id })}
+                        disabled={!m.fits_ram}
                         className={cn(
                           "w-full p-4 rounded-xl border flex items-center justify-between text-left transition-all",
+                          !m.fits_ram ? "border-zinc-800 bg-zinc-900/50 opacity-50 cursor-not-allowed" :
                           formData.stt === m.id
                             ? "border-emerald-500 bg-emerald-500/10"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
@@ -302,9 +491,13 @@ export default function Wizard() {
                         <div>
                           <div className="font-medium flex items-center gap-2">
                             {m.name}
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{m.ram}</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">~{m.ram_mb} MB RAM</span>
+                            {m.installed && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">{t('wizard.sttInstalled')}</span>}
+                            {!m.fits_ram && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">{t('wizard.sttNoRam')}</span>}
                           </div>
-                          <div className="text-sm text-zinc-400 mt-1">{m.desc}</div>
+                          <div className="text-sm text-zinc-400 mt-1">
+                            {m.id === 'tiny' ? t('wizard.sttTinyDesc') : m.id === 'base' ? t('wizard.sttBaseDesc') : m.id === 'small' ? t('wizard.sttSmallDesc') : m.quality}
+                          </div>
                         </div>
                         {formData.stt === m.id && <Check size={20} className="text-emerald-500" />}
                       </button>
@@ -318,24 +511,44 @@ export default function Wizard() {
                   <h2 className="text-xl font-medium">{t('wizard.ttsTitle')}</h2>
                   <p className="text-zinc-400 text-sm">{t('wizard.ttsDesc')}</p>
                   <div className="grid grid-cols-2 gap-4">
-                    {[
-                      { id: 'ru_irina', name: t('wizard.ttsIrina') },
-                      { id: 'ru_dmitry', name: t('wizard.ttsDmitry') },
-                      { id: 'ru_ruslan', name: t('wizard.ttsRuslan') },
-                      { id: 'ru_kseniya', name: t('wizard.ttsKseniya') },
-                    ].map(v => (
-                      <button
+                    {(ttsVoices.length > 0 ? ttsVoices : [
+                      { id: 'ru_RU-irina-medium', name: 'Irina', language: 'ru', gender: 'female', size_mb: 50, installed: false, active: false },
+                      { id: 'ru_RU-ruslan-medium', name: 'Ruslan', language: 'ru', gender: 'male', size_mb: 50, installed: false, active: false },
+                      { id: 'en_US-amy-medium', name: 'Amy', language: 'en', gender: 'female', size_mb: 50, installed: false, active: false },
+                      { id: 'en_US-ryan-high', name: 'Ryan', language: 'en', gender: 'male', size_mb: 60, installed: false, active: false },
+                    ]).map(v => (
+                      <div
                         key={v.id}
-                        onClick={() => setFormData({ ...formData, tts: v.id })}
                         className={cn(
-                          "p-4 rounded-xl border flex items-center justify-between transition-all",
+                          "p-4 rounded-xl border transition-all",
                           formData.tts === v.id
-                            ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
+                            ? "border-emerald-500 bg-emerald-500/10"
                             : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
                         )}
                       >
-                        <span className="font-medium">{v.name}</span>
-                      </button>
+                        <button
+                          onClick={() => setFormData({ ...formData, tts: v.id })}
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={cn("font-medium", formData.tts === v.id && "text-emerald-500")}>
+                              {v.name}
+                            </span>
+                            {v.installed && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-500">{t('wizard.sttInstalled')}</span>}
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            {v.language.toUpperCase()} · {v.gender === 'female' ? t('wizard.ttsFemale') : t('wizard.ttsMale')} · {v.size_mb} MB
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
+                          disabled={previewingVoice !== null}
+                          className="mt-2 flex items-center gap-1.5 text-xs text-zinc-400 hover:text-emerald-400 transition-colors disabled:opacity-50"
+                        >
+                          <Play size={12} className={previewingVoice === v.id ? 'animate-pulse text-emerald-500' : ''} />
+                          {previewingVoice === v.id ? t('wizard.ttsPlaying') : t('wizard.ttsPreview')}
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

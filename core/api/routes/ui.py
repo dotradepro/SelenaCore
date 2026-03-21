@@ -6,9 +6,12 @@ core/api/routes/ui.py — UI-специфичные API эндпоинты дл�
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.config import get_settings, get_yaml_config
+from core.config_writer import read_config, update_config, update_section, write_config
 from core.registry.models import Device
 from core.registry.service import DeviceNotFoundError, DeviceRegistry
 
@@ -314,6 +318,9 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     _wizard_state["steps"][step_name] = body.data
     logger.info("Wizard step completed: %s", step_name)
 
+    # --- Persist step data to core.yaml ---
+    await _apply_wizard_step(step_name, body.data)
+
     # Determine next step
     step_names = list(WIZARD_STEPS.keys())
     current_idx = step_names.index(step_name)
@@ -340,21 +347,76 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
 
 def _persist_wizard_completed() -> None:
     """Write wizard_completed=true to core.yaml."""
-    import yaml
-    config_path = Path(
-        __import__("os").environ.get("SELENA_CONFIG", "/opt/selena-core/config/core.yaml")
-    )
     try:
-        if config_path.exists():
-            content = yaml.safe_load(config_path.read_text()) or {}
-        else:
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            content = {}
-        content.setdefault("wizard", {})["completed"] = True
-        config_path.write_text(yaml.dump(content, default_flow_style=False))
-        logger.info("Wizard completed, persisted to %s", config_path)
+        config = read_config()
+        config.setdefault("wizard", {})["completed"] = True
+        write_config(config)
+        logger.info("Wizard completed, persisted to config")
     except Exception as exc:
         logger.error("Failed to persist wizard state: %s", exc)
+
+
+async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:
+    """Apply wizard step data to real system config."""
+    try:
+        if step == "language" and data.get("language"):
+            update_config("system", "language", data["language"])
+
+        elif step == "device_name" and data.get("name"):
+            update_config("system", "device_name", data["name"])
+
+        elif step == "timezone" and data.get("timezone"):
+            update_config("system", "timezone", data["timezone"])
+            # Try to apply system timezone
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        ["timedatectl", "set-timezone", data["timezone"]],
+                        capture_output=True, timeout=10,
+                    )
+                )
+            except Exception:
+                pass
+
+        elif step == "stt_model" and data.get("model"):
+            update_config("voice", "stt_model", data["model"])
+            os.environ["WHISPER_MODEL"] = data["model"]
+
+        elif step == "tts_voice" and data.get("voice"):
+            update_config("voice", "tts_voice", data["voice"])
+            os.environ["PIPER_VOICE"] = data["voice"]
+
+        elif step == "admin_user" and data.get("username"):
+            update_section("admin", {
+                "username": data["username"],
+                # PIN is not stored in plaintext in yaml; just mark admin created
+                "created": True,
+            })
+
+        elif step == "wifi" and data.get("ssid"):
+            update_config("system", "wifi_ssid", data["ssid"])
+            # Attempt real WiFi connection via nmcli
+            try:
+                ssid = data["ssid"]
+                password = data.get("password", "")
+                cmd = ["nmcli", "dev", "wifi", "connect", ssid]
+                if password:
+                    cmd += ["password", password]
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run(cmd, capture_output=True, timeout=30)
+                )
+            except Exception as exc:
+                logger.debug("WiFi connect via nmcli skipped: %s", exc)
+
+        elif step == "platform" and data.get("device_hash"):
+            update_config("platform", "device_hash", data["device_hash"])
+
+    except Exception as exc:
+        logger.warning("Failed to apply wizard step '%s': %s", step, exc)
 
 
 # ---------- Setup QR ----------

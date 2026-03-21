@@ -112,11 +112,41 @@ const en = {
             localLlmDesc: 'Used for complex commands (Level 2)',
             llmActive: 'Active',
 
+            // STT / TTS
+            sttModel: 'STT Model (Whisper)',
+            ttsVoice: 'TTS Voice (Piper)',
+            installed: 'Installed',
+            playing: 'Playing…',
+            preview: 'Preview',
+            llmUnavailable: 'Unavailable',
+            available: 'available',
+            ramRequired: 'RAM required',
+            activate: 'Activate',
+            download: 'Download',
+            downloading: 'Downloading…',
+
             // Audio
             audioSubsystem: 'Audio subsystem',
             audioSubsystemDesc: 'Configure microphones and speakers.',
             microphone: 'Microphone',
+            speaker: 'Speaker',
+            noDevicesFound: 'No devices found',
             testMic: 'Test microphone',
+
+            // Network
+            networkTitle: 'Network',
+            networkDesc: 'Wi-Fi, Ethernet, and internet connectivity.',
+            networkStatus: 'Connection status',
+            internet: 'Internet',
+            connected: 'Connected',
+            disconnected: 'Disconnected',
+            wifiNetworks: 'Wi-Fi networks',
+            scan: 'Scan',
+            clickScan: 'Click Scan to search for networks',
+            wifiPassword: 'Password',
+            connect: 'Connect',
+            connecting: 'Connecting…',
+            nmcliNotAvailable: 'WiFi management (nmcli) is not available on this system.',
 
             // System
             systemTitle: 'System',
@@ -151,6 +181,10 @@ const en = {
             wifiDesc: 'Select a network to connect Raspberry Pi to the internet.',
             wifiPassword: 'Network password',
             wifiPasswordPlaceholder: 'Wi-Fi password',
+            wifiScanning: 'Scanning networks…',
+            wifiNotAvailable: 'Wi-Fi management is not available.',
+            wifiNoNetworks: 'No networks found. Pull to refresh.',
+            wifiConnected: 'Connected',
 
             // Step 3 - Device name
             deviceNameTitle: 'Device name',
@@ -161,6 +195,8 @@ const en = {
             // Step 4 - Timezone
             timezoneTitle: 'Timezone',
             timezoneDesc: 'Required for time-based automations to work correctly.',
+            timezoneSearch: 'Search timezone…',
+            timezoneSelected: 'Selected',
 
             // Step 5 - STT
             sttTitle: 'STT Voice Model (Whisper)',
@@ -171,6 +207,10 @@ const en = {
             sttBaseDesc: 'Optimal balance of speed and quality.',
             sttSmall: 'Small',
             sttSmallDesc: 'High quality. Pi 5 only.',
+            sttInstalled: 'Installed',
+            sttNoRam: 'Not enough RAM',
+            sttAvailable: 'available',
+            sttTotal: 'total',
 
             // Step 6 - TTS
             ttsTitle: 'Assistant voice (Piper TTS)',
@@ -179,6 +219,10 @@ const en = {
             ttsDmitry: 'Dmitry (Male)',
             ttsRuslan: 'Ruslan (Male)',
             ttsKseniya: 'Kseniya (Female)',
+            ttsFemale: 'Female',
+            ttsMale: 'Male',
+            ttsPreview: 'Preview',
+            ttsPlaying: 'Playing…',
 
             // Step 7 - User
             userTitle: 'First user (Admin)',

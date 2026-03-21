@@ -112,11 +112,41 @@ const uk = {
             localLlmDesc: 'Використовується для складних команд (Рівень 2)',
             llmActive: 'Активно',
 
+            // STT / TTS
+            sttModel: 'Модель STT (Whisper)',
+            ttsVoice: 'Голос TTS (Piper)',
+            installed: 'Встановлено',
+            playing: 'Відтворення…',
+            preview: 'Прослухати',
+            llmUnavailable: 'Недоступний',
+            available: 'доступно',
+            ramRequired: 'Потрібно RAM',
+            activate: 'Активувати',
+            download: 'Завантажити',
+            downloading: 'Завантаження…',
+
             // Audio
             audioSubsystem: 'Аудіо-підсистема',
             audioSubsystemDesc: 'Налаштування мікрофонів та динаміків.',
             microphone: 'Мікрофон',
+            speaker: 'Динамік',
+            noDevicesFound: 'Пристрої не знайдено',
             testMic: 'Тест мікрофона',
+
+            // Network
+            networkTitle: 'Мережа',
+            networkDesc: 'Wi-Fi, Ethernet та підключення до інтернету.',
+            networkStatus: 'Стан підключення',
+            internet: 'Інтернет',
+            connected: 'Підключено',
+            disconnected: 'Відключено',
+            wifiNetworks: 'Мережі Wi-Fi',
+            scan: 'Сканувати',
+            clickScan: 'Натисніть Сканувати для пошуку мереж',
+            wifiPassword: 'Пароль',
+            connect: 'Підключити',
+            connecting: 'Підключення…',
+            nmcliNotAvailable: 'Керування Wi-Fi (nmcli) недоступне на цій системі.',
 
             // System
             systemTitle: 'Система',
@@ -151,6 +181,10 @@ const uk = {
             wifiDesc: 'Оберіть мережу для підключення Raspberry Pi до інтернету.',
             wifiPassword: 'Пароль мережі',
             wifiPasswordPlaceholder: 'Пароль Wi-Fi',
+            wifiScanning: 'Сканування мереж…',
+            wifiNotAvailable: 'Керування Wi-Fi недоступне.',
+            wifiNoNetworks: 'Мережі не знайдено. Оновіть.',
+            wifiConnected: 'Підключено',
 
             // Step 3 - Device name
             deviceNameTitle: 'Назва пристрою',
@@ -161,6 +195,8 @@ const uk = {
             // Step 4 - Timezone
             timezoneTitle: 'Часовий пояс',
             timezoneDesc: 'Необхідний для коректної роботи автоматизацій за часом.',
+            timezoneSearch: 'Пошук часового поясу…',
+            timezoneSelected: 'Обрано',
 
             // Step 5 - STT
             sttTitle: 'Голосова модель STT (Whisper)',
@@ -171,6 +207,10 @@ const uk = {
             sttBaseDesc: 'Оптимальний баланс швидкості та якості.',
             sttSmall: 'Small',
             sttSmallDesc: 'Висока якість. Тільки для Pi 5.',
+            sttInstalled: 'Встановлено',
+            sttNoRam: 'Недостатньо RAM',
+            sttAvailable: 'доступно',
+            sttTotal: 'всього',
 
             // Step 6 - TTS
             ttsTitle: 'Голос асистента (Piper TTS)',
@@ -179,6 +219,10 @@ const uk = {
             ttsDmitry: 'Дмитро (Чоловічий)',
             ttsRuslan: 'Руслан (Чоловічий)',
             ttsKseniya: 'Ксенія (Жіночий)',
+            ttsFemale: 'Жіночий',
+            ttsMale: 'Чоловічий',
+            ttsPreview: 'Прослухати',
+            ttsPlaying: 'Відтворення…',
 
             // Step 7 - User
             userTitle: 'Перший користувач (Admin)',
