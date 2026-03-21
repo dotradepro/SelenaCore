@@ -2,110 +2,112 @@
 
 # SelenaCore
 
-**Открытое локальное ядро умного дома для Raspberry Pi**
+**Open-source local smart home core for Raspberry Pi**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-teal.svg)](https://fastapi.tiangolo.com)
 
+🇺🇦 [Українська версія](docs/uk/README.md)
+
 </div>
 
 ---
 
-## Что это
+## What is it
 
-SmartHome LK Core — открытый (MIT) хаб умного дома, который устанавливается на Raspberry Pi 4/5 или любой Linux SBC. Работает **полностью офлайн** — голосовой ассистент, автоматизации, управление устройствами — без подписки и без облака.
+SmartHome LK Core is an open-source (MIT) smart home hub that runs on Raspberry Pi 4/5 or any Linux SBC. Works **fully offline** — voice assistant, automations, device management — no subscription, no cloud required.
 
-Три принципа:
+Three principles:
 
-- **Ядро неизменно** — SHA256-защита всех файлов ядра, Integrity Agent проверяет каждые 30 сек
-- **Модули изолированы** — только HTTP/localhost:7070, без прямого доступа к данным ядра
-- **Агент наблюдает** — IntegrityAgent: стоп модулей → уведомление → откат → SAFE MODE
+- **Core is immutable** — SHA256 protection of all core files, Integrity Agent checks every 30 sec
+- **Modules are isolated** — HTTP/localhost:7070 only, no direct access to core data
+- **Agent watches** — IntegrityAgent: stop modules → notify → rollback → SAFE MODE
 
 ---
 
-## Быстрый старт
+## Quick Start
 
-### Требования
+### Requirements
 
-- Raspberry Pi 4/5 (4–8 GB RAM) или любой Linux SBC
+- Raspberry Pi 4/5 (4–8 GB RAM) or any Linux SBC
 - Docker + Docker Compose
 - Python 3.11+
 
-### Запуск
+### Launch
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
 
 cp .env.example .env
-# Отредактируй .env при необходимости
+# Edit .env as needed
 
 docker compose up -d
 ```
 
 **Core API:** `http://localhost:7070`
-**UI (PWA):** `http://localhost:8080` или `http://smarthome.local:8080`
+**UI (PWA):** `http://localhost:8080` or `http://smarthome.local:8080`
 
-### Первый запуск — Onboarding Wizard
+### First Launch — Onboarding Wizard
 
-При первом старте (или без Wi-Fi) ядро поднимает точку доступа:
+On first start (or without Wi-Fi) the core creates an access point:
 
 ```
 SSID:     SmartHome-Setup
 Password: smarthome
 ```
 
-Подключись с телефона → открой браузер → `192.168.4.1` → пройди 9-шаговый wizard.
+Connect from your phone → open browser → `192.168.4.1` → follow the 9-step wizard.
 
 ---
 
-## Архитектура
+## Architecture
 
 ```
 smarthome-core     ~420 MB    FastAPI, Device Registry, Event Bus,
                                Module Loader, Cloud Sync, Voice Core,
                                LLM Engine, UI Core
 
-smarthome-modules  180-350 MB  Все пользовательские модули (Plugin Manager)
+smarthome-modules  180-350 MB  All user modules (Plugin Manager)
 
-smarthome-sandbox  96-256 MB   Временный контейнер для тестирования (--rm)
+smarthome-sandbox  96-256 MB   Temporary container for testing (--rm)
 
-smarthome-agent    systemd     Integrity Agent — независимый процесс
+smarthome-agent    systemd     Integrity Agent — independent process
 ```
 
-### Структура проекта
+### Project Structure
 
 ```
 selena-core/
   core/
-    main.py                  # FastAPI + asyncio точка входа
-    config.py                # Настройки из .env + core.yaml
+    main.py                  # FastAPI + asyncio entry point
+    config.py                # Settings from .env + core.yaml
     registry/                # Device Registry (SQLAlchemy + SQLite)
     eventbus/                # Event Bus (asyncio.Queue + webhooks)
     module_loader/           # Plugin Manager + Docker sandbox
     api/routes/              # REST API endpoints
-    cloud_sync/              # Синхронизация с платформой (HMAC)
+    cloud_sync/              # Platform sync (HMAC)
   system_modules/
     voice_core/              # STT (Whisper), TTS (Piper), wake-word
     llm_engine/              # Ollama, Fast Matcher, Intent Router
     network_scanner/         # ARP, mDNS, SSDP, OUI lookup
-    user_manager/            # Профили, PIN, Face ID, аудит-лог
-    secrets_vault/           # AES-256-GCM хранилище токенов
+    user_manager/            # Profiles, PIN, Face ID, audit log
+    secrets_vault/           # AES-256-GCM token storage
     import_adapters/         # Home Assistant, Tuya, Philips Hue
-    hw_monitor/              # CPU/RAM/диск мониторинг
+    hw_monitor/              # CPU/RAM/disk monitoring
     notify_push/             # Web Push VAPID
-    backup_manager/          # Local/Cloud backup, QR-перенос
+    backup_manager/          # Local/Cloud backup, QR transfer
     remote_access/           # Tailscale VPN
     ui_core/                 # FastAPI :8080, PWA, wizard, TTY TUI
   agent/
-    integrity_agent.py       # SHA256 периодическая проверка
-    responder.py             # Цепочка реагирования + SAFE MODE
+    integrity_agent.py       # SHA256 periodic check
+    responder.py             # Response chain + SAFE MODE
   sdk/
-    base_module.py           # SmartHomeModule базовый класс
+    base_module.py           # SmartHomeModule base class
     cli.py                   # smarthome CLI
-    mock_core.py             # Mock Core API для разработки
-  tests/                     # pytest тесты
+    mock_core.py             # Mock Core API for development
+  tests/                     # pytest tests
   config/
     core.yaml.example
   docker-compose.yml
@@ -118,57 +120,57 @@ selena-core/
 Base URL: `http://localhost:7070/api/v1`
 Auth: `Authorization: Bearer <module_token>`
 
-| Метод | Путь | Описание |
-|-------|------|----------|
-| GET | `/health` | Статус ядра (без авторизации) |
-| GET | `/devices` | Список устройств |
-| POST | `/devices` | Регистрация устройства |
-| GET | `/devices/{id}` | Конкретное устройство |
-| PATCH | `/devices/{id}/state` | Обновление состояния |
-| DELETE | `/devices/{id}` | Удаление |
-| POST | `/events/publish` | Публикация события |
-| POST | `/events/subscribe` | Подписка на события (webhook) |
-| GET | `/modules` | Список модулей |
-| POST | `/modules/install` | Установка модуля (ZIP) |
-| POST | `/modules/{name}/start` | Запуск модуля |
-| POST | `/modules/{name}/stop` | Остановка модуля |
-| GET | `/integrity/status` | Статус Integrity Agent |
-| GET | `/system/info` | Информация об устройстве |
-| POST | `/wizard/step` | Шаг onboarding wizard |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Core status (no auth required) |
+| GET | `/devices` | Device list |
+| POST | `/devices` | Register device |
+| GET | `/devices/{id}` | Specific device |
+| PATCH | `/devices/{id}/state` | Update state |
+| DELETE | `/devices/{id}` | Delete |
+| POST | `/events/publish` | Publish event |
+| POST | `/events/subscribe` | Subscribe to events (webhook) |
+| GET | `/modules` | Module list |
+| POST | `/modules/install` | Install module (ZIP) |
+| POST | `/modules/{name}/start` | Start module |
+| POST | `/modules/{name}/stop` | Stop module |
+| GET | `/integrity/status` | Integrity Agent status |
+| GET | `/system/info` | Device info |
+| POST | `/wizard/step` | Onboarding wizard step |
 
-Полная документация: `http://localhost:7070/docs` (Swagger UI, автогенерация FastAPI).
+Full documentation: `http://localhost:7070/docs` (Swagger UI, auto-generated by FastAPI).
 
 ---
 
-## Голосовой ассистент
+## Voice Assistant
 
-Полностью офлайн — STT и TTS работают без интернета.
+Fully offline — STT and TTS work without internet.
 
 ```
 Wake-word (openWakeWord)
-  → Запись аудио
-  → Whisper.cpp STT           ~0.8–2 сек
+  → Audio recording
+  → Whisper.cpp STT           ~0.8–2 sec
   → Speaker ID (resemblyzer)  ~200 ms
   → Fast Matcher (YAML)       ~50 ms
-  → LLM Fallback (Ollama)     ~3–8 сек (только Pi 5, 8GB)
+  → LLM Fallback (Ollama)     ~3–8 sec (Pi 5, 8GB only)
   → Piper TTS                 ~300 ms
-  → История (SQLite)
+  → History (SQLite)
 ```
 
-Поддерживаемые языки: `ru`, `uk`, `en`.
+Supported languages: `uk`, `en`.
 
 ---
 
-## SDK для разработчиков модулей
+## SDK for Module Developers
 
 ```bash
-smarthome new-module my-module    # создать структуру модуля
-smarthome dev                     # mock Core API на :7070
-smarthome test                    # запустить тесты
-smarthome publish                 # упаковать и загрузить в SelenaCore
+smarthome new-module my-module    # create module structure
+smarthome dev                     # mock Core API on :7070
+smarthome test                    # run tests
+smarthome publish                 # package and upload to SelenaCore
 ```
 
-Пример модуля:
+Module example:
 
 ```python
 from sdk.base_module import SmartHomeModule, on_event, scheduled
@@ -188,14 +190,14 @@ class ClimateModule(SmartHomeModule):
 
     @scheduled("every:5m")
     async def periodic_check(self):
-        pass  # запускается каждые 5 минут
+        pass  # runs every 5 minutes
 ```
 
 ---
 
-## Переменные окружения
+## Environment Variables
 
-Скопируй `.env.example` → `.env`:
+Copy `.env.example` → `.env`:
 
 ```bash
 CORE_PORT=7070
@@ -214,7 +216,7 @@ DEV_MODULE_TOKEN=test-module-token-xyz
 
 ---
 
-## Тесты
+## Tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -225,20 +227,20 @@ pytest tests/ --cov=core --cov-report=term-missing
 
 ---
 
-## Безопасность
+## Security
 
-- **Integrity Agent** — SHA256-проверка файлов ядра каждые 30 сек
-- **AES-256-GCM** — все OAuth-токены зашифрованы в `/secure/tokens/`
-- **API proxy** — модули никогда не получают токены напрямую
-- **Биометрия** — хранится только локально, синхронизация в облако заблокирована
-- **Core API** — недоступен снаружи localhost (iptables)
-- **Rate limiting** — 100 req/sec на токен; PIN: 5 попыток → блокировка 10 минут
+- **Integrity Agent** — SHA256 check of core files every 30 sec
+- **AES-256-GCM** — all OAuth tokens encrypted in `/secure/tokens/`
+- **API proxy** — modules never receive tokens directly
+- **Biometrics** — stored locally only, cloud sync blocked
+- **Core API** — inaccessible outside localhost (iptables)
+- **Rate limiting** — 100 req/sec per token; PIN: 5 attempts → 10 min lock
 
 ---
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE)
 
 ---
 

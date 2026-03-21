@@ -1,28 +1,28 @@
-# Развёртывание SelenaCore на Raspberry Pi
+# Deploying SelenaCore on Raspberry Pi
 
-## Поддерживаемые платформы
+## Supported Platforms
 
-| Устройство | Поддержка | Рекомендуется |
-|-----------|-----------|---------------|
-| Raspberry Pi 5 (8 GB) | ✅ Полная | Да — включая LLM |
-| Raspberry Pi 5 (4 GB) | ✅ Полная | Да |
-| Raspberry Pi 4 (4/8 GB) | ✅ Полная | Без LLM |
-| Raspberry Pi 4 (2 GB) | ⚠️ Ограниченная | LLM отключён |
-| Debian x86-64 / ARM | ✅ | Да |
+| Device | Support | Recommended |
+|--------|---------|-------------|
+| Raspberry Pi 5 (8 GB) | ✅ Full | Yes — including LLM |
+| Raspberry Pi 5 (4 GB) | ✅ Full | Yes |
+| Raspberry Pi 4 (4/8 GB) | ✅ Full | Without LLM |
+| Raspberry Pi 4 (2 GB) | ⚠️ Limited | LLM disabled |
+| Debian x86-64 / ARM | ✅ | Yes |
 
 ---
 
-## Подготовка системы
+## System Preparation
 
-### 1. Операционная система
+### 1. Operating System
 
-Рекомендовано: **Raspberry Pi OS 64-bit Lite** (без GUI) или **Debian 12 Bookworm**.
+Recommended: **Raspberry Pi OS 64-bit Lite** (no GUI) or **Debian 12 Bookworm**.
 
 ```bash
-# Обновить систему
+# Update the system
 sudo apt update && sudo apt upgrade -y
 
-# Обязательные зависимости
+# Required dependencies
 sudo apt install -y \
     python3.11 python3.11-venv python3-pip \
     git curl wget \
@@ -39,13 +39,13 @@ sudo apt install -y \
 ```bash
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER
-# Перелогиниться или: newgrp docker
+# Re-login or: newgrp docker
 
-# Проверить
+# Verify
 docker run --rm hello-world
 ```
 
-### 3. Клонировать репозиторий
+### 3. Clone the Repository
 
 ```bash
 sudo mkdir -p /opt/selena-core
@@ -57,16 +57,16 @@ git clone https://github.com/dotradepro/SelenaCore.git .
 
 ---
 
-## Настройка
+## Configuration
 
-### 4. Конфигурация .env
+### 4. Configure .env
 
 ```bash
 cp .env.example .env
 nano .env
 ```
 
-Минимальные настройки:
+Minimum settings:
 
 ```bash
 CORE_PORT=7070
@@ -76,12 +76,12 @@ CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
 DEBUG=false
 
-# Для платформенного подключения (опционально):
+# For platform connection (optional):
 PLATFORM_API_URL=https://selenehome.tech/api/v1
-PLATFORM_DEVICE_HASH=           # заполняется при регистрации на платформе
+PLATFORM_DEVICE_HASH=           # filled during platform registration
 ```
 
-### 5. Создать директории
+### 5. Create Directories
 
 ```bash
 sudo mkdir -p /var/lib/selena
@@ -94,40 +94,40 @@ sudo chown -R $USER:$USER /var/lib/selena /secure /var/log/selena
 sudo chmod 700 /secure
 ```
 
-### 6. Инициализация хранилища
+### 6. Initialize Storage
 
 ```bash
 cd /opt/selena-core
 
-# Создать core.manifest (SHA256 всех файлов ядра)
+# Create core.manifest (SHA256 of all core files)
 python3 agent/manifest.py --init
 
-# Сгенерировать HTTPS сертификат
+# Generate HTTPS certificate
 python3 scripts/generate_https_cert.py
 ```
 
 ---
 
-## Запуск
+## Launch
 
-### Docker Compose (рекомендовано)
+### Docker Compose (Recommended)
 
 ```bash
 cd /opt/selena-core
 docker compose up -d
 
-# Проверить логи
+# Check logs
 docker compose logs -f core
 docker compose logs -f agent
 
-# Статус
+# Status
 curl http://localhost:7070/api/v1/health
 ```
 
-### Systemd (если не используешь Docker)
+### Systemd (Without Docker)
 
 ```bash
-# Установить сервисы
+# Install services
 sudo cp smarthome-core.service /etc/systemd/system/
 sudo cp smarthome-agent.service /etc/systemd/system/
 sudo cp smarthome-modules.service /etc/systemd/system/
@@ -136,7 +136,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable smarthome-core smarthome-agent smarthome-modules
 sudo systemctl start smarthome-core
 
-# Проверить
+# Verify
 sudo systemctl status smarthome-core
 journalctl -u smarthome-core -f
 ```
@@ -145,63 +145,63 @@ journalctl -u smarthome-core -f
 
 ## Onboarding Wizard
 
-После первого запуска:
+After first launch:
 
-1. **С монитором:** браузер откроется автоматически → `http://localhost:8080`
-2. **Без монитора (headless):**
-   - Если есть Wi-Fi — ядро поднимает точку доступа `SmartHome-Setup` / пароль `smarthome`
-   - Подключись с телефона → открой `192.168.4.1`
+1. **With a monitor:** the browser opens automatically → `http://localhost:8080`
+2. **Without a monitor (headless):**
+   - If Wi-Fi is available — the core creates an access point `SmartHome-Setup` / password `smarthome`
+   - Connect from your phone → open `192.168.4.1`
 
-### Шаги Wizard
+### Wizard Steps
 
-| Шаг | Описание |
-|-----|----------|
-| `wifi` | Подключиться к Wi-Fi |
-| `language` | Язык интерфейса (`ru`, `uk`, `en`) |
-| `device_name` | Имя устройства |
-| `timezone` | Часовой пояс |
-| `stt_model` | Выбор модели распознавания речи |
-| `tts_voice` | Выбор голоса синтеза речи |
-| `admin_user` | Создать аккаунт администратора |
-| `platform` | Подключение к платформе SmartHome LK (опционально) |
-| `import` | Импорт устройств (Home Assistant, Tuya, Philips Hue) |
+| Step | Description |
+|------|-------------|
+| `wifi` | Connect to Wi-Fi |
+| `language` | Interface language (`uk`, `en`) |
+| `device_name` | Device name |
+| `timezone` | Time zone |
+| `stt_model` | Speech recognition model |
+| `tts_voice` | Text-to-speech voice |
+| `admin_user` | Create administrator account |
+| `platform` | Connect to SmartHome LK platform (optional) |
+| `import` | Import devices (Home Assistant, Tuya, Philips Hue) |
 
 ---
 
-## Аудио
+## Audio
 
-### Автодетект
+### Auto-detection
 
-Ядро автоматически определяет доступные устройства. Проверить:
+The core automatically detects available devices. To verify:
 
 ```bash
-# Список карт ALSA
-arecord -l    # входы
-aplay -l      # выходы
+# List ALSA cards
+arecord -l    # inputs
+aplay -l      # outputs
 
-# USB микрофон должен появиться как card 1
+# USB microphone should appear as card 1
 ```
 
-### I2S микрофон (INMP441)
+### I2S Microphone (INMP441)
 
 ```bash
-# Добавить в /boot/config.txt
+# Add to /boot/config.txt
 echo "dtoverlay=googlevoicehat-soundcard" | sudo tee -a /boot/config.txt
 sudo reboot
 
-# Проверить после перезагрузки
+# Verify after reboot
 arecord -l
 ```
 
-### Bluetooth колонка
+### Bluetooth Speaker
 
 ```bash
-# Через API (рекомендовано)
+# Via API (recommended)
 curl -X POST http://localhost:7070/api/v1/system/bluetooth/pair \
   -H "Authorization: Bearer <token>" \
   -d '{"mac": "AA:BB:CC:DD:EE:FF"}'
 
-# Или вручную
+# Or manually
 bluetoothctl
   power on
   scan on
@@ -211,55 +211,55 @@ bluetoothctl
   quit
 ```
 
-### Принудительный выбор аудиоустройства
+### Force Audio Device Selection
 
 ```bash
-# В .env
+# In .env
 AUDIO_FORCE_INPUT=hw:2,0
 AUDIO_FORCE_OUTPUT=bluez_sink.AA_BB_CC
 ```
 
 ---
 
-## Обновление
+## Updating
 
 ```bash
 cd /opt/selena-core
 git pull origin main
 
-# Пересобрать и перезапустить
+# Rebuild and restart
 docker compose down
 docker compose build
 docker compose up -d
 
-# Обновить core.manifest после обновления ядра
+# Update core.manifest after core update
 python3 agent/manifest.py --update
 ```
 
 ---
 
-## Брандмауэр (iptables)
+## Firewall (iptables)
 
 ```bash
-# Установить правила из скрипта
+# Apply rules from script
 sudo bash scripts/setup_iptables.sh
 
-# Вручную — основные правила
+# Manually — basic rules
 sudo iptables -A INPUT -i lo -j ACCEPT
 sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT   # UI (LAN)
-sudo iptables -A INPUT -p tcp --dport 7070 -j DROP     # Core API (только localhost)
+sudo iptables -A INPUT -p tcp --dport 7070 -j DROP     # Core API (localhost only)
 sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT     # SSH
 
-# Сохранить
+# Save
 sudo netfilter-persistent save
 ```
 
 ---
 
-## Бэкап
+## Backup
 
-### Локальный бэкап на USB
+### Local Backup to USB
 
 ```bash
 curl -X POST http://localhost:7070/api/v1/backup/local \
@@ -267,9 +267,9 @@ curl -X POST http://localhost:7070/api/v1/backup/local \
   -d '{"destination": "/media/usb0"}'
 ```
 
-### Облачный бэкап
+### Cloud Backup
 
-Данные шифруются E2E (PBKDF2 + AES-256-GCM) до отправки на платформу:
+Data is encrypted E2E (PBKDF2 + AES-256-GCM) before being sent to the platform:
 
 ```bash
 curl -X POST http://localhost:7070/api/v1/backup/cloud \
@@ -278,25 +278,25 @@ curl -X POST http://localhost:7070/api/v1/backup/cloud \
 
 ---
 
-## Мониторинг
+## Monitoring
 
 ```bash
-# Статус системы
+# System status
 curl http://localhost:7070/api/v1/system/info | python3 -m json.tool
 
 # Integrity Agent
 curl http://localhost:7070/api/v1/integrity/status | python3 -m json.tool
 
-# Аппаратный мониторинг
+# Hardware monitoring
 curl http://localhost:7070/api/v1/system/hardware | python3 -m json.tool
 ```
 
 ---
 
-## Часто задаваемые вопросы
+## FAQ
 
-**Q: Модуль не запускается после установки**
-A: Проверь статус: `GET /api/v1/modules/{name}`. Статус `ERROR` → смотри логи Docker: `docker logs selena-module-{name}`.
+**Q: Module won't start after installation**
+A: Check status: `GET /api/v1/modules/{name}`. Status `ERROR` → check Docker logs: `docker logs selena-module-{name}`.
 
 **Q: Голосовой ассистент не слышит wake-word**
 A: Проверь аудио вход: `arecord -d 5 test.wav && aplay test.wav`. Если запись тихая — убедись, что усиление микрофона включено: `alsamixer`.

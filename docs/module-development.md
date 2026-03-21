@@ -1,35 +1,35 @@
-# Разработка модулей для SelenaCore
+# Module Development for SelenaCore
 
-## Что такое модуль
+## What is a Module
 
-Модуль — изолированный микросервис, который запускается в Docker-контейнере и общается с ядром **только** через Core API (`http://localhost:7070/api/v1`).
+A module is an isolated microservice that runs in a Docker container and communicates with the core **only** through Core API (`http://localhost:7070/api/v1`).
 
-Модуль может:
-- Регистрировать устройства в Device Registry
-- Подписываться на события Event Bus через webhook
-- Публиковать события (кроме `core.*`)
-- Хранить OAuth-токены через Secrets Vault
+A module can:
+- Register devices in Device Registry
+- Subscribe to Event Bus events via webhook
+- Publish events (except `core.*`)
+- Store OAuth tokens through Secrets Vault
 
-Модуль **не может**:
-- Читать `/secure/` напрямую
-- Обращаться к SQLite ядра
-- Публиковать `core.*` события
-- Получить OAuth-токен напрямую (только через API proxy)
-- Останавливать другие модули
+A module **cannot**:
+- Read `/secure/` directly
+- Access the core's SQLite database
+- Publish `core.*` events
+- Obtain an OAuth token directly (only via API proxy)
+- Stop other modules
 
 ---
 
-## Структура модуля
+## Module Structure
 
-Минимальная структура ZIP-архива:
+Minimum ZIP archive structure:
 
 ```
 my-module.zip
-  manifest.json          ← обязательно
-  main.py                ← точка входа
-  requirements.txt       ← зависимости Python
-  Dockerfile             ← как запускать
-  icon.svg               ← иконка в UI (если type: UI)
+  manifest.json          ← required
+  main.py                ← entry point
+  requirements.txt       ← Python dependencies
+  Dockerfile             ← how to run
+  icon.svg               ← UI icon (if type: UI)
 ```
 
 ---
@@ -40,7 +40,7 @@ my-module.zip
 {
   "name": "my-module",
   "version": "1.0.0",
-  "description": "Краткое описание модуля",
+  "description": "Brief module description",
   "type": "UI",
   "ui_profile": "FULL",
   "api_version": "1.0",
@@ -69,44 +69,44 @@ my-module.zip
 }
 ```
 
-### Обязательные поля
+### Required Fields
 
-| Поле | Допустимые значения | Комментарий |
-|------|--------------------|-------------|
-| `name` | `[a-z0-9-]+` | RFC 1123 slug, уникальное имя |
+| Field | Allowed Values | Notes |
+|-------|---------------|-------|
+| `name` | `[a-z0-9-]+` | RFC 1123 slug, unique name |
 | `version` | `1.2.3` | semver |
-| `type` | `UI`, `INTEGRATION`, `DRIVER`, `AUTOMATION`, `IMPORT_SOURCE` | SYSTEM — только ядро |
-| `api_version` | `"1.0"` | Текущая версия API |
-| `port` | `8100`–`8200` | Порт модуля |
-| `permissions` | см. ниже | Список полномочий |
+| `type` | `UI`, `INTEGRATION`, `DRIVER`, `AUTOMATION`, `IMPORT_SOURCE` | SYSTEM — core only |
+| `api_version` | `"1.0"` | Current API version |
+| `port` | `8100`–`8200` | Module port |
+| `permissions` | see below | List of permissions |
 
-### Разрешения (permissions)
+### Permissions
 
-| Разрешение | Доступно для типов | Описание |
-|------------|-------------------|----------|
-| `device.read` | все | GET /devices |
-| `device.write` | все | POST/PATCH/DELETE /devices |
-| `events.subscribe` | все | Подписка на события |
-| `events.publish` | все | Публикация событий |
-| `secrets.oauth` | только INTEGRATION | Запуск OAuth flow |
-| `secrets.proxy` | только INTEGRATION | API proxy через vault |
+| Permission | Available for Types | Description |
+|------------|-------------------|-------------|
+| `device.read` | all | GET /devices |
+| `device.write` | all | POST/PATCH/DELETE /devices |
+| `events.subscribe` | all | Subscribe to events |
+| `events.publish` | all | Publish events |
+| `secrets.oauth` | INTEGRATION only | Start OAuth flow |
+| `secrets.proxy` | INTEGRATION only | API proxy through vault |
 
 ### runtime_mode
 
-| Значение | Поведение |
-|----------|-----------|
-| `always_on` | Запускается с ядром, перезапускается при сбое |
-| `on_demand` | Запускается по запросу, остаётся пока активен |
-| `scheduled` | Запускается по расписанию (cron-выражение) |
+| Value | Behavior |
+|-------|----------|
+| `always_on` | Starts with core, restarts on failure |
+| `on_demand` | Starts on request, stays while active |
+| `scheduled` | Starts on schedule (cron expression) |
 
-### ui_profile (только для type: UI)
+### ui_profile (for type: UI only)
 
-| Профиль | Что отображается |
-|---------|-----------------|
-| `HEADLESS` | Нет UI |
-| `SETTINGS_ONLY` | Только страница настроек |
-| `ICON_SETTINGS` | Иконка в меню + настройки |
-| `FULL` | Иконка + виджет на дашборде + настройки |
+| Profile | What is Displayed |
+|---------|------------------|
+| `HEADLESS` | No UI |
+| `SETTINGS_ONLY` | Settings page only |
+| `ICON_SETTINGS` | Menu icon + settings |
+| `FULL` | Icon + dashboard widget + settings |
 
 ---
 
@@ -122,18 +122,18 @@ class MyModule(SmartHomeModule):
     # === Lifecycle ===
 
     async def on_start(self):
-        """Вызывается при запуске модуля."""
+        """Called when the module starts."""
         self.logger.info("Module started")
 
     async def on_stop(self):
-        """Вызывается при остановке модуля."""
+        """Called when the module stops."""
         pass
 
     # === Event handlers ===
 
     @on_event("device.state_changed")
     async def handle_state_changed(self, payload: dict):
-        """Вызывается при каждом изменении состояния устройства."""
+        """Called on each device state change."""
         device_id = payload["device_id"]
         new_state = payload["new_state"]
         self.logger.debug(f"Device {device_id} → {new_state}")
@@ -146,76 +146,76 @@ class MyModule(SmartHomeModule):
 
     @scheduled("every:5m")
     async def periodic_sync(self):
-        """Вызывается каждые 5 минут."""
+        """Runs every 5 minutes."""
         devices = await self.list_devices()
         for device in devices:
             await self._sync_device(device)
 
     @scheduled("cron:0 * * * *")
     async def hourly_report(self):
-        """Вызывается каждый час по cron."""
+        """Runs every hour via cron."""
         pass
 
     # === Core API helpers ===
 
     async def _sync_device(self, device: dict):
-        # Обновить состояние в Registry
+        # Update state in Registry
         await self.update_device_state(
             device["device_id"],
             {"temperature": 22.5}
         )
 
-        # Опубликовать событие
+        # Publish event
         await self.publish_event("climate.updated", {
             "device_id": device["device_id"],
             "temperature": 22.5
         })
 ```
 
-### Доступные методы SmartHomeModule
+### Available SmartHomeModule Methods
 
 ```python
-# Устройства
-await self.list_devices()                         # все устройства
-await self.get_device(device_id)                  # конкретное устройство
-await self.register_device(name, type, protocol,  # создать устройство
+# Devices
+await self.list_devices()                         # all devices
+await self.get_device(device_id)                  # specific device
+await self.register_device(name, type, protocol,  # create device
                            capabilities, meta)
-await self.update_device_state(device_id, state)  # обновить состояние
-await self.delete_device(device_id)               # удалить
+await self.update_device_state(device_id, state)  # update state
+await self.delete_device(device_id)               # delete
 
-# События
-await self.publish_event(event_type, payload)     # опубликовать событие
-await self.subscribe_events(event_types,          # подписаться (webhook)
+# Events
+await self.publish_event(event_type, payload)     # publish event
+await self.subscribe_events(event_types,          # subscribe (webhook)
                             webhook_url)
 
-# Свойства
-self.logger          # logging.Logger с именем модуля
-self.token           # module_token для заголовка Authorization
+# Properties
+self.logger          # logging.Logger with module name
+self.token           # module_token for Authorization header
 self.core_url        # http://localhost:7070/api/v1
 ```
 
 ---
 
-## Локальная разработка
+## Local Development
 
-### Шаг 1 — Создать модуль
+### Step 1 — Create Module
 
 ```bash
 cd /your/workspace
 smarthome new-module my-climate-module
-# Создаёт: my-climate-module/manifest.json, main.py, Dockerfile, requirements.txt
+# Creates: my-climate-module/manifest.json, main.py, Dockerfile, requirements.txt
 ```
 
-### Шаг 2 — Запустить mock Core API
+### Step 2 — Run Mock Core API
 
 ```bash
 smarthome dev
-# Запускает mock API на http://localhost:7070
-# Все endpoints работают с in-memory хранилищем
-# Токен разработки: DEV_MODULE_TOKEN из .env (по умолчанию "test-module-token-xyz")
+# Starts mock API on http://localhost:7070
+# All endpoints work with in-memory storage
+# Dev token: DEV_MODULE_TOKEN from .env (default "test-module-token-xyz")
 ```
 
-### Шаг 3 — Разработать модуль
+### Step 3 — Develop Module
 
 ```python
 # main.py
@@ -234,14 +234,14 @@ async def health():
     return {"status": "ok"}
 ```
 
-### Шаг 4 — Тесты
+### Step 4 — Tests
 
 ```bash
 smarthome test
-# Запускает pytest в контексте mock Core API
+# Runs pytest in mock Core API context
 ```
 
-Пример теста:
+Test example:
 
 ```python
 import pytest
@@ -263,22 +263,22 @@ async def test_device_registration(core_client):
     assert resp.status_code == 201
 ```
 
-### Шаг 5 — Установить в SelenaCore
+### Step 5 — Install to SelenaCore
 
 ```bash
 smarthome publish --core http://localhost:7070
-# Собирает ZIP, отправляет на POST /api/v1/modules/install
-# Отслеживает статус через SSE
+# Builds ZIP, sends to POST /api/v1/modules/install
+# Tracks status via SSE
 ```
 
 ---
 
-## Webhook от Event Bus
+## Webhooks from Event Bus
 
-Если твой модуль подписался на события, ядро будет отправлять POST-запросы на твой webhook URL.
+If your module subscribed to events, the core will send POST requests to your webhook URL.
 
 ```python
-# Подписка
+# Subscribe
 await core_client.post("/api/v1/events/subscribe",
     headers={"Authorization": f"Bearer {token}"},
     json={
@@ -289,17 +289,17 @@ await core_client.post("/api/v1/events/subscribe",
 ```
 
 ```python
-# Обработчик webhook в модуле (FastAPI)
+# Webhook handler in module (FastAPI)
 from fastapi import FastAPI, Request, HTTPException
 import hmac
 import hashlib
 
 app = FastAPI()
-WEBHOOK_SECRET = "..."  # получен при регистрации
+WEBHOOK_SECRET = "..."  # received during registration
 
 @app.post("/webhook/events")
 async def handle_event(request: Request):
-    # Верифицировать HMAC-SHA256
+    # Verify HMAC-SHA256
     signature = request.headers.get("X-Selena-Signature", "")
     body = await request.body()
     expected = "sha256=" + hmac.new(
@@ -311,13 +311,13 @@ async def handle_event(request: Request):
     event = await request.json()
     event_type = event["type"]
     payload = event["payload"]
-    # ... обработка
+    # ... handle event
     return {"ok": True}
 ```
 
 ---
 
-## Структура manifest.json для OAuth интеграции
+## manifest.json Structure for OAuth Integration
 
 ```json
 {
@@ -334,33 +334,33 @@ async def handle_event(request: Request):
 }
 ```
 
-Использование в коде:
+Usage in code:
 
 ```python
-# Начать OAuth flow (QR-код на экране)
+# Start OAuth flow (QR code on screen)
 await core_client.post("/api/v1/secrets/oauth/start",
     json={"module": "gmail-integration", "provider": "google",
           "scopes": ["gmail.readonly"]})
 
-# Выполнить запрос к API — ядро подставит токен
+# Execute API request — core injects the token
 resp = await core_client.post("/api/v1/secrets/proxy",
     json={
         "module": "gmail-integration",
         "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
         "method": "GET"
     })
-# Токен НИКОГДА не покидает ядро
+# Token NEVER leaves the core
 ```
 
 ---
 
-## Типичные ошибки
+## Common Errors
 
-| Ошибка | Причина | Решение |
-|--------|---------|---------|
-| `403 Forbidden` на `/events/publish` | Тип события начинается с `core.` | Переименуй тип события |
-| `403 Forbidden` на `/modules/{name}/stop` | Пытаешься остановить SYSTEM модуль | Нельзя |
-| `422 Unprocessable Entity` при установке | Ошибка в manifest.json | Проверь обязательные поля |
-| `409 Conflict` при установке | Модуль с таким именем уже существует | Сначала DELETE |
-| Webhook не доходит | Неверный `webhook_url` или модуль не слушает | Проверь порт в manifest.json |
-| `400 Bad Request` на proxy | URL не https:// или приватный IP | Только публичные HTTPS endpoints |
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `403 Forbidden` on `/events/publish` | Event type starts with `core.` | Rename the event type |
+| `403 Forbidden` on `/modules/{name}/stop` | Attempting to stop a SYSTEM module | Not allowed |
+| `422 Unprocessable Entity` on install | Error in manifest.json | Check required fields |
+| `409 Conflict` on install | Module with this name already exists | DELETE first |
+| Webhook not received | Invalid `webhook_url` or module not listening | Check port in manifest.json |
+| `400 Bad Request` on proxy | URL is not https:// or private IP | Only public HTTPS endpoints |

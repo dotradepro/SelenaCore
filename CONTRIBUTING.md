@@ -1,76 +1,78 @@
 # Contributing to SelenaCore
 
-Спасибо за интерес к проекту!
+Thank you for your interest in the project!
 
-## Рабочий процесс
+🇺🇦 [Українська версія](docs/uk/CONTRIBUTING.md)
 
-1. **Issues first** — любая работа начинается с создания Issue на GitHub
-2. **Одна задача за раз** — берёшь Issue → реализуешь → коммит → закрываешь
-3. **Тесты обязательны** — нельзя пушить в `main` с падающими тестами
+## Workflow
 
-## Ветки
+1. **Issues first** — all work starts with creating a GitHub Issue
+2. **One task at a time** — take an Issue → implement → commit → close
+3. **Tests required** — cannot push to `main` with failing tests
 
-- Изменения до 200 строк — работа прямо в `main`
-- Больше 200 строк — `feat/<issue-number>-<slug>`
+## Branches
+
+- Changes under 200 lines — work directly in `main`
+- Over 200 lines — `feat/<issue-number>-<slug>`
 
 ```bash
 git checkout -b feat/5-device-registry
-# ... работаешь ...
+# ... work ...
 git checkout main
 git merge feat/5-device-registry
 git push origin main
 ```
 
-## Коммиты
+## Commits
 
-Формат: `<type>(<scope>): <описание> [#<N>]`
+Format: `<type>(<scope>): <description> [#<N>]`
 
 ```bash
-# Примеры
+# Examples
 git commit -m "feat(registry): add Device Registry CRUD with state history [#5]"
 git commit -m "fix(agent): handle missing manifest file on first init [#12]"
 git commit -m "test(registry): add pytest for state_changed event emission [#68]"
 ```
 
-Типы: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`, `security`, `perf`
+Types: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`, `security`, `perf`
 
-**Запрещено:** `fix`, `update`, `wip`, `.`, пустое сообщение.
+**Forbidden:** `fix`, `update`, `wip`, `.`, empty message.
 
-## Код
+## Code
 
-- Python 3.11+, все публичные методы — `async def`
-- Типизация обязательна (type hints)
-- `logging.getLogger(__name__)` — никаких `print()`
-- `except Exception as e:` — никогда пустого `except: pass`
-- Один файл = одна ответственность
+- Python 3.11+, all public methods — `async def`
+- Type hints required
+- `logging.getLogger(__name__)` — no `print()`
+- `except Exception as e:` — never bare `except: pass`
+- One file = one responsibility
 
-## Тесты
+## Tests
 
 ```bash
 pytest tests/ -v
 pytest tests/ --cov=core --cov-report=term-missing
 ```
 
-Перед каждым push:
+Before each push:
 
 ```bash
-pytest tests/ -x -q           # все тесты зелёные
-python -m mypy core/           # типизация
+pytest tests/ -x -q           # all tests green
+python -m mypy core/           # type checking
 ```
 
-## Безопасность
+## Security
 
-Если нашёл уязвимость — **не создавай публичный Issue**. Напиши на security@selenehome.tech или через [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
+If you find a vulnerability — **do not create a public Issue**. Write to security@selenehome.tech or use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
 
-## Запрещено
+## Forbidden
 
-- `eval()`, `exec()` в любом коде
-- `shell=True` без крайней необходимости
-- Секреты в `.env` (только `.env.example`)
-- Прямое чтение `/secure/` из модуля
-- Публикация `core.*` событий из модуля
-- Биометрия в исходящих HTTP запросах
+- `eval()`, `exec()` in any code
+- `shell=True` without absolute necessity
+- Secrets in `.env` (only `.env.example`)
+- Direct reading of `/secure/` from a module
+- Publishing `core.*` events from a module
+- Biometrics in outgoing HTTP requests
 
-## Лицензия
+## License
 
-Все вклады принимаются под лицензией MIT.
+All contributions are accepted under the MIT license.
