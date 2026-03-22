@@ -178,10 +178,10 @@ function FilterBar({
   const { t } = useTranslation();
 
   const statusOpts = [
-    { key: 'all',     label: t('modules.filterAll') },
+    { key: 'all', label: t('modules.filterAll') },
     { key: 'RUNNING', label: t('modules.filterRunning') },
     { key: 'STOPPED', label: t('modules.filterStopped') },
-    { key: 'ERROR',   label: t('modules.filterError') },
+    { key: 'ERROR', label: t('modules.filterError') },
   ];
 
   const chipStyle = (active: boolean): React.CSSProperties => ({

@@ -181,7 +181,7 @@
                     const list = document.getElementById("users-list");
                     const users = d.users ?? [];
                     if (users.length === 0) {
-                    list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + t('no_users') + '</div>';
+                        list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + t('no_users') + '</div>';
                     } else {
                         list.innerHTML = users.slice(0, 6).map(u =>
                             `<div class="user-item">

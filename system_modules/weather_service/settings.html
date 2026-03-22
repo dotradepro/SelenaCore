@@ -533,8 +533,10 @@
                     const r1 = await fetch('https://ipapi.co/json/');
                     const j1 = await r1.json();
                     if (j1.latitude && j1.longitude) {
-                        loc = { lat: j1.latitude, lon: j1.longitude,
-                                city: j1.city, country: j1.country_name };
+                        loc = {
+                            lat: j1.latitude, lon: j1.longitude,
+                            city: j1.city, country: j1.country_name
+                        };
                     }
                 } catch (_) { /* try next service */ }
 
