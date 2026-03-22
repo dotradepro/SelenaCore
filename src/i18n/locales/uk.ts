@@ -63,6 +63,11 @@ const uk = {
             noModulesInstalled: 'Немає встановлених модулів.',
             turnedOn: 'Увімкнено',
             turnedOff: 'Вимкнено',
+            edit: 'Редагувати',
+            done: 'Готово',
+            addWidget: 'Додати віджет',
+            addBtn: 'Додати',
+            allPinned: 'Всі доступні віджети вже на головному екрані.',
         },
 
         // ── Devices ──

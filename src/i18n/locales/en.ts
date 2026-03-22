@@ -63,6 +63,11 @@ const en = {
             noModulesInstalled: 'No modules installed.',
             turnedOn: 'On',
             turnedOff: 'Off',
+            edit: 'Edit',
+            done: 'Done',
+            addWidget: 'Add widget',
+            addBtn: 'Add',
+            allPinned: 'All available widgets are already on the dashboard.',
         },
 
         // ── Devices ──

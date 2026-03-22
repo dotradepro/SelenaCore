@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
+import type React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useStore, Module } from '../store/useStore';
 
 /* ── Widget Shell ── */
@@ -89,8 +91,172 @@ function WidgetShell({
   );
 }
 
+/* ── Add Widget Drawer ── */
+function WidgetPreview({ mod }: { mod: Module }) {
+  const [iconFail, setIconFail] = useState(false);
+  const TYPE_EMOJI: Record<string, string> = {
+    INTEGRATION: '🔗', DRIVER: '🔌', SYSTEM: '⚙️',
+    AUTOMATION: '⚡', UI: '🖥', IMPORT_SOURCE: '📥',
+  };
+
+  if (mod.status === 'RUNNING' && mod.ui?.widget?.file) {
+    return (
+      <div style={{
+        width: '100%', height: 80, overflow: 'hidden',
+        borderRadius: 8, position: 'relative', background: 'var(--sf2)',
+        pointerEvents: 'none',
+      }}>
+        {/* scale trick: 30% of original widget */}
+        <iframe
+          src={`/api/ui/modules/${mod.name}/widget`}
+          sandbox="allow-scripts allow-same-origin"
+          scrolling="no"
+          title={`${mod.name} preview`}
+          style={{
+            position: 'absolute', top: 0, left: 0,
+            width: '333%', height: '333%',
+            transform: 'scale(0.3)', transformOrigin: 'top left',
+            border: 'none', pointerEvents: 'none',
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      width: '100%', height: 80,
+      background: 'var(--sf2)', borderRadius: 8,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 4,
+    }}>
+      {mod.ui?.icon && !iconFail ? (
+        <img
+          src={`/api/ui/modules/${mod.name}/icon`}
+          alt={mod.name}
+          onError={() => setIconFail(true)}
+          style={{ width: 28, height: 28, objectFit: 'contain' }}
+        />
+      ) : (
+        <span style={{ fontSize: 22 }}>{TYPE_EMOJI[mod.type] || '📦'}</span>
+      )}
+      <span style={{ fontSize: 9, color: 'var(--tx3)', opacity: .7 }}>
+        {mod.status.toLowerCase()}
+      </span>
+    </div>
+  );
+}
+
+function AddWidgetDrawer({
+  modules,
+  pinned,
+  onPin,
+  onClose,
+}: {
+  modules: Module[];
+  pinned: string[];
+  onPin: (name: string) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  // All modules with a widget file that are not currently pinned
+  const available = modules.filter(
+    (m) => !!m.ui?.widget?.file && !pinned.includes(m.name)
+  );
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'absolute', inset: 0, zIndex: 40,
+          background: 'rgba(0,0,0,.45)',
+        }}
+      />
+      {/* Drawer */}
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        zIndex: 50,
+        background: 'var(--sf)',
+        borderRadius: '14px 14px 0 0',
+        padding: '12px 14px 20px',
+        boxShadow: '0 -4px 24px rgba(0,0,0,.3)',
+      }}>
+        {/* Handle */}
+        <div style={{
+          width: 36, height: 4, borderRadius: 2,
+          background: 'var(--sf3)', margin: '0 auto 12px',
+        }} />
+
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx)', marginBottom: 12 }}>
+          {t('dashboard.addWidget', 'Add widget')}
+        </div>
+
+        {available.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: '20px 0',
+            color: 'var(--tx3)', fontSize: 11,
+          }}>
+            {t('dashboard.allPinned', 'All available widgets are already on the dashboard.')}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex', gap: 10,
+            overflowX: 'auto', paddingBottom: 4,
+            scrollbarWidth: 'none',
+          }}>
+            {available.map((mod) => (
+              <div
+                key={mod.name}
+                style={{
+                  flexShrink: 0, width: 110,
+                  background: 'var(--sf2)',
+                  borderRadius: 10,
+                  padding: 8,
+                  cursor: 'pointer',
+                  border: '1px solid var(--b)',
+                  transition: 'border-color .15s',
+                }}
+                onClick={() => { onPin(mod.name); onClose(); }}
+              >
+                <WidgetPreview mod={mod} />
+                <div style={{ marginTop: 6 }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 600, color: 'var(--tx)',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}>
+                    {mod.name}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                    <div style={{
+                      width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                      background: mod.status === 'RUNNING' ? 'var(--gr)' : 'var(--tx3)',
+                    }} />
+                    <span style={{ fontSize: 9, color: 'var(--tx3)' }}>{mod.type}</span>
+                  </div>
+                </div>
+                <div style={{
+                  marginTop: 8, width: '100%',
+                  background: 'var(--ac)', color: '#fff',
+                  borderRadius: 6, padding: '4px 0',
+                  textAlign: 'center', fontSize: 10, fontWeight: 600,
+                }}>
+                  + {t('dashboard.addBtn', 'Add')}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 /* ── Dashboard (Widget Homescreen) ── */
 export default function Dashboard() {
+  const { t } = useTranslation();
   const modules = useStore((s) => s.modules);
   const fetchModules = useStore((s) => s.fetchModules);
   const widgetLayout = useStore((s) => s.widgetLayout);
@@ -101,7 +267,7 @@ export default function Dashboard() {
 
   const [currentScreen, setCurrentScreen] = useState(0);
   const [editMode, setEditMode] = useState(false);
-  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [showAddDrawer, setShowAddDrawer] = useState(false);
   const swipeRef = useRef<number | null>(null);
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
@@ -111,9 +277,9 @@ export default function Dashboard() {
     .map(name => modules.find(m => m.name === name))
     .filter(Boolean) as Module[];
 
-  // Unpinned system modules with a widget (available to add to dashboard)
-  const unpinnedSystemMods = modules.filter(m =>
-    m.type === 'SYSTEM' && !!m.ui?.widget?.file && !widgetLayout.pinned.includes(m.name)
+  // Any module with a widget that is NOT currently pinned (for the add drawer)
+  const unpinnedWidgetMods = modules.filter(
+    (m) => !!m.ui?.widget?.file && !widgetLayout.pinned.includes(m.name)
   );
 
   const PER_SCREEN = 6;
@@ -147,34 +313,20 @@ export default function Dashboard() {
     >
       {/* Edit toggle */}
       <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 30, display: 'flex', gap: 6, alignItems: 'center' }}>
-        {editMode && unpinnedSystemMods.length > 0 && (
-          <div className="edit-toggle" onClick={() => setShowAddPanel(v => !v)}>
-            + Add ({unpinnedSystemMods.length})
+        {editMode && unpinnedWidgetMods.length > 0 && (
+          <div className="edit-toggle" onClick={() => setShowAddDrawer(v => !v)}>
+            + {t('dashboard.addWidget', 'Add')} ({unpinnedWidgetMods.length})
           </div>
         )}
         <div
           className={`edit-toggle${editMode ? ' on' : ''}`}
-          onClick={() => { setEditMode(v => !v); setShowAddPanel(false); }}
+          onClick={() => { setEditMode(v => !v); setShowAddDrawer(false); }}
         >
-          {editMode ? 'Done' : 'Edit'}
+          {editMode ? t('dashboard.done', 'Done') : t('dashboard.edit', 'Edit')}
         </div>
       </div>
 
-      {/* Add system module panel */}
-      {editMode && showAddPanel && (
-        <div className="add-mod-panel">
-          <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--tx3)', marginBottom: 6 }}>
-            Add to Dashboard
-          </div>
-          {unpinnedSystemMods.map(m => (
-            <div key={m.name} className="add-mod-item" onClick={() => { pinModule(m.name); setShowAddPanel(false); }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: m.status === 'RUNNING' ? 'var(--gr)' : 'var(--tx3)', flexShrink: 0 }} />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
-              <span style={{ color: 'var(--ac)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}>+</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Add system module panel (legacy small dropdown — hidden now) */}
 
       {/* Left arrow */}
       {currentScreen > 0 && (
@@ -229,14 +381,20 @@ export default function Dashboard() {
                   />
                 ))}
 
-                {/* Add slot (edit mode) */}
+                {/* Add slot (edit mode) — opens the full add drawer */}
                 {editMode && mods.length < maxSlots && (
-                  <div className="ws ws-empty sp-1x1">
-                    <svg viewBox="0 0 16 16" fill="none" width="18" height="18" style={{ color: 'var(--tx3)' }}>
+                  <div
+                    className="ws ws-empty sp-1x1"
+                    onClick={() => setShowAddDrawer(true)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <svg viewBox="0 0 16 16" fill="none" width="18" height="18" style={{ color: 'var(--ac)' }}>
                       <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
                       <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
                     </svg>
-                    <div style={{ fontSize: 9, color: 'var(--tx3)', marginTop: 2 }}>Add</div>
+                    <div style={{ fontSize: 9, color: 'var(--ac)', marginTop: 2 }}>
+                      {t('dashboard.addBtn', 'Add')}
+                    </div>
                   </div>
                 )}
               </div>
@@ -244,6 +402,16 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      {/* Add widget drawer */}
+      {editMode && showAddDrawer && (
+        <AddWidgetDrawer
+          modules={modules}
+          pinned={widgetLayout.pinned}
+          onPin={pinModule}
+          onClose={() => setShowAddDrawer(false)}
+        />
+      )}
 
       {/* Page dots */}
       {totalScreens > 1 && (
