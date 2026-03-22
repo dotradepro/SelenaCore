@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useStore, Module } from '../store/useStore';
+
+const PAGE_SIZE = 12;
 
 const TYPE_CLS: Record<string, string> = {
   INTEGRATION: 'bg-int',
@@ -17,19 +20,38 @@ const STATUS_CLS: Record<string, string> = {
   ERROR: 'bg-stop',
 };
 
-function typeEmoji(type: string): string {
-  const map: Record<string, string> = {
-    INTEGRATION: '🔗',
-    DRIVER: '🔌',
-    SYSTEM: '⚙️',
-    AUTOMATION: '⚡',
-    UI: '🖥',
-    IMPORT_SOURCE: '📥',
-  };
-  return map[type] || '📦';
+const TYPE_EMOJI: Record<string, string> = {
+  INTEGRATION: '🔗',
+  DRIVER: '🔌',
+  SYSTEM: '⚙️',
+  AUTOMATION: '⚡',
+  UI: '🖥',
+  IMPORT_SOURCE: '📥',
+};
+
+/** Shows the module's icon file if available, falls back to type emoji */
+function ModuleIcon({ mod }: { mod: Module }) {
+  const [failed, setFailed] = useState(false);
+  const hasIcon = !!mod.ui?.icon && !failed;
+
+  if (hasIcon) {
+    return (
+      <img
+        src={`/api/ui/modules/${mod.name}/icon`}
+        alt={mod.name}
+        onError={() => setFailed(true)}
+        style={{
+          width: 28, height: 28, objectFit: 'contain',
+          borderRadius: 6, flexShrink: 0,
+        }}
+      />
+    );
+  }
+  return <span style={{ fontSize: 18, lineHeight: 1 }}>{TYPE_EMOJI[mod.type] || '📦'}</span>;
 }
 
 function ModuleCard({ mod }: { mod: Module }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const stopModule = useStore((s) => s.stopModule);
   const startModule = useStore((s) => s.startModule);
@@ -44,18 +66,18 @@ function ModuleCard({ mod }: { mod: Module }) {
     try { await fn(); } finally { setBusy(false); }
   }
 
-  const uptime = mod.installed_at
-    ? `installed ${new Date(mod.installed_at * 1000).toLocaleDateString()}`
+  const installedDate = mod.installed_at
+    ? new Date(mod.installed_at * 1000).toLocaleDateString()
     : '';
 
   return (
     <div className="mcard">
       <div
         className="mcard-ico"
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         onClick={() => navigate(`/modules/${mod.name}`)}
       >
-        {typeEmoji(mod.type)}
+        <ModuleIcon mod={mod} />
       </div>
       <div
         className="mcard-info"
@@ -64,8 +86,8 @@ function ModuleCard({ mod }: { mod: Module }) {
       >
         <div className="mcard-name">{mod.name}</div>
         <div className="mcard-sub">
-          v{mod.version} · {mod.type} · :{mod.port}
-          {uptime && ` · ${uptime}`}
+          v{mod.version} · {mod.type}{mod.port ? ` · :${mod.port}` : ''}
+          {installedDate && ` · ${installedDate}`}
         </div>
       </div>
       <span className={`badge ${TYPE_CLS[mod.type] || 'bg-int'}`} style={{ marginRight: 4 }}>
@@ -82,7 +104,7 @@ function ModuleCard({ mod }: { mod: Module }) {
             <button
               disabled={busy}
               onClick={() => handle(() => stopModule(mod.name))}
-              title="Stop"
+              title={t('modules.stop')}
               style={{
                 width: 26, height: 26, borderRadius: 6,
                 background: 'rgba(224,84,84,.1)',
@@ -100,7 +122,7 @@ function ModuleCard({ mod }: { mod: Module }) {
             <button
               disabled={busy}
               onClick={() => handle(() => startModule(mod.name))}
-              title="Start"
+              title={t('modules.start')}
               style={{
                 width: 26, height: 26, borderRadius: 6,
                 background: 'rgba(46,201,138,.1)',
@@ -118,7 +140,7 @@ function ModuleCard({ mod }: { mod: Module }) {
           <button
             disabled={busy}
             onClick={() => handle(() => removeModule(mod.name))}
-            title="Remove"
+            title={t('modules.remove')}
             style={{
               width: 26, height: 26, borderRadius: 6,
               background: 'rgba(255,255,255,.04)',
@@ -138,14 +160,140 @@ function ModuleCard({ mod }: { mod: Module }) {
   );
 }
 
+// ── Filter bar ──────────────────────────────────────────────────────────────
+
+const ALL_TYPES = ['SYSTEM', 'UI', 'INTEGRATION', 'DRIVER', 'AUTOMATION', 'IMPORT_SOURCE'];
+
+function FilterBar({
+  search, onSearch,
+  status, onStatus,
+  typeFilter, onType,
+  types,
+}: {
+  search: string; onSearch: (v: string) => void;
+  status: string; onStatus: (v: string) => void;
+  typeFilter: string; onType: (v: string) => void;
+  types: string[];
+}) {
+  const { t } = useTranslation();
+
+  const statusOpts = [
+    { key: 'all',     label: t('modules.filterAll') },
+    { key: 'RUNNING', label: t('modules.filterRunning') },
+    { key: 'STOPPED', label: t('modules.filterStopped') },
+    { key: 'ERROR',   label: t('modules.filterError') },
+  ];
+
+  const chipStyle = (active: boolean): React.CSSProperties => ({
+    padding: '3px 9px', borderRadius: 20, fontSize: 10, fontWeight: 500,
+    cursor: 'pointer', border: 'none', transition: 'all .15s',
+    background: active ? 'var(--ac)' : 'var(--sf3)',
+    color: active ? '#fff' : 'var(--tx2)',
+  });
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+      {/* Search */}
+      <input
+        type="search"
+        placeholder={t('modules.searchPlaceholder')}
+        value={search}
+        onChange={(e) => { onSearch(e.target.value); }}
+        style={{
+          width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 11,
+          background: 'var(--sf)', border: '1px solid var(--b)',
+          color: 'var(--tx)', outline: 'none',
+        }}
+      />
+
+      {/* Status tabs */}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        {statusOpts.map((o) => (
+          <button key={o.key} style={chipStyle(status === o.key)} onClick={() => onStatus(o.key)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Type chips — only show types that exist */}
+      {types.length > 1 && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 10, color: 'var(--tx3)', marginRight: 2 }}>
+            {t('modules.filterByType')}:
+          </span>
+          <button style={chipStyle(typeFilter === 'all')} onClick={() => onType('all')}>
+            {t('modules.filterAll')}
+          </button>
+          {types.map((tp) => (
+            <button key={tp} style={chipStyle(typeFilter === tp)} onClick={() => onType(tp)}>
+              {TYPE_EMOJI[tp] || ''} {tp}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pagination ──────────────────────────────────────────────────────────────
+
+function Pagination({ page, total, onPage }: { page: number; total: number; onPage: (n: number) => void }) {
+  const { t } = useTranslation();
+  if (total <= 1) return null;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: 10, marginTop: 10,
+    }}>
+      <button
+        disabled={page === 1}
+        onClick={() => onPage(page - 1)}
+        style={{
+          padding: '4px 12px', borderRadius: 6, fontSize: 11,
+          background: 'var(--sf2)', border: '1px solid var(--b)',
+          color: page === 1 ? 'var(--tx3)' : 'var(--tx2)', cursor: page === 1 ? 'default' : 'pointer',
+        }}
+      >
+        {t('modules.prev')}
+      </button>
+      <span style={{ fontSize: 11, color: 'var(--tx3)' }}>
+        {page} {t('modules.pageOf')} {total}
+      </span>
+      <button
+        disabled={page === total}
+        onClick={() => onPage(page + 1)}
+        style={{
+          padding: '4px 12px', borderRadius: 6, fontSize: 11,
+          background: 'var(--sf2)', border: '1px solid var(--b)',
+          color: page === total ? 'var(--tx3)' : 'var(--tx2)', cursor: page === total ? 'default' : 'pointer',
+        }}
+      >
+        {t('modules.next')}
+      </button>
+    </div>
+  );
+}
+
+// ── Main page ───────────────────────────────────────────────────────────────
+
 export default function Modules() {
+  const { t } = useTranslation();
   const modules = useStore((s) => s.modules);
   const fetchModules = useStore((s) => s.fetchModules);
   const fileRef = useRef<HTMLInputElement>(null);
   const [installing, setInstalling] = useState(false);
   const [installMsg, setInstallMsg] = useState('');
 
+  // Filters
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [page, setPage] = useState(1);
+
   useEffect(() => { fetchModules(); }, [fetchModules]);
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [search, statusFilter, typeFilter]);
 
   async function handleInstall(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -170,6 +318,20 @@ export default function Modules() {
     }
   }
 
+  // Collect types that actually exist in the list
+  const presentTypes = ALL_TYPES.filter((tp) => modules.some((m) => m.type === tp));
+
+  // Apply filters
+  const filtered = modules.filter((m) => {
+    if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter !== 'all' && m.status !== statusFilter) return false;
+    if (typeFilter !== 'all' && m.type !== typeFilter) return false;
+    return true;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageMods = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const running = modules.filter((m) => m.status === 'RUNNING').length;
 
   return (
@@ -177,24 +339,34 @@ export default function Modules() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--tx)' }}>Modules</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--tx)' }}>
+            {t('modules.title')}
+          </div>
           <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 1 }}>
-            {running} running · {modules.length} total
+            {t('modules.total', { running, total: modules.length })}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={() => fetchModules()}
-            style={{
-              padding: '5px 10px', borderRadius: 6,
-              background: 'var(--sf2)', border: '1px solid var(--b)',
-              color: 'var(--tx2)', fontSize: 11, cursor: 'pointer',
-            }}
-          >
-            Refresh
-          </button>
-        </div>
+        <button
+          onClick={() => fetchModules()}
+          style={{
+            padding: '5px 10px', borderRadius: 6,
+            background: 'var(--sf2)', border: '1px solid var(--b)',
+            color: 'var(--tx2)', fontSize: 11, cursor: 'pointer',
+          }}
+        >
+          {t('modules.refresh')}
+        </button>
       </div>
+
+      {/* Filter bar — only show when there are modules */}
+      {modules.length > 0 && (
+        <FilterBar
+          search={search} onSearch={setSearch}
+          status={statusFilter} onStatus={setStatusFilter}
+          typeFilter={typeFilter} onType={setTypeFilter}
+          types={presentTypes}
+        />
+      )}
 
       {/* Module list */}
       {modules.length === 0 ? (
@@ -204,11 +376,23 @@ export default function Modules() {
           background: 'var(--sf)', borderRadius: 'var(--r)',
           border: '1px solid var(--b)',
         }}>
-          No modules installed yet
+          {t('modules.noModulesInstalled')}
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{
+          textAlign: 'center', padding: '30px 20px',
+          color: 'var(--tx3)', fontSize: 11,
+          background: 'var(--sf)', borderRadius: 'var(--r)',
+          border: '1px solid var(--b)',
+        }}>
+          {t('modules.noResults')}
         </div>
       ) : (
-        modules.map((mod) => <ModuleCard key={mod.name} mod={mod} />)
+        pageMods.map((mod) => <ModuleCard key={mod.name} mod={mod} />)
       )}
+
+      {/* Pagination */}
+      <Pagination page={page} total={totalPages} onPage={setPage} />
 
       {/* Install from ZIP */}
       <div
@@ -218,14 +402,16 @@ export default function Modules() {
           borderRadius: 'var(--r)',
           padding: '18px',
           textAlign: 'center',
-          color: installMsg ? (installMsg.startsWith('✓') ? 'var(--gr)' : installMsg.startsWith('✗') ? 'var(--rd)' : 'var(--tx2)') : 'var(--tx3)',
+          color: installMsg
+            ? (installMsg.startsWith('✓') ? 'var(--gr)' : installMsg.startsWith('✗') ? 'var(--rd)' : 'var(--tx2)')
+            : 'var(--tx3)',
           fontSize: 11,
-          marginTop: 4,
+          marginTop: 8,
           cursor: installing ? 'default' : 'pointer',
           transition: 'border-color .15s',
         }}
       >
-        {installMsg || '+ Install module from ZIP'}
+        {installMsg || t('modules.installFromZip')}
       </div>
       <input
         ref={fileRef}
