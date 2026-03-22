@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Adapters — Settings</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 24px;
+        }
+
+        h2 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: #60a5fa;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #94a3b8;
+            border-bottom: 2px solid transparent;
+            transition: all .15s;
+        }
+
+        .tab.active {
+            color: #60a5fa;
+            border-bottom-color: #60a5fa;
+        }
+
+        .panel {
+            display: none;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #94a3b8;
+            margin-bottom: 4px;
+            margin-top: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            font-size: 14px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        input[type=checkbox] {
+            width: auto;
+        }
+
+        .btn {
+            margin-top: 16px;
+            width: 100%;
+            padding: 10px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #1d4ed8;
+        }
+
+        .result {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .result.ok {
+            background: #166534;
+            color: #bbf7d0;
+        }
+
+        .result.err {
+            background: #991b1b;
+            color: #fecaca;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+
+        .history-table th,
+        .history-table td {
+            text-align: left;
+            padding: 6px 10px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .history-table th {
+            color: #94a3b8;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Import Adapters</h2>
+
+    <div class="tabs">
+        <div class="tab active" onclick="showTab('ha')">Home Assistant</div>
+        <div class="tab" onclick="showTab('tuya')">Tuya</div>
+        <div class="tab" onclick="showTab('hue')">Philips Hue</div>
+        <div class="tab" onclick="showTab('hist')">History</div>
+    </div>
+
+    <!-- HA -->
+    <div id="tab-ha" class="panel active">
+        <label>HA Base URL (e.g. http://homeassistant.local:8123)</label>
+        <input id="ha-url" type="url" placeholder="http://homeassistant.local:8123">
+        <label>Long-Lived Access Token</label>
+        <input id="ha-token" type="password" placeholder="eyJ...">
+        <div class="row"><input type="checkbox" id="ha-dry"><label for="ha-dry" style="margin:0">Dry run (preview
+                only)</label></div>
+        <button class="btn" onclick="runHA()">Import from Home Assistant</button>
+        <div id="ha-result" class="result"></div>
+    </div>
+
+    <!-- Tuya -->
+    <div id="tab-tuya" class="panel">
+        <label>Scan timeout (seconds)</label>
+        <input id="tuya-timeout" type="number" value="6" min="2" max="30">
+        <div class="row"><input type="checkbox" id="tuya-dry"><label for="tuya-dry" style="margin:0">Dry run (preview
+                only)</label></div>
+        <button class="btn" onclick="runTuya()">Scan Tuya Devices</button>
+        <div id="tuya-result" class="result"></div>
+    </div>
+
+    <!-- Hue -->
+    <div id="tab-hue" class="panel">
+        <label>Bridge IP Address</label>
+        <input id="hue-ip" type="text" placeholder="192.168.1.10">
+        <label>Application Key (username)</label>
+        <input id="hue-user" type="text" placeholder="your-hue-app-key">
+        <div class="row"><input type="checkbox" id="hue-dry"><label for="hue-dry" style="margin:0">Dry run (preview
+                only)</label></div>
+        <button class="btn" onclick="runHue()">Import from Hue Bridge</button>
+        <div id="hue-result" class="result"></div>
+    </div>
+
+    <!-- History -->
+    <div id="tab-hist" class="panel">
+        <button class="btn" onclick="loadHistory()" style="margin-bottom:12px">Refresh History</button>
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Count</th>
+                    <th>Started</th>
+                </tr>
+            </thead>
+            <tbody id="hist-body">
+                <tr>
+                    <td colspan="4" style="color:#64748b;text-align:center">Load history...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach((t, i) => t.classList.remove('active'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            const tabs = ['ha', 'tuya', 'hue', 'hist'];
+            document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');
+            document.getElementById('tab-' + name).classList.add('active');
+            if (name === 'hist') loadHistory();
+        }
+
+        function showResult(id, ok, msg) {
+            const el = document.getElementById(id);
+            el.className = 'result ' + (ok ? 'ok' : 'err');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        async function runHA() {
+            const url = document.getElementById('ha-url').value.trim();
+            const token = document.getElementById('ha-token').value.trim();
+            const dry_run = document.getElementById('ha-dry').checked;
+            if (!url || !token) return showResult('ha-result', false, 'URL and token are required.');
+            try {
+                const r = await fetch('/import/ha', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ base_url: url, token, dry_run })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.detail || 'Import failed');
+                showResult('ha-result', true, `✅ Imported ${d.imported_count} devices (${d.status})`);
+            } catch (e) { showResult('ha-result', false, '❌ ' + e.message); }
+        }
+
+        async function runTuya() {
+            const scan_timeout = parseFloat(document.getElementById('tuya-timeout').value) || 6;
+            const dry_run = document.getElementById('tuya-dry').checked;
+            try {
+                const r = await fetch('/import/tuya', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ scan_timeout, dry_run })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.detail || 'Import failed');
+                showResult('tuya-result', true, `✅ Found ${d.imported_count} Tuya devices (${d.status})`);
+            } catch (e) { showResult('tuya-result', false, '❌ ' + e.message); }
+        }
+
+        async function runHue() {
+            const bridge_ip = document.getElementById('hue-ip').value.trim();
+            const username = document.getElementById('hue-user').value.trim();
+            const dry_run = document.getElementById('hue-dry').checked;
+            if (!bridge_ip || !username) return showResult('hue-result', false, 'Bridge IP and username are required.');
+            try {
+                const r = await fetch('/import/hue', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bridge_ip, username, dry_run })
+                });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.detail || 'Import failed');
+                showResult('hue-result', true, `✅ Imported ${d.imported_count} Hue lights (${d.status})`);
+            } catch (e) { showResult('hue-result', false, '❌ ' + e.message); }
+        }
+
+        async function loadHistory() {
+            try {
+                const r = await fetch('/import/history');
+                const data = await r.json();
+                const tbody = document.getElementById('hist-body');
+                if (!data.length) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="color:#64748b;text-align:center">No imports yet</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.map(s => `<tr>
+      <td>${s.source}</td>
+      <td>${s.status}</td>
+      <td>${s.imported_count}</td>
+      <td>${s.started_at ? s.started_at.substring(0, 16).replace('T', ' ') : '—'}</td>
+    </tr>`).join('');
+            } catch { }
+        }
+    </script>
+</body>
+
+</html>

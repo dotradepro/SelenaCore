@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Adapters</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 16px;
+        }
+
+        h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #60a5fa;
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .label {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .value {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-idle {
+            background: #334155;
+            color: #94a3b8;
+        }
+
+        .badge-running {
+            background: #1d4ed8;
+            color: #bfdbfe;
+        }
+
+        .badge-completed {
+            background: #166534;
+            color: #bbf7d0;
+        }
+
+        .badge-failed {
+            background: #991b1b;
+            color: #fecaca;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid #1e293b;
+            margin: 10px 0;
+        }
+
+        .adapters {
+            display: flex;
+            gap: 8px;
+        }
+
+        .adapter-pill {
+            flex: 1;
+            text-align: center;
+            padding: 4px 6px;
+            border-radius: 6px;
+            font-size: 11px;
+            background: #1e293b;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+
+<body>
+    <h3>Import Adapters</h3>
+    <div id="status-display">
+        <div class="status-row">
+            <span class="label">Status</span>
+            <span id="status-badge" class="badge badge-idle">idle</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Last import</span>
+            <span id="source-val" class="value">—</span>
+        </div>
+        <div class="status-row">
+            <span class="label">Devices imported</span>
+            <span id="count-val" class="value">—</span>
+        </div>
+    </div>
+    <hr class="divider">
+    <div class="adapters">
+        <div class="adapter-pill">🏠 HA</div>
+        <div class="adapter-pill">🔌 Tuya</div>
+        <div class="adapter-pill">💡 Hue</div>
+    </div>
+    <script>
+        async function refresh() {
+            try {
+                const r = await fetch('/import/status');
+                if (!r.ok) return;
+                const d = await r.json();
+                const badge = document.getElementById('status-badge');
+                badge.textContent = d.status;
+                badge.className = 'badge badge-' + d.status;
+                document.getElementById('source-val').textContent = d.source || '—';
+                document.getElementById('count-val').textContent = d.imported_count ?? '—';
+            } catch { }
+        }
+        refresh();
+        setInterval(refresh, 10000);
+    </script>
+</body>
+
+</html>
