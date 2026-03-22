@@ -157,7 +157,7 @@ oauth:
 | `remote-access` | HEADLESS | Tailscale VPN client: auto-connect, tunnel status |
 | `hw-monitor` | HEADLESS | CPU temperature, RAM, disk. Alert + automatic load reduction on overheating |
 | `notify-push` | HEADLESS | Web Push VAPID — phone notifications when browser is closed |
-| `ui-core` | FULL | PWA · smarthome.local:8080 · TTY1/kiosk · first launch wizard |
+| `ui-core` | FULL | PWA · smarthome.local:80 · TTY1/kiosk · first launch wizard |
 
 ---
 
@@ -229,12 +229,12 @@ mDNS fallback: `http://smarthome-setup.local`
 
 ### 6.2 UI Mode Auto-Detection at Startup
 
-The `:8080` web server runs in all modes at all times. The local display is an additional client.
+The `:80` web server runs in all modes at all times. The local display is an additional client.
 
 | Mode | Condition | Description |
 |---|---|---|
-| `HEADLESS` | No HDMI | Web server only. Access: smarthome.local:8080 + Tailscale. |
-| `KIOSK` | X11/Wayland + HDMI | `chromium --kiosk http://localhost:8080` on top of the desktop. |
+| `HEADLESS` | No HDMI | Web server only. Access: smarthome.local:80 + Tailscale. |
+| `KIOSK` | X11/Wayland + HDMI | `chromium --kiosk http://localhost:80` on top of the desktop. |
 | `FRAMEBUFFER` | Lite OS + HDMI + Chromium | `chromium --ozone-platform=drm` without X11, directly to framebuffer. |
 | `TTY` | Lite OS + HDMI, no Chromium | Python Textual TUI (~15 MB) on TTY1. Status + navigation. |
 
@@ -266,7 +266,7 @@ def detect_display_mode() -> str:
 
 ```yaml
 ui:
-  web_port: 8080
+  web_port: 80
   display_mode: auto        # auto | headless | kiosk | framebuffer | tty
   mdns_announce: true       # smarthome.local
   tty_device: /dev/tty1
@@ -453,9 +453,9 @@ iptables -A INPUT -p tcp --dport 7070 -s 127.0.0.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7070 -j DROP
 
 # Web interface — local network + Tailscale
-iptables -A INPUT -p tcp --dport 8080 -s 192.168.0.0/16 -j ACCEPT
-iptables -A INPUT -p tcp --dport 8080 -s 100.0.0.0/8 -j ACCEPT  # Tailscale
-iptables -A INPUT -p tcp --dport 8080 -j DROP
+iptables -A INPUT -p tcp --dport 80 -s 192.168.0.0/16 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -s 100.0.0.0/8 -j ACCEPT  # Tailscale
+iptables -A INPUT -p tcp --dport 80 -j DROP
 ```
 
 The `/secure` partition is not accessible to modules — there is no `/secure` volume mount in the `smarthome-modules` container.
@@ -662,7 +662,7 @@ smarthome dev
 | LLM Intent Router | ✅ Yes | Ollama locally on Pi 5 |
 | Device Registry | ✅ Yes | Local SQLite |
 | Automations | ✅ Yes | Local devices |
-| Web interface :8080 | ✅ Yes | Local network |
+| Web interface :80 | ✅ Yes | Local network |
 | Dialog history | ✅ Yes | Local SQLite |
 | Tailscale (remote access) | ❌ No | Requires internet for the tunnel |
 | Cloud Sync with platform | ⚠️ Partial | Buffers, sends on reconnect |

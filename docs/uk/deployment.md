@@ -72,7 +72,7 @@ nano .env
 
 ```bash
 CORE_PORT=7070
-UI_PORT=8080
+UI_PORT=80
 CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
@@ -149,7 +149,7 @@ journalctl -u smarthome-core -f
 
 Після першого запуску:
 
-1. **З монітором:** браузер відкриється автоматично → `http://localhost:8080`
+1. **З монітором:** браузер відкриється автоматично → `http://localhost:80`
 2. **Без монітора (headless):**
    - Якщо є Wi-Fi — ядро піднімає точку доступу `SmartHome-Setup` / пароль `smarthome`
    - Підключіться з телефону → відкрийте `192.168.4.1`
@@ -249,7 +249,7 @@ sudo bash scripts/setup_iptables.sh
 # Вручну — основні правила
 sudo iptables -A INPUT -i lo -j ACCEPT
 sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT   # UI (LAN)
+sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT   # UI (LAN)
 sudo iptables -A INPUT -p tcp --dport 7070 -j DROP     # Core API (лише localhost)
 sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT     # SSH
 

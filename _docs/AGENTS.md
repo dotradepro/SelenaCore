@@ -42,8 +42,7 @@ selena-core/
       types.py                 # константы типов событий
     module_loader/
       loader.py                # Plugin Manager + lifecycle
-      sandbox.py               # Docker-изоляция + in-process загрузка
-      system_module.py         # SystemModule ABC (базовый класс)
+      sandbox.py               # Docker-изоляция тестового контейнера
       validator.py             # валидация manifest.json
     api/
       routes/
@@ -96,7 +95,7 @@ selena-core/
     notify_push/
       vapid.py                 # Web Push VAPID
     ui_core/
-      server.py                # FastAPI сервер :80
+      server.py                # FastAPI сервер :8080
       pwa.py                   # PWA manifest + service worker
       wizard.py                # Onboarding wizard endpoints
       routes/                  # страницы ui-core
@@ -1030,7 +1029,7 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 
 | Issue | Заголовок | Labels |
 |---|---|---|
-| #20 | `feat(ui): FastAPI server :80 + static files + PWA manifest` | `phase-5`, `feat`, `frontend` |
+| #20 | `feat(ui): FastAPI server :8080 + static files + PWA manifest` | `phase-5`, `feat`, `frontend` |
 | #21 | `feat(ui): AP mode + QR code generation on first boot` | `phase-5`, `feat`, `frontend` |
 | #22 | `feat(ui): wizard endpoints (9 steps: wifi→import)` | `phase-5`, `feat`, `frontend` |
 | #23 | `feat(ui): dashboard page + device list + module list` | `phase-5`, `feat`, `frontend` |
@@ -1204,7 +1203,7 @@ docker restart selena-core
 # 4. Проверить что всё работает
 sleep 3
 curl -s http://localhost:7070/api/v1/health | python3 -m json.tool
-curl -s -o /dev/null -w "UI :80 → HTTP %{http_code}\n" http://localhost:80/
+curl -s -o /dev/null -w "UI :8080 → HTTP %{http_code}\n" http://localhost:8080/
 
 # 5. Обновить экран устройства (kiosk Chromium)
 sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
@@ -1225,7 +1224,7 @@ sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 | Шаг | Что обновляется | Где видно |
 |-----|-----------------|-----------|
 | `npx vite build` | Фронтенд (React SPA) | — |
-| `docker cp static/` | UI в контейнере | Браузер `:80` |
+| `docker cp static/` | UI в контейнере | Браузер `:8080` |
 | `docker restart` | Перезагрузка FastAPI + UI | Сервер |
 | `wtype -k F5` | Обновление страницы в kiosk | Экран устройства |
 
@@ -1321,10 +1320,6 @@ in-progress / blocked / needs-review
 ⛔ Коммит с сообщением "fix", "update", "wip", "."
 ⛔ Создавать virtualenv / venv внутри Docker-контейнера (зависимости ставятся глобально через pip)
 ⛔ Использовать docker cp для обновления core/ или system_modules/ (используются volume mounts)
-⛔ Запускать системные модули как отдельные процессы/контейнеры с портами (только in-process через importlib)
-⛔ Указывать "port" в manifest.json для SYSTEM-модулей (порты только для пользовательских модулей)
-⛔ Использовать httpx/HTTP для связи между системным модулем и ядром (только прямые вызовы Python)
-⛔ Хардкодить localhost:PORT в HTML-виджетах (использовать window.location.pathname для BASE URL)
 ```
 
 ---
@@ -1426,7 +1421,7 @@ CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO                       # DEBUG | INFO | WARNING | ERROR
 
 # UI
-UI_PORT=80
+UI_PORT=8080
 UI_HTTPS=true
 
 # Integrity Agent
@@ -1454,223 +1449,6 @@ TAILSCALE_AUTH_KEY=                       # tskey-auth-...
 # Режим разработки
 DEBUG=false
 MOCK_PLATFORM=false                       # для локальной разработки без платформы
-```
-
----
-
-## 16. БЕЗОПАСНОСТЬ СЕРВЕРА И DOCKER
-
-### 16.1 Изоляция портов (САМОЕ ВАЖНОЕ)
-
-Docker по умолчанию **игнорирует UFW** и напрямую открывает порты через iptables.
-Базы данных и внутренние сервисы **никогда** не должны быть доступны снаружи.
-
-```yaml
-# ❌ Неправильно — открыто всему интернету
-services:
-  redis:
-    ports:
-      - "6379:6379"
-  postgres:
-    ports:
-      - "5432:5432"
-
-# ✅ Правильно — доступно только внутри сервера
-services:
-  redis:
-    command: redis-server --requirepass СЛОЖНЫЙ_ПАРОЛЬ
-    ports:
-      - "127.0.0.1:6379:6379"
-  postgres:
-    environment:
-      POSTGRES_PASSWORD: СЛОЖНЫЙ_ПАРОЛЬ
-    ports:
-      - "127.0.0.1:5432:5432"
-```
-
-> Контейнеры внутри одного `docker-compose` всё равно общаются между собой по именам сервисов (`redis:6379`) — проброс наружу им не нужен.
-
-**Для SelenaCore** — в `docker-compose.yml` порты Core API (7070) и UI (80) должны быть привязаны к `127.0.0.1` если доступ снаружи не требуется.
-
-### 16.2 Настройка UFW (системный Firewall)
-
-```bash
-sudo ufw default deny incoming   # запретить все входящие по умолчанию
-sudo ufw default allow outgoing  # разрешить серверу выходить в интернет
-sudo ufw allow 22/tcp            # SSH — обязательно, иначе потеряете доступ!
-sudo ufw allow 80/tcp            # HTTP
-sudo ufw allow 443/tcp           # HTTPS
-sudo ufw enable                  # включить
-sudo ufw status verbose          # проверить статус
-```
-
-### 16.3 Никакого dev-режима в production
-
-`npm run dev` небезопасен: много памяти, медленно, открывает отладочные порты (возможен RCE).
-
-```bash
-# ✅ Правильно для Node.js / Next.js / Vite
-npm run build
-npm run start
-
-# ✅ В Dockerfile
-RUN npm run build
-CMD ["npm", "run", "start"]
-```
-
-В SelenaCore `npx vite build` — только для сборки статики. Собранные файлы раздаются через FastAPI `StaticFiles`. В production контейнере `npm` вообще не запускается.
-
-### 16.4 Защита SSH
-
-```bash
-# Проверить authorized_keys на посторонние ключи
-cat ~/.ssh/authorized_keys
-
-# Если нашли чужие ключи — удалить их
-nano ~/.ssh/authorized_keys
-
-# Сменить пароль root
-passwd root
-```
-
-### 16.5 Регулярная проверка
-
-```bash
-# Нагрузка системы
-htop
-
-# Статистика контейнеров (CPU / RAM)
-docker stats
-
-# Обновление системы (закрывает уязвимости)
-sudo apt update && sudo apt upgrade -y
-
-# Проверить открытые порты
-ss -tlnp
-```
-
-### 16.6 Правила для агента
-
-```
-⛔ Нельзя маппить DB-порты без 127.0.0.1: prefix
-⛔ Нельзя запускать npm run dev в production-контейнере
-⛔ Нельзя хранить пароли БД в открытом виде (только через .env / secrets)
-⛔ Нельзя добавлять SSH-ключи в authorized_keys без явного запроса пользователя
-✅ Все новые сервисы в docker-compose — проверять биндинг портов
-✅ После изменения docker-compose — проверять sudo ufw status
-```
-
----
-
-## 17. АРХИТЕКТУРА СИСТЕМНЫХ МОДУЛЕЙ (КРИТИЧЕСКИ ВАЖНО)
-
-> **Системные модули (type: SYSTEM) запускаются IN-PROCESS внутри smarthome-core контейнера.**
-> **Отдельные Docker-контейнеры / subprocess / порты — ТОЛЬКО для пользовательских модулей.**
-> **Это экономит ~580 MB RAM на Raspberry Pi.**
-
-### 17.1 Разделение модулей
-
-| Тип | Запуск | Порт | Связь с ядром | Контейнер |
-|-----|--------|------|---------------|-----------|
-| **SYSTEM** | importlib в процессе ядра | ❌ нет | Прямые Python-вызовы | smarthome-core (единый) |
-| **UI/INTEGRATION/DRIVER/AUTOMATION** | Docker sandbox | ✅ 8100-8200 | HTTP API + webhooks | smarthome-modules |
-
-### 17.2 Базовый класс SystemModule
-
-```python
-# core/module_loader/system_module.py — наследовать ВСЕ системные модули
-
-class SystemModule(ABC):
-    name: str  # должен совпадать с manifest.json "name"
-
-    async def setup(bus, session_factory):  # вызывается loader-ом
-    async def start():                       # абстрактный — запуск
-    async def stop():                        # абстрактный — остановка
-    def get_router() -> APIRouter | None:    # REST endpoints
-
-    # Вместо httpx → прямой доступ:
-    self.publish(event_type, payload)        # → EventBus напрямую
-    self.subscribe(event_types, callback)    # → DirectSubscription (без webhook)
-    self.fetch_devices()                     # → SQLAlchemy session
-    self.patch_device_state(device_id, state)
-    self.register_device(...)
-```
-
-### 17.3 Структура файлов системного модуля
-
-```
-system_modules/weather_service/
-    __init__.py            # from .module import WeatherServiceModule as module_class
-    module.py              # WeatherServiceModule(SystemModule) — точка входа
-    weather.py             # WeatherService — бизнес-логика (существующий код)
-    manifest.json          # type: SYSTEM, БЕЗ поля "port"
-    widget.html            # виджет (iframe, BASE из pathname)
-    settings.html          # настройки (iframe, BASE из pathname)
-```
-
-### 17.4 manifest.json — правила для SYSTEM модулей
-
-```json
-{
-    "name": "weather-service",
-    "type": "SYSTEM",
-    "runtime_mode": "always_on",
-    // ⛔ НЕТ поля "port" — SYSTEM модули не слушают порт
-    "permissions": ["events.publish"]
-}
-```
-
-### 17.5 EventBus — два способа доставки
-
-```python
-# 1. DirectSubscription (для SYSTEM модулей — in-process)
-self.subscribe(["device.state_changed"], self._on_event)
-# → EventBus вызывает callback напрямую через asyncio.create_task()
-
-# 2. Webhook (для пользовательских модулей — через HTTP)
-POST /api/v1/events/subscribe { webhook_url: "http://localhost:8100/webhook" }
-# → EventBus делает HTTP POST на webhook_url
-```
-
-### 17.6 Роутинг API системных модулей
-
-Роутеры системных модулей монтируются в core FastAPI app:
-
-```
-GET /api/ui/modules/weather-service/weather/current
-GET /api/ui/modules/automation-engine/rules
-POST /api/ui/modules/scheduler/jobs
-```
-
-Виджеты загружаются через iframe:
-```html
-<iframe src="/api/ui/modules/weather-service/widget.html" />
-```
-
-### 17.7 BASE URL в HTML виджетах
-
-```javascript
-// ✅ Правильно — вычисляется из URL iframe
-const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-fetch(BASE + '/weather/current')
-
-// ❌ Неправильно
-const BASE = "http://localhost:8115";    // хардкод порта
-const base = window.location.origin;     // не учитывает prefix
-fetch('/status');                         // без prefix
-```
-
-### 17.8 Загрузка модулей (sandbox.py)
-
-```python
-# sandbox.py → _start_in_process()
-import importlib
-mod = importlib.import_module(f"system_modules.{dir_name}")
-cls = mod.module_class           # экспортируется из __init__.py
-instance = cls()
-await instance.setup(bus, session_factory)
-await instance.start()
-router = instance.get_router()   # монтируется в app
 ```
 
 ---

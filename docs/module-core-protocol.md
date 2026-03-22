@@ -18,7 +18,7 @@ MODULE (:810X)                        CORE (:7070)
    │◄─── POST /webhook/events ────────────│  доставка событий (HMAC)
    │◄─── POST /webhook/commands ──────────│  команды платформы (HMAC)
    │                                      │
-   UI Core (:8080) ──iframe──► GET /widget.html от модуля
+   UI Core (:80) ──iframe──► GET /widget.html от модуля
 ```
 
 ---
@@ -556,7 +556,7 @@ class SmartHomeModule(metaclass=SmartHomeModuleMeta):
 
 ### 4.1 Как UI Core загружает виджет
 
-UI Core (:8080) рендерит главный экран. Для каждого модуля с `ui_profile != HEADLESS`:
+UI Core (:80) рендерит главный экран. Для каждого модуля с `ui_profile != HEADLESS`:
 
 ```
 UI Core получает список модулей:
@@ -1087,7 +1087,7 @@ python main.py
 ```bash
 # Основные
 CORE_PORT=7070
-UI_PORT=8080
+UI_PORT=80
 CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO

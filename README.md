@@ -47,7 +47,7 @@ docker compose up -d
 ```
 
 **Core API:** `http://localhost:7070`
-**UI (PWA):** `http://localhost:8080` or `http://smarthome.local:8080`
+**UI (PWA):** `http://localhost:80` or `http://smarthome.local:80`
 
 ### First Launch — Onboarding Wizard
 
@@ -99,7 +99,7 @@ selena-core/
     notify_push/             # Web Push VAPID
     backup_manager/          # Local/Cloud backup, QR transfer
     remote_access/           # Tailscale VPN
-    ui_core/                 # FastAPI :8080, PWA, wizard, TTY TUI
+    ui_core/                 # FastAPI :80, PWA, wizard, TTY TUI
   agent/
     integrity_agent.py       # SHA256 periodic check
     responder.py             # Response chain + SAFE MODE
@@ -204,7 +204,7 @@ CORE_PORT=7070
 CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
-UI_PORT=8080
+UI_PORT=80
 PLATFORM_API_URL=https://selenehome.tech/api/v1
 PLATFORM_DEVICE_HASH=
 GOOGLE_CLIENT_ID=

@@ -2,7 +2,10 @@
 
 ## What is a Module
 
-A module is an isolated microservice that runs in a Docker container and communicates with the core **only** through Core API (`http://localhost:7070/api/v1`).
+> **Note:** This guide covers **user modules** (types: UI, INTEGRATION, DRIVER, AUTOMATION) that run in Docker containers.
+> **System modules** (type: SYSTEM) run in-process inside the core. They inherit from `SystemModule` (`core/module_loader/system_module.py`) and communicate with the core through direct Python calls, not HTTP. See `AGENTS.md` §17 for system module architecture.
+
+A user module is an isolated microservice that runs in a Docker container and communicates with the core **only** through Core API (`http://localhost:7070/api/v1`).
 
 A module can:
 - Register devices in Device Registry

@@ -8,7 +8,7 @@ SelenaCore consists of two independent processes:
 ┌─────────────────────────────────────────────────────────────────┐
 │                      smarthome-core (Docker)                     │
 │                                                                   │
-│  FastAPI :7070 (Core API)          FastAPI :8080 (UI Core)       │
+│  FastAPI :7070 (Core API)          FastAPI :80 (UI Core)       │
 │       │                                   │                      │
 │  ┌────┴────────────────────────────────────┴───────────────┐     │
 │  │             EventBus (asyncio.Queue)                     │     │
@@ -32,6 +32,21 @@ SelenaCore consists of two independent processes:
 ---
 
 ## Components
+
+### Module Execution Model
+
+SelenaCore uses a **two-tier module execution model** to conserve RAM (~580 MB saved on Raspberry Pi):
+
+| Type | Execution | Port | Communication | Container |
+|------|-----------|------|---------------|-----------|
+| **SYSTEM** | In-process via `importlib` | None | Direct Python calls + `SystemModule` ABC | smarthome-core (shared) |
+| **User (UI/INTEGRATION/DRIVER/AUTOMATION)** | Docker sandbox | 8100–8200 | HTTP API + webhook events | smarthome-modules |
+
+**System modules** inherit from `SystemModule` (`core/module_loader/system_module.py`) and are loaded by `sandbox.py → _start_in_process()`. Their `APIRouter` is mounted in the core FastAPI app at `/api/ui/modules/{name}/`. They access the EventBus and Device Registry through direct Python method calls — no HTTP overhead.
+
+**User modules** run in isolated Docker containers with their own ports and communicate with the core exclusively via the REST API and webhook event delivery.
+
+---
 
 ### 1. Core API (`core/api/`)
 
@@ -69,12 +84,16 @@ On `PATCH /devices/{id}/state`, a `device.state_changed` event is automatically 
 # Publishing
 await bus.publish(event)          # puts into asyncio.Queue
 
-# Subscribing
+# Subscribing (user modules — webhook)
 await bus.subscribe("device.*", webhook_url)  # wildcard
 
+# Subscribing (system modules — in-process)
+bus.subscribe_direct(sub_id, module_id, ["device.*"], callback)
+
 # Delivery (background task)
-POST http://module:810X/webhook/events
-X-Selena-Signature: sha256=<hmac>    # HMAC-SHA256 signature
+# Webhooks: POST http://module:810X/webhook/events
+# Direct:   asyncio.create_task(callback(event))
+X-Selena-Signature: sha256=<hmac>    # HMAC-SHA256 signature (webhooks only)
 ```
 
 **Protection:**
@@ -224,15 +243,16 @@ iptables FORWARD DROP
     ↓
 localhost
   :7070  Core API        (modules + UI only)
-  :8080  UI Core         (user browser)
-  :8100  Module 1
-  :8101  Module 2
+  :80  UI Core         (user browser)
+  :8100  User Module 1   (Docker sandbox only — NOT system modules)
+  :8101  User Module 2
   ...
-  :8200  Module 100
+  :8200  User Module 100
 ```
 
 Docker network: `selena-net` (driver: bridge, internal).
-Modules CANNOT communicate with each other directly.
+User modules CANNOT communicate with each other directly.
+System modules run inside the core process and have NO network ports.
 
 ---
 

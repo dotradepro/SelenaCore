@@ -157,7 +157,7 @@ oauth:
 | `remote-access` | HEADLESS | Tailscale VPN клієнт: автопідключення, статус тунелю |
 | `hw-monitor` | HEADLESS | Температура CPU, RAM, диск. Алерт + автозниження навантаження при перегріві |
 | `notify-push` | HEADLESS | Web Push VAPID — сповіщення на телефон коли браузер закритий |
-| `ui-core` | FULL | PWA · smarthome.local:8080 · TTY1/kiosk · wizard першого запуску |
+| `ui-core` | FULL | PWA · smarthome.local:80 · TTY1/kiosk · wizard першого запуску |
 
 ---
 
@@ -229,12 +229,12 @@ mDNS fallback: `http://smarthome-setup.local`
 
 ### 6.2 Автодетект режиму UI при старті
 
-Веб-сервер `:8080` працює завжди у всіх режимах. Локальний екран — додатковий клієнт.
+Веб-сервер `:80` працює завжди у всіх режимах. Локальний екран — додатковий клієнт.
 
 | Режим | Умова | Опис |
 |---|---|---|
-| `HEADLESS` | Немає HDMI | Тільки веб-сервер. Доступ: smarthome.local:8080 + Tailscale. |
-| `KIOSK` | X11/Wayland + HDMI | `chromium --kiosk http://localhost:8080` поверх робочого столу. |
+| `HEADLESS` | Немає HDMI | Тільки веб-сервер. Доступ: smarthome.local:80 + Tailscale. |
+| `KIOSK` | X11/Wayland + HDMI | `chromium --kiosk http://localhost:80` поверх робочого столу. |
 | `FRAMEBUFFER` | Lite OS + HDMI + Chromium | `chromium --ozone-platform=drm` без X11, прямо у framebuffer. |
 | `TTY` | Lite OS + HDMI, немає Chromium | Python Textual TUI (~15 MB) на TTY1. Статус + навігація. |
 
@@ -266,7 +266,7 @@ def detect_display_mode() -> str:
 
 ```yaml
 ui:
-  web_port: 8080
+  web_port: 80
   display_mode: auto        # auto | headless | kiosk | framebuffer | tty
   mdns_announce: true       # smarthome.local
   tty_device: /dev/tty1
@@ -453,9 +453,9 @@ iptables -A INPUT -p tcp --dport 7070 -s 127.0.0.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7070 -j DROP
 
 # Веб-інтерфейс — локальна мережа + Tailscale
-iptables -A INPUT -p tcp --dport 8080 -s 192.168.0.0/16 -j ACCEPT
-iptables -A INPUT -p tcp --dport 8080 -s 100.0.0.0/8 -j ACCEPT  # Tailscale
-iptables -A INPUT -p tcp --dport 8080 -j DROP
+iptables -A INPUT -p tcp --dport 80 -s 192.168.0.0/16 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -s 100.0.0.0/8 -j ACCEPT  # Tailscale
+iptables -A INPUT -p tcp --dport 80 -j DROP
 ```
 
 Розділ `/secure` не доступний модулям — volume-маунт `/secure` у контейнері `smarthome-modules` відсутній.
@@ -662,7 +662,7 @@ smarthome dev
 | LLM Intent Router | ✅ Так | Ollama локально на Pi 5 |
 | Device Registry | ✅ Так | SQLite локально |
 | Автоматизації | ✅ Так | Локальні пристрої |
-| Веб-інтерфейс :8080 | ✅ Так | Локальна мережа |
+| Веб-інтерфейс :80 | ✅ Так | Локальна мережа |
 | Історія діалогів | ✅ Так | SQLite локально |
 | Tailscale (віддалений доступ) | ❌ Ні | Потребує інтернет для тунелю |
 | Cloud Sync з платформою | ⚠️ Частково | Буферизує, відправить при відновленні |
