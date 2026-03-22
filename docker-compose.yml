@@ -7,9 +7,7 @@ services:
       dockerfile: Dockerfile.core
     container_name: selena-core
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:7070:7070"
-      - "0.0.0.0:80:80"
+    network_mode: host
     volumes:
       - selena_data:/var/lib/selena
       - selena_secure:/secure
@@ -25,9 +23,6 @@ services:
       - ./sdk:/opt/selena-core/sdk
     env_file:
       - .env
-    networks:
-      - selena_internal
-      - selena_external
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7070/api/v1/health', timeout=5)"]
       interval: 30s
@@ -41,6 +36,7 @@ services:
       dockerfile: Dockerfile.core
     container_name: selena-agent
     restart: unless-stopped
+    network_mode: host
     command: ["python", "-m", "agent.integrity_agent"]
     volumes:
       - selena_data:/var/lib/selena
@@ -49,8 +45,6 @@ services:
       - /var/log/selena:/var/log/selena
     env_file:
       - .env
-    networks:
-      - selena_internal
     depends_on:
       - core
 
@@ -60,16 +54,15 @@ services:
     restart: unless-stopped
     ports:
       - "8100-8200:8100-8200"
+    extra_hosts:
+      - "selena-core:host-gateway"
     volumes:
       - selena_data:/var/lib/selena:ro
     networks:
-      - selena_internal
-      - selena_external
+      - selena_modules
 
 networks:
-  selena_internal:
-    driver: bridge
-  selena_external:
+  selena_modules:
     driver: bridge
 
 volumes:

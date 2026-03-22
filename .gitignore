@@ -11,6 +11,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 token git
+.version
 
 # Local docs snapshot
 _docs/

@@ -63,6 +63,20 @@ class CoreApiProxyMiddleware:
             return
         await self.app(scope, receive, send)
 
+    @staticmethod
+    def _get_client_ip(scope) -> str:
+        """Extract real client IP from ASGI scope."""
+        client = scope.get("client")
+        return client[0] if client else ""
+
+    @staticmethod
+    def _get_header(scope, name: bytes) -> str:
+        """Get a single header value from ASGI scope."""
+        for hname, hval in scope.get("headers", []):
+            if hname.lower() == name.lower():
+                return hval.decode("latin-1")
+        return ""
+
     async def _proxy_stream(self, scope, receive, send) -> None:
         """Zero-copy SSE proxy — writes chunks straight to ASGI send."""
         path = scope["path"]
@@ -74,6 +88,15 @@ class CoreApiProxyMiddleware:
             for name, value in scope.get("headers", [])
             if name.lower() not in (b"host", b"transfer-encoding", b"content-length")
         }
+        # Inject real client IP and forwarding headers so backend sees them
+        client_ip = self._get_client_ip(scope)
+        if client_ip:
+            fwd_headers["x-forwarded-for"] = client_ip
+            fwd_headers["x-real-ip"] = client_ip
+        orig_host = self._get_header(scope, b"host")
+        if orig_host:
+            fwd_headers["x-forwarded-host"] = orig_host
+        fwd_headers["x-forwarded-proto"] = "https" if scope.get("scheme") == "https" else "http"
 
         sent_start = False
         async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
@@ -136,6 +159,15 @@ class CoreApiProxyMiddleware:
             for name, value in scope.get("headers", [])
             if name.lower() not in (b"host", b"transfer-encoding")
         }
+        # Inject real client IP and forwarding headers so backend sees them
+        client_ip = self._get_client_ip(scope)
+        if client_ip:
+            fwd_headers["x-forwarded-for"] = client_ip
+            fwd_headers["x-real-ip"] = client_ip
+        orig_host = self._get_header(scope, b"host")
+        if orig_host:
+            fwd_headers["x-forwarded-host"] = orig_host
+        fwd_headers["x-forwarded-proto"] = "https" if scope.get("scheme") == "https" else "http"
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

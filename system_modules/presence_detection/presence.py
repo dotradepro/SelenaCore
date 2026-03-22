@@ -417,9 +417,33 @@ class PresenceDetector:
             logger.info("Generated new VAPID key pair")
         self._vapid_private = self._get_setting("vapid_private_key")
         self._vapid_public = self._get_setting("vapid_public_key")
+        # Pre-load Vapid object from PEM for use in webpush()
+        self._vapid_obj = None
+        if self._vapid_private and Vapid is not None:
+            try:
+                self._vapid_obj = Vapid.from_pem(self._vapid_private.encode())
+            except Exception as e:
+                logger.error("Failed to load VAPID key: %s", e)
 
     def get_vapid_public_key(self) -> str | None:
         return self._vapid_public
+
+    def reset_vapid_and_subscriptions(self) -> str:
+        """Delete all push subscriptions and regenerate VAPID keys.
+
+        Returns the new public key.
+        """
+        if self._db is None:
+            return ""
+        self._db.execute("DELETE FROM push_subscriptions")
+        self._db.execute("DELETE FROM settings WHERE key IN ('vapid_private_key', 'vapid_public_key')")
+        self._db.commit()
+        self._vapid_private = None
+        self._vapid_public = None
+        self._vapid_obj = None
+        self._init_vapid()
+        logger.info("VAPID keys regenerated and all push subscriptions cleared")
+        return self._vapid_public or ""
 
     # ── Push subscriptions ─────────────────────────────────────────────────────
 
@@ -472,7 +496,7 @@ class PresenceDetector:
         self._db.commit()
 
     async def send_push_to_user(self, user_id: str, title: str, body: str, data: dict | None = None) -> dict:
-        if not WEBPUSH_AVAILABLE or not self._vapid_private:
+        if not WEBPUSH_AVAILABLE or not self._vapid_obj:
             return {"sent": 0, "failed": 0, "error": "webpush not available"}
         subs = self.get_push_subscriptions_for_user(user_id)
         sent, failed = 0, 0
@@ -509,8 +533,8 @@ class PresenceDetector:
                 "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
             },
             data=json.dumps({"title": title, "body": body, "data": data or {}}),
-            vapid_private_key=self._vapid_private,
-            vapid_claims={"sub": "mailto:selena@local.home"},
+            vapid_private_key=self._vapid_obj,
+            vapid_claims={"sub": "mailto:admin@example.com"},
             timeout=10,
         )
 

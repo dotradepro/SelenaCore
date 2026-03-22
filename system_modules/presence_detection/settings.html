@@ -559,6 +559,10 @@
                 <button class="btn btn-sec btn-sm" id="push-copy-btn" onclick="copyVapid()"
                     data-i18n="push_copy"></button>
             </div>
+            <div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:10px">
+                <button class="btn btn-sec btn-sm" onclick="resetPush()" data-i18n="push_reset"></button>
+                <span style="font-size:0.75rem;color:var(--tx3);margin-left:8px" data-i18n="push_reset_hint"></span>
+            </div>
         </div>
     </div>
 
@@ -619,7 +623,10 @@
                 push_test: 'Test', push_no_subs: 'No push subscriptions yet.',
                 push_vapid: 'VAPID Public Key', push_copy: 'Copy',
                 push_copied: 'Copied!', push_sent: 'Sent', push_failed: 'Failed',
-                push_testing: 'Sending\u2026'
+                push_testing: 'Sending\u2026',
+                push_reset: 'Reset Push Keys', push_reset_hint: 'Regenerate VAPID keys and clear all subscriptions. Users must re-subscribe.',
+                push_reset_ok: 'Keys regenerated. Users must re-subscribe from their phones.',
+                push_reset_confirm: 'This will delete all push subscriptions. Users will need to re-subscribe. Continue?'
             },
             uk: {
                 title: '\uD83C\uDFE0 Виявлення присутності',
@@ -657,7 +664,10 @@
                 push_test: 'Тест', push_no_subs: 'Поки немає push-підписок.',
                 push_vapid: 'VAPID Public Key', push_copy: 'Копіювати',
                 push_copied: 'Скопійовано!', push_sent: 'Відправлено', push_failed: 'Помилка',
-                push_testing: 'Відправка\u2026'
+                push_testing: 'Відправка\u2026',
+                push_reset: 'Скинути Push ключі', push_reset_hint: 'Перегенерувати VAPID ключі та видалити всі підписки. Користувачі повинні підписатися заново.',
+                push_reset_ok: 'Ключі перегенеровано. Користувачі повинні підписатися заново з телефонів.',
+                push_reset_confirm: 'Це видалить всі push-підписки. Користувачі повинні будуть підписатися заново. Продовжити?'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -1036,6 +1046,18 @@
                     setTimeout(function () { document.getElementById('push-copy-btn').textContent = t('push_copy'); }, 2000);
                 }
             } catch (e) { }
+        }
+
+        async function resetPush() {
+            if (!confirm(t('push_reset_confirm'))) return;
+            try {
+                var r = await fetch(BASE + '/push/reset', { method: 'POST', headers: h });
+                if (r.ok) {
+                    showToast(t('push_reset_ok'));
+                    loadPushSubs();
+                    copyVapid();
+                } else { showToast(t('push_failed')); }
+            } catch (e) { showToast(t('push_failed')); }
         }
 
         function showToast(msg) {

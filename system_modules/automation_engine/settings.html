@@ -115,7 +115,60 @@
             font-size: 12px;
         }
 
-        textarea {
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+
+        .form-row label {
+            font-size: 12px;
+            color: var(--tx2);
+        }
+
+        .form-row input,
+        .form-row select {
+            background: var(--bg);
+            border: 1px solid var(--b2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: var(--tx);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .form-row input:focus,
+        .form-row select:focus {
+            border-color: var(--ac);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 12px;
+        }
+
+        .dyn-fields {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .dyn-fields.visible {
+            display: block;
+        }
+
+        details>summary {
+            cursor: pointer;
+            color: var(--tx3);
+            font-size: 12px;
+            padding: 6px 0;
+        }
+
+        details textarea {
             width: 100%;
             background: var(--bg);
             border: 1px solid var(--b2);
@@ -125,10 +178,11 @@
             font-size: 12px;
             font-family: monospace;
             resize: vertical;
-            min-height: 200px;
+            min-height: 160px;
+            margin-top: 8px;
         }
 
-        textarea:focus {
+        details textarea:focus {
             outline: none;
             border-color: var(--ac);
         }
@@ -239,41 +293,169 @@
             <div id="rules-container" data-i18n="loading"></div>
         </div>
 
-        <!-- YAML import -->
+        <!-- Add Rule form -->
         <div class="card">
             <div class="card-header">
-                <h2 data-i18n="import_title"></h2>
+                <h2 data-i18n="add_rule_title"></h2>
             </div>
-            <p style="color:var(--tx3);font-size:12px;margin-bottom:8px" data-i18n="paste_yaml"></p>
-            <textarea id="yaml-input" placeholder="automations:
-  - id: lights_morning
-    name: &quot;Turn on lights at 7:00&quot;
-    trigger:
-      type: time
-      at: &quot;07:00&quot;
-    actions:
-      - type: device_command
-        device_id: &quot;your-device-id&quot;
-        state:
-          state: ON
-"></textarea>
-            <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-                <button class="btn btn-primary" onclick="importYaml()" data-i18n="import_btn"></button>
-                <span class="msg" id="import-msg"></span>
-                <span class="msg err-msg" id="import-err"></span>
+
+            <div class="form-row">
+                <label data-i18n="f_name"></label>
+                <input type="text" id="f-name" data-i18n-placeholder="f_name_ph">
             </div>
+
+            <div class="form-grid">
+                <div class="form-row">
+                    <label data-i18n="f_trigger_type"></label>
+                    <select id="f-trigger" onchange="onTriggerChange()">
+                        <option value="time" data-i18n="trig_time"></option>
+                        <option value="event" data-i18n="trig_event"></option>
+                        <option value="device" data-i18n="trig_device"></option>
+                        <option value="presence" data-i18n="trig_presence"></option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label data-i18n="f_action_type"></label>
+                    <select id="f-action" onchange="onActionChange()">
+                        <option value="device_command" data-i18n="act_device"></option>
+                        <option value="publish_event" data-i18n="act_event"></option>
+                        <option value="notify" data-i18n="act_notify"></option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Trigger dynamic fields -->
+            <div class="dyn-fields visible" id="trig-time">
+                <div class="form-row"><label data-i18n="f_at_time"></label><input type="time" id="f-at" value="07:00">
+                </div>
+            </div>
+            <div class="dyn-fields" id="trig-event">
+                <div class="form-row"><label data-i18n="f_event_type"></label><input type="text" id="f-trig-event"
+                        placeholder="device.state_changed"></div>
+            </div>
+            <div class="dyn-fields" id="trig-device">
+                <div class="form-row"><label data-i18n="f_device_id"></label><input type="text" id="f-trig-dev-id"
+                        placeholder="uuid-..."></div>
+                <div class="form-grid">
+                    <div class="form-row"><label data-i18n="f_state_key"></label><input type="text" id="f-trig-key"
+                            placeholder="state"></div>
+                    <div class="form-row"><label data-i18n="f_state_val"></label><input type="text" id="f-trig-val"
+                            placeholder="ON"></div>
+                </div>
+            </div>
+            <div class="dyn-fields" id="trig-presence">
+                <div class="form-row"><label data-i18n="f_user_id"></label><input type="text" id="f-trig-user"
+                        placeholder="user-uuid-001"></div>
+                <div class="form-row">
+                    <label data-i18n="f_presence_status"></label>
+                    <select id="f-trig-presence-st">
+                        <option value="home" data-i18n="pres_home"></option>
+                        <option value="away" data-i18n="pres_away"></option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Action dynamic fields -->
+            <div class="dyn-fields visible" id="act-device_command">
+                <div class="form-row"><label data-i18n="f_act_device_id"></label><input type="text" id="f-act-dev-id"
+                        placeholder="uuid-..."></div>
+                <div class="form-grid">
+                    <div class="form-row"><label data-i18n="f_state_key"></label><input type="text" id="f-act-key"
+                            placeholder="state"></div>
+                    <div class="form-row"><label data-i18n="f_state_val"></label><input type="text" id="f-act-val"
+                            placeholder="ON"></div>
+                </div>
+            </div>
+            <div class="dyn-fields" id="act-publish_event">
+                <div class="form-row"><label data-i18n="f_pub_event_type"></label><input type="text" id="f-pub-event"
+                        placeholder="custom.my_event"></div>
+            </div>
+            <div class="dyn-fields" id="act-notify">
+                <div class="form-row"><label data-i18n="f_notify_msg"></label><input type="text" id="f-notify-msg"
+                        placeholder="Lights turned on"></div>
+                <div class="form-row">
+                    <label data-i18n="f_notify_channel"></label>
+                    <select id="f-notify-ch">
+                        <option value="voice">TTS (Voice)</option>
+                        <option value="push">Web Push</option>
+                        <option value="telegram">Telegram</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+                <button class="btn btn-primary" onclick="addRule()" data-i18n="add_rule_btn"></button>
+                <span class="msg" id="add-msg"></span>
+                <span class="msg err-msg" id="add-err"></span>
+            </div>
+
+            <!-- Advanced YAML (collapsed) -->
+            <details style="margin-top:14px">
+                <summary data-i18n="adv_yaml"></summary>
+                <p style="color:var(--tx3);font-size:12px;margin:8px 0 4px" data-i18n="adv_yaml_hint"></p>
+                <textarea id="yaml-input" placeholder="automations:"></textarea>
+                <div style="margin-top:6px">
+                    <button class="btn btn-primary btn-sm" onclick="importYaml()" data-i18n="import_btn"></button>
+                </div>
+            </details>
         </div>
     </div>
 
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { title: '⚙️ Automation Engine', subtitle: 'YAML-based rule engine — triggers → actions', total_rules: 'Total rules', enabled: 'Enabled', runs: 'Runs', errors: 'Errors', active_rules: 'Active Rules', refresh: '↻ Refresh', loading: 'Loading…', no_rules: 'No rules loaded.', import_title: 'Import / Add Rules (YAML)', paste_yaml: 'Paste a YAML list of automation rules:', import_btn: 'Import Rules', imported_ok: '✓ Imported', trigger_lbl: 'trigger: ', on: 'ON', off: 'OFF', disable: 'Disable', enable: 'Enable', delete_confirm: 'Delete this rule?' },
-            uk: { title: '⚙️ Рушій автоматизації', subtitle: 'Рушій правил на базі YAML — тригери → дії', total_rules: 'Всього правил', enabled: 'Увімкнено', runs: 'Запуски', errors: 'Помилки', active_rules: 'Активні правила', refresh: '↻ Оновити', loading: 'Завантаження…', no_rules: 'Правила не завантажені.', import_title: 'Імпорт / Додати правила (YAML)', paste_yaml: 'Вставте список правил автоматизації у форматі YAML:', import_btn: 'Імпортувати правила', imported_ok: '✓ Імпортовано', trigger_lbl: 'тригер: ', on: 'ВКЛ', off: 'ВИКЛ', disable: 'Вимкнути', enable: 'Увімкнути', delete_confirm: 'Видалити це правило?' }
+            en: {
+                title: '⚙️ Automation Engine', subtitle: 'Triggers → conditions → actions',
+                total_rules: 'Total rules', enabled: 'Enabled', runs: 'Runs', errors: 'Errors',
+                active_rules: 'Active Rules', refresh: '↻ Refresh', loading: 'Loading…',
+                no_rules: 'No rules yet. Add your first rule below.',
+                add_rule_title: 'Add New Rule',
+                f_name: 'Rule name', f_name_ph: 'Morning lights',
+                f_trigger_type: 'Trigger', f_action_type: 'Action',
+                trig_time: '🕐 Time (schedule)', trig_event: '📡 Event', trig_device: '💡 Device state', trig_presence: '👤 Presence',
+                act_device: '💡 Control device', act_event: '📡 Publish event', act_notify: '🔔 Send notification',
+                f_at_time: 'Time (HH:MM)', f_event_type: 'Event type',
+                f_device_id: 'Device ID', f_state_key: 'State key', f_state_val: 'State value',
+                f_user_id: 'User ID', f_presence_status: 'Status',
+                pres_home: 'Home', pres_away: 'Away',
+                f_act_device_id: 'Device ID', f_pub_event_type: 'Event type',
+                f_notify_msg: 'Message', f_notify_channel: 'Channel',
+                add_rule_btn: '+ Add Rule', added_ok: '✓ Rule added',
+                adv_yaml: '▸ Advanced: Import from YAML',
+                adv_yaml_hint: 'Paste a YAML ruleset to bulk-import rules:',
+                import_btn: 'Import YAML', imported_ok: '✓ Imported',
+                trigger_lbl: 'trigger: ', on: 'ON', off: 'OFF',
+                disable: 'Disable', enable: 'Enable', delete_confirm: 'Delete this rule?',
+                err_name: 'Enter a rule name'
+            },
+            uk: {
+                title: '⚙️ Рушій автоматизації', subtitle: 'Тригери → умови → дії',
+                total_rules: 'Всього правил', enabled: 'Увімкнено', runs: 'Запуски', errors: 'Помилки',
+                active_rules: 'Активні правила', refresh: '↻ Оновити', loading: 'Завантаження…',
+                no_rules: 'Правил ще немає. Додайте перше правило нижче.',
+                add_rule_title: 'Додати нове правило',
+                f_name: 'Назва правила', f_name_ph: 'Ранкове світло',
+                f_trigger_type: 'Тригер', f_action_type: 'Дія',
+                trig_time: '🕐 Час (розклад)', trig_event: '📡 Подія', trig_device: '💡 Стан пристрою', trig_presence: '👤 Присутність',
+                act_device: '💡 Керувати пристроєм', act_event: '📡 Опублікувати подію', act_notify: '🔔 Надіслати сповіщення',
+                f_at_time: 'Час (ГГ:ХХ)', f_event_type: 'Тип події',
+                f_device_id: 'ID пристрою', f_state_key: 'Ключ стану', f_state_val: 'Значення',
+                f_user_id: 'ID користувача', f_presence_status: 'Статус',
+                pres_home: 'Вдома', pres_away: 'Відсутній',
+                f_act_device_id: 'ID пристрою', f_pub_event_type: 'Тип події',
+                f_notify_msg: 'Повідомлення', f_notify_channel: 'Канал',
+                add_rule_btn: '+ Додати правило', added_ok: '✓ Правило додано',
+                adv_yaml: '▸ Додатково: імпорт з YAML',
+                adv_yaml_hint: 'Вставте YAML з правилами для масового імпорту:',
+                import_btn: 'Імпортувати YAML', imported_ok: '✓ Імпортовано',
+                trigger_lbl: 'тригер: ', on: 'ВКЛ', off: 'ВИКЛ',
+                disable: 'Вимкнути', enable: 'Увімкнути', delete_confirm: 'Видалити це правило?',
+                err_name: 'Введіть назву правила'
+            }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadRules(); } });
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); applyLangPlaceholders(); loadRules(); } });
 
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const TOKEN = window.SELENA_TOKEN || "";
@@ -338,35 +520,122 @@
             } catch { }
         }
 
-        async function importYaml() {
-            const yaml_text = document.getElementById("yaml-input").value.trim();
-            if (!yaml_text) return;
-            const errEl = document.getElementById("import-err");
-            const okEl = document.getElementById("import-msg");
-            errEl.style.display = "none";
-            try {
-                const r = await fetch(BASE + "/rules/import", {
-                    method: "POST", headers: h, body: JSON.stringify({ yaml_text })
-                });
-                if (r.ok) {
-                    const d = await r.json();
-                    okEl.textContent = t('imported_ok') + ' ' + d.imported + ' rule(s)';
-                    okEl.style.display = "inline";
-                    setTimeout(() => okEl.style.display = "none", 3000);
-                    loadRules();
-                    loadStatus();
-                } else {
-                    const e = await r.json();
-                    errEl.textContent = e.detail || "Import failed";
-                    errEl.style.display = "inline";
-                }
-            } catch (ex) {
-                errEl.textContent = String(ex);
-                errEl.style.display = "inline";
+        function onTriggerChange() {
+            var v = document.getElementById('f-trigger').value;
+            ['time', 'event', 'device', 'presence'].forEach(function (k) {
+                var el = document.getElementById('trig-' + k);
+                if (el) el.className = 'dyn-fields' + (k === v ? ' visible' : '');
+            });
+        }
+        function onActionChange() {
+            var v = document.getElementById('f-action').value;
+            ['device_command', 'publish_event', 'notify'].forEach(function (k) {
+                var el = document.getElementById('act-' + k);
+                if (el) el.className = 'dyn-fields' + (k === v ? ' visible' : '');
+            });
+        }
+        function applyLangPlaceholders() {
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+            });
+            // localise <option> elements
+            document.querySelectorAll('option[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+
+        async function addRule() {
+            var name = document.getElementById('f-name').value.trim();
+            if (!name) { showAddErr(t('err_name')); return; }
+
+            var trigType = document.getElementById('f-trigger').value;
+            var actType = document.getElementById('f-action').value;
+            var trigger = { type: trigType };
+            var action = { type: actType };
+
+            if (trigType === 'time') {
+                trigger.at = document.getElementById('f-at').value || '07:00';
+            } else if (trigType === 'event') {
+                trigger.event_type = document.getElementById('f-trig-event').value.trim();
+            } else if (trigType === 'device') {
+                trigger.device_id = document.getElementById('f-trig-dev-id').value.trim();
+                var key = document.getElementById('f-trig-key').value.trim();
+                var val = document.getElementById('f-trig-val').value.trim();
+                if (key) { trigger.state = {}; trigger.state[key] = val; }
+            } else if (trigType === 'presence') {
+                trigger.user_id = document.getElementById('f-trig-user').value.trim();
+                trigger.status = document.getElementById('f-trig-presence-st').value;
             }
+
+            if (actType === 'device_command') {
+                action.device_id = document.getElementById('f-act-dev-id').value.trim();
+                var akey = document.getElementById('f-act-key').value.trim();
+                var aval = document.getElementById('f-act-val').value.trim();
+                action.state = {};
+                if (akey) action.state[akey] = aval; else action.state = { state: 'ON' };
+            } else if (actType === 'publish_event') {
+                action.event_type = document.getElementById('f-pub-event').value.trim();
+            } else if (actType === 'notify') {
+                action.message = document.getElementById('f-notify-msg').value.trim();
+                action.channel = document.getElementById('f-notify-ch').value;
+            }
+
+            var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+            var yaml_text = 'automations:\n  - id: ' + id + '\n    name: "' + name.replace(/"/g, "'") + '"\n    trigger:\n      type: ' + trigger.type;
+            if (trigger.at) yaml_text += '\n      at: "' + trigger.at + '"';
+            if (trigger.event_type) yaml_text += '\n      event_type: ' + trigger.event_type;
+            if (trigger.device_id) yaml_text += '\n      device_id: ' + trigger.device_id;
+            if (trigger.state) { var sk = Object.keys(trigger.state)[0]; yaml_text += '\n      state:\n        ' + sk + ': ' + trigger.state[sk]; }
+            if (trigger.user_id) yaml_text += '\n      user_id: ' + trigger.user_id;
+            if (trigger.status) yaml_text += '\n      status: ' + trigger.status;
+            yaml_text += '\n    actions:\n      - type: ' + action.type;
+            if (action.device_id) yaml_text += '\n        device_id: ' + action.device_id;
+            if (action.state) { var ak = Object.keys(action.state)[0]; yaml_text += '\n        state:\n          ' + ak + ': ' + action.state[ak]; }
+            if (action.event_type) yaml_text += '\n        event_type: ' + action.event_type;
+            if (action.message) yaml_text += '\n        message: "' + action.message.replace(/"/g, "'") + '"';
+            if (action.channel) yaml_text += '\n        channel: ' + action.channel;
+
+            try {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: h, body: JSON.stringify({ yaml_text: yaml_text }) });
+                if (r.ok) {
+                    showAddOk(t('added_ok'));
+                    document.getElementById('f-name').value = '';
+                    loadRules(); loadStatus();
+                } else {
+                    var e = await r.json();
+                    showAddErr(e.detail || 'Error');
+                }
+            } catch (ex) { showAddErr(String(ex)); }
+        }
+
+        function showAddOk(msg) {
+            document.getElementById('add-msg').textContent = msg;
+            document.getElementById('add-err').textContent = '';
+            setTimeout(function () { document.getElementById('add-msg').textContent = ''; }, 3000);
+        }
+        function showAddErr(msg) {
+            document.getElementById('add-err').textContent = msg;
+            document.getElementById('add-msg').textContent = '';
+        }
+
+        async function importYaml() {
+            var yaml_text = document.getElementById('yaml-input').value.trim();
+            if (!yaml_text) return;
+            try {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: h, body: JSON.stringify({ yaml_text: yaml_text }) });
+                if (r.ok) {
+                    var d = await r.json();
+                    showAddOk(t('imported_ok') + ' ' + d.imported + ' rule(s)');
+                    loadRules(); loadStatus();
+                } else {
+                    var e = await r.json();
+                    showAddErr(e.detail || 'Import failed');
+                }
+            } catch (ex) { showAddErr(String(ex)); }
         }
 
         applyLang();
+        applyLangPlaceholders();
         loadStatus();
         loadRules();
         setInterval(loadStatus, 10000);

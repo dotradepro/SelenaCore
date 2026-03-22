@@ -48,39 +48,152 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--tx);
-            padding: 24px;
+            padding: 20px;
             min-height: 100%;
             overflow-y: auto;
         }
 
         h1 {
-            font-size: 1.4rem;
-            margin-bottom: 24px;
-            color: var(--tx);
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 20px;
         }
 
         .section {
             background: var(--sf);
             border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
+            padding: 18px;
+            margin-bottom: 14px;
         }
 
         .section h2 {
-            font-size: 1rem;
+            font-size: 0.95rem;
             color: var(--tx2);
-            margin-bottom: 16px;
+            margin-bottom: 14px;
+            font-weight: 600;
         }
 
-        #status-pre {
+        /* Stat cards */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .stat-card {
             background: var(--sf2);
-            border-radius: 8px;
-            padding: 12px;
+            border-radius: 10px;
+            padding: 14px 16px;
+        }
+
+        .stat-card .val {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--am);
+            line-height: 1.1;
+        }
+
+        .stat-card .val.ok {
+            color: var(--gr);
+        }
+
+        .stat-card .val.err {
+            color: var(--rd);
+        }
+
+        .stat-card .lbl {
+            font-size: 0.75rem;
+            color: var(--tx3);
+            margin-top: 4px;
+        }
+
+        /* Form */
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+
+        .form-row label {
             font-size: 0.8rem;
             color: var(--tx2);
-            white-space: pre-wrap;
         }
 
+        .form-row input,
+        .form-row select {
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: var(--tx);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .form-row input:focus,
+        .form-row select:focus {
+            border-color: var(--ac);
+        }
+
+        select option {
+            background: var(--sf2);
+            color: var(--tx);
+        }
+
+        .btn {
+            background: var(--ac);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            opacity: 0.85;
+        }
+
+        .btn-sm {
+            padding: 6px 14px;
+            font-size: 0.8rem;
+        }
+
+        .btn-sec {
+            background: var(--sf3);
+            color: var(--tx);
+        }
+
+        .btn-danger {
+            background: var(--rd);
+            color: #fff;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .msg {
+            font-size: 0.82rem;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .ok-msg {
+            color: var(--gr);
+        }
+
+        .err-msg {
+            color: var(--rd);
+        }
+
+        /* Table */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -95,8 +208,93 @@
         }
 
         th {
-            background: var(--sf);
+            background: var(--sf2);
             color: var(--tx2);
+            font-weight: 600;
+        }
+
+        td.power {
+            color: var(--am);
+            font-weight: 600;
+        }
+
+        td.kwh {
+            color: var(--ac);
+        }
+
+        /* Source cards */
+        .source-card {
+            background: var(--sf2);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .source-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .source-dot.active {
+            background: var(--gr);
+        }
+
+        .source-dot.inactive {
+            background: var(--tx3);
+        }
+
+        .source-dot.no-data {
+            background: var(--am);
+        }
+
+        .source-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .source-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .source-meta {
+            font-size: 0.75rem;
+            color: var(--tx3);
+            margin-top: 2px;
+        }
+
+        .source-type {
+            display: inline-block;
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: var(--sf3);
+            color: var(--tx2);
+        }
+
+        .source-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .dyn-fields {
+            display: none;
+        }
+
+        .dyn-fields.visible {
+            display: block;
+        }
+
+        .hint {
+            font-size: 0.72rem;
+            color: var(--tx3);
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -104,14 +302,121 @@
 <body>
     <h1 data-i18n="title"></h1>
 
+    <!-- Overview -->
     <div class="section">
-        <h2 data-i18n="status"></h2>
-        <pre id="status-pre" data-i18n="loading"></pre>
+        <h2 data-i18n="h_overview"></h2>
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="val" id="s-status">—</div>
+                <div class="lbl" data-i18n="lbl_status"></div>
+            </div>
+            <div class="stat-card">
+                <div class="val" id="s-devices">—</div>
+                <div class="lbl" data-i18n="lbl_tracked"></div>
+            </div>
+            <div class="stat-card">
+                <div class="val" id="s-power">—</div>
+                <div class="lbl" data-i18n="lbl_total_w"></div>
+            </div>
+            <div class="stat-card">
+                <div class="val" id="s-kwh">—</div>
+                <div class="lbl" data-i18n="lbl_kwh_today"></div>
+            </div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-sec btn-sm" onclick="load()" data-i18n="refresh"></button>
+        </div>
     </div>
 
+    <!-- Data Sources -->
     <div class="section">
-        <h2 data-i18n="all_devices"></h2>
-        <table id="devices-table">
+        <h2 data-i18n="h_sources"></h2>
+        <div id="sources-list">
+            <p style="color: var(--tx3); font-size: 0.85rem" data-i18n="loading"></p>
+        </div>
+
+        <h2 style="margin-top: 16px" data-i18n="h_add_source"></h2>
+        <div class="form-row">
+            <label data-i18n="lbl_source_name"></label>
+            <input type="text" id="src-name" data-i18n-placeholder="ph_source_name">
+        </div>
+        <div class="form-row">
+            <label data-i18n="lbl_source_type"></label>
+            <select id="src-type" onchange="onSourceTypeChange()">
+                <option value="device_registry" data-i18n="type_device">Device from Registry</option>
+                <option value="mqtt_topic" data-i18n="type_mqtt">MQTT Topic</option>
+                <option value="manual" data-i18n="type_manual">Manual Input</option>
+            </select>
+        </div>
+
+        <!-- Device Registry fields -->
+        <div id="src-fields-device_registry" class="dyn-fields visible">
+            <div class="form-row">
+                <label data-i18n="lbl_device_id"></label>
+                <select id="src-device-id">
+                    <option value="" data-i18n="loading">Loading…</option>
+                </select>
+                <div class="hint" data-i18n="hint_device_id"></div>
+            </div>
+            <div class="form-row">
+                <label data-i18n="lbl_state_key"></label>
+                <input type="text" id="src-state-key" value="power" data-i18n-placeholder="ph_state_key">
+                <div class="hint" data-i18n="hint_state_key"></div>
+            </div>
+        </div>
+
+        <!-- MQTT Topic fields -->
+        <div id="src-fields-mqtt_topic" class="dyn-fields">
+            <div class="form-row">
+                <label data-i18n="lbl_mqtt_topic"></label>
+                <input type="text" id="src-mqtt-topic" data-i18n-placeholder="ph_mqtt_topic">
+                <div class="hint" data-i18n="hint_mqtt_topic"></div>
+            </div>
+            <div class="form-row">
+                <label data-i18n="lbl_mqtt_key"></label>
+                <input type="text" id="src-mqtt-key" value="power" data-i18n-placeholder="ph_mqtt_key">
+                <div class="hint" data-i18n="hint_mqtt_key"></div>
+            </div>
+        </div>
+
+        <!-- Manual fields -->
+        <div id="src-fields-manual" class="dyn-fields">
+            <div class="form-row">
+                <label data-i18n="lbl_manual_device_id"></label>
+                <input type="text" id="src-manual-id" data-i18n-placeholder="ph_manual_device_id">
+                <div class="hint" data-i18n="hint_manual"></div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn" onclick="addSource()" data-i18n="btn_add_source"></button>
+        </div>
+        <div class="msg" id="src-msg"></div>
+    </div>
+
+    <!-- Thresholds -->
+    <div class="section">
+        <h2 data-i18n="h_thresholds"></h2>
+        <div class="form-row">
+            <label data-i18n="lbl_alert_w"></label>
+            <input type="number" id="alert-w" min="0" step="10" placeholder="500">
+        </div>
+        <div class="form-row">
+            <label data-i18n="lbl_low_w"></label>
+            <input type="number" id="low-w" min="0" step="1" placeholder="5">
+        </div>
+        <div class="form-row">
+            <label data-i18n="lbl_report_min"></label>
+            <input type="number" id="report-min" min="5" step="5" placeholder="60">
+        </div>
+        <button class="btn" onclick="saveThresholds()" data-i18n="save"></button>
+        <div class="msg" id="thr-msg"></div>
+    </div>
+
+    <!-- Device table -->
+    <div class="section">
+        <h2 data-i18n="h_devices"></h2>
+        <table>
             <thead>
                 <tr>
                     <th data-i18n="device_id"></th>
@@ -130,51 +435,295 @@
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { title: '⚡ Energy Monitor Settings', status: 'Status', loading: 'Loading…', all_devices: 'All Devices', device_id: 'Device ID', current_w: 'Current (W)', today_kwh: 'Today (kWh)', no_readings: 'No readings yet', error_prefix: 'Error: ' },
-            uk: { title: '⚡ Налаштування енергомонітору', status: 'Статус', loading: 'Завантаження…', all_devices: 'Усі пристрої', device_id: 'ID пристрою', current_w: 'Потужність (W)', today_kwh: 'Сьогодні (kWh)', no_readings: 'Даних ще немає', error_prefix: 'Помилка: ' }
+            en: {
+                title: '\u26A1 Energy Monitor',
+                h_overview: 'Overview', h_thresholds: 'Alert Thresholds', h_devices: 'Device Power Readings',
+                h_sources: 'Data Sources', h_add_source: 'Add Data Source',
+                lbl_status: 'Status', lbl_tracked: 'Tracked Devices', lbl_total_w: 'Total Power (W)', lbl_kwh_today: 'Today Total (kWh)',
+                lbl_alert_w: 'Alert threshold (W) — notify when device exceeds this',
+                lbl_low_w: 'Low-power threshold (W) — ignore devices below this',
+                lbl_report_min: 'Daily report interval (minutes)',
+                lbl_source_name: 'Source Name', lbl_source_type: 'Source Type',
+                lbl_device_id: 'Device', lbl_state_key: 'State Key (power field name)',
+                lbl_mqtt_topic: 'MQTT Topic', lbl_mqtt_key: 'JSON Key for watts',
+                lbl_manual_device_id: 'Device ID (label for readings)',
+                type_device: '\uD83D\uDD0C Device from Registry',
+                type_mqtt: '\uD83D\uDCE1 MQTT Topic',
+                type_manual: '\u270D Manual Input',
+                ph_source_name: 'e.g. Kitchen Smart Plug',
+                ph_state_key: 'power, watts, energy_power…',
+                ph_mqtt_topic: 'e.g. shellies/shelly1/relay/0/power',
+                ph_mqtt_key: 'power',
+                ph_manual_device_id: 'e.g. solar-inverter-1',
+                hint_device_id: 'Select a device from the registry to track its power usage',
+                hint_state_key: 'The JSON key in device state that contains watts (e.g. "power", "watts", "current_power")',
+                hint_mqtt_topic: 'MQTT topic that publishes power data (Shelly, Tasmota, Sonoff, etc.)',
+                hint_mqtt_key: 'Key in the MQTT JSON payload for watts value',
+                hint_manual: 'For devices you send readings to manually via API',
+                btn_add_source: '+ Add Source',
+                save: 'Save Settings', refresh: '\u21BB Refresh',
+                loading: 'Loading\u2026', no_readings: 'No readings yet',
+                no_sources: 'No data sources configured yet. Add one to start tracking energy.',
+                device_id: 'Device', current_w: 'Power (W)', today_kwh: 'Today (kWh)',
+                saved_ok: '\u2713 Saved', error_prefix: 'Error: ',
+                source_added: '\u2713 Source added', source_deleted: 'Source removed',
+                src_active: 'Receiving data', src_no_data: 'No data yet', src_disabled: 'Disabled',
+                last_reading: 'Last reading', never: 'never',
+                confirm_delete_source: 'Remove this data source?',
+                err_name_required: 'Please enter a source name'
+            },
+            uk: {
+                title: '\u26A1 Моніторинг енергії',
+                h_overview: 'Огляд', h_thresholds: 'Порогові значення', h_devices: 'Споживання пристроїв',
+                h_sources: 'Джерела даних', h_add_source: 'Додати джерело даних',
+                lbl_status: 'Статус', lbl_tracked: 'Відстежується', lbl_total_w: 'Загальна потужність (W)', lbl_kwh_today: 'Сьогодні (кВт·год)',
+                lbl_alert_w: 'Поріг оповіщення (W) — сповістити при перевищенні',
+                lbl_low_w: 'Поріг малого споживання (W) — ігнорувати нижче',
+                lbl_report_min: 'Інтервал добового звіту (хвилини)',
+                lbl_source_name: 'Назва джерела', lbl_source_type: 'Тип джерела',
+                lbl_device_id: 'Пристрій', lbl_state_key: 'Ключ стану (поле потужності)',
+                lbl_mqtt_topic: 'MQTT топік', lbl_mqtt_key: 'JSON ключ для ватт',
+                lbl_manual_device_id: 'ID пристрою (мітка для показників)',
+                type_device: '\uD83D\uDD0C Пристрій з реєстру',
+                type_mqtt: '\uD83D\uDCE1 MQTT топік',
+                type_manual: '\u270D Ручне введення',
+                ph_source_name: 'напр. Розумна розетка кухня',
+                ph_state_key: 'power, watts, energy_power…',
+                ph_mqtt_topic: 'напр. shellies/shelly1/relay/0/power',
+                ph_mqtt_key: 'power',
+                ph_manual_device_id: 'напр. solar-inverter-1',
+                hint_device_id: 'Виберіть пристрій з реєстру для відстеження енергоспоживання',
+                hint_state_key: 'JSON ключ в стані пристрою, що містить ватти (напр. "power", "watts", "current_power")',
+                hint_mqtt_topic: 'MQTT топік, що публікує дані про потужність (Shelly, Tasmota, Sonoff та ін.)',
+                hint_mqtt_key: 'Ключ у JSON MQTT повідомленні для значення ватт',
+                hint_manual: 'Для пристроїв, показники яких ви надсилаєте вручну через API',
+                btn_add_source: '+ Додати джерело',
+                save: 'Зберегти', refresh: '\u21BB Оновити',
+                loading: 'Завантаження\u2026', no_readings: 'Даних ще немає',
+                no_sources: 'Джерела даних ще не налаштовані. Додайте одне, щоб почати відстеження.',
+                device_id: 'Пристрій', current_w: 'Потужність (W)', today_kwh: 'Сьогодні (кВт·год)',
+                saved_ok: '\u2713 Збережено', error_prefix: 'Помилка: ',
+                source_added: '\u2713 Джерело додано', source_deleted: 'Джерело видалено',
+                src_active: 'Отримую дані', src_no_data: 'Даних ще немає', src_disabled: 'Вимкнено',
+                last_reading: 'Останній показник', never: 'ніколи',
+                confirm_delete_source: 'Видалити це джерело даних?',
+                err_name_required: 'Введіть назву джерела'
+            }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+        function applyLangPlaceholders() {
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+            });
+            document.querySelectorAll('option[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+        window.addEventListener('message', function (e) {
+            if (e.data && e.data.type === 'lang_changed') {
+                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+                applyLang(); applyLangPlaceholders(); load(); loadSources(); loadRegistryDevices();
+            }
+        });
 
-        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+        var base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+        var h = { 'Content-Type': 'application/json' };
 
+        /* ── Source type toggle ──────────────────────────────────── */
+        function onSourceTypeChange() {
+            var v = document.getElementById('src-type').value;
+            ['device_registry', 'mqtt_topic', 'manual'].forEach(function (k) {
+                var el = document.getElementById('src-fields-' + k);
+                if (el) el.className = 'dyn-fields' + (k === v ? ' visible' : '');
+            });
+        }
+
+        /* ── Load registry devices for dropdown ─────────────────── */
+        async function loadRegistryDevices() {
+            try {
+                var r = await fetch('/api/v1/devices');
+                if (!r.ok) return;
+                var d = await r.json();
+                var devices = d.devices || d || [];
+                var sel = document.getElementById('src-device-id');
+                sel.innerHTML = '<option value="">— ' + t('lbl_device_id') + ' —</option>';
+                devices.forEach(function (dev) {
+                    var id = dev.device_id || dev.id;
+                    var name = dev.name || id;
+                    var proto = dev.protocol ? ' (' + dev.protocol + ')' : '';
+                    var opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = name + proto;
+                    sel.appendChild(opt);
+                });
+            } catch (e) { }
+        }
+
+        /* ── Load sources list ──────────────────────────────────── */
+        async function loadSources() {
+            try {
+                var r = await fetch(base + '/energy/sources');
+                if (!r.ok) return;
+                var d = await r.json();
+                var sources = d.sources || [];
+                var container = document.getElementById('sources-list');
+                if (sources.length === 0) {
+                    container.innerHTML = '<p style="color:var(--tx3);font-size:0.85rem">' + t('no_sources') + '</p>';
+                    return;
+                }
+                container.innerHTML = sources.map(function (src) {
+                    var hasData = !!src.last_reading_ts;
+                    var dotClass = !src.enabled ? 'inactive' : (hasData ? 'active' : 'no-data');
+                    var statusText = !src.enabled ? t('src_disabled') : (hasData ? t('src_active') : t('src_no_data'));
+                    var typeLabels = { device_registry: t('type_device'), mqtt_topic: t('type_mqtt'), manual: t('type_manual') };
+                    var configInfo = '';
+                    if (src.type === 'device_registry') configInfo = src.config.device_id || '';
+                    else if (src.type === 'mqtt_topic') configInfo = src.config.mqtt_topic || '';
+                    else configInfo = src.config.device_id || '';
+                    var lastTs = src.last_reading_ts ? new Date(src.last_reading_ts).toLocaleString() : t('never');
+                    return '<div class="source-card">' +
+                        '<div class="source-dot ' + dotClass + '"></div>' +
+                        '<div class="source-info">' +
+                        '<div class="source-name">' + src.name + '</div>' +
+                        '<div class="source-meta">' +
+                        '<span class="source-type">' + (typeLabels[src.type] || src.type) + '</span> ' +
+                        (configInfo ? ' &nbsp;' + configInfo : '') +
+                        '</div>' +
+                        '<div class="source-meta">' + t('last_reading') + ': ' + lastTs + ' &nbsp; ' + statusText + '</div>' +
+                        '</div>' +
+                        '<div class="source-actions">' +
+                        '<button class="btn btn-sm btn-sec" onclick="toggleSource(\'' + src.id + '\',' + !src.enabled + ')">' + (src.enabled ? '⏸' : '▶') + '</button>' +
+                        '<button class="btn btn-sm btn-danger" onclick="deleteSource(\'' + src.id + '\')">✕</button>' +
+                        '</div>' +
+                        '</div>';
+                }).join('');
+            } catch (e) { }
+        }
+
+        async function addSource() {
+            var name = document.getElementById('src-name').value.trim();
+            if (!name) { showSrcMsg(t('err_name_required'), true); return; }
+            var type = document.getElementById('src-type').value;
+            var config = {};
+
+            if (type === 'device_registry') {
+                config.device_id = document.getElementById('src-device-id').value;
+                config.state_key = document.getElementById('src-state-key').value.trim() || 'power';
+                if (!config.device_id) { showSrcMsg(t('err_name_required'), true); return; }
+            } else if (type === 'mqtt_topic') {
+                config.mqtt_topic = document.getElementById('src-mqtt-topic').value.trim();
+                config.state_key = document.getElementById('src-mqtt-key').value.trim() || 'power';
+                if (!config.mqtt_topic) { showSrcMsg(t('err_name_required'), true); return; }
+            } else {
+                config.device_id = document.getElementById('src-manual-id').value.trim() || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            }
+
+            try {
+                var r = await fetch(base + '/energy/sources', { method: 'POST', headers: h, body: JSON.stringify({ name: name, type: type, config: config }) });
+                if (r.ok) {
+                    showSrcMsg(t('source_added'), false);
+                    document.getElementById('src-name').value = '';
+                    loadSources();
+                } else {
+                    var e = await r.json();
+                    showSrcMsg((e.detail || 'Error'), true);
+                }
+            } catch (ex) { showSrcMsg(String(ex), true); }
+        }
+
+        async function deleteSource(id) {
+            if (!confirm(t('confirm_delete_source'))) return;
+            try {
+                var r = await fetch(base + '/energy/sources/' + id, { method: 'DELETE', headers: h });
+                if (r.ok) { showSrcMsg(t('source_deleted'), false); loadSources(); }
+            } catch (e) { }
+        }
+
+        async function toggleSource(id, enabled) {
+            try {
+                await fetch(base + '/energy/sources/' + id + '/toggle', { method: 'PATCH', headers: h, body: JSON.stringify({ enabled: enabled }) });
+                loadSources();
+            } catch (e) { }
+        }
+
+        function showSrcMsg(msg, isErr) {
+            var el = document.getElementById('src-msg');
+            el.textContent = msg;
+            el.className = 'msg ' + (isErr ? 'err-msg' : 'ok-msg');
+            setTimeout(function () { el.textContent = ''; }, 3000);
+        }
+
+        /* ── Load overview + devices ────────────────────────────── */
         async function load() {
             try {
-                const [status, cur, today] = await Promise.all([
-                    fetch(`${base}/energy/status`).then(r => r.json()),
-                    fetch(`${base}/energy/current`).then(r => r.json()),
-                    fetch(`${base}/energy/today`).then(r => r.json()),
+                var results = await Promise.all([
+                    fetch(base + '/energy/status').then(function (r) { return r.json(); }).catch(function () { return {}; }),
+                    fetch(base + '/energy/current').then(function (r) { return r.json(); }).catch(function () { return {}; }),
+                    fetch(base + '/energy/today').then(function (r) { return r.json(); }).catch(function () { return {}; }),
                 ]);
+                var status = results[0], cur = results[1], today = results[2];
 
-                document.getElementById('status-pre').textContent = JSON.stringify(status, null, 2);
+                // Overview cards
+                var stEl = document.getElementById('s-status');
+                stEl.textContent = '\u2713 OK';
+                stEl.className = 'val ok';
+                document.getElementById('s-devices').textContent = status.devices ?? Object.keys(cur).length;
 
-                const power = cur.power || {};
-                const kwh = today.devices || {};
-                const ids = Object.keys(power);
-
-                if (!ids.length) {
-                    document.getElementById('devices-body').innerHTML =
-                        '<tr><td colspan="3" style="text-align:center;color:var(--tx3)">' + t('no_readings') + '</td></tr>';
-                } else {
-                    document.getElementById('devices-body').innerHTML = ids
-                        .sort()
-                        .map(id => `<tr>
-          <td>${id}</td>
-          <td>${power[id]?.toFixed(1) ?? '—'} W</td>
-          <td>${(kwh[id] || 0).toFixed(4)} kWh</td>
-        </tr>`).join('');
+                var totalW = 0;
+                var power = cur;
+                if (typeof power === 'object' && power !== null) {
+                    Object.keys(power).forEach(function (k) { totalW += power[k] || 0; });
                 }
+                document.getElementById('s-power').textContent = totalW.toFixed(1) + ' W';
+
+                var totalKwh = today.total_kwh || 0;
+                document.getElementById('s-kwh').textContent = totalKwh.toFixed(3) + ' kWh';
+
+                // Threshold inputs
+                if (status.alert_threshold_w != null) document.getElementById('alert-w').value = status.alert_threshold_w;
+                if (status.low_power_threshold_w != null) document.getElementById('low-w').value = status.low_power_threshold_w;
+                if (status.report_interval_min != null) document.getElementById('report-min').value = status.report_interval_min;
+
+                // Device table
+                var ids = typeof power === 'object' && power !== null ? Object.keys(power).sort() : [];
+                document.getElementById('devices-body').innerHTML = ids.length ? ids.map(function (id) {
+                    return '<tr><td>' + id + '</td><td class="power">' + (power[id] != null ? power[id].toFixed(1) : '\u2014') + ' W</td><td class="kwh">\u2014</td></tr>';
+                }).join('') : '<tr><td colspan="3" style="text-align:center;color:var(--tx3)">' + t('no_readings') + '</td></tr>';
+
             } catch (e) {
-                document.getElementById('status-pre').textContent = t('error_prefix') + e.message;
+                document.getElementById('s-status').textContent = '\u2717';
+                document.getElementById('s-status').className = 'val err';
             }
         }
 
+        async function saveThresholds() {
+            var body = {
+                alert_threshold_w: parseFloat(document.getElementById('alert-w').value) || null,
+                low_power_threshold_w: parseFloat(document.getElementById('low-w').value) || null,
+                report_interval_min: parseInt(document.getElementById('report-min').value) || null,
+            };
+            var msg = document.getElementById('thr-msg');
+            try {
+                await fetch(base + '/energy/config', { method: 'POST', headers: h, body: JSON.stringify(body) });
+                msg.textContent = t('saved_ok');
+                msg.className = 'msg ok-msg';
+            } catch (e) {
+                msg.textContent = t('error_prefix') + e.message;
+                msg.className = 'msg err-msg';
+            }
+            setTimeout(function () { msg.textContent = ''; }, 3000);
+        }
+
         applyLang();
+        applyLangPlaceholders();
         load();
+        loadSources();
+        loadRegistryDevices();
         setInterval(load, 30000);
+        setInterval(loadSources, 30000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

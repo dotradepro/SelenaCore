@@ -1,152 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Update Manager Settings</title>
     <style>
         :root {
-            --bg: #0B0C10;
-            --sf: #12131A;
-            --sf2: #191A22;
-            --sf3: #20212C;
-            --b: rgba(255, 255, 255, .07);
-            --b2: rgba(255, 255, 255, .13);
-            --tx: #EDEEF5;
-            --tx2: #888EA8;
-            --tx3: #484D66;
-            --ac: #4F8CF7;
-            --gr: #2EC98A;
-            --am: #F5A93A;
-            --rd: #E05454;
+            --bg: #0B0C10; --sf: #12131A; --sf2: #191A22; --sf3: #20212C;
+            --b: rgba(255,255,255,.07); --b2: rgba(255,255,255,.13);
+            --tx: #EDEEF5; --tx2: #888EA8; --tx3: #484D66;
+            --ac: #4F8CF7; --gr: #2EC98A; --am: #F5A93A; --rd: #E05454;
         }
-
         :root.light {
-            --bg: #F3F4F8;
-            --sf: #FFFFFF;
-            --sf2: #F0F1F5;
-            --sf3: #E4E5ED;
-            --b: rgba(0, 0, 0, .08);
-            --b2: rgba(0, 0, 0, .14);
-            --tx: #1A1C24;
-            --tx2: #5C6178;
-            --tx3: #9498AD;
-            --ac: #3B7AE8;
-            --gr: #1FAF75;
-            --am: #DB8F1C;
-            --rd: #C94040;
+            --bg: #F3F4F8; --sf: #FFFFFF; --sf2: #F0F1F5; --sf3: #E4E5ED;
+            --b: rgba(0,0,0,.08); --b2: rgba(0,0,0,.14);
+            --tx: #1A1C24; --tx2: #5C6178; --tx3: #9498AD;
+            --ac: #3B7AE8; --gr: #1FAF75; --am: #DB8F1C; --rd: #C94040;
         }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--tx);
-            padding: 24px;
-            min-height: 100%;
-            overflow-y: auto;
-        }
-
-        h1 {
-            font-size: 1.4rem;
-            margin-bottom: 24px;
-        }
-
-        .section {
-            background: var(--sf);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
-        }
-
-        h2 {
-            font-size: 1rem;
-            color: var(--tx2);
-            margin-bottom: 14px;
-        }
-
-        pre {
-            background: var(--sf2);
-            border-radius: 8px;
-            padding: 12px;
-            font-size: 0.8rem;
-            color: var(--tx2);
-            white-space: pre-wrap;
-        }
-
-        button {
-            background: var(--ac);
-            color: var(--tx);
-            border: none;
-            border-radius: 8px;
-            padding: 10px 20px;
-            cursor: pointer;
-            margin-right: 8px;
-            font-size: 0.9rem;
-        }
-
-        button.danger {
-            background: #733;
-        }
-
-        button:hover {
-            opacity: 0.85;
-        }
-
-        .msg {
-            margin-top: 10px;
-            font-size: 0.85rem;
-        }
-
-        .ok {
-            color: var(--gr);
-        }
-
-        .err {
-            color: var(--rd);
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--tx); padding: 20px; min-height: 100%; overflow-y: auto; }
+        h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; }
+        .section { background: var(--sf); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+        .section h2 { font-size: 0.95rem; color: var(--tx2); margin-bottom: 14px; font-weight: 600; }
+        /* Version card */
+        .ver-card { background: var(--sf2); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+        .ver-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--b); }
+        .ver-row:last-child { border-bottom: none; }
+        .ver-label { font-size: 0.82rem; color: var(--tx2); }
+        .ver-value { font-size: 0.9rem; font-weight: 600; color: var(--tx); }
+        .ver-value.big { font-size: 1.2rem; color: var(--ac); }
+        /* Badges */
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; }
+        .badge-ok    { background: rgba(46,201,138,.15); color: var(--gr); }
+        .badge-warn  { background: rgba(245,169,58,.15);  color: var(--am); }
+        .badge-err   { background: rgba(224,84,84,.15);   color: var(--rd); }
+        .badge-info  { background: rgba(79,140,247,.15);  color: var(--ac); }
+        /* Available banner */
+        .update-banner { border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .update-banner.available { background: rgba(46,201,138,.1); border: 1px solid rgba(46,201,138,.3); }
+        .update-banner.current   { background: rgba(79,140,247,.07); border: 1px solid var(--b); }
+        .update-banner .ico { font-size: 1.4rem; }
+        .update-banner .text .head { font-weight: 700; font-size: 0.95rem; }
+        .update-banner .text .sub  { font-size: 0.8rem; color: var(--tx2); margin-top: 2px; }
+        /* Buttons */
+        .btn { background: var(--ac); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; margin-right: 8px; margin-bottom: 8px; }
+        .btn:hover { opacity: 0.85; }
+        .btn:disabled { opacity: 0.4; cursor: default; }
+        .btn-danger { background: rgba(224,84,84,.2); color: var(--rd); border: 1px solid rgba(224,84,84,.3); }
+        .btn-sec { background: var(--sf3); color: var(--tx); }
+        .msg { font-size: 0.85rem; margin-top: 8px; min-height: 18px; }
+        .ok-msg { color: var(--gr); } .err-msg { color: var(--rd); } .info-msg { color: var(--am); }
+        .progress { height: 4px; background: var(--sf3); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
+        .progress-bar { height: 100%; background: var(--ac); width: 0; transition: width 0.3s; border-radius: 2px; }
     </style>
 </head>
-
 <body>
     <h1 data-i18n="title"></h1>
 
-    <div class="section">
-        <h2 data-i18n="h_status"></h2>
-        <pre id="status-pre" data-i18n="loading"></pre>
+    <!-- Current version banner -->
+    <div id="upd-banner" class="update-banner current">
+        <div class="ico">🔄</div>
+        <div class="text">
+            <div class="head" id="banner-head" data-i18n="checking"></div>
+            <div class="sub" id="banner-sub"></div>
+        </div>
     </div>
 
+    <!-- Version details -->
+    <div class="section">
+        <h2 data-i18n="h_version"></h2>
+        <div class="ver-card">
+            <div class="ver-row">
+                <span class="ver-label" data-i18n="lbl_current"></span>
+                <span class="ver-value big" id="v-current">—</span>
+            </div>
+            <div class="ver-row">
+                <span class="ver-label" data-i18n="lbl_latest"></span>
+                <span class="ver-value" id="v-latest">—</span>
+            </div>
+            <div class="ver-row">
+                <span class="ver-label" data-i18n="lbl_state"></span>
+                <span id="v-state"><span class="badge badge-info" data-i18n="loading"></span></span>
+            </div>
+            <div class="ver-row">
+                <span class="ver-label" data-i18n="lbl_last_check"></span>
+                <span class="ver-value" id="v-last-check">—</span>
+            </div>
+            <div class="ver-row" id="row-downloaded" style="display:none">
+                <span class="ver-label" data-i18n="lbl_downloaded"></span>
+                <span class="ver-value" id="v-downloaded">—</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
     <div class="section">
         <h2 data-i18n="h_actions"></h2>
-        <button onclick="doCheck()" data-i18n="check_btn"></button>
-        <button onclick="doDownload()" data-i18n="download_btn"></button>
-        <button onclick="doRollback()" class="danger" data-i18n="rollback_btn"></button>
-        <div id="action-msg" class="msg"></div>
+        <button class="btn btn-sec" onclick="doCheck()" id="btn-check" data-i18n="check_btn"></button>
+        <button class="btn" onclick="doDownload()" id="btn-download" disabled data-i18n="download_btn"></button>
+        <button class="btn btn-danger" onclick="doRollback()" id="btn-rollback" data-i18n="rollback_btn"></button>
+        <div class="progress"><div class="progress-bar" id="prog-bar"></div></div>
+        <div class="msg" id="action-msg"></div>
     </div>
 
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
-                title: '🔄 Update Manager', h_status: 'Status', loading: 'Loading…', h_actions: 'Actions',
+                title: '🔄 Update Manager',
+                checking: 'Checking…', h_version: 'Version Info', h_actions: 'Actions',
+                lbl_current: 'Installed version', lbl_latest: 'Latest available',
+                lbl_state: 'State', lbl_last_check: 'Last checked', lbl_downloaded: 'Downloaded',
                 check_btn: 'Check for Updates', download_btn: 'Download Update', rollback_btn: 'Rollback',
-                checking: 'Checking…', update_avail: '✅ Update available', up_to_date: '✓ Up to date',
-                downloading: 'Downloading…', downloaded: '✅ Downloaded: ', failed: '⚠️ Failed',
-                rolling_back: 'Rolling back…', rolled_back: '✅ Rolled back. State: ',
-                rollback_confirm: 'Roll back to previous version?'
+                state_idle: 'Up to date', state_update_available: 'Update available',
+                state_downloading: 'Downloading…', state_applying: 'Applying…',
+                state_rolling_back: 'Rolling back…', state_error: 'Error',
+                checking_msg: 'Checking for updates…', up_to_date: '✓ Already up to date',
+                update_avail: '✅ Update available', new_version: 'New version: ',
+                downloading: 'Downloading…', downloaded: '✅ Downloaded successfully',
+                failed: '⚠️ Failed', rolling_back: 'Rolling back…',
+                rolled_back: '✅ Rolled back successfully',
+                rollback_confirm: 'Roll back to the previous version?',
+                never: 'Never', loading: 'Loading…'
             },
             uk: {
-                title: '🔄 Менеджер оновлень', h_status: 'Статус', loading: 'Завантаження…', h_actions: 'Дії',
+                title: '🔄 Менеджер оновлень',
+                checking: 'Перевірка…', h_version: 'Відомості про версію', h_actions: 'Дії',
+                lbl_current: 'Встановлена версія', lbl_latest: 'Остання доступна',
+                lbl_state: 'Стан', lbl_last_check: 'Остання перевірка', lbl_downloaded: 'Завантажено',
                 check_btn: 'Перевірити оновлення', download_btn: 'Завантажити', rollback_btn: 'Відкат',
-                checking: 'Перевірка…', update_avail: '✅ Доступне оновлення', up_to_date: '✓ Актуально',
-                downloading: 'Завантаження…', downloaded: '✅ Завантажено: ', failed: '⚠️ Помилка',
-                rolling_back: 'Відкат…', rolled_back: '✅ Відкачено. Стан: ',
-                rollback_confirm: 'Відкатити до попередньої версії?'
+                state_idle: 'Актуально', state_update_available: 'Доступне оновлення',
+                state_downloading: 'Завантаження…', state_applying: 'Застосування…',
+                state_rolling_back: 'Відкат…', state_error: 'Помилка',
+                checking_msg: 'Перевірка оновлень…', up_to_date: '✓ Версія актуальна',
+                update_avail: '✅ Доступне оновлення', new_version: 'Нова версія: ',
+                downloading: 'Завантаження…', downloaded: '✅ Завантажено успішно',
+                failed: '⚠️ Помилка', rolling_back: 'Відкат…',
+                rolled_back: '✅ Відкат виконано',
+                rollback_confirm: 'Відкатити до попередньої версії?',
+                never: 'Ніколи', loading: 'Завантаження…'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -154,46 +146,112 @@
         window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); } });
 
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+
+        function stateLabel(state) {
+            var map = { idle: 'state_idle', update_available: 'state_update_available', downloading: 'state_downloading', applying: 'state_applying', rolling_back: 'state_rolling_back', error: 'state_error' };
+            return t(map[state] || state);
+        }
+        function stateBadgeClass(state) {
+            if (state === 'idle') return 'badge-ok';
+            if (state === 'update_available') return 'badge-warn';
+            if (state === 'error') return 'badge-err';
+            return 'badge-info';
+        }
+        function fmtDate(ts) {
+            if (!ts) return t('never');
+            try {
+                var d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+                return d.toLocaleString();
+            } catch (e) { return ts; }
+        }
+
         async function loadStatus() {
             try {
-                const s = await fetch(`${base}/update/status`).then(r => r.json());
-                document.getElementById('status-pre').textContent = JSON.stringify(s, null, 2);
-            } catch (e) { document.getElementById('status-pre').textContent = 'Error: ' + e.message; }
+                var s = await fetch(base + '/update/status').then(function (r) { return r.json(); });
+                document.getElementById('v-current').textContent = s.current_version || '—';
+                document.getElementById('v-latest').textContent = s.latest_version || '—';
+                document.getElementById('v-last-check').textContent = fmtDate(s.last_check);
+
+                var stateKey = s.update_available ? 'update_available' : (s.state || 'idle');
+                document.getElementById('v-state').innerHTML = '<span class="badge ' + stateBadgeClass(stateKey) + '">' + stateLabel(stateKey) + '</span>';
+
+                if (s.downloaded_version) {
+                    document.getElementById('v-downloaded').textContent = s.downloaded_version;
+                    document.getElementById('row-downloaded').style.display = '';
+                } else {
+                    document.getElementById('row-downloaded').style.display = 'none';
+                }
+
+                // Banner
+                var banner = document.getElementById('upd-banner');
+                var head = document.getElementById('banner-head');
+                var sub = document.getElementById('banner-sub');
+                if (s.update_available) {
+                    banner.className = 'update-banner available';
+                    document.querySelector('#upd-banner .ico').textContent = '🆕';
+                    head.textContent = t('update_avail');
+                    sub.textContent = t('new_version') + s.latest_version;
+                } else {
+                    banner.className = 'update-banner current';
+                    document.querySelector('#upd-banner .ico').textContent = '✅';
+                    head.textContent = t('state_idle');
+                    sub.textContent = s.current_version || '';
+                }
+
+                // Enable download button only if update is available
+                document.getElementById('btn-download').disabled = !s.update_available;
+            } catch (e) {
+                document.getElementById('banner-head').textContent = '⚠ ' + e.message;
+            }
         }
+
+        function showMsg(text, cls) {
+            var el = document.getElementById('action-msg');
+            el.textContent = text;
+            el.className = 'msg ' + (cls || '');
+        }
+
         async function doCheck() {
-            showMsg(t('checking'), '');
+            showMsg(t('checking_msg'), 'info-msg');
+            document.getElementById('btn-check').disabled = true;
             try {
-                const r = await fetch(`${base}/update/check`, { method: 'POST' }).then(r => r.json());
-                showMsg(r.update_available ? t('update_avail') + ' ' + r.version : t('up_to_date'), 'ok');
+                var r = await fetch(base + '/update/check', { method: 'POST' }).then(function (res) { return res.json(); });
+                showMsg(r.update_available ? t('update_avail') + ' — ' + r.version : t('up_to_date'), r.update_available ? 'info-msg' : 'ok-msg');
                 loadStatus();
-            } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
+            } catch (e) { showMsg('⚠️ ' + e.message, 'err-msg'); }
+            document.getElementById('btn-check').disabled = false;
         }
+
         async function doDownload() {
-            showMsg(t('downloading'), '');
+            showMsg(t('downloading'), 'info-msg');
+            document.getElementById('btn-download').disabled = true;
+            document.querySelector('.progress').style.display = 'block';
+            var bar = document.getElementById('prog-bar');
+            var pct = 0;
+            var prog = setInterval(function () { pct = Math.min(pct + 5, 90); bar.style.width = pct + '%'; }, 300);
             try {
-                const r = await fetch(`${base}/update/download`, { method: 'POST' }).then(r => r.json());
-                showMsg(r.ok ? t('downloaded') + r.path : t('failed'), r.ok ? 'ok' : 'err');
+                var r = await fetch(base + '/update/download', { method: 'POST' }).then(function (res) { return res.json(); });
+                clearInterval(prog); bar.style.width = '100%';
+                showMsg(r.ok !== false ? t('downloaded') : t('failed'), r.ok !== false ? 'ok-msg' : 'err-msg');
                 loadStatus();
-            } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
+            } catch (e) { clearInterval(prog); showMsg('⚠️ ' + e.message, 'err-msg'); }
+            setTimeout(function () { document.querySelector('.progress').style.display = 'none'; bar.style.width = '0'; }, 1500);
         }
+
         async function doRollback() {
             if (!confirm(t('rollback_confirm'))) return;
-            showMsg(t('rolling_back'), '');
+            showMsg(t('rolling_back'), 'info-msg');
             try {
-                const r = await fetch(`${base}/update/rollback`, { method: 'POST' }).then(r => r.json());
-                showMsg(t('rolled_back') + r.state, 'ok');
+                var r = await fetch(base + '/update/rollback', { method: 'POST' }).then(function (res) { return res.json(); });
+                showMsg(t('rolled_back'), 'ok-msg');
                 loadStatus();
-            } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
+            } catch (e) { showMsg('⚠️ ' + e.message, 'err-msg'); }
         }
-        function showMsg(text, cls) {
-            const el = document.getElementById('action-msg');
-            el.textContent = text;
-            el.className = 'msg ' + cls;
-        }
-        applyLang();
-        loadStatus(); setInterval(loadStatus, 30000);
-    </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
-</body>
 
+        applyLang();
+        loadStatus();
+        setInterval(loadStatus, 30000);
+    </script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
+</body>
 </html>

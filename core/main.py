@@ -72,10 +72,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await bus.start()
 
     # Publish startup event
+    from core.version import VERSION
     await bus.publish(
         type=CORE_STARTUP,
         source="core",
-        payload={"version": "0.3.0-beta"},
+        payload={"version": VERSION},
     )
 
     # Start CloudSync
@@ -128,10 +129,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
+    from core.version import VERSION
     app = FastAPI(
         title="SelenaCore API",
         description="SmartHome LK — Local Device Core",
-        version="0.3.0-beta",
+        version=VERSION,
         docs_url="/docs" if os.environ.get("DEBUG", "false").lower() == "true" else None,
         redoc_url=None,
         lifespan=lifespan,

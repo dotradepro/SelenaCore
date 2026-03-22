@@ -10,6 +10,11 @@ Provides:
   - get_total_today_kwh()             — sum of all devices today
   - anomaly check: reading > 2× rolling average fires energy.anomaly event
 
+Data sources:
+  - device_registry: subscribe to device.state_changed, extract watts from state key
+  - mqtt_topic: listen for MQTT events routed via protocol_bridge
+  - manual: user sends readings via POST /energy/reading
+
 Events published:
   energy.anomaly        — spike detected (reading > 2× rolling avg)
   energy.daily_report   — sent once per day with summary
@@ -18,8 +23,10 @@ Events published:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
+import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
@@ -74,6 +81,17 @@ class EnergyMonitor:
         self._db.execute("""
             CREATE INDEX IF NOT EXISTS idx_energy_device_ts
             ON energy_readings (device_id, ts)
+        """)
+        self._db.execute("""
+            CREATE TABLE IF NOT EXISTS energy_sources (
+                id          TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                type        TEXT NOT NULL,
+                config      TEXT NOT NULL DEFAULT '{}',
+                enabled     INTEGER NOT NULL DEFAULT 1,
+                last_reading_ts TEXT,
+                created_at  TEXT NOT NULL
+            )
         """)
         self._db.commit()
 
@@ -171,6 +189,95 @@ class EnergyMonitor:
             "total_today_kwh": round(self.get_total_today_kwh(), 4),
             "last_report_date": self._last_report_date.isoformat() if self._last_report_date else None,
         }
+
+    # ── Data Sources ─────────────────────────────────────────────────────────
+
+    def get_sources(self) -> list[dict[str, Any]]:
+        if self._db is None:
+            return []
+        rows = self._db.execute(
+            "SELECT id, name, type, config, enabled, last_reading_ts, created_at "
+            "FROM energy_sources ORDER BY created_at"
+        ).fetchall()
+        return [
+            {
+                "id": r[0], "name": r[1], "type": r[2],
+                "config": json.loads(r[3]), "enabled": bool(r[4]),
+                "last_reading_ts": r[5], "created_at": r[6],
+            }
+            for r in rows
+        ]
+
+    def add_source(self, name: str, source_type: str, config: dict[str, Any]) -> dict[str, Any]:
+        if self._db is None:
+            raise RuntimeError("Database not initialized")
+        valid_types = ("device_registry", "mqtt_topic", "manual")
+        if source_type not in valid_types:
+            raise ValueError(f"Invalid source type: {source_type}. Must be one of: {valid_types}")
+        source_id = str(uuid.uuid4())[:8]
+        now = datetime.now(tz=timezone.utc).isoformat()
+        self._db.execute(
+            "INSERT INTO energy_sources (id, name, type, config, enabled, created_at) "
+            "VALUES (?, ?, ?, ?, 1, ?)",
+            (source_id, name, source_type, json.dumps(config), now),
+        )
+        self._db.commit()
+        return {
+            "id": source_id, "name": name, "type": source_type,
+            "config": config, "enabled": True,
+            "last_reading_ts": None, "created_at": now,
+        }
+
+    def delete_source(self, source_id: str) -> bool:
+        if self._db is None:
+            return False
+        cur = self._db.execute("DELETE FROM energy_sources WHERE id=?", (source_id,))
+        self._db.commit()
+        return cur.rowcount > 0
+
+    def toggle_source(self, source_id: str, enabled: bool) -> bool:
+        if self._db is None:
+            return False
+        cur = self._db.execute(
+            "UPDATE energy_sources SET enabled=? WHERE id=?",
+            (1 if enabled else 0, source_id),
+        )
+        self._db.commit()
+        return cur.rowcount > 0
+
+    def _update_source_ts(self, source_id: str) -> None:
+        if self._db is None:
+            return
+        now = datetime.now(tz=timezone.utc).isoformat()
+        self._db.execute(
+            "UPDATE energy_sources SET last_reading_ts=? WHERE id=?",
+            (now, source_id),
+        )
+        self._db.commit()
+
+    def get_source_device_ids(self) -> dict[str, str]:
+        """Return mapping of device_id → source_id for device_registry sources."""
+        result: dict[str, str] = {}
+        for src in self.get_sources():
+            if src["type"] == "device_registry" and src["enabled"]:
+                dev_id = src["config"].get("device_id")
+                if dev_id:
+                    result[dev_id] = src["id"]
+        return result
+
+    def get_source_mqtt_topics(self) -> dict[str, dict[str, Any]]:
+        """Return mapping of mqtt_topic → {source_id, state_key} for mqtt sources."""
+        result: dict[str, dict[str, Any]] = {}
+        for src in self.get_sources():
+            if src["type"] == "mqtt_topic" and src["enabled"]:
+                topic = src["config"].get("mqtt_topic")
+                if topic:
+                    result[topic] = {
+                        "source_id": src["id"],
+                        "state_key": src["config"].get("state_key", "power"),
+                        "device_id": src["config"].get("device_id", topic),
+                    }
+        return result
 
     # ── Integration helper ────────────────────────────────────────────────────
 

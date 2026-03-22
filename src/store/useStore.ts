@@ -274,7 +274,7 @@ export const useStore = create<AppState>((set, get) => ({
             uptime: core.uptime ?? 0,
             integrity: core.integrity ?? 'ok',
             mode: core.mode ?? 'normal',
-            version: core.version ?? '0.3.0-beta',
+            version: core.version ?? '—',
           },
         });
       }

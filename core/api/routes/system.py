@@ -35,9 +35,10 @@ def get_system_mode() -> str:
 
 @router.get("/health")
 async def health() -> dict[str, Any]:
+    from core.version import VERSION
     return {
         "status": "ok",
-        "version": "0.3.0-beta",
+        "version": VERSION,
         "mode": _system_mode,
         "uptime": int(time.time() - _start_time),
         "integrity": _integrity_status,
@@ -61,10 +62,11 @@ async def system_info() -> dict[str, Any]:
     except Exception:
         ram_total_mb = 0
 
+    from core.version import VERSION
     return {
         "initialized": system_cfg.get("initialized", False),
         "wizard_completed": wizard_cfg.get("completed", False),
-        "version": "0.3.0-beta",
+        "version": VERSION,
         "hardware": {
             "model": platform.node(),
             "ram_total_mb": ram_total_mb,

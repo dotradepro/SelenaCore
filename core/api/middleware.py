@@ -80,7 +80,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if path.startswith(prefix):
                 return await call_next(request)
 
-        ip = request.client.host if request.client else "unknown"
+        ip = (request.client.host if request.client else None) or "unknown"
         limit = self.LIMIT_LOCAL if self._is_local(ip) else self.LIMIT_EXTERNAL
         now = time.monotonic()
         window_start = now - self.WINDOW_SEC

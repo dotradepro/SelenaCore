@@ -139,6 +139,53 @@ selena-core/
 
 ## 2. СТЕК И ВЕРСИИ
 
+### 2.1 Версионирование SelenaCore
+
+Формат: `MAJOR.MINOR.PATCH-LABEL+COMMIT`
+
+| Часть | Источник | Пример | Описание |
+|-------|----------|--------|----------|
+| `MAJOR.MINOR` | Вручную в `core/version.py` | `0.3` | Номер релиза, повышается вручную |
+| `PATCH` | `git rev-list --count HEAD` | `142` | Кол-во коммитов — растёт автоматически с каждым коммитом |
+| `LABEL` | Вручную в `core/version.py` | `beta` | `beta` → `rc` → пусто (release) |
+| `COMMIT` | `git rev-parse --short HEAD` | `0644435` | 7-символьный SHA последнего коммита |
+
+Пример полной версии: `0.3.142-beta+0644435`
+
+**Единственный источник правды:** `core/version.py`
+
+```python
+# core/version.py
+MAJOR = 0
+MINOR = 3
+LABEL = "beta"   # "beta" | "rc" | ""
+# PATCH и COMMIT вычисляются автоматически из git
+```
+
+**Правила:**
+
+```
+✅ Версия вычисляется централизованно — `from core.version import VERSION`
+✅ PATCH растёт автоматически с каждым коммитом (не нужно менять вручную)
+✅ COMMIT привязан к текущему git HEAD — всегда можно найти точный коммит
+
+⛔ Нельзя хардкодить строку версии — только `from core.version import VERSION`
+⛔ Нельзя менять PATCH вручную — он вычисляется из git автоматически
+⛔ При повышении MAJOR/MINOR — менять только в core/version.py
+```
+
+**Где используется:**
+
+| Место | Как получает |
+|-------|-------------|
+| `GET /api/v1/health` | `from core.version import VERSION` |
+| `GET /api/v1/system/info` | `from core.version import VERSION` |
+| FastAPI OpenAPI docs | `from core.version import VERSION` |
+| Event `core.startup` payload | `from core.version import VERSION` |
+| Фронтенд (SystemPage) | Из API → `health.version` / `stats.version` |
+
+### 2.2 Стек технологий
+
 | Компонент | Версия | Назначение |
 |---|---|---|
 | Python | 3.11+ | Язык ядра |
@@ -1245,15 +1292,29 @@ npx vite build
 # 2. Скопировать собранные статические файлы в контейнер
 docker cp system_modules/ui_core/static/. selena-core:/opt/selena-core/system_modules/ui_core/static/
 
-# 3. Перезапустить контейнер (Python-код подхватится через volume mounts)
+# 3. Обновить .version (PATCH из количества коммитов, COMMIT из HEAD)
+python3 -c "
+import subprocess, pathlib
+MAJOR, MINOR, LABEL = 0, 3, 'beta'
+patch = subprocess.check_output(['git','rev-list','--count','HEAD']).decode().strip()
+commit = subprocess.check_output(['git','rev-parse','--short','HEAD']).decode().strip()
+v = f'{MAJOR}.{MINOR}.{patch}'
+if LABEL: v += f'-{LABEL}'
+if commit: v += f'+{commit}'
+pathlib.Path('.version').write_text(v)
+print(f'[version] {v}')
+"
+docker cp .version selena-core:/opt/selena-core/.version
+
+# 4. Перезапустить контейнер (Python-код подхватится через volume mounts)
 docker restart selena-core
 
-# 4. Проверить что всё работает
+# 5. Проверить что всё работает
 sleep 3
 curl -s http://localhost:7070/api/v1/health | python3 -m json.tool
 curl -s -o /dev/null -w "UI :80 → HTTP %{http_code}\n" http://localhost:80/
 
-# 5. Обновить экран устройства (kiosk Chromium)
+# 6. Обновить экран устройства (kiosk Chromium)
 sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 ```
 
@@ -1273,16 +1334,17 @@ sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 |-----|-----------------|-----------|
 | `npx vite build` | Фронтенд (React SPA) | — |
 | `docker cp static/` | UI в контейнере | Браузер `:80` |
+| `.version` + `docker cp` | Версия билда | API + UI |
 | `docker restart` | Перезагрузка FastAPI + UI | Сервер |
 | `wtype -k F5` | Обновление страницы в kiosk | Экран устройства |
 
 **Правила:**
 
-- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 3, 4, 5
-- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5 (volume mount — автоматически)
-- Если изменения в обоих — все 5 шагов
-- ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 4
-- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 5)
+- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 3, 4, 5, 6
+- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5, 6 (volume mount — автоматически)
+- Если изменения в обоих — все 6 шагов
+- ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 5
+- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 6)
 
 ---
 
