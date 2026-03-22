@@ -1,0 +1,31 @@
+{
+    "name": "protocol-bridge",
+    "version": "0.1.0",
+    "description": "Шлюз протоколов MQTT/Zigbee/Z-Wave/HTTP ↔ Device Registry",
+    "type": "SYSTEM",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "port": 8109,
+    "permissions": [
+        "device.read",
+        "device.write",
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x1"
+        },
+        "settings": "settings.html"
+    },
+    "resources": {
+        "memory_mb": 256,
+        "cpu": 0.25
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}

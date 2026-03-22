@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protocol Bridge Settings</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid #1e293b;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            color: #94a3b8;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            transition: all .15s;
+        }
+
+        .tab.active {
+            color: #38bdf8;
+            border-bottom-color: #38bdf8;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #cbd5e1;
+        }
+
+        .form-row {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: #f1f5f9;
+            font-size: 13px;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .toggle-row:last-child {
+            border-bottom: none;
+        }
+
+        .toggle-label {
+            font-size: 13px;
+        }
+
+        .toggle-desc {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        input[type=checkbox] {
+            width: auto;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge.connected {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+
+        .badge.disconnected {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+        }
+
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: background .15s;
+        }
+
+        .btn-primary {
+            background: #0ea5e9;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #38bdf8;
+        }
+
+        .btn-danger {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 24px;
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat .num {
+            font-size: 22px;
+            font-weight: 700;
+            color: #38bdf8;
+        }
+
+        .stat .desc {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        #save-msg {
+            font-size: 12px;
+            color: #34d399;
+            margin-left: 10px;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>⚡ Protocol Bridge</h1>
+        <p class="subtitle">MQTT / HTTP / Zigbee gateway — device state synchronization</p>
+
+        <!-- Status bar -->
+        <div class="status-bar">
+            <div class="stat">
+                <div class="num" id="s-bridged">0</div>
+                <div class="desc">Bridged devices</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-msg">0</div>
+                <div class="desc">Messages/min</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-err">0</div>
+                <div class="desc">Errors</div>
+            </div>
+            <div class="stat">
+                <div id="s-mqtt-badge" class="badge disconnected">MQTT offline</div>
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('mqtt')">MQTT</div>
+            <div class="tab" onclick="switchTab('http')">HTTP Poll</div>
+            <div class="tab" onclick="switchTab('zigbee')">Zigbee / Z-Wave</div>
+            <div class="tab" onclick="switchTab('advanced')">Advanced</div>
+        </div>
+
+        <!-- MQTT tab -->
+        <div class="tab-content active" id="tab-mqtt">
+            <div class="card">
+                <h2>MQTT Broker</h2>
+                <div class="form-row">
+                    <label>Broker host</label>
+                    <input id="mqtt-host" placeholder="localhost" />
+                </div>
+                <div class="form-row">
+                    <label>Port</label>
+                    <input id="mqtt-port" type="number" value="1883" />
+                </div>
+                <div class="form-row">
+                    <label>Username (optional)</label>
+                    <input id="mqtt-user" placeholder="mqtt_user" />
+                </div>
+                <div class="form-row">
+                    <label>Password (optional)</label>
+                    <input id="mqtt-pass" type="password" placeholder="••••••••" />
+                </div>
+            </div>
+            <div class="card">
+                <h2>Subscriptions</h2>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">Home Assistant Discovery</div>
+                        <div class="toggle-desc">homeassistant/+/+/config</div>
+                    </div>
+                    <input type="checkbox" id="ha-discovery" checked />
+                </div>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">zigbee2mqtt</div>
+                        <div class="toggle-desc">zigbee2mqtt/bridge/devices + states</div>
+                    </div>
+                    <input type="checkbox" id="z2m-enabled" checked />
+                </div>
+                <div class="form-row" style="margin-top:10px">
+                    <label>zigbee2mqtt base topic</label>
+                    <input id="z2m-topic" value="zigbee2mqtt" />
+                </div>
+            </div>
+        </div>
+
+        <!-- HTTP Poll tab -->
+        <div class="tab-content" id="tab-http">
+            <div class="card">
+                <h2>HTTP Polling</h2>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">Enable HTTP polling</div>
+                        <div class="toggle-desc">Auto-poll devices with poll_url in meta</div>
+                    </div>
+                    <input type="checkbox" id="http-enabled" checked />
+                </div>
+                <div class="form-row" style="margin-top:10px">
+                    <label>Default poll interval (seconds)</label>
+                    <input id="http-interval" type="number" value="30" />
+                </div>
+                <div class="form-row">
+                    <label>Request timeout (seconds)</label>
+                    <input id="http-timeout" type="number" value="5" />
+                </div>
+            </div>
+        </div>
+
+        <!-- Zigbee / Z-Wave tab -->
+        <div class="tab-content" id="tab-zigbee">
+            <div class="card">
+                <h2>Zigbee via MQTT</h2>
+                <p style="color:#64748b;font-size:12px;margin-bottom:12px">
+                    Zigbee devices are bridged via zigbee2mqtt. Configure the zigbee2mqtt topic in the MQTT tab.
+                </p>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">Auto-register discovered Zigbee devices</div>
+                        <div class="toggle-desc">Add to Device Registry on first message</div>
+                    </div>
+                    <input type="checkbox" id="zigbee-auto-register" checked />
+                </div>
+            </div>
+            <div class="card">
+                <h2>Z-Wave via MQTT</h2>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">Enable Z-Wave JS UI discovery</div>
+                        <div class="toggle-desc">zwave-js-ui/+/status topic</div>
+                    </div>
+                    <input type="checkbox" id="zwave-enabled" />
+                </div>
+                <div class="form-row" style="margin-top:10px">
+                    <label>Z-Wave MQTT base topic</label>
+                    <input id="zwave-topic" value="zwave" />
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced tab -->
+        <div class="tab-content" id="tab-advanced">
+            <div class="card">
+                <h2>General</h2>
+                <div class="toggle-row">
+                    <div>
+                        <div class="toggle-label">Reconnect on disconnect</div>
+                        <div class="toggle-desc">Exponential backoff up to 60s</div>
+                    </div>
+                    <input type="checkbox" id="reconnect" checked />
+                </div>
+                <div class="form-row" style="margin-top:10px">
+                    <label>Max reconnect delay (seconds)</label>
+                    <input id="reconnect-max" type="number" value="60" />
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-primary" onclick="save()">Save &amp; Reconnect</button>
+            <span id="save-msg">✓ Saved</span>
+        </div>
+    </div>
+
+    <script>
+        const BASE = "http://localhost:8109";
+        const TOKEN = window.SELENA_TOKEN || "";
+        const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
+
+        function switchTab(name) {
+            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+            document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+            event.target.classList.add("active");
+            document.getElementById("tab-" + name).classList.add("active");
+        }
+
+        async function loadStatus() {
+            try {
+                const r = await fetch(BASE + "/status", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                document.getElementById("s-bridged").textContent = d.bridged_devices ?? 0;
+                document.getElementById("s-msg").textContent = d.messages_per_min ?? 0;
+                document.getElementById("s-err").textContent = d.error_count ?? 0;
+                const badge = document.getElementById("s-mqtt-badge");
+                if (d.mqtt?.connected) { badge.textContent = "MQTT online"; badge.className = "badge connected"; }
+                else { badge.textContent = "MQTT offline"; badge.className = "badge disconnected"; }
+            } catch { }
+        }
+
+        async function loadConfig() {
+            try {
+                const r = await fetch(BASE + "/config", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? el.value; };
+                const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+                set("mqtt-host", d.mqtt_host);
+                set("mqtt-port", d.mqtt_port);
+                set("mqtt-user", d.mqtt_username);
+                set("z2m-topic", d.z2m_base_topic);
+                chk("ha-discovery", d.ha_discovery_enabled !== false);
+                chk("z2m-enabled", d.z2m_enabled !== false);
+                chk("zigbee-auto-register", d.zigbee_auto_register !== false);
+                set("http-interval", d.http_poll_interval);
+                set("http-timeout", d.http_timeout);
+                chk("http-enabled", d.http_enabled !== false);
+                chk("reconnect", d.reconnect !== false);
+                set("reconnect-max", d.reconnect_max_delay);
+            } catch { }
+        }
+
+        async function save() {
+            const cfg = {
+                mqtt_host: document.getElementById("mqtt-host").value,
+                mqtt_port: parseInt(document.getElementById("mqtt-port").value) || 1883,
+                mqtt_username: document.getElementById("mqtt-user").value || null,
+                mqtt_password: document.getElementById("mqtt-pass").value || null,
+                ha_discovery_enabled: document.getElementById("ha-discovery").checked,
+                z2m_enabled: document.getElementById("z2m-enabled").checked,
+                z2m_base_topic: document.getElementById("z2m-topic").value,
+                zigbee_auto_register: document.getElementById("zigbee-auto-register").checked,
+                http_enabled: document.getElementById("http-enabled").checked,
+                http_poll_interval: parseInt(document.getElementById("http-interval").value) || 30,
+                http_timeout: parseFloat(document.getElementById("http-timeout").value) || 5,
+                reconnect: document.getElementById("reconnect").checked,
+                reconnect_max_delay: parseInt(document.getElementById("reconnect-max").value) || 60,
+            };
+            try {
+                const r = await fetch(BASE + "/config", { method: "POST", headers: h, body: JSON.stringify(cfg) });
+                if (r.ok) {
+                    const msg = document.getElementById("save-msg");
+                    msg.style.display = "inline";
+                    setTimeout(() => msg.style.display = "none", 2000);
+                }
+            } catch { }
+        }
+
+        loadStatus();
+        loadConfig();
+        setInterval(loadStatus, 10000);
+    </script>
+</body>
+
+</html>

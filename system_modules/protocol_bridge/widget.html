@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, sans-serif;
+        }
+
+        body {
+            background: transparent;
+            color: #f8fafc;
+            font-size: 13px;
+            height: 100%;
+        }
+
+        .widget {
+            display: flex;
+            gap: 12px;
+            padding: 10px;
+            height: 100%;
+        }
+
+        .panel {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .panel h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot.ok {
+            background: #34d399;
+        }
+
+        .dot.error {
+            background: #f87171;
+        }
+
+        .dot.idle {
+            background: #94a3b8;
+        }
+
+        .label {
+            font-size: 12px;
+            color: #cbd5e1;
+            flex: 1;
+        }
+
+        .val {
+            font-size: 12px;
+            color: #f8fafc;
+            font-weight: 600;
+        }
+
+        .event-item {
+            font-size: 11px;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 4px 0;
+        }
+
+        .event-item span {
+            color: #38bdf8;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="widget">
+        <!-- Left panel: connection status -->
+        <div class="panel">
+            <h3>Protocol Bridge</h3>
+            <div class="status-row">
+                <div class="dot" id="mqtt-dot"></div>
+                <div class="label">MQTT</div>
+                <div class="val" id="mqtt-status">—</div>
+            </div>
+            <div class="status-row">
+                <div class="dot" id="http-dot"></div>
+                <div class="label">HTTP Poll</div>
+                <div class="val" id="http-count">—</div>
+            </div>
+            <div class="stat"><span style="color:#94a3b8">Bridged devices</span><span id="bridged-count"
+                    style="font-weight:600">—</span></div>
+            <div class="stat"><span style="color:#94a3b8">Messages/min</span><span id="msg-rate"
+                    style="font-weight:600">—</span></div>
+            <div class="stat"><span style="color:#94a3b8">Errors</span><span id="err-count"
+                    style="font-weight:600;color:#f87171">—</span></div>
+        </div>
+        <!-- Right panel: recent events -->
+        <div class="panel">
+            <h3>Recent Events</h3>
+            <div id="events-list">
+                <div class="event-item" style="color:#475569">Loading…</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const BASE = "http://localhost:8109";
+        const TOKEN = window.SELENA_TOKEN || "";
+        const headers = { "Authorization": "Bearer " + TOKEN };
+
+        async function refresh() {
+            try {
+                const r = await fetch(BASE + "/status", { headers });
+                if (!r.ok) return;
+                const d = await r.json();
+
+                const mqttOk = d.mqtt?.connected;
+                document.getElementById("mqtt-dot").className = "dot " + (mqttOk ? "ok" : "error");
+                document.getElementById("mqtt-status").textContent = mqttOk ? "Connected" : "Disconnected";
+                document.getElementById("http-count").textContent = (d.http_pollers ?? 0) + " pollers";
+                document.getElementById("bridged-count").textContent = d.bridged_devices ?? 0;
+                document.getElementById("msg-rate").textContent = d.messages_per_min ?? 0;
+                document.getElementById("err-count").textContent = d.error_count ?? 0;
+
+                const events = d.recent_events ?? [];
+                const el = document.getElementById("events-list");
+                if (events.length === 0) {
+                    el.innerHTML = '<div class="event-item" style="color:#475569">No events yet</div>';
+                } else {
+                    el.innerHTML = events.slice(0, 6).map(e =>
+                        `<div class="event-item"><span>${e.type}</span> — ${e.device_id ?? ""}</div>`
+                    ).join("");
+                }
+            } catch { }
+        }
+
+        refresh();
+        setInterval(refresh, 5000);
+    </script>
+</body>
+
+</html>
