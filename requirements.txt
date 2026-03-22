@@ -26,6 +26,8 @@ pywebpush==2.0.0
 psutil==6.0.0
 
 # Pinned transitive dependencies (security)
+h11>=0.16.0
+anyio>=4.4.0
 zipp>=3.19.1
 numpy>=1.22.2
 torch>=2.10.0
