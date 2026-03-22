@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, sans-serif;
+        }
+
+        body {
+            background: transparent;
+            color: #f8fafc;
+            font-size: 13px;
+        }
+
+        .widget {
+            display: flex;
+            gap: 12px;
+            padding: 10px;
+            height: 100%;
+        }
+
+        .panel {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .panel h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 8px;
+        }
+
+        .big {
+            font-size: 32px;
+            font-weight: 700;
+            color: #34d399;
+        }
+
+        .label {
+            font-size: 11px;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot.home {
+            background: #34d399;
+        }
+
+        .dot.away {
+            background: #f87171;
+        }
+
+        .dot.unknown {
+            background: #94a3b8;
+        }
+
+        .user-name {
+            font-size: 12px;
+            color: #cbd5e1;
+            flex: 1;
+        }
+
+        .user-state {
+            font-size: 11px;
+            color: #64748b;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="widget">
+        <div class="panel">
+            <h3>Presence</h3>
+            <div class="big" id="home-count">—</div>
+            <div class="label">users home</div>
+            <div class="stat"><span>Away</span><span id="away-count">—</span></div>
+            <div class="stat"><span>Total tracked</span><span id="total-count">—</span></div>
+        </div>
+        <div class="panel">
+            <h3>Users</h3>
+            <div id="users-list">
+                <div style="color:#475569;font-size:11px">Loading…</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const BASE = "http://localhost:8112";
+        const h = { "Authorization": "Bearer " + (window.SELENA_TOKEN || "") };
+
+        async function refresh() {
+            try {
+                const [sr, ur] = await Promise.all([
+                    fetch(BASE + "/status", { headers: h }),
+                    fetch(BASE + "/users", { headers: h }),
+                ]);
+                if (sr.ok) {
+                    const s = await sr.json();
+                    document.getElementById("home-count").textContent = s.users_home ?? 0;
+                    document.getElementById("away-count").textContent = s.users_away ?? 0;
+                    document.getElementById("total-count").textContent = s.users_total ?? 0;
+                }
+                if (ur.ok) {
+                    const d = await ur.json();
+                    const list = document.getElementById("users-list");
+                    const users = d.users ?? [];
+                    if (users.length === 0) {
+                        list.innerHTML = '<div style="color:#475569;font-size:11px">No users tracked.</div>';
+                    } else {
+                        list.innerHTML = users.slice(0, 6).map(u =>
+                            `<div class="user-item">
+            <div class="dot ${u.state}"></div>
+            <span class="user-name">${u.name}</span>
+            <span class="user-state">${u.state}</span>
+          </div>`
+                        ).join("");
+                    }
+                }
+            } catch { }
+        }
+
+        refresh();
+        setInterval(refresh, 15000);
+    </script>
+</body>
+
+</html>

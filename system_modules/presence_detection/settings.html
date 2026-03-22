@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Presence Detection Settings</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin: 0;
+        }
+
+        .form-row {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 8px 10px;
+            color: #f1f5f9;
+            font-size: 13px;
+        }
+
+        .btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn-primary {
+            background: #0ea5e9;
+            color: #fff;
+        }
+
+        .btn-danger {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        .user-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid #0f172a;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot.home {
+            background: #34d399;
+        }
+
+        .dot.away {
+            background: #f87171;
+        }
+
+        .dot.unknown {
+            background: #94a3b8;
+        }
+
+        .stat-bar {
+            display: flex;
+            gap: 24px;
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat .num {
+            font-size: 22px;
+            font-weight: 700;
+            color: #34d399;
+        }
+
+        .stat .desc {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .device-tag {
+            display: inline-block;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            margin: 2px;
+        }
+
+        .msg {
+            font-size: 12px;
+            color: #34d399;
+            margin-left: 8px;
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🏠 Presence Detection</h1>
+        <p class="subtitle">Track who is home via IP, MAC, or Bluetooth</p>
+
+        <div class="stat-bar">
+            <div class="stat">
+                <div class="num" id="s-home">0</div>
+                <div class="desc">Home</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-away" style="color:#f87171">0</div>
+                <div class="desc">Away</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-total" style="color:#38bdf8">0</div>
+                <div class="desc">Tracked</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-interval" style="color:#f59e0b">—</div>
+                <div class="desc">Scan interval (s)</div>
+            </div>
+        </div>
+
+        <!-- User list -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Tracked Users</h2>
+                <div>
+                    <button class="btn btn-primary btn-sm" onclick="triggerScan()">Scan Now</button>
+                    <button class="btn btn-primary btn-sm" onclick="loadUsers()" style="margin-left:4px">↻</button>
+                </div>
+            </div>
+            <div id="users-container">Loading…</div>
+        </div>
+
+        <!-- Add user -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Add User</h2>
+            </div>
+            <div class="form-row">
+                <label>User ID</label>
+                <input id="new-user-id" placeholder="user-uuid-001" />
+            </div>
+            <div class="form-row">
+                <label>Name</label>
+                <input id="new-user-name" placeholder="Alice" />
+            </div>
+            <div class="form-row">
+                <label>IP address (optional)</label>
+                <input id="new-ip" placeholder="192.168.1.101" />
+            </div>
+            <div class="form-row">
+                <label>MAC address (optional)</label>
+                <input id="new-mac" placeholder="aa:bb:cc:dd:ee:ff" />
+            </div>
+            <div class="form-row">
+                <label>Bluetooth address (optional)</label>
+                <input id="new-bt" placeholder="AA:BB:CC:DD:EE:FF" />
+            </div>
+            <div style="display:flex;align-items:center">
+                <button class="btn btn-primary" onclick="addUser()">Add User</button>
+                <span class="msg" id="add-msg">✓ Added</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE = "http://localhost:8112";
+        const h = { "Authorization": "Bearer " + (window.SELENA_TOKEN || ""), "Content-Type": "application/json" };
+
+        async function loadStatus() {
+            try {
+                const r = await fetch(BASE + "/status", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                document.getElementById("s-home").textContent = d.users_home ?? 0;
+                document.getElementById("s-away").textContent = d.users_away ?? 0;
+                document.getElementById("s-total").textContent = d.users_total ?? 0;
+                document.getElementById("s-interval").textContent = d.scan_interval_sec ?? "—";
+            } catch { }
+        }
+
+        async function loadUsers() {
+            try {
+                const r = await fetch(BASE + "/users", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                const container = document.getElementById("users-container");
+                const users = d.users ?? [];
+                if (users.length === 0) {
+                    container.innerHTML = '<p style="color:#475569;font-size:13px">No users. Add one below.</p>';
+                    return;
+                }
+                container.innerHTML = users.map(u => `
+      <div class="user-row">
+        <div class="dot ${u.state}"></div>
+        <div style="flex:1">
+          <div style="font-size:13px">${u.name} <span style="color:#64748b;font-size:11px">(${u.state})</span></div>
+          <div>${(u.devices ?? []).map(d => `<span class="device-tag">${d.type}: ${d.address}</span>`).join("")}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="removeUser('${u.user_id}')">✕</button>
+      </div>
+    `).join("");
+            } catch { }
+        }
+
+        async function removeUser(id) {
+            if (!confirm("Remove user?")) return;
+            await fetch(BASE + "/users/" + id, { method: "DELETE", headers: h });
+            loadUsers();
+            loadStatus();
+        }
+
+        async function triggerScan() {
+            try {
+                const r = await fetch(BASE + "/scan", { method: "POST", headers: h });
+                if (r.ok) { loadUsers(); loadStatus(); }
+            } catch { }
+        }
+
+        async function addUser() {
+            const id = document.getElementById("new-user-id").value.trim();
+            const name = document.getElementById("new-user-name").value.trim();
+            if (!id || !name) { alert("User ID and Name are required."); return; }
+
+            const devices = [];
+            const ip = document.getElementById("new-ip").value.trim();
+            const mac = document.getElementById("new-mac").value.trim();
+            const bt = document.getElementById("new-bt").value.trim();
+            if (ip) devices.push({ type: "ip", address: ip });
+            if (mac) devices.push({ type: "mac", address: mac });
+            if (bt) devices.push({ type: "bluetooth", address: bt });
+
+            const r = await fetch(BASE + "/users", {
+                method: "POST", headers: h,
+                body: JSON.stringify({ user_id: id, name, devices })
+            });
+            if (r.ok) {
+                document.getElementById("add-msg").style.display = "inline";
+                setTimeout(() => document.getElementById("add-msg").style.display = "none", 2000);
+                loadUsers();
+                loadStatus();
+            }
+        }
+
+        loadStatus();
+        loadUsers();
+        setInterval(loadStatus, 15000);
+    </script>
+</body>
+
+</html>

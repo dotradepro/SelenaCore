@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="12" fill="#1e293b"/>
+  <!-- Home shape -->
+  <path d="M32 12 L10 30 H16 V50 H28 V38 H36 V50 H48 V30 H54 Z" fill="#334155"/>
+  <path d="M32 12 L10 30 H16 V50 H28 V38 H36 V50 H48 V30 H54 Z" stroke="#38bdf8" stroke-width="2"/>
+  <!-- Person silhouette -->
+  <circle cx="32" cy="36" r="5" fill="#34d399"/>
+  <path d="M22 48 Q32 40 42 48" stroke="#34d399" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>
