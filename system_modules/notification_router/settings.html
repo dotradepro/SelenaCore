@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Router Settings</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            padding: 24px;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 24px;
+            color: #fff;
+        }
+
+        .section {
+            background: #1a1d27;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .section h2 {
+            font-size: 1rem;
+            color: #aaa;
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: #0f1117;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            padding: 10px 12px;
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+        }
+
+        button {
+            background: #5c8ee6;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+
+        button:hover {
+            background: #4a7bd4;
+        }
+
+        .msg {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .msg.ok {
+            background: rgba(80, 200, 120, 0.15);
+            color: #50c878;
+        }
+
+        .msg.err {
+            background: rgba(220, 50, 50, 0.15);
+            color: #e06c75;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        th,
+        td {
+            border: 1px solid #2a2a3a;
+            padding: 6px 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #161926;
+            color: #aaa;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔔 Notification Router Settings</h1>
+
+    <div class="section">
+        <h2>Add Channel</h2>
+        <label>Channel type</label>
+        <select id="ch-type">
+            <option value="telegram">Telegram</option>
+            <option value="webhook">Webhook</option>
+            <option value="tts">TTS (voice)</option>
+            <option value="push">Web Push</option>
+        </select>
+        <div id="ch-fields"></div>
+        <button onclick="addChannel()">Add Channel</button>
+        <div id="ch-msg"></div>
+    </div>
+
+    <div class="section">
+        <h2>Add Routing Rule</h2>
+        <label>Channel</label>
+        <select id="rule-channel">
+            <option value="telegram">telegram</option>
+            <option value="webhook">webhook</option>
+            <option value="tts">tts</option>
+            <option value="push">push</option>
+        </select>
+        <label>Priority (lower = first)</label>
+        <input type="number" id="rule-priority" value="100" min="1">
+        <label>Level filter (blank = all)</label>
+        <select id="rule-level">
+            <option value="">All</option>
+            <option value="info">info</option>
+            <option value="warning">warning</option>
+            <option value="critical">critical</option>
+        </select>
+        <button onclick="addRule()">Add Rule</button>
+        <div id="rule-msg"></div>
+    </div>
+
+    <div class="section">
+        <h2>Active Channels</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Sent</th>
+                </tr>
+            </thead>
+            <tbody id="channels-body"></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>Active Rules</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Priority</th>
+                    <th>Channel</th>
+                    <th>Level</th>
+                    <th>Events</th>
+                </tr>
+            </thead>
+            <tbody id="rules-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        const base = window.location.origin;
+
+        document.getElementById('ch-type').addEventListener('change', renderChFields);
+
+        function renderChFields() {
+            const type = document.getElementById('ch-type').value;
+            const f = document.getElementById('ch-fields');
+            if (type === 'telegram') {
+                f.innerHTML = `
+      <label>Bot Token</label><input id="tg-token" type="password" placeholder="1234:ABCD...">
+      <label>Chat ID</label><input id="tg-chat" placeholder="-1001234567890">
+    `;
+            } else if (type === 'webhook') {
+                f.innerHTML = `<label>Webhook URL</label><input id="wh-url" placeholder="https://...">`;
+            } else {
+                f.innerHTML = '';
+            }
+        }
+        renderChFields();
+
+        async function addChannel() {
+            const name = document.getElementById('ch-type').value;
+            let config = {};
+            if (name === 'telegram') {
+                config = { bot_token: document.getElementById('tg-token').value, chat_id: document.getElementById('tg-chat').value };
+            } else if (name === 'webhook') {
+                config = { url: document.getElementById('wh-url').value };
+            }
+            try {
+                const r = await fetch(`${base}/channels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, config }) });
+                const d = await r.json();
+                if (r.ok) { showMsg('ch-msg', '✓ Channel added', 'ok'); await loadStatus(); }
+                else showMsg('ch-msg', d.detail || 'Error', 'err');
+            } catch (e) { showMsg('ch-msg', e.message, 'err'); }
+        }
+
+        async function addRule() {
+            const body = {
+                channel: document.getElementById('rule-channel').value,
+                priority: parseInt(document.getElementById('rule-priority').value) || 100,
+                level: document.getElementById('rule-level').value || null,
+            };
+            try {
+                const r = await fetch(`${base}/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const d = await r.json();
+                if (r.ok) { showMsg('rule-msg', '✓ Rule added', 'ok'); await loadStatus(); }
+                else showMsg('rule-msg', d.detail || 'Error', 'err');
+            } catch (e) { showMsg('rule-msg', e.message, 'err'); }
+        }
+
+        async function loadStatus() {
+            try {
+                const [chs, rules] = await Promise.all([
+                    fetch(`${base}/channels`).then(r => r.json()),
+                    fetch(`${base}/rules`).then(r => r.json()),
+                ]);
+                document.getElementById('channels-body').innerHTML = Object.entries(chs.channels || {})
+                    .map(([n, v]) => `<tr><td>${n}</td><td>${v.stats || 0}</td></tr>`).join('') ||
+                    '<tr><td colspan="2" style="color:#555">No channels</td></tr>';
+                document.getElementById('rules-body').innerHTML = (rules.rules || [])
+                    .map(r => `<tr><td>${r.priority}</td><td>${r.channel}</td><td>${r.level || 'all'}</td><td>${(r.event_types || []).join(',') || 'all'}</td></tr>`)
+                    .join('') || '<tr><td colspan="4" style="color:#555">No rules</td></tr>';
+            } catch (e) { }
+        }
+
+        function showMsg(id, text, type) {
+            const el = document.getElementById(id);
+            el.className = 'msg ' + type;
+            el.textContent = text;
+            setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
+        }
+
+        loadStatus();
+    </script>
+</body>
+
+</html>

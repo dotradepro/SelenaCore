@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            padding: 16px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+        }
+
+        .badge {
+            background: #5c8ee6;
+            border-radius: 12px;
+            padding: 3px 10px;
+            font-size: 0.8rem;
+        }
+
+        .notif {
+            background: #1a1d27;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            border-left: 3px solid #5c8ee6;
+        }
+
+        .notif.warning {
+            border-color: #FFD700;
+        }
+
+        .notif.critical {
+            border-color: #e06c75;
+        }
+
+        .notif-msg {
+            font-size: 0.9rem;
+            margin-bottom: 4px;
+        }
+
+        .notif-meta {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .empty {
+            text-align: center;
+            color: #555;
+            padding: 30px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2>🔔 Notifications</h2>
+        <span class="badge" id="count">0</span>
+    </div>
+    <div id="list">
+        <div class="empty">No notifications</div>
+    </div>
+    <script>
+        const base = window.location.origin;
+        async function load() {
+            try {
+                const data = await fetch(`${base}/notify/history?limit=20`).then(r => r.json());
+                const items = (data.history || []).reverse();
+                document.getElementById('count').textContent = items.length;
+                if (!items.length) {
+                    document.getElementById('list').innerHTML = '<div class="empty">No notifications</div>';
+                    return;
+                }
+                document.getElementById('list').innerHTML = items.map(n => `
+      <div class="notif ${n.level}">
+        <div class="notif-msg">${n.message}</div>
+        <div class="notif-meta">${n.level.toUpperCase()} · ${n.ts?.slice(0, 19).replace('T', ' ')} · ${(n.channels || []).join(', ') || '—'}</div>
+      </div>
+    `).join('');
+            } catch (e) {
+                document.getElementById('list').innerHTML = `<div class="empty">⚠️ ${e.message}</div>`;
+            }
+        }
+        load(); setInterval(load, 10000);
+    </script>
+</body>
+
+</html>
