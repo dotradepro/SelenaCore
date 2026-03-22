@@ -177,7 +177,7 @@
     </div>
 
     <script>
-        const base = window.location.origin;
+        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         document.getElementById('ch-type').addEventListener('change', renderChFields);
 

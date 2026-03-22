@@ -130,7 +130,7 @@
     </table>
 
     <script>
-        const BASE = '';
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         async function loadConfig() {
             const r = await fetch(BASE + '/config');

@@ -6,7 +6,6 @@
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "port": 8111,
     "permissions": [
         "events.subscribe",
         "events.publish"

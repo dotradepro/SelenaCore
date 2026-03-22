@@ -6,7 +6,6 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "port": 8109,
     "permissions": [
         "device.read",
         "device.write",

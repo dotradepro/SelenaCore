@@ -117,9 +117,10 @@
         <div class="adapter-pill">💡 Hue</div>
     </div>
     <script>
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function refresh() {
             try {
-                const r = await fetch('/import/status');
+                const r = await fetch(BASE + '/import/status');
                 if (!r.ok) return;
                 const d = await r.json();
                 const badge = document.getElementById('status-badge');

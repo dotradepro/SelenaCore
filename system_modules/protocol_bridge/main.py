@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from .bridge import ProtocolBridge
+from system_modules.protocol_bridge.bridge import ProtocolBridge
 
 logger = logging.getLogger(__name__)
 

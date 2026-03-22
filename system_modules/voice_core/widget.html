@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Voice Core</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            font-family: "DM Sans", system-ui, sans-serif;
+            background: transparent;
+            color: #EDEEF5;
+            font-size: 12px;
+            line-height: 1.4;
+            padding: 8px 10px;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .top {
+            display: flex;
+            align-items: center;
+            gap: 5
+        }
+
+        .lbl {
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            color: #484D66
+        }
+
+        .sdot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            transition: all .3s
+        }
+
+        .sdot.ok {
+            background: #2EC98A
+        }
+
+        .sdot.off {
+            background: #E05454
+        }
+
+        .sdot.listen {
+            background: #2EC98A;
+            box-shadow: 0 0 5px #2EC98A
+        }
+
+        .center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1
+        }
+
+        .mic {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(79, 140, 247, .1);
+            border: 1.5px solid rgba(79, 140, 247, .25);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            color: #EDEEF5;
+            transition: all .2s;
+        }
+
+        .mic:hover {
+            background: rgba(79, 140, 247, .18)
+        }
+
+        .mic svg {
+            width: 20px;
+            height: 20px
+        }
+
+        @keyframes rp {
+            0% {
+                transform: scale(1);
+                opacity: .7
+            }
+
+            100% {
+                transform: scale(1.5);
+                opacity: 0
+            }
+        }
+
+        .mic.listening::before,
+        .mic.listening::after {
+            content: '';
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            border: 1.5px solid #4F8CF7;
+            animation: rp 1.6s ease-out infinite;
+        }
+
+        .mic.listening::after {
+            animation-delay: .55s
+        }
+
+        .bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end
+        }
+
+        .status {
+            font-size: 10px;
+            transition: color .3s
+        }
+
+        .info {
+            display: flex;
+            gap: 8px;
+            font-size: 9px;
+            color: #484D66
+        }
+
+        .info .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 2px;
+            vertical-align: middle
+        }
+
+        .info .dot.ok {
+            background: #2EC98A
+        }
+
+        .info .dot.off {
+            background: #E05454
+        }
+
+        .priv {
+            background: rgba(224, 84, 84, .12);
+            color: #E05454;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-size: 9px;
+            text-align: center;
+        }
+
+        .priv.hidden {
+            display: none
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Top label -->
+    <div class="top">
+        <div class="lbl">Voice · Core</div>
+        <div class="sdot" id="statusDot"></div>
+        <span id="privBadge" class="priv hidden">🔇</span>
+    </div>
+
+    <!-- Mic button -->
+    <div class="center">
+        <div class="mic" id="micBtn">
+            <svg viewBox="0 0 26 26" fill="none">
+                <rect x="9" y="2" width="8" height="13" rx="4" stroke="currentColor" stroke-width="1.5" />
+                <path d="M4.5 12c0 4.7 3.8 8.5 8.5 8.5S21.5 16.7 21.5 12M13 20.5V24M9 24h8" stroke="currentColor"
+                    stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+        </div>
+    </div>
+
+    <!-- Bottom: status + info -->
+    <div class="bottom">
+        <div class="status" id="statusText" style="color:#484D66">Ready</div>
+        <div class="info">
+            <span><span class="dot" id="sttDot"></span>STT</span>
+            <span><span class="dot" id="wakeDot"></span>Wake</span>
+            <span><span class="dot" id="ttsDot"></span>TTS</span>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+            const $ = id => document.getElementById(id);
+
+            async function load() {
+                try {
+                    const cfg = await (await fetch(BASE + '/config')).json();
+                    $('statusDot').className = 'sdot ok';
+                    if (cfg.privacy_mode) {
+                        $('privBadge').className = 'priv';
+                        $('statusDot').className = 'sdot off';
+                    } else {
+                        $('privBadge').className = 'priv hidden';
+                    }
+                    $('sttDot').className = 'dot ok';
+                    $('ttsDot').className = 'dot ok';
+                } catch {
+                    $('statusDot').className = 'sdot off';
+                    $('sttDot').className = 'dot off';
+                    $('ttsDot').className = 'dot off';
+                    $('wakeDot').className = 'dot off';
+                    $('statusText').textContent = 'Offline';
+                    $('statusText').style.color = '#E05454';
+                }
+                try {
+                    const wk = await (await fetch(BASE + '/wakeword/status')).json();
+                    $('wakeDot').className = wk.running ? 'dot ok' : 'dot off';
+                } catch { $('wakeDot').className = 'dot off' }
+            }
+
+            // Open settings page in parent app
+            $('micBtn').addEventListener('click', function () {
+                window.parent.postMessage({ type: 'openSettings', module: 'voice-core' }, '*');
+            });
+
+            load();
+            setInterval(load, 30000);
+        })();
+    </script>
+</body>
+
+</html>

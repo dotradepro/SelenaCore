@@ -51,9 +51,10 @@
     <div class="count" id="count">—</div>
     <div class="label">online</div>
     <script>
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function refresh() {
             try {
-                const r = await fetch('/status');
+                const r = await fetch(BASE + '/status');
                 const d = await r.json();
                 const ok = d.offline === 0;
                 document.getElementById('indicator').className = 'pulse ' + (ok ? 'online' : 'warning');

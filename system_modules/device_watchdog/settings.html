@@ -106,8 +106,9 @@
     <div id="msg"></div>
 
     <script>
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function loadConfig() {
-            const r = await fetch('/config');
+            const r = await fetch(BASE + '/config');
             const d = await r.json();
             for (const [k, v] of Object.entries(d)) {
                 const el = document.getElementById(k);
@@ -123,13 +124,13 @@
                 body[k] = parseFloat(document.getElementById(k).value);
             });
             body.notify_on_offline = document.getElementById('notify_on_offline').checked;
-            await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             document.getElementById('msg').textContent = '✓ Saved';
             setTimeout(() => document.getElementById('msg').textContent = '', 3000);
         }
 
         async function scanNow() {
-            const r = await fetch('/scan', { method: 'POST' });
+            const r = await fetch(BASE + '/scan', { method: 'POST' });
             const d = await r.json();
             document.getElementById('msg').textContent = `Scan done: ${d.online}/${d.checked} online, ${d.offline} offline`;
         }

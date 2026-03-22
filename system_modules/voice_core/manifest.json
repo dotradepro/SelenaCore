@@ -1,14 +1,13 @@
 {
-    "name": "automation-engine",
-    "version": "0.1.0",
-    "description": "YAML-based rule engine — triggers (time/event/device/presence) → actions (commands, scenes, notifications)",
+    "name": "voice-core",
+    "version": "1.0.0",
+    "description": "Voice subsystem: STT (Vosk), TTS (Piper), wake word detection, speaker ID, privacy mode",
     "type": "SYSTEM",
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
     "permissions": [
         "device.read",
-        "device.write",
         "events.subscribe",
         "events.publish"
     ],
@@ -16,14 +15,14 @@
         "icon": "icon.svg",
         "widget": {
             "file": "widget.html",
-            "size": "2x1"
+            "size": "2x2"
         },
         "settings": "settings.html"
     },
     "oauth": null,
     "resources": {
-        "memory_mb": 128,
-        "cpu": 0.25
+        "memory_mb": 256,
+        "cpu": 0.5
     },
     "author": "SmartHome LK",
     "license": "MIT",

@@ -6,7 +6,6 @@
     "ui_profile": "ICON_SETTINGS",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "port": 8110,
     "permissions": [
         "device.read",
         "device.write",

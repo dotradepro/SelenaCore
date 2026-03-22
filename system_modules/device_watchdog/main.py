@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from pathlib import Path
 from pydantic import BaseModel
 
-from .watchdog import DeviceWatchdog
+from system_modules.device_watchdog.watchdog import DeviceWatchdog
 
 logger = logging.getLogger(__name__)
 

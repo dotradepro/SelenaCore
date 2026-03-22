@@ -368,7 +368,7 @@
     </div>
 
     <script>
-        const BASE = "http://localhost:8109";
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const TOKEN = window.SELENA_TOKEN || "";
         const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
 

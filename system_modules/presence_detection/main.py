@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-from .presence import PresenceDetector
+from system_modules.presence_detection.presence import PresenceDetector
 
 logger = logging.getLogger(__name__)
 

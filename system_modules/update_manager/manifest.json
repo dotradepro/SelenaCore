@@ -2,11 +2,10 @@
     "name": "update-manager",
     "version": "1.0.0",
     "description": "OTA update management: check, download with SHA256 verification, apply, and rollback",
-    "type": "UI",
+    "type": "SYSTEM",
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "port": 8113,
     "permissions": [
         "events.publish"
     ],

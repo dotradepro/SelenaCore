@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Voice Core — Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "DM Sans", system-ui, sans-serif;
+            background: #12131A;
+            color: #EDEEF5;
+            font-size: 13px;
+            line-height: 1.5;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #888EA8;
+            margin: 18px 0 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card {
+            background: #191A22;
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, .05);
+        }
+
+        .row:last-child {
+            border-bottom: none;
+        }
+
+        .row-label {
+            font-size: 13px;
+            color: #EDEEF5;
+        }
+
+        .row-sub {
+            font-size: 11px;
+            color: #484D66;
+            margin-top: 2px;
+        }
+
+        select,
+        input[type="number"],
+        input[type="range"] {
+            background: #20212C;
+            color: #EDEEF5;
+            border: 1px solid rgba(255, 255, 255, .13);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 13px;
+            outline: none;
+            min-width: 160px;
+        }
+
+        select:focus,
+        input:focus {
+            border-color: #4F8CF7;
+        }
+
+        input[type="range"] {
+            padding: 0;
+            height: 6px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            cursor: pointer;
+        }
+
+        .toggle input {
+            display: none;
+        }
+
+        .toggle .slider {
+            position: absolute;
+            inset: 0;
+            background: #20212C;
+            border-radius: 11px;
+            transition: .2s;
+            border: 1px solid rgba(255, 255, 255, .13);
+        }
+
+        .toggle .slider::after {
+            content: "";
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: #888EA8;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: .2s;
+        }
+
+        .toggle input:checked+.slider {
+            background: #4F8CF7;
+            border-color: #4F8CF7;
+        }
+
+        .toggle input:checked+.slider::after {
+            transform: translateX(18px);
+            background: #fff;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: .15s;
+        }
+
+        .btn-primary {
+            background: #4F8CF7;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #3D7AE5;
+        }
+
+        .btn-danger {
+            background: #E05454;
+            color: #fff;
+        }
+
+        .btn-danger:hover {
+            background: #C94444;
+        }
+
+        .btn-secondary {
+            background: #20212C;
+            color: #EDEEF5;
+            border: 1px solid rgba(255, 255, 255, .13);
+        }
+
+        .btn-secondary:hover {
+            background: #292A36;
+        }
+
+        .btn:disabled {
+            opacity: .4;
+            cursor: not-allowed;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-dot.ok {
+            background: #2EC98A;
+        }
+
+        .status-dot.off {
+            background: #E05454;
+        }
+
+        .status-dot.warn {
+            background: #F5A93A;
+        }
+
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .range-val {
+            font-size: 12px;
+            color: #4F8CF7;
+            min-width: 36px;
+            text-align: right;
+        }
+
+        .device-list {
+            list-style: none;
+        }
+
+        .device-list li {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 12px;
+            color: #888EA8;
+        }
+
+        .device-list li .name {
+            color: #EDEEF5;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .badge-ok {
+            background: rgba(46, 201, 138, .15);
+            color: #2EC98A;
+        }
+
+        .badge-off {
+            background: rgba(224, 84, 84, .15);
+            color: #E05454;
+        }
+
+        .badge-warn {
+            background: rgba(245, 169, 58, .15);
+            color: #F5A93A;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2EC98A;
+            color: #0B0C10;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity .3s;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+
+        .empty {
+            text-align: center;
+            color: #484D66;
+            padding: 20px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>🎙️ Voice Core Settings</h2>
+
+    <!-- Status -->
+    <div class="card" id="statusCard">
+        <div class="row">
+            <div>
+                <div class="row-label">Module Status</div>
+            </div>
+            <span id="moduleStatus" class="badge badge-ok">Loading…</span>
+        </div>
+        <div class="row">
+            <div>
+                <div class="row-label">Privacy Mode</div>
+                <div class="row-sub">Disables microphone and wake word</div>
+            </div>
+            <label class="toggle">
+                <input type="checkbox" id="privacyToggle">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- STT Settings -->
+    <h3>Speech-to-Text (STT)</h3>
+    <div class="card">
+        <div class="row">
+            <div>
+                <div class="row-label">STT Model</div>
+                <div class="row-sub">Vosk offline recognition model</div>
+            </div>
+            <select id="sttModel">
+                <option value="vosk-model-small-uk">🇺🇦 Ukrainian (small)</option>
+                <option value="vosk-model-small-en-us">🇺🇸 English (small)</option>
+                <option value="vosk-model-small-ru">🇷🇺 Russian (small)</option>
+                <option value="vosk-model-uk">🇺🇦 Ukrainian (large)</option>
+                <option value="vosk-model-en-us-0.22">🇺🇸 English (large)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- TTS Settings -->
+    <h3>Text-to-Speech (TTS)</h3>
+    <div class="card">
+        <div class="row">
+            <div>
+                <div class="row-label">TTS Voice</div>
+                <div class="row-sub">Piper offline voice model</div>
+            </div>
+            <select id="ttsVoice">
+                <option value="uk_UA-ukrainian_tts-medium">🇺🇦 Ukrainian TTS</option>
+                <option value="uk_UA-lada-medium">🇺🇦 Lada (UK)</option>
+                <option value="en_US-amy-medium">🇺🇸 Amy (EN)</option>
+                <option value="en_US-ryan-high">🇺🇸 Ryan (EN)</option>
+                <option value="ru_RU-irina-medium">🇷🇺 Irina (RU)</option>
+                <option value="ru_RU-ruslan-medium">🇷🇺 Ruslan (RU)</option>
+            </select>
+        </div>
+        <div class="row">
+            <div>
+                <div class="row-label">Test TTS</div>
+                <div class="row-sub">Speak a test phrase</div>
+            </div>
+            <button class="btn btn-secondary" id="testTtsBtn">▶ Test</button>
+        </div>
+    </div>
+
+    <!-- Wake Word -->
+    <h3>Wake Word</h3>
+    <div class="card">
+        <div class="row">
+            <div>
+                <div class="row-label">Wake Word Model</div>
+                <div class="row-sub">openWakeWord activation phrase</div>
+            </div>
+            <select id="wakeWordModel">
+                <option value="hey_selena">hey selena</option>
+                <option value="hey_jarvis">hey jarvis</option>
+                <option value="alexa">alexa</option>
+            </select>
+        </div>
+        <div class="row">
+            <div>
+                <div class="row-label">Detection Threshold</div>
+                <div class="row-sub">Higher = fewer false positives</div>
+            </div>
+            <div class="range-row">
+                <input type="range" id="wakeThreshold" min="0.1" max="1.0" step="0.05" value="0.5">
+                <span class="range-val" id="wakeThresholdVal">0.50</span>
+            </div>
+        </div>
+        <div class="row">
+            <div>
+                <div class="row-label">Detector Status</div>
+            </div>
+            <span id="wakeStatus" class="badge badge-off">—</span>
+        </div>
+    </div>
+
+    <!-- Speaker ID -->
+    <h3>Speaker Identification</h3>
+    <div class="card">
+        <div class="row">
+            <div>
+                <div class="row-label">Similarity Threshold</div>
+                <div class="row-sub">Min confidence for voice match</div>
+            </div>
+            <div class="range-row">
+                <input type="range" id="speakerThreshold" min="0.3" max="1.0" step="0.05" value="0.75">
+                <span class="range-val" id="speakerThresholdVal">0.75</span>
+            </div>
+        </div>
+        <div class="row">
+            <div>
+                <div class="row-label">Enrolled Speakers</div>
+            </div>
+            <span id="speakerCount" class="badge badge-ok">—</span>
+        </div>
+        <ul class="device-list" id="speakerList"></ul>
+    </div>
+
+    <!-- Audio Devices -->
+    <h3>Audio Devices</h3>
+    <div class="card" id="audioCard">
+        <div class="row">
+            <div>
+                <div class="row-label">Input Devices</div>
+            </div>
+            <span id="inputCount" class="badge badge-ok">—</span>
+        </div>
+        <ul class="device-list" id="inputList"></ul>
+        <div class="row" style="margin-top:8px">
+            <div>
+                <div class="row-label">Output Devices</div>
+            </div>
+            <span id="outputCount" class="badge badge-ok">—</span>
+        </div>
+        <ul class="device-list" id="outputList"></ul>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+        <button class="btn btn-primary" id="saveBtn">Save Settings</button>
+        <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        (function () {
+            const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+
+            const $ = (id) => document.getElementById(id);
+
+            function showToast(msg, ms) {
+                const t = $('toast');
+                t.textContent = msg;
+                t.classList.add('show');
+                setTimeout(() => t.classList.remove('show'), ms || 2000);
+            }
+
+            async function api(path, opts) {
+                const resp = await fetch(BASE + path, opts);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return resp.json();
+            }
+
+            // ── Load config ──────────────────────────────────────────────
+            async function loadConfig() {
+                try {
+                    const cfg = await api('/config');
+                    $('sttModel').value = cfg.stt_model || 'vosk-model-small-uk';
+                    $('ttsVoice').value = cfg.tts_voice || 'uk_UA-ukrainian_tts-medium';
+                    $('wakeWordModel').value = cfg.wake_word_model || 'hey_selena';
+                    $('wakeThreshold').value = cfg.wake_word_threshold || 0.5;
+                    $('wakeThresholdVal').textContent = (cfg.wake_word_threshold || 0.5).toFixed(2);
+                    $('speakerThreshold').value = cfg.speaker_threshold || 0.75;
+                    $('speakerThresholdVal').textContent = (cfg.speaker_threshold || 0.75).toFixed(2);
+                    $('privacyToggle').checked = cfg.privacy_mode || false;
+                    $('moduleStatus').textContent = 'Running';
+                    $('moduleStatus').className = 'badge badge-ok';
+                } catch (e) {
+                    $('moduleStatus').textContent = 'Offline';
+                    $('moduleStatus').className = 'badge badge-off';
+                }
+            }
+
+            // ── Load wake word status ────────────────────────────────────
+            async function loadWakeStatus() {
+                try {
+                    const s = await api('/wakeword/status');
+                    $('wakeStatus').textContent = s.running ? 'Active' : 'Stopped';
+                    $('wakeStatus').className = s.running ? 'badge badge-ok' : 'badge badge-off';
+                } catch { $('wakeStatus').textContent = '—'; }
+            }
+
+            // ── Load speakers ─────────────────────────────────────────────
+            async function loadSpeakers() {
+                try {
+                    const s = await api('/speakers');
+                    const list = s.speakers || [];
+                    $('speakerCount').textContent = list.length;
+                    const ul = $('speakerList');
+                    ul.innerHTML = '';
+                    if (list.length === 0) {
+                        ul.innerHTML = '<li class="empty">No speakers enrolled</li>';
+                    } else {
+                        list.forEach(id => {
+                            const li = document.createElement('li');
+                            li.innerHTML = '<span class="name">' + id + '</span>' +
+                                '<button class="btn btn-danger" style="padding:2px 8px;font-size:11px" data-uid="' + id + '">✕</button>';
+                            ul.appendChild(li);
+                        });
+                        ul.querySelectorAll('[data-uid]').forEach(btn => {
+                            btn.addEventListener('click', async function () {
+                                const uid = this.getAttribute('data-uid');
+                                await api('/speakers/' + encodeURIComponent(uid), { method: 'DELETE' });
+                                showToast('Speaker ' + uid + ' removed');
+                                loadSpeakers();
+                            });
+                        });
+                    }
+                } catch { $('speakerCount').textContent = '—'; }
+            }
+
+            // ── Load audio devices ─────────────────────────────────────────
+            async function loadAudio() {
+                try {
+                    const d = await api('/audio/devices');
+                    const inputs = d.inputs || [];
+                    const outputs = d.outputs || [];
+                    $('inputCount').textContent = inputs.length;
+                    $('outputCount').textContent = outputs.length;
+
+                    const renderList = (items, ul) => {
+                        ul.innerHTML = '';
+                        if (items.length === 0) {
+                            ul.innerHTML = '<li class="empty">No devices detected</li>';
+                        } else {
+                            items.forEach(dev => {
+                                const li = document.createElement('li');
+                                li.innerHTML = '<span class="status-dot ok"></span><span class="name">' +
+                                    dev.name + '</span> <span style="color:#484D66">(' + dev.type + ')</span>';
+                                ul.appendChild(li);
+                            });
+                        }
+                    };
+                    renderList(inputs, $('inputList'));
+                    renderList(outputs, $('outputList'));
+                } catch {
+                    $('inputCount').textContent = '—';
+                    $('outputCount').textContent = '—';
+                }
+            }
+
+            // ── Save ──────────────────────────────────────────────────────
+            $('saveBtn').addEventListener('click', async () => {
+                try {
+                    await api('/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            stt_model: $('sttModel').value,
+                            tts_voice: $('ttsVoice').value,
+                            wake_word_model: $('wakeWordModel').value,
+                            wake_word_threshold: parseFloat($('wakeThreshold').value),
+                            speaker_threshold: parseFloat($('speakerThreshold').value),
+                            privacy_mode: $('privacyToggle').checked,
+                        }),
+                    });
+                    showToast('Settings saved ✓');
+                } catch (e) {
+                    showToast('Save failed: ' + e.message);
+                }
+            });
+
+            // ── Privacy toggle ────────────────────────────────────────────
+            $('privacyToggle').addEventListener('change', async function () {
+                try {
+                    await api('/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ privacy_mode: this.checked }),
+                    });
+                    showToast(this.checked ? 'Privacy mode ON 🔇' : 'Privacy mode OFF 🎙️');
+                    loadWakeStatus();
+                } catch (e) {
+                    showToast('Toggle failed');
+                }
+            });
+
+            // ── Test TTS ──────────────────────────────────────────────────
+            $('testTtsBtn').addEventListener('click', async () => {
+                const btn = $('testTtsBtn');
+                btn.disabled = true;
+                btn.textContent = '⏳ Speaking…';
+                try {
+                    await api('/tts/test', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: 'Привіт! Голосовий модуль працює.', voice: $('ttsVoice').value }),
+                    });
+                    showToast('TTS test complete ✓');
+                } catch (e) {
+                    showToast('TTS test failed');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '▶ Test';
+                }
+            });
+
+            // ── Range sliders ─────────────────────────────────────────────
+            $('wakeThreshold').addEventListener('input', function () {
+                $('wakeThresholdVal').textContent = parseFloat(this.value).toFixed(2);
+            });
+            $('speakerThreshold').addEventListener('input', function () {
+                $('speakerThresholdVal').textContent = parseFloat(this.value).toFixed(2);
+            });
+
+            // ── Refresh ──────────────────────────────────────────────────
+            $('refreshBtn').addEventListener('click', () => {
+                loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
+                showToast('Refreshed');
+            });
+
+            // ── Init ──────────────────────────────────────────────────────
+            loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
+        })();
+    </script>
+</body>
+
+</html>

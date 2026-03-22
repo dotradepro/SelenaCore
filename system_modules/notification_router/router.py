@@ -172,7 +172,7 @@ class NotificationRouter:
             return False
 
     async def _deliver_tts(self, config: dict, message: str) -> bool:
-        url = config.get("tts_url", "http://localhost:8080/api/tts/say")
+        url = config.get("tts_url", "http://localhost/api/tts/say")
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json={"text": message})
             return resp.status_code < 300
@@ -189,7 +189,7 @@ class NotificationRouter:
             return resp.status_code == 200
 
     async def _deliver_push(self, config: dict, message: str, level: str) -> bool:
-        push_url = config.get("push_url", "http://localhost:8080/api/push/send")
+        push_url = config.get("push_url", "http://localhost/api/push/send")
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(push_url, json={"title": f"[{level.upper()}]", "body": message})
             return resp.status_code < 300

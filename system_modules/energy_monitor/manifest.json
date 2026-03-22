@@ -1,31 +1,30 @@
 {
-  "name": "energy-monitor",
-  "version": "1.0.0",
-  "description": "Per-device power consumption tracking, daily kWh reports, and anomaly detection",
-  "type": "UI",
-  "ui_profile": "FULL",
-  "api_version": "1.0",
-  "runtime_mode": "always_on",
-  "port": 8114,
-  "permissions": [
-    "device.read",
-    "events.subscribe",
-    "events.publish"
-  ],
-  "ui": {
-    "icon": "icon.svg",
-    "widget": {
-      "file": "widget.html",
-      "size": "2x2"
+    "name": "energy-monitor",
+    "version": "1.0.0",
+    "description": "Per-device power consumption tracking, daily kWh reports, and anomaly detection",
+    "type": "SYSTEM",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "permissions": [
+        "device.read",
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2"
+        },
+        "settings": "settings.html"
     },
-    "settings": "settings.html"
-  },
-  "oauth": null,
-  "resources": {
-    "memory_mb": 96,
-    "cpu": 0.1
-  },
-  "author": "SmartHome LK",
-  "license": "MIT",
-  "homepage": "https://github.com/dotradepro/SelenaCore"
+    "oauth": null,
+    "resources": {
+        "memory_mb": 96,
+        "cpu": 0.1
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
 }

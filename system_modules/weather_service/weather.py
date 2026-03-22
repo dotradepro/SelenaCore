@@ -88,6 +88,7 @@ class WeatherService:
         self._units = units
         self._alert_rain = alert_rain_mm
         self._alert_wind = alert_wind_kmh
+        self._location_name: str = ""
 
         self._current: dict[str, Any] | None = None
         self._forecast: list[dict[str, Any]] = []
@@ -107,8 +108,11 @@ class WeatherService:
         return {
             "latitude": self.latitude,
             "longitude": self.longitude,
+            "location_name": self._location_name,
             "units": self._units,
             "update_interval_sec": self._interval,
+            "alert_rain_mm": self._alert_rain,
+            "alert_wind_kmh": self._alert_wind,
             "last_updated": self._last_updated,
             "error": self._error,
             "has_data": self._current is not None,
@@ -118,6 +122,7 @@ class WeatherService:
         self,
         latitude: float | None = None,
         longitude: float | None = None,
+        location_name: str | None = None,
         update_interval_sec: int | None = None,
         units: str | None = None,
         alert_rain_mm: float | None = None,
@@ -127,6 +132,8 @@ class WeatherService:
             self.latitude = latitude
         if longitude is not None:
             self.longitude = longitude
+        if location_name is not None:
+            self._location_name = location_name
         if update_interval_sec is not None:
             self._interval = update_interval_sec
         if units is not None:
@@ -135,9 +142,8 @@ class WeatherService:
             self._alert_rain = alert_rain_mm
         if alert_wind_kmh is not None:
             self._alert_wind = alert_wind_kmh
-        # invalidate cache so next loop triggers fresh fetch
-        self._current = None
-        self._forecast = []
+        # Trigger immediate re-fetch in background
+        asyncio.ensure_future(self._safe_fetch())
 
     # ── Fetch ─────────────────────────────────────────────────────────────────
 
@@ -252,6 +258,13 @@ class WeatherService:
             })
 
     # ── Background loop ────────────────────────────────────────────────────────
+
+    async def _safe_fetch(self) -> None:
+        """Fetch and silently swallow errors (used after configure)."""
+        try:
+            await self.fetch()
+        except Exception:
+            pass  # error already logged in fetch()
 
     async def start(self) -> None:
         self._task = asyncio.get_event_loop().create_task(self._update_loop())

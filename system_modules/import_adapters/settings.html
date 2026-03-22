@@ -210,6 +210,7 @@
     </div>
 
     <script>
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         function showTab(name) {
             document.querySelectorAll('.tab').forEach((t, i) => t.classList.remove('active'));
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -232,7 +233,7 @@
             const dry_run = document.getElementById('ha-dry').checked;
             if (!url || !token) return showResult('ha-result', false, 'URL and token are required.');
             try {
-                const r = await fetch('/import/ha', {
+                const r = await fetch(BASE + '/import/ha', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ base_url: url, token, dry_run })
                 });
@@ -246,7 +247,7 @@
             const scan_timeout = parseFloat(document.getElementById('tuya-timeout').value) || 6;
             const dry_run = document.getElementById('tuya-dry').checked;
             try {
-                const r = await fetch('/import/tuya', {
+                const r = await fetch(BASE + '/import/tuya', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ scan_timeout, dry_run })
                 });
@@ -262,7 +263,7 @@
             const dry_run = document.getElementById('hue-dry').checked;
             if (!bridge_ip || !username) return showResult('hue-result', false, 'Bridge IP and username are required.');
             try {
-                const r = await fetch('/import/hue', {
+                const r = await fetch(BASE + '/import/hue', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ bridge_ip, username, dry_run })
                 });
@@ -274,7 +275,7 @@
 
         async function loadHistory() {
             try {
-                const r = await fetch('/import/history');
+                const r = await fetch(BASE + '/import/history');
                 const data = await r.json();
                 const tbody = document.getElementById('hist-body');
                 if (!data.length) {

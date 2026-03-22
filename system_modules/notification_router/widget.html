@@ -80,7 +80,7 @@
         <div class="empty">No notifications</div>
     </div>
     <script>
-        const base = window.location.origin;
+        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function load() {
             try {
                 const data = await fetch(`${base}/notify/history?limit=20`).then(r => r.json());

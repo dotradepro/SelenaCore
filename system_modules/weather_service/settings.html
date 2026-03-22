@@ -1,176 +1,614 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Weather Service Settings</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: #0f1117;
-    color: #e0e0e0;
-    padding: 24px;
-  }
-  h1 { font-size: 1.4rem; margin-bottom: 24px; color: #fff; }
-  .section {
-    background: #1a1d27;
-    border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 16px;
-  }
-  .section h2 { font-size: 1rem; color: #aaa; margin-bottom: 16px; }
-  label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 4px; }
-  input, select {
-    width: 100%;
-    background: #0f1117;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #e0e0e0;
-    padding: 10px 12px;
-    font-size: 0.95rem;
-    margin-bottom: 14px;
-  }
-  input:focus, select:focus { outline: none; border-color: #5c8ee6; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  button {
-    width: 100%;
-    background: #5c8ee6;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 12px;
-    font-size: 1rem;
-    cursor: pointer;
-    margin-top: 8px;
-  }
-  button:hover { background: #4a7bd4; }
-  #status-panel {
-    background: #111827;
-    border-radius: 8px;
-    padding: 12px;
-    font-size: 0.8rem;
-    color: #aaa;
-    margin-top: 12px;
-    white-space: pre-wrap;
-  }
-  .msg { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.9rem; }
-  .msg.ok { background: rgba(80,200,120,0.15); color: #50c878; }
-  .msg.err { background: rgba(220,50,50,0.15); color: #e06c75; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Service Settings</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f1117;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        .section {
+            background: #1a1d27;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+
+        .section h2 {
+            font-size: 0.95rem;
+            color: #aaa;
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.82rem;
+            color: #aaa;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background: #0f1117;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: #e0e0e0;
+            padding: 9px 12px;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #5c8ee6;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        button,
+        .btn {
+            display: inline-block;
+            background: #5c8ee6;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        button:hover,
+        .btn:hover {
+            background: #4a7bd4;
+        }
+
+        .btn-secondary {
+            background: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #444;
+        }
+
+        .btn-detect {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            width: 100%;
+            padding: 12px;
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+        }
+
+        .btn-detect:hover {
+            background: linear-gradient(135deg, #16a34a, #15803d);
+        }
+
+        /* Location display */
+        .location-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #111827;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+            min-height: 48px;
+        }
+
+        .location-display .pin {
+            font-size: 1.4rem;
+        }
+
+        .location-display .info {
+            flex: 1;
+        }
+
+        .location-display .name {
+            font-size: 0.95rem;
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .location-display .coords {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .location-display .change-btn {
+            background: none;
+            border: 1px solid #333;
+            color: #888;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .location-display .change-btn:hover {
+            border-color: #5c8ee6;
+            color: #5c8ee6;
+        }
+
+        /* Search */
+        .search-wrap {
+            position: relative;
+            margin-bottom: 12px;
+        }
+
+        .search-wrap input {
+            margin-bottom: 0;
+            padding-right: 36px;
+        }
+
+        .search-wrap .spinner {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #333;
+            border-top-color: #5c8ee6;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .search-results {
+            background: #111827;
+            border-radius: 8px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .search-results .item {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #1e2333;
+            font-size: 0.85rem;
+            transition: background .15s;
+        }
+
+        .search-results .item:hover {
+            background: #1e2a44;
+        }
+
+        .search-results .item .city {
+            color: #e0e0e0;
+        }
+
+        .search-results .item .region {
+            color: #666;
+            font-size: 0.75rem;
+            margin-top: 2px;
+        }
+
+        /* Map */
+        #map {
+            width: 100%;
+            height: 220px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            z-index: 0;
+        }
+
+        /* Messages */
+        .msg {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .msg.ok {
+            background: rgba(80, 200, 120, .15);
+            color: #50c878;
+        }
+
+        .msg.err {
+            background: rgba(220, 50, 50, .15);
+            color: #e06c75;
+        }
+
+        #status-panel {
+            background: #111827;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 8px;
+            white-space: pre-wrap;
+            max-height: 160px;
+            overflow-y: auto;
+        }
+
+        /* Dark scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+    </style>
 </head>
+
 <body>
-<h1>🌤️ Weather Service Settings</h1>
+    <h1>🌤️ Weather Service Settings</h1>
 
-<div class="section">
-  <h2>Location</h2>
-  <div class="row">
-    <div>
-      <label>Latitude</label>
-      <input type="number" id="lat" step="0.0001" placeholder="50.4501">
+    <!-- Location Section -->
+    <div class="section">
+        <h2>📍 Location</h2>
+
+        <div class="location-display" id="loc-display" style="display:none">
+            <div class="pin">📌</div>
+            <div class="info">
+                <div class="name" id="loc-name">—</div>
+                <div class="coords" id="loc-coords">—</div>
+            </div>
+            <button class="change-btn" onclick="showLocationPicker()">Change</button>
+        </div>
+
+        <div id="loc-picker">
+            <button class="btn-detect" onclick="detectLocation()">
+                📡 Detect My Location
+            </button>
+
+            <div class="search-wrap">
+                <input type="text" id="search-city" placeholder="Search city name…" oninput="onSearchInput()"
+                    autocomplete="off">
+                <div class="spinner" id="search-spinner"></div>
+            </div>
+            <div class="search-results" id="search-results"></div>
+
+            <div id="map"></div>
+
+            <div class="row" style="margin-bottom:4px">
+                <div>
+                    <label>Latitude</label>
+                    <input type="number" id="lat" step="0.0001" placeholder="50.4501">
+                </div>
+                <div>
+                    <label>Longitude</label>
+                    <input type="number" id="lon" step="0.0001" placeholder="30.5234">
+                </div>
+            </div>
+        </div>
     </div>
-    <div>
-      <label>Longitude</label>
-      <input type="number" id="lon" step="0.0001" placeholder="30.5234">
+
+    <!-- Preferences -->
+    <div class="section">
+        <h2>⚙️ Preferences</h2>
+        <label>Units</label>
+        <select id="units">
+            <option value="metric">Metric (°C, km/h)</option>
+            <option value="imperial">Imperial (°F, mph)</option>
+        </select>
+        <label>Update interval (seconds, min 60)</label>
+        <input type="number" id="interval" step="60" min="60" placeholder="1800">
     </div>
-  </div>
-</div>
 
-<div class="section">
-  <h2>Preferences</h2>
-  <label>Units</label>
-  <select id="units">
-    <option value="metric">Metric (°C, km/h)</option>
-    <option value="imperial">Imperial (°F, mph)</option>
-  </select>
-  <label>Update interval (seconds, min 60)</label>
-  <input type="number" id="interval" step="60" min="60" placeholder="1800">
-</div>
-
-<div class="section">
-  <h2>Alert Thresholds</h2>
-  <div class="row">
-    <div>
-      <label>Rain alert (mm)</label>
-      <input type="number" id="alert_rain" step="0.5" min="0" placeholder="10">
+    <!-- Alert Thresholds -->
+    <div class="section">
+        <h2>⚠️ Alert Thresholds</h2>
+        <div class="row">
+            <div>
+                <label>Rain alert (mm)</label>
+                <input type="number" id="alert_rain" step="0.5" min="0" placeholder="10">
+            </div>
+            <div>
+                <label>Wind alert (km/h)</label>
+                <input type="number" id="alert_wind" step="1" min="0" placeholder="50">
+            </div>
+        </div>
     </div>
-    <div>
-      <label>Wind alert (km/h)</label>
-      <input type="number" id="alert_wind" step="1" min="0" placeholder="50">
+
+    <button onclick="save()" style="width:100%">💾 Save Settings</button>
+    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;">🔄 Refresh Now</button>
+    <div id="msg"></div>
+
+    <div class="section" style="margin-top:14px">
+        <h2>Status</h2>
+        <div id="status-panel">Loading…</div>
     </div>
-  </div>
-</div>
 
-<button onclick="save()">Save Settings</button>
-<button onclick="refresh()" style="background:#444; margin-top:8px;">🔄 Refresh Now</button>
-<div id="msg"></div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
-<div class="section" style="margin-top:16px;">
-  <h2>Current Status</h2>
-  <div id="status-panel">Loading…</div>
-</div>
+        let map, marker;
+        let selectedLat = null, selectedLon = null, selectedName = '';
+        let searchTimeout = null;
 
-<script>
-const base = window.location.origin;
+        // ── Init Map ──
+        function initMap(lat, lon) {
+            if (map) { map.remove(); }
+            map = L.map('map', {
+                center: [lat, lon], zoom: 10,
+                zoomControl: true, attributionControl: false,
+            });
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                maxZoom: 18,
+            }).addTo(map);
+            marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+            marker.on('dragend', function () {
+                const pos = marker.getLatLng();
+                setLocation(pos.lat, pos.lng, '');
+                reverseGeocode(pos.lat, pos.lng);
+            });
+            map.on('click', function (e) {
+                marker.setLatLng(e.latlng);
+                setLocation(e.latlng.lat, e.latlng.lng, '');
+                reverseGeocode(e.latlng.lat, e.latlng.lng);
+            });
+        }
 
-async function loadStatus() {
-  try {
-    const s = await fetch(`${base}/weather/status`).then(r => r.json());
-    document.getElementById('status-panel').textContent = JSON.stringify(s, null, 2);
-    if (s.latitude) document.getElementById('lat').value = s.latitude;
-    if (s.longitude) document.getElementById('lon').value = s.longitude;
-    if (s.units) document.getElementById('units').value = s.units;
-    if (s.update_interval_sec) document.getElementById('interval').value = s.update_interval_sec;
-  } catch (e) {
-    document.getElementById('status-panel').textContent = 'Error loading status: ' + e.message;
-  }
-}
+        function setLocation(lat, lon, name) {
+            selectedLat = Math.round(lat * 10000) / 10000;
+            selectedLon = Math.round(lon * 10000) / 10000;
+            document.getElementById('lat').value = selectedLat;
+            document.getElementById('lon').value = selectedLon;
+            if (name) {
+                selectedName = name;
+                document.getElementById('loc-name').textContent = name;
+            }
+            document.getElementById('loc-coords').textContent = `${selectedLat}, ${selectedLon}`;
+            if (map && marker) {
+                marker.setLatLng([selectedLat, selectedLon]);
+                map.setView([selectedLat, selectedLon], map.getZoom());
+            }
+        }
 
-async function save() {
-  const body = {};
-  const lat = parseFloat(document.getElementById('lat').value);
-  const lon = parseFloat(document.getElementById('lon').value);
-  const interval = parseInt(document.getElementById('interval').value);
-  const units = document.getElementById('units').value;
-  const alertRain = parseFloat(document.getElementById('alert_rain').value);
-  const alertWind = parseFloat(document.getElementById('alert_wind').value);
-  if (!isNaN(lat)) body.latitude = lat;
-  if (!isNaN(lon)) body.longitude = lon;
-  if (!isNaN(interval) && interval >= 60) body.update_interval_sec = interval;
-  if (units) body.units = units;
-  if (!isNaN(alertRain)) body.alert_rain_mm = alertRain;
-  if (!isNaN(alertWind)) body.alert_wind_kmh = alertWind;
-  try {
-    await fetch(`${base}/weather/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    showMsg('Settings saved!', 'ok');
-    loadStatus();
-  } catch (e) {
-    showMsg('Error: ' + e.message, 'err');
-  }
-}
+        function showLocationCompact() {
+            if (!selectedName && !selectedLat) return;
+            document.getElementById('loc-display').style.display = 'flex';
+            document.getElementById('loc-picker').style.display = 'none';
+        }
 
-async function refresh() {
-  try {
-    await fetch(`${base}/weather/refresh`, { method: 'POST' });
-    showMsg('Refreshed!', 'ok');
-    loadStatus();
-  } catch (e) {
-    showMsg('Error: ' + e.message, 'err');
-  }
-}
+        function showLocationPicker() {
+            document.getElementById('loc-display').style.display = 'none';
+            document.getElementById('loc-picker').style.display = 'block';
+            setTimeout(() => { if (map) map.invalidateSize(); }, 100);
+        }
 
-function showMsg(text, type) {
-  const el = document.getElementById('msg');
-  el.className = 'msg ' + type;
-  el.textContent = text;
-  setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
-}
+        // ── Detect Location (Browser Geolocation API) ──
+        function detectLocation() {
+            if (!navigator.geolocation) {
+                showMsg('Geolocation is not supported by this browser', 'err');
+                return;
+            }
+            showMsg('Detecting location…', 'ok');
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    setLocation(lat, lon, '');
+                    initMap(lat, lon);
+                    reverseGeocode(lat, lon);
+                    showMsg('Location detected!', 'ok');
+                },
+                function (err) {
+                    // Fallback: use IP-based location
+                    fetchIpLocation();
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        }
 
-loadStatus();
-</script>
+        async function fetchIpLocation() {
+            try {
+                // ip-api.com is free, no key required, returns lat/lon from IP
+                const r = await fetch('http://ip-api.com/json/?fields=lat,lon,city,country');
+                const d = await r.json();
+                if (d.lat && d.lon) {
+                    const name = [d.city, d.country].filter(Boolean).join(', ');
+                    setLocation(d.lat, d.lon, name);
+                    initMap(d.lat, d.lon);
+                    showMsg('Location detected via IP', 'ok');
+                } else {
+                    showMsg('Could not detect location. Please search for your city.', 'err');
+                }
+            } catch (e) {
+                showMsg('Could not detect location: ' + e.message, 'err');
+            }
+        }
+
+        // ── Reverse Geocode (coordinates → city name) ──
+        async function reverseGeocode(lat, lon) {
+            try {
+                const r = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`,
+                    { headers: { 'User-Agent': 'SelenaCore/0.3' } }
+                );
+                const d = await r.json();
+                const parts = [];
+                if (d.address) {
+                    parts.push(d.address.city || d.address.town || d.address.village || d.address.county || '');
+                    parts.push(d.address.country || '');
+                }
+                const name = parts.filter(Boolean).join(', ') || d.display_name || '';
+                if (name) {
+                    selectedName = name;
+                    document.getElementById('loc-name').textContent = name;
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        // ── City Search ──
+        function onSearchInput() {
+            clearTimeout(searchTimeout);
+            const q = document.getElementById('search-city').value.trim();
+            if (q.length < 2) {
+                document.getElementById('search-results').style.display = 'none';
+                return;
+            }
+            document.getElementById('search-spinner').style.display = 'block';
+            searchTimeout = setTimeout(() => searchCity(q), 350);
+        }
+
+        async function searchCity(q) {
+            try {
+                const r = await fetch(`${BASE}/weather/geocode?q=${encodeURIComponent(q)}`);
+                const d = await r.json();
+                const el = document.getElementById('search-results');
+                if (!d.results || d.results.length === 0) {
+                    el.innerHTML = '<div class="item"><span class="city" style="color:#666">No results</span></div>';
+                    el.style.display = 'block';
+                    return;
+                }
+                el.innerHTML = d.results.map((r, i) => `
+                    <div class="item" onclick='pickResult(${i})'>
+                        <div class="city">${esc(r.name)}</div>
+                        <div class="region">${esc([r.admin1, r.country].filter(Boolean).join(', '))} · ${r.latitude.toFixed(2)}, ${r.longitude.toFixed(2)}</div>
+                    </div>
+                `).join('');
+                el.style.display = 'block';
+                window._searchResults = d.results;
+            } catch (e) {
+                showMsg('Search failed: ' + e.message, 'err');
+            } finally {
+                document.getElementById('search-spinner').style.display = 'none';
+            }
+        }
+
+        function pickResult(i) {
+            const r = window._searchResults[i];
+            const name = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+            setLocation(r.latitude, r.longitude, name);
+            initMap(r.latitude, r.longitude);
+            document.getElementById('search-results').style.display = 'none';
+            document.getElementById('search-city').value = '';
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        // ── Load Status ──
+        async function loadStatus() {
+            try {
+                const s = await fetch(`${BASE}/weather/status`).then(r => r.json());
+                document.getElementById('status-panel').textContent = JSON.stringify(s, null, 2);
+                if (s.latitude) {
+                    selectedLat = s.latitude;
+                    document.getElementById('lat').value = s.latitude;
+                }
+                if (s.longitude) {
+                    selectedLon = s.longitude;
+                    document.getElementById('lon').value = s.longitude;
+                }
+                if (s.location_name) {
+                    selectedName = s.location_name;
+                    document.getElementById('loc-name').textContent = s.location_name;
+                }
+                if (s.units) document.getElementById('units').value = s.units;
+                if (s.update_interval_sec) document.getElementById('interval').value = s.update_interval_sec;
+                if (s.alert_rain_mm) document.getElementById('alert_rain').value = s.alert_rain_mm;
+                if (s.alert_wind_kmh) document.getElementById('alert_wind').value = s.alert_wind_kmh;
+
+                // Show coordinates
+                if (selectedLat && selectedLon) {
+                    document.getElementById('loc-coords').textContent = `${selectedLat}, ${selectedLon}`;
+                    initMap(selectedLat, selectedLon);
+                    if (selectedName) {
+                        showLocationCompact();
+                    }
+                }
+            } catch (e) {
+                document.getElementById('status-panel').textContent = 'Error loading status: ' + e.message;
+            }
+        }
+
+        // ── Save ──
+        async function save() {
+            const body = {};
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lon = parseFloat(document.getElementById('lon').value);
+            const interval = parseInt(document.getElementById('interval').value);
+            const units = document.getElementById('units').value;
+            const alertRain = parseFloat(document.getElementById('alert_rain').value);
+            const alertWind = parseFloat(document.getElementById('alert_wind').value);
+            if (!isNaN(lat)) body.latitude = lat;
+            if (!isNaN(lon)) body.longitude = lon;
+            if (selectedName) body.location_name = selectedName;
+            if (!isNaN(interval) && interval >= 60) body.update_interval_sec = interval;
+            if (units) body.units = units;
+            if (!isNaN(alertRain)) body.alert_rain_mm = alertRain;
+            if (!isNaN(alertWind)) body.alert_wind_kmh = alertWind;
+            try {
+                const r = await fetch(`${BASE}/weather/config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                showMsg('Settings saved! Weather will refresh shortly.', 'ok');
+                if (selectedName) showLocationCompact();
+                loadStatus();
+            } catch (e) {
+                showMsg('Error: ' + e.message, 'err');
+            }
+        }
+
+        async function refreshWeather() {
+            try {
+                await fetch(`${BASE}/weather/refresh`, { method: 'POST' });
+                showMsg('Weather refreshed!', 'ok');
+                loadStatus();
+            } catch (e) {
+                showMsg('Error: ' + e.message, 'err');
+            }
+        }
+
+        function showMsg(text, type) {
+            const el = document.getElementById('msg');
+            el.className = 'msg ' + type;
+            el.textContent = text;
+            setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
+        }
+
+        // ── Init ──
+        loadStatus();
+    </script>
 </body>
+
 </html>

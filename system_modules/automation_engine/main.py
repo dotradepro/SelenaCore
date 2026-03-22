@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
-from .engine import AutomationEngine
+from system_modules.automation_engine.engine import AutomationEngine
 
 logger = logging.getLogger(__name__)
 
