@@ -145,11 +145,53 @@ interface AppState {
   connectSyncStream: () => () => void;
 }
 
-async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(path, opts);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  if (res.status === 204) return null;
-  return res.json();
+// ── Request optimizations ─────────────────────────────────────────────────────
+// 1. In-flight dedup: parallel GET calls for the same URL share one request.
+// 2. TTL cache: wizard/requirements-style endpoints that rarely change.
+// 3. Module-fetch dedup: SSE events skip fetchModules if a mutation just ran it.
+
+const _inflight = new Map<string, Promise<unknown>>();
+const _cache = new Map<string, { data: unknown; ts: number }>();
+
+const CACHE_TTL: Record<string, number> = {
+  '/api/ui/wizard/status': 30_000,
+  '/api/ui/wizard/requirements': 60_000,
+};
+
+let _lastModulesFetch = 0;
+let _modulesFetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function debounceFetchModules(getFn: () => AppState) {
+  if (_modulesFetchTimer) clearTimeout(_modulesFetchTimer);
+  // Skip if a direct fetch (from mutation) ran within the last 2 s
+  if (Date.now() - _lastModulesFetch < 2_000) return;
+  _modulesFetchTimer = setTimeout(() => { getFn().fetchModules(); }, 400);
+}
+
+async function apiFetch(path: string, opts?: RequestInit): Promise<unknown> {
+  const isGet = !opts?.method || opts.method.toUpperCase() === 'GET';
+  const ttl = isGet ? CACHE_TTL[path] : undefined;
+
+  // Serve from TTL cache if still fresh
+  if (ttl) {
+    const hit = _cache.get(path);
+    if (hit && Date.now() - hit.ts < ttl) return hit.data;
+  }
+
+  // Reuse an already-in-flight GET request (dedup parallel mounts)
+  if (isGet && _inflight.has(path)) return _inflight.get(path)!;
+
+  const promise = (async () => {
+    const res = await fetch(path, opts);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (res.status === 204) return null;
+    const data = await res.json();
+    if (ttl) _cache.set(path, { data, ts: Date.now() });
+    return data;
+  })().finally(() => _inflight.delete(path));
+
+  if (isGet) _inflight.set(path, promise);
+  return promise;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -212,16 +254,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchHealth: async () => {
-    try {
-      const data = await apiFetch('/api/ui/system');
-      if (data?.core) {
-        set({ health: data.core });
-      }
-    } catch (e) {
-      console.error('fetchHealth failed', e);
-    }
-  },
+  // fetchHealth is an alias for fetchStats — both use /api/ui/system
+  fetchHealth: async () => { await get().fetchStats(); },
 
   fetchStats: async () => {
     try {
@@ -263,6 +297,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchModules: async () => {
     set({ modulesLoading: true });
+    _lastModulesFetch = Date.now();
     try {
       const data = await apiFetch('/api/ui/modules');
       const mods = data?.modules ?? [];
@@ -396,7 +431,7 @@ export const useStore = create<AppState>((set, get) => ({
           msg.type === 'module.stopped' ||
           msg.type === 'module.removed'
         ) {
-          get().fetchModules();
+          debounceFetchModules(get);
         }
       } catch { /* ignore */ }
     };
