@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scheduler — Settings</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            margin-top: 24px;
+            color: #94a3b8;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 8px 10px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+
+        button {
+            padding: 8px 18px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th,
+        td {
+            padding: 8px 10px;
+            text-align: left;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        th {
+            color: #94a3b8;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #1e3a5f;
+            font-size: 0.78rem;
+        }
+
+        #msg {
+            margin-top: 10px;
+            font-size: 0.88rem;
+            color: #4ade80;
+            min-height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>⏱ Scheduler</h1>
+
+    <h2>Location &amp; Timezone</h2>
+    <div class="form-group">
+        <label>Latitude (° -90..90)</label>
+        <input type="number" id="lat" step="0.0001" min="-90" max="90" />
+    </div>
+    <div class="form-group">
+        <label>Longitude (° -180..180)</label>
+        <input type="number" id="lon" step="0.0001" min="-180" max="180" />
+    </div>
+    <div class="form-group">
+        <label>Timezone</label>
+        <input type="text" id="tz" placeholder="Europe/Kyiv" />
+    </div>
+    <button onclick="saveConfig()">Save</button>
+    <div id="msg"></div>
+
+    <h2>Active Jobs</h2>
+    <table id="jobs-table">
+        <thead>
+            <tr>
+                <th>Job ID</th>
+                <th>Trigger</th>
+                <th>Owner</th>
+                <th>Next Run</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="jobs-body"></tbody>
+    </table>
+
+    <script>
+        const BASE = '';
+
+        async function loadConfig() {
+            const r = await fetch(BASE + '/config');
+            const d = await r.json();
+            document.getElementById('lat').value = d.latitude ?? '';
+            document.getElementById('lon').value = d.longitude ?? '';
+            document.getElementById('tz').value = d.timezone ?? 'UTC';
+        }
+
+        async function saveConfig() {
+            const body = {
+                latitude: parseFloat(document.getElementById('lat').value) || null,
+                longitude: parseFloat(document.getElementById('lon').value) || null,
+                timezone: document.getElementById('tz').value || 'UTC',
+            };
+            await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            document.getElementById('msg').textContent = '✓ Saved';
+            setTimeout(() => document.getElementById('msg').textContent = '', 3000);
+        }
+
+        async function loadJobs() {
+            const r = await fetch(BASE + '/jobs');
+            const d = await r.json();
+            const tbody = document.getElementById('jobs-body');
+            tbody.innerHTML = '';
+            for (const j of (d.jobs || [])) {
+                const row = document.createElement('tr');
+                const next = j.next_run ? new Date(j.next_run).toLocaleString() : '—';
+                row.innerHTML = `<td>${j.job_id}</td><td><span class="badge">${j.trigger}</span></td><td>${j.owner}</td><td>${next}</td><td><button onclick="removeJob('${j.job_id}')">✕</button></td>`;
+                tbody.appendChild(row);
+            }
+        }
+
+        async function removeJob(jobId) {
+            if (!confirm('Remove job ' + jobId + '?')) return;
+            await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
+            loadJobs();
+        }
+
+        loadConfig();
+        loadJobs();
+        setInterval(loadJobs, 30000);
+    </script>
+</body>
+
+</html>

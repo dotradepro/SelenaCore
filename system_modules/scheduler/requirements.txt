@@ -1,0 +1,5 @@
+astral>=3.2
+apscheduler>=3.10
+httpx>=0.27
+fastapi>=0.111
+uvicorn>=0.29

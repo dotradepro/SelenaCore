@@ -1,0 +1,25 @@
+{
+    "name": "scheduler",
+    "version": "0.1.0",
+    "description": "Центральный планировщик задач: cron, interval, sunrise/sunset триггеры",
+    "type": "SYSTEM",
+    "ui_profile": "SETTINGS_ONLY",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "port": 8111,
+    "permissions": [
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "settings": "settings.html"
+    },
+    "resources": {
+        "memory_mb": 64,
+        "cpu": 0.1
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}
