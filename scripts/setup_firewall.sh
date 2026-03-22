@@ -29,7 +29,7 @@ iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7070 -m conntrack --ctstate NEW -j ACCEPT
 
 # UI (local network only)
-iptables -A INPUT -p tcp --dport 8080 -m conntrack --ctstate NEW -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
 
 # Block external access to module ports (8100-8200)
 # Modules are only accessible from internal docker network

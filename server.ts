@@ -8,7 +8,7 @@ import path from 'path';
  */
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.UI_PORT || 8080);
+  const PORT = Number(process.env.UI_PORT || 80);
 
   const distPath = path.join(process.cwd(), 'system_modules/ui_core/static');
   app.use(express.static(distPath));

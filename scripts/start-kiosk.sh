@@ -3,7 +3,7 @@
 # Used by smarthome-kiosk.service on devices with HDMI display attached.
 set -euo pipefail
 
-UI_URL="${UI_URL:-http://localhost:8080}"
+UI_URL="${UI_URL:-http://localhost}"
 
 # ── Wait for UI to be reachable ──
 echo "[kiosk] Waiting for UI at ${UI_URL} ..."

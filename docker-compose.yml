@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:7070:7070"
-      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:80:80"
     volumes:
       - selena_data:/var/lib/selena
       - selena_secure:/secure

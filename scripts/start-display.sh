@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-UI_URL="${SELENA_UI_URL:-http://localhost:8080}"
+UI_URL="${SELENA_UI_URL:-http://localhost}"
 COMPOSE_FILE="${COMPOSE_FILE:-/home/selena/SelenaCore/docker-compose.yml}"
 LOG="${SELENA_LOG_DIR:-/var/log/selena}/display.log"
 

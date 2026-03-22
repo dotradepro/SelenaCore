@@ -47,6 +47,6 @@ ENV PYTHONUNBUFFERED=1 \
     CORE_SECURE_DIR=/secure \
     CORE_LOG_LEVEL=INFO
 
-EXPOSE 7070 8080
+EXPOSE 7070 80
 
 CMD ["/bin/bash", "/opt/selena-core/start.sh"]
