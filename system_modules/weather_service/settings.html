@@ -398,7 +398,7 @@
                 h_status: 'Status', loading: 'Loading…',
                 geo_notsupported: 'Geolocation is not supported by this browser',
                 detecting: 'Detecting location…', detected: 'Location detected!',
-                detected_ip: 'Location detected via IP',
+                detected_ip: '⚠️ Approximate location via IP (city level). Use the map to refine.',
                 detect_failed: 'Could not detect location. Please search for your city.',
                 detect_failed_err: 'Could not detect location: ',
                 saved: 'Settings saved! Weather will refresh shortly.',
@@ -416,7 +416,7 @@
                 h_status: 'Статус', loading: 'Завантаження…',
                 geo_notsupported: 'Геолокація не підтримується цим браузером',
                 detecting: 'Визначення місцезнаходження…', detected: 'Місцезнаходження визначено!',
-                detected_ip: 'Місцезнаходження визначено через IP',
+                detected_ip: '⚠️ Приблизне місце через IP (рівень міста). Уточніть на карті.',
                 detect_failed: 'Не вдалося визначити місце. Шукайте місто.',
                 detect_failed_err: 'Не вдалося визначити місце: ',
                 saved: 'Налаштування збережено! Погода скоро оновиться.',
@@ -429,13 +429,13 @@
 
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
-        let map, marker;
+        let map, marker, accuracyCircle;
         let selectedLat = null, selectedLon = null, selectedName = '';
         let searchTimeout = null;
 
         // ── Init Map ──
-        function initMap(lat, lon) {
-            if (map) { map.remove(); }
+        function initMap(lat, lon, accuracy) {
+            if (map) { map.remove(); accuracyCircle = null; }
             map = L.map('map', {
                 center: [lat, lon], zoom: 10,
                 zoomControl: true, attributionControl: false,
@@ -443,6 +443,18 @@
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                 maxZoom: 18,
             }).addTo(map);
+            // Show accuracy radius circle (only if meaningful, < 50 km)
+            if (accuracy && accuracy < 50000) {
+                accuracyCircle = L.circle([lat, lon], {
+                    radius: accuracy,
+                    color: '#4F8CF7',
+                    fillColor: '#4F8CF7',
+                    fillOpacity: 0.08,
+                    weight: 1,
+                }).addTo(map);
+                // Zoom map to fit the accuracy circle
+                map.fitBounds(accuracyCircle.getBounds());
+            }
             marker = L.marker([lat, lon], { draggable: true }).addTo(map);
             marker.on('dragend', function () {
                 const pos = marker.getLatLng();
@@ -495,29 +507,51 @@
                 function (pos) {
                     const lat = pos.coords.latitude;
                     const lon = pos.coords.longitude;
+                    const acc = pos.coords.accuracy; // metres
                     setLocation(lat, lon, '');
-                    initMap(lat, lon);
+                    initMap(lat, lon, acc);
                     reverseGeocode(lat, lon);
-                    showMsg(t('detected'), 'ok');
+                    // Show human-readable accuracy
+                    const accLabel = acc < 1000
+                        ? '\xb1' + Math.round(acc) + 'm'
+                        : '\xb1' + (acc / 1000).toFixed(1) + 'km';
+                    showMsg(t('detected') + ' (' + accLabel + ')', 'ok');
                 },
                 function (err) {
                     // Fallback: use IP-based location
                     fetchIpLocation();
                 },
-                { enableHighAccuracy: true, timeout: 10000 }
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
             );
         }
 
         async function fetchIpLocation() {
             try {
-                // ip-api.com is free, no key required, returns lat/lon from IP
-                const r = await fetch('http://ip-api.com/json/?fields=lat,lon,city,country');
-                const d = await r.json();
-                if (d.lat && d.lon) {
-                    const name = [d.city, d.country].filter(Boolean).join(', ');
-                    setLocation(d.lat, d.lon, name);
-                    initMap(d.lat, d.lon);
-                    showMsg(t('detected_ip'), 'ok');
+                let loc = null;
+                // 1st try: ipapi.co (HTTPS, free, ~city accuracy)
+                try {
+                    const r1 = await fetch('https://ipapi.co/json/');
+                    const j1 = await r1.json();
+                    if (j1.latitude && j1.longitude) {
+                        loc = { lat: j1.latitude, lon: j1.longitude,
+                                city: j1.city, country: j1.country_name };
+                    }
+                } catch (_) { /* try next service */ }
+
+                // 2nd try: ip-api.com (HTTP, free fallback)
+                if (!loc) {
+                    const r2 = await fetch('http://ip-api.com/json/?fields=lat,lon,city,country');
+                    const j2 = await r2.json();
+                    if (j2.lat && j2.lon) {
+                        loc = { lat: j2.lat, lon: j2.lon, city: j2.city, country: j2.country };
+                    }
+                }
+
+                if (loc) {
+                    const name = [loc.city, loc.country].filter(Boolean).join(', ');
+                    setLocation(loc.lat, loc.lon, name);
+                    initMap(loc.lat, loc.lon); // no accuracy circle — IP is city-level
+                    showMsg(t('detected_ip'), 'err'); // amber warning — approximate
                 } else {
                     showMsg(t('detect_failed'), 'err');
                 }
