@@ -1,0 +1,17 @@
+{
+    "name": "SelenaCore",
+    "short_name": "Selena",
+    "description": "Smart home — local control",
+    "start_url": "/api/ui/modules/presence-detection/settings",
+    "display": "standalone",
+    "background_color": "#0B0C10",
+    "theme_color": "#4F8CF7",
+    "icons": [
+        {
+            "src": "/api/ui/modules/presence-detection/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

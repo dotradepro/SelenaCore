@@ -40,26 +40,22 @@
 
         * {
             box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
-            margin: 0;
-            font-family: system-ui, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--tx);
-            font-size: 14px;
+            padding: 20px;
             min-height: 100%;
             overflow-y: auto;
-        }
-
-        .container {
-            max-width: 680px;
-            margin: 0 auto;
-            padding: 24px 16px;
+            font-size: 14px;
         }
 
         h1 {
-            font-size: 20px;
+            font-size: 1.3rem;
             font-weight: 700;
             margin-bottom: 4px;
         }
@@ -67,87 +63,163 @@
         .subtitle {
             color: var(--tx3);
             font-size: 13px;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
 
-        .card {
+        .section {
             background: var(--sf);
-            border-radius: 10px;
-            padding: 16px;
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 14px;
+        }
+
+        .section h2 {
+            font-size: 0.95rem;
+            color: var(--tx2);
+            margin-bottom: 14px;
+            font-weight: 600;
+        }
+
+        /* Stat cards */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
             margin-bottom: 16px;
         }
 
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
+        .stat-card {
+            background: var(--sf2);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
         }
 
-        .card h2 {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--tx);
-            margin: 0;
+        .stat-card .val {
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.1;
         }
 
-        .form-row {
-            margin-bottom: 12px;
+        .stat-card .val.green {
+            color: var(--gr);
         }
 
-        label {
-            display: block;
-            font-size: 12px;
-            color: var(--tx2);
-            margin-bottom: 4px;
+        .stat-card .val.red {
+            color: var(--rd);
         }
 
-        input,
-        select {
-            width: 100%;
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            padding: 8px 10px;
-            color: var(--tx);
-            font-size: 13px;
+        .stat-card .val.blue {
+            color: var(--ac);
         }
 
+        .stat-card .val.amber {
+            color: var(--am);
+        }
+
+        .stat-card .lbl {
+            font-size: 0.72rem;
+            color: var(--tx3);
+            margin-top: 4px;
+        }
+
+        /* Buttons */
         .btn {
-            padding: 6px 16px;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
+            padding: 8px 18px;
             cursor: pointer;
+            font-size: 0.85rem;
             font-weight: 600;
-            font-size: 13px;
+        }
+
+        .btn:hover {
+            opacity: 0.85;
         }
 
         .btn-primary {
             background: var(--ac);
+            color: #fff;
+        }
+
+        .btn-sec {
+            background: var(--sf3);
             color: var(--tx);
         }
 
         .btn-danger {
-            background: rgba(248, 113, 113, 0.15);
-            color: var(--rd);
+            background: var(--rd);
+            color: #fff;
         }
 
         .btn-sm {
-            padding: 4px 10px;
-            font-size: 12px;
+            padding: 5px 12px;
+            font-size: 0.8rem;
         }
 
-        .user-row {
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Forms */
+        .form-row {
+            margin-bottom: 12px;
+        }
+
+        .form-row label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--tx2);
+            margin-bottom: 4px;
+        }
+
+        .form-row input,
+        .form-row select {
+            width: 100%;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: var(--tx);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .form-row input:focus {
+            border-color: var(--ac);
+        }
+
+        .msg {
+            font-size: 0.82rem;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .ok-msg {
+            color: var(--gr);
+        }
+
+        .err-msg {
+            color: var(--rd);
+        }
+
+        /* User cards */
+        .user-card {
+            background: var(--sf2);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--bg);
+            gap: 12px;
         }
 
         .dot {
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             flex-shrink: 0;
         }
@@ -161,118 +233,350 @@
         }
 
         .dot.unknown {
-            background: var(--tx2);
+            background: var(--tx3);
         }
 
-        .stat-bar {
-            display: flex;
-            gap: 24px;
-            background: var(--sf);
-            border-radius: 10px;
-            padding: 12px 16px;
-            margin-bottom: 20px;
+        .user-info {
+            flex: 1;
+            min-width: 0;
         }
 
-        .stat {
-            text-align: center;
+        .user-name {
+            font-weight: 600;
+            font-size: 0.9rem;
         }
 
-        .stat .num {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--gr);
-        }
-
-        .stat .desc {
-            font-size: 11px;
+        .user-meta {
+            font-size: 0.75rem;
             color: var(--tx3);
+            margin-top: 2px;
         }
 
         .device-tag {
             display: inline-block;
-            background: var(--bg);
+            background: var(--sf3);
             border: 1px solid var(--b2);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 11px;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 0.72rem;
             color: var(--tx2);
-            margin: 2px;
+            margin: 2px 2px 0 0;
         }
 
-        .msg {
+        .user-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        /* Discovered device rows */
+        .disc-row {
+            background: var(--sf2);
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.15s;
+        }
+
+        .disc-row:hover {
+            border-color: var(--ac);
+        }
+
+        .disc-row.selected {
+            border-color: var(--gr);
+            background: rgba(46, 201, 138, 0.08);
+        }
+
+        .disc-icon {
+            font-size: 1.3rem;
+            flex-shrink: 0;
+            width: 32px;
+            text-align: center;
+        }
+
+        .disc-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .disc-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .disc-detail {
+            font-size: 0.75rem;
+            color: var(--tx3);
+        }
+
+        .disc-check {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid var(--b2);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .disc-row.selected .disc-check {
+            border-color: var(--gr);
+            background: var(--gr);
+        }
+
+        .disc-row.selected .disc-check::after {
+            content: '\2713';
+            color: #fff;
             font-size: 12px;
-            color: var(--gr);
+            font-weight: 700;
+        }
+
+        .scan-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--b2);
+            border-top: 2px solid var(--ac);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
             margin-left: 8px;
-            display: none;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .empty-msg {
+            color: var(--tx3);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 16px;
+        }
+
+        /* QR Modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            padding: 20px;
+        }
+
+        .modal {
+            background: var(--sf);
+            border-radius: 16px;
+            padding: 28px;
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .modal h3 {
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+
+        .modal .qr-box {
+            background: #fff;
+            border-radius: 12px;
+            padding: 16px;
+            display: inline-block;
+            margin: 16px 0;
+        }
+
+        .modal .qr-box svg {
+            width: 200px;
+            height: 200px;
+        }
+
+        .modal .status-line {
+            font-size: 0.85rem;
+            color: var(--tx2);
+            margin-top: 8px;
+        }
+
+        .modal .status-line.done {
+            color: var(--gr);
+            font-weight: 600;
+        }
+
+        .modal .close-btn {
+            margin-top: 16px;
+        }
+
+        /* History */
+        .history-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 0.78rem;
+            color: var(--tx2);
+        }
+
+        .history-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .history-dot.home {
+            background: var(--gr);
+        }
+
+        .history-dot.away {
+            background: var(--rd);
+        }
+
+        .user-history {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--b);
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1 data-i18n="title"></h1>
-        <p class="subtitle" data-i18n="subtitle"></p>
+    <h1 data-i18n="title"></h1>
+    <p class="subtitle" data-i18n="subtitle"></p>
 
-        <div class="stat-bar">
-            <div class="stat">
-                <div class="num" id="s-home">0</div>
-                <div class="desc" data-i18n="stat_home"></div>
-            </div>
-            <div class="stat">
-                <div class="num" id="s-away" style="color:var(--rd)">0</div>
-                <div class="desc" data-i18n="stat_away"></div>
-            </div>
-            <div class="stat">
-                <div class="num" id="s-total" style="color:var(--ac)">0</div>
-                <div class="desc" data-i18n="stat_tracked"></div>
-            </div>
-            <div class="stat">
-                <div class="num" id="s-interval" style="color:var(--am)">—</div>
-                <div class="desc" data-i18n="stat_interval"></div>
+    <!-- Stats -->
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="val green" id="s-home">0</div>
+            <div class="lbl" data-i18n="stat_home"></div>
+        </div>
+        <div class="stat-card">
+            <div class="val red" id="s-away">0</div>
+            <div class="lbl" data-i18n="stat_away"></div>
+        </div>
+        <div class="stat-card">
+            <div class="val blue" id="s-total">0</div>
+            <div class="lbl" data-i18n="stat_tracked"></div>
+        </div>
+        <div class="stat-card">
+            <div class="val amber" id="s-interval">&mdash;</div>
+            <div class="lbl" data-i18n="stat_interval"></div>
+        </div>
+    </div>
+
+    <!-- Tracked users -->
+    <div class="section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h2 style="margin:0" data-i18n="tracked_users"></h2>
+            <div class="btn-row">
+                <button class="btn btn-primary btn-sm" onclick="triggerScan()" data-i18n="scan_now"></button>
+                <button class="btn btn-sec btn-sm" onclick="loadUsers()">&#8635;</button>
             </div>
         </div>
+        <div id="users-container">
+            <p class="empty-msg" data-i18n="loading"></p>
+        </div>
+    </div>
 
-        <!-- User list -->
-        <div class="card">
-            <div class="card-header">
-                <h2 data-i18n="tracked_users"></h2>
-                <div>
-                    <button class="btn btn-primary btn-sm" onclick="triggerScan()" data-i18n="scan_now"></button>
-                    <button class="btn btn-primary btn-sm" onclick="loadUsers()" style="margin-left:4px">↻</button>
-                </div>
-            </div>
-            <div id="users-container" data-i18n="loading"></div>
+    <!-- Add user — step 1: scan network -->
+    <div class="section">
+        <h2 data-i18n="h_add_user"></h2>
+        <p style="font-size:0.85rem;color:var(--tx2);margin-bottom:14px" data-i18n="add_hint"></p>
+
+        <div class="btn-row" style="margin-bottom:14px">
+            <button class="btn btn-primary" onclick="scanNetwork()" id="btn-scan-net"
+                data-i18n="btn_scan_network"></button>
+            <button class="btn btn-sec" onclick="openQrInvite()" id="btn-qr-invite" data-i18n="btn_qr_invite"></button>
+            <span id="scan-spinner" style="display:none"><span class="scan-spinner"></span></span>
         </div>
 
-        <!-- Add user -->
-        <div class="card">
-            <div class="card-header">
-                <h2 data-i18n="add_user_title"></h2>
-            </div>
-            <div class="form-row">
-                <label data-i18n="lbl_uid"></label>
-                <input id="new-user-id" placeholder="user-uuid-001" />
-            </div>
+        <div id="discover-list" style="display:none">
+            <div id="discover-container"></div>
+            <div class="msg" id="disc-msg"></div>
+        </div>
+
+        <!-- After selecting device(s), fill in user name -->
+        <div id="add-form" style="display:none;margin-top:16px;border-top:1px solid var(--b2);padding-top:16px">
             <div class="form-row">
                 <label data-i18n="lbl_name"></label>
-                <input id="new-user-name" placeholder="Alice" />
+                <input id="f-name" data-i18n-placeholder="ph_name">
             </div>
-            <div class="form-row">
-                <label data-i18n="lbl_ip"></label>
-                <input id="new-ip" placeholder="192.168.1.101" />
+            <div id="selected-devices-info" style="margin-bottom:12px"></div>
+            <div class="btn-row">
+                <button class="btn btn-primary" onclick="addUserFromSelection()" data-i18n="btn_add_user"></button>
+                <span class="msg" id="add-msg"></span>
             </div>
-            <div class="form-row">
-                <label data-i18n="lbl_mac"></label>
-                <input id="new-mac" placeholder="aa:bb:cc:dd:ee:ff" />
+        </div>
+
+        <!-- Manual fallback -->
+        <details style="margin-top:16px">
+            <summary style="color:var(--tx3);font-size:0.82rem;cursor:pointer" data-i18n="manual_toggle"></summary>
+            <div style="padding-top:12px">
+                <div class="form-row">
+                    <label data-i18n="lbl_uid"></label>
+                    <input id="m-uid" placeholder="user-001">
+                </div>
+                <div class="form-row">
+                    <label data-i18n="lbl_name_manual"></label>
+                    <input id="m-name" placeholder="Alice">
+                </div>
+                <div class="form-row">
+                    <label data-i18n="lbl_ip"></label>
+                    <input id="m-ip" placeholder="192.168.1.101">
+                </div>
+                <div class="form-row">
+                    <label data-i18n="lbl_mac"></label>
+                    <input id="m-mac" placeholder="aa:bb:cc:dd:ee:ff">
+                </div>
+                <div class="form-row">
+                    <label data-i18n="lbl_bt"></label>
+                    <input id="m-bt" placeholder="AA:BB:CC:DD:EE:FF">
+                </div>
+                <button class="btn btn-sec" onclick="addUserManual()" data-i18n="btn_add_manual"></button>
+                <span class="msg" id="add-msg-manual"></span>
             </div>
-            <div class="form-row">
-                <label data-i18n="lbl_bt"></label>
-                <input id="new-bt" placeholder="AA:BB:CC:DD:EE:FF" />
+        </details>
+    </div>
+
+    <!-- Push Notifications Section -->
+    <div class="section">
+        <h2><span data-i18n="push_title"></span> · <span id="push-count">0</span> <span data-i18n="push_devices"></span>
+        </h2>
+        <div id="push-list"></div>
+        <div style="margin-top:14px;background:var(--sf2);border-radius:8px;padding:12px">
+            <div style="font-size:0.8rem;color:var(--tx2);margin-bottom:6px" data-i18n="push_vapid"></div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <code id="push-vapid-key" style="font-size:0.75rem;color:var(--tx3);word-break:break-all;flex:1"></code>
+                <button class="btn btn-sec btn-sm" id="push-copy-btn" onclick="copyVapid()"
+                    data-i18n="push_copy"></button>
             </div>
-            <div style="display:flex;align-items:center">
-                <button class="btn btn-primary" onclick="addUser()" data-i18n="add_user_btn"></button>
-                <span class="msg" id="add-msg" data-i18n="added"></span>
+        </div>
+    </div>
+
+    <!-- QR Invite Modal -->
+    <div id="qr-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeQrModal()">
+        <div class="modal">
+            <h3 data-i18n="qr_title"></h3>
+            <div class="form-row" id="qr-name-row">
+                <label data-i18n="qr_lbl_name"></label>
+                <input id="qr-name" data-i18n-placeholder="ph_name">
             </div>
+            <button class="btn btn-primary" id="qr-gen-btn" onclick="generateQrInvite()"
+                data-i18n="qr_generate"></button>
+            <div id="qr-result" style="display:none">
+                <div class="qr-box" id="qr-svg-box"></div>
+                <p class="status-line" id="qr-status" data-i18n="qr_waiting"></p>
+            </div>
+            <button class="btn btn-sec close-btn" onclick="closeQrModal()" data-i18n="qr_close"></button>
         </div>
     </div>
 
@@ -280,112 +584,477 @@
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
-                title: '🏠 Presence Detection', subtitle: 'Track who is home via IP, MAC, or Bluetooth',
-                stat_home: 'Home', stat_away: 'Away', stat_tracked: 'Tracked', stat_interval: 'Scan interval (s)',
-                tracked_users: 'Tracked Users', scan_now: 'Scan Now', loading: 'Loading…',
-                add_user_title: 'Add User', lbl_uid: 'User ID', lbl_name: 'Name',
-                lbl_ip: 'IP address (optional)', lbl_mac: 'MAC address (optional)', lbl_bt: 'Bluetooth address (optional)',
-                add_user_btn: 'Add User', added: '✓ Added', no_users: 'No users. Add one below.',
-                err_required: 'User ID and Name are required.', remove_confirm: 'Remove user?'
+                title: '\uD83C\uDFE0 Presence Detection',
+                subtitle: 'Track who is home by scanning the network',
+                stat_home: 'Home', stat_away: 'Away', stat_tracked: 'Tracked', stat_interval: 'Scan (s)',
+                tracked_users: 'Tracked Users', scan_now: 'Scan Now', loading: 'Loading\u2026',
+                h_add_user: 'Add Person',
+                add_hint: 'Scan your network to discover devices. Select your phone or laptop, enter a name, and click Add.',
+                btn_scan_network: '\uD83D\uDD0E Scan Network',
+                btn_qr_invite: '\uD83D\uDCF2 QR Invite',
+                scanning: 'Scanning network\u2026',
+                no_devices_found: 'No devices found. Make sure devices are connected to the same network.',
+                select_device: 'Select one or more devices that belong to this person',
+                lbl_name: 'Person name',
+                ph_name: 'e.g. Alice, Dad, Mom\u2026',
+                btn_add_user: '\u2795 Add Person',
+                selected_prefix: 'Selected devices:',
+                manual_toggle: '\u2699 Add manually (advanced)',
+                lbl_uid: 'User ID', lbl_name_manual: 'Name',
+                lbl_ip: 'IP address', lbl_mac: 'MAC address', lbl_bt: 'Bluetooth address',
+                btn_add_manual: 'Add',
+                no_users: 'No one tracked yet. Scan the network and add people below.',
+                added: '\u2713 Added!', err_select: 'Select at least one device',
+                err_name: 'Enter a name', err_required: 'User ID and Name are required',
+                remove_confirm: 'Remove this person?',
+                last_seen: 'Last seen', never: 'never',
+                home: 'home', away: 'away', unknown: 'unknown',
+                qr_title: 'QR Invite', qr_lbl_name: 'Person name',
+                qr_generate: 'Generate QR Code', qr_waiting: 'Waiting for scan\u2026',
+                qr_done: '\u2713 Device registered!', qr_expired: 'Invite expired',
+                qr_close: 'Close', qr_hint: 'Show this QR to the person. They scan it with their phone camera.',
+                show_history: 'History',
+                push_title: 'Push Notifications', push_devices: 'devices subscribed',
+                push_user: 'User', push_platform: 'Platform', push_date: 'Date',
+                push_test: 'Test', push_no_subs: 'No push subscriptions yet.',
+                push_vapid: 'VAPID Public Key', push_copy: 'Copy',
+                push_copied: 'Copied!', push_sent: 'Sent', push_failed: 'Failed',
+                push_testing: 'Sending\u2026'
             },
             uk: {
-                title: '🏠 Виявлення присутності', subtitle: 'Відстежуйте, хто вдома, за IP, MAC або Bluetooth',
-                stat_home: 'Вдома', stat_away: 'Відсутні', stat_tracked: 'Відстежується', stat_interval: 'Інтервал (с)',
-                tracked_users: 'Відстежувані користувачі', scan_now: 'Сканувати', loading: 'Завантаження…',
-                add_user_title: 'Додати користувача', lbl_uid: 'User ID', lbl_name: 'Ім\'я',
-                lbl_ip: 'IP-адреса (необов\'язково)', lbl_mac: 'MAC-адреса (необов\'язково)', lbl_bt: 'Bluetooth-адреса (необов\'язково)',
-                add_user_btn: 'Додати', added: '✓ Додано', no_users: 'Немає користувачів. Додайте нижче.',
-                err_required: 'User ID та Ім\'я обов\'язкові.', remove_confirm: 'Видалити користувача?'
+                title: '\uD83C\uDFE0 Виявлення присутності',
+                subtitle: 'Відстежуйте, хто вдома, скануючи мережу',
+                stat_home: 'Вдома', stat_away: 'Відсутні', stat_tracked: 'Відстежується', stat_interval: 'Скан (с)',
+                tracked_users: 'Відстежувані люди', scan_now: 'Сканувати', loading: 'Завантаження\u2026',
+                h_add_user: 'Додати людину',
+                add_hint: 'Скануйте мережу, щоб знайти пристрої. Виберіть свій телефон або ноутбук, введіть ім\u0027я та натисніть Додати.',
+                btn_scan_network: '\uD83D\uDD0E Сканувати мережу',
+                btn_qr_invite: '\uD83D\uDCF2 QR запрошення',
+                scanning: 'Сканування мережі\u2026',
+                no_devices_found: 'Пристрої не знайдено. Переконайтесь, що вони підключені до тієї ж мережі.',
+                select_device: 'Виберіть один або кілька пристроїв цієї людини',
+                lbl_name: 'Ім\u0027я людини',
+                ph_name: 'напр. Аліса, Тато, Мама\u2026',
+                btn_add_user: '\u2795 Додати людину',
+                selected_prefix: 'Вибрані пристрої:',
+                manual_toggle: '\u2699 Додати вручну (розширене)',
+                lbl_uid: 'User ID', lbl_name_manual: 'Ім\u0027я',
+                lbl_ip: 'IP-адреса', lbl_mac: 'MAC-адреса', lbl_bt: 'Bluetooth-адреса',
+                btn_add_manual: 'Додати',
+                no_users: 'Ще нікого не відстежується. Скануйте мережу та додайте людей.',
+                added: '\u2713 Додано!', err_select: 'Виберіть хоча б один пристрій',
+                err_name: 'Введіть ім\u0027я', err_required: 'User ID та Ім\u0027я обов\u0027язкові',
+                remove_confirm: 'Видалити цю людину?',
+                last_seen: 'Останній раз', never: 'ніколи',
+                home: 'вдома', away: 'відсутній', unknown: 'невідомо',
+                qr_title: 'QR запрошення', qr_lbl_name: 'Ім\u0027я людини',
+                qr_generate: 'Згенерувати QR код', qr_waiting: 'Очікування сканування\u2026',
+                qr_done: '\u2713 Пристрій зареєстровано!', qr_expired: 'Запрошення прострочене',
+                qr_close: 'Закрити', qr_hint: 'Покажіть цей QR людині. Вона сканує його камерою телефону.',
+                show_history: 'Історія',
+                push_title: 'Push-сповіщення', push_devices: 'пристроїв підписано',
+                push_user: 'Користувач', push_platform: 'Платформа', push_date: 'Дата',
+                push_test: 'Тест', push_no_subs: 'Поки немає push-підписок.',
+                push_vapid: 'VAPID Public Key', push_copy: 'Копіювати',
+                push_copied: 'Скопійовано!', push_sent: 'Відправлено', push_failed: 'Помилка',
+                push_testing: 'Відправка\u2026'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); loadUsers(); } });
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) { el.placeholder = t(el.getAttribute('data-i18n-placeholder')); });
+        }
+        window.addEventListener('message', function (e) {
+            if (e.data && e.data.type === 'lang_changed') {
+                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+                applyLang(); loadStatus(); loadUsers();
+            }
+        });
 
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        const h = { "Authorization": "Bearer " + (window.SELENA_TOKEN || ""), "Content-Type": "application/json" };
+        var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+        var h = { 'Content-Type': 'application/json' };
+        var selectedDevices = [];
+        var discoveredDevices = [];
 
+        /* ── Status ──────────────────────────────────────────── */
         async function loadStatus() {
             try {
-                const r = await fetch(BASE + "/status", { headers: h });
+                var r = await fetch(BASE + '/status', { headers: h });
                 if (!r.ok) return;
-                const d = await r.json();
-                document.getElementById("s-home").textContent = d.users_home ?? 0;
-                document.getElementById("s-away").textContent = d.users_away ?? 0;
-                document.getElementById("s-total").textContent = d.users_total ?? 0;
-                document.getElementById("s-interval").textContent = d.scan_interval_sec ?? "—";
-            } catch { }
+                var d = await r.json();
+                document.getElementById('s-home').textContent = d.users_home || 0;
+                document.getElementById('s-away').textContent = d.users_away || 0;
+                document.getElementById('s-total').textContent = d.users_total || 0;
+                document.getElementById('s-interval').textContent = d.scan_interval_sec || '\u2014';
+            } catch (e) { }
         }
 
+        /* ── User list ───────────────────────────────────────── */
         async function loadUsers() {
             try {
-                const r = await fetch(BASE + "/users", { headers: h });
+                var r = await fetch(BASE + '/users', { headers: h });
                 if (!r.ok) return;
-                const d = await r.json();
-                const container = document.getElementById("users-container");
-                const users = d.users ?? [];
+                var d = await r.json();
+                var users = d.users || [];
+                var container = document.getElementById('users-container');
                 if (users.length === 0) {
-                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + t('no_users') + '</p>';
+                    container.innerHTML = '<p class="empty-msg">' + t('no_users') + '</p>';
                     return;
                 }
-                container.innerHTML = users.map(u => `
-      <div class="user-row">
-        <div class="dot ${u.state}"></div>
-        <div style="flex:1">
-          <div style="font-size:13px">${u.name} <span style="color:var(--tx3);font-size:11px">(${u.state})</span></div>
-          <div>${(u.devices ?? []).map(d => `<span class="device-tag">${d.type}: ${d.address}</span>`).join("")}</div>
-        </div>
-        <button class="btn btn-danger btn-sm" onclick="removeUser('${u.user_id}')">✕</button>
-      </div>
-    `).join("");
-            } catch { }
+                container.innerHTML = users.map(function (u) {
+                    var stateText = t(u.state) || u.state;
+                    var lastSeen = u.last_seen ? new Date(u.last_seen).toLocaleString() : t('never');
+                    var devTags = (u.devices || []).map(function (d) {
+                        var icon = d.type === 'ip' ? '\uD83C\uDF10' : d.type === 'mac' ? '\uD83D\uDD17' : '\uD83D\uDCF6';
+                        return '<span class="device-tag">' + icon + ' ' + d.address + '</span>';
+                    }).join('');
+                    return '<div class="user-card">' +
+                        '<div class="dot ' + u.state + '"></div>' +
+                        '<div class="user-info">' +
+                        '<div class="user-name">' + u.name + ' <span style="color:var(--tx3);font-size:0.75rem">(' + stateText + ')</span></div>' +
+                        '<div class="user-meta">' + t('last_seen') + ': ' + lastSeen + '</div>' +
+                        '<div>' + devTags + '</div>' + '<div class="user-history" id="hist-' + u.user_id + '"></div>' +
+                        '<a href="#" style="font-size:0.75rem;color:var(--ac);text-decoration:none" onclick="loadHistory(\'' + u.user_id + '\');return false">' + t('show_history') + '</a>' + '</div>' +
+                        '<div class="user-actions">' +
+                        '<button class="btn btn-danger btn-sm" onclick="removeUser(\'' + u.user_id + '\')">&#10005;</button>' +
+                        '</div>' +
+                        '</div>';
+                }).join('');
+            } catch (e) { }
         }
 
         async function removeUser(id) {
             if (!confirm(t('remove_confirm'))) return;
-            await fetch(BASE + "/users/" + id, { method: "DELETE", headers: h });
-            loadUsers();
-            loadStatus();
+            await fetch(BASE + '/users/' + id, { method: 'DELETE', headers: h });
+            loadUsers(); loadStatus();
         }
 
         async function triggerScan() {
             try {
-                const r = await fetch(BASE + "/scan", { method: "POST", headers: h });
-                if (r.ok) { loadUsers(); loadStatus(); }
-            } catch { }
+                await fetch(BASE + '/scan', { method: 'POST', headers: h });
+                loadUsers(); loadStatus();
+            } catch (e) { }
         }
 
-        async function addUser() {
-            const id = document.getElementById("new-user-id").value.trim();
-            const name = document.getElementById("new-user-name").value.trim();
-            if (!id || !name) { alert(t('err_required')); return; }
+        /* ── Network discovery ───────────────────────────────── */
+        async function scanNetwork() {
+            document.getElementById('scan-spinner').style.display = 'inline';
+            document.getElementById('btn-scan-net').disabled = true;
+            document.getElementById('discover-list').style.display = 'block';
+            document.getElementById('discover-container').innerHTML = '<p class="empty-msg">' + t('scanning') + '</p>';
+            selectedDevices = [];
+            document.getElementById('add-form').style.display = 'none';
 
-            const devices = [];
-            const ip = document.getElementById("new-ip").value.trim();
-            const mac = document.getElementById("new-mac").value.trim();
-            const bt = document.getElementById("new-bt").value.trim();
-            if (ip) devices.push({ type: "ip", address: ip });
-            if (mac) devices.push({ type: "mac", address: mac });
-            if (bt) devices.push({ type: "bluetooth", address: bt });
-
-            const r = await fetch(BASE + "/users", {
-                method: "POST", headers: h,
-                body: JSON.stringify({ user_id: id, name, devices })
-            });
-            if (r.ok) {
-                document.getElementById("add-msg").style.display = "inline";
-                setTimeout(() => document.getElementById("add-msg").style.display = "none", 2000);
-                loadUsers();
-                loadStatus();
+            try {
+                var r = await fetch(BASE + '/discover?active=true', { headers: h });
+                if (!r.ok) throw new Error('Scan failed');
+                var d = await r.json();
+                discoveredDevices = d.devices || [];
+                renderDiscovered();
+            } catch (e) {
+                document.getElementById('discover-container').innerHTML = '<p class="empty-msg">' + t('no_devices_found') + '</p>';
             }
+            document.getElementById('scan-spinner').style.display = 'none';
+            document.getElementById('btn-scan-net').disabled = false;
+        }
+
+        function renderDiscovered() {
+            var container = document.getElementById('discover-container');
+            if (discoveredDevices.length === 0) {
+                container.innerHTML = '<p class="empty-msg">' + t('no_devices_found') + '</p>';
+                return;
+            }
+            container.innerHTML = '<p style="font-size:0.82rem;color:var(--tx2);margin-bottom:10px">' + t('select_device') + '</p>' +
+                discoveredDevices.map(function (dev, idx) {
+                    var isSelected = selectedDevices.some(function (s) { return s.mac === dev.mac; });
+                    var displayName = dev.hostname || dev.manufacturer || dev.ip;
+                    var icon = guessIcon(dev);
+                    return '<div class="disc-row' + (isSelected ? ' selected' : '') + '" onclick="toggleDevice(' + idx + ')">' +
+                        '<div class="disc-icon">' + icon + '</div>' +
+                        '<div class="disc-info">' +
+                        '<div class="disc-name">' + displayName + '</div>' +
+                        '<div class="disc-detail">' + dev.ip + ' &nbsp; ' + dev.mac +
+                        (dev.manufacturer ? ' &nbsp; ' + dev.manufacturer : '') + '</div>' +
+                        '</div>' +
+                        '<div class="disc-check"></div>' +
+                        '</div>';
+                }).join('');
+        }
+
+        function guessIcon(dev) {
+            var combined = ((dev.hostname || '') + ' ' + (dev.manufacturer || '')).toLowerCase();
+            if (/iphone|android|samsung|xiaomi|huawei|oneplus|pixel|galaxy|oppo|poco|realme/.test(combined)) return '\uD83D\uDCF1';
+            if (/macbook|laptop|thinkpad|dell|lenovo|hp|asus|acer/.test(combined)) return '\uD83D\uDCBB';
+            if (/imac|desktop|pc|workstation/.test(combined)) return '\uD83D\uDDA5';
+            if (/ipad|tablet|tab/.test(combined)) return '\uD83D\uDCF1';
+            if (/apple|airpods|watch/.test(combined)) return '\u231A';
+            if (/sonos|speaker|echo|alexa|homepod/.test(combined)) return '\uD83D\uDD0A';
+            if (/tv|chromecast|roku|firestick/.test(combined)) return '\uD83D\uDCFA';
+            if (/printer|canon|epson|brother/.test(combined)) return '\uD83D\uDDA8';
+            if (/router|gateway|mikrotik|ubiquiti|tp-link|asus/.test(combined)) return '\uD83C\uDF10';
+            if (/raspb|pi/.test(combined)) return '\uD83E\uDDE0';
+            if (/cam|reolink|hikvision|ring|arlo/.test(combined)) return '\uD83D\uDCF7';
+            return '\uD83D\uDD0C';
+        }
+
+        function toggleDevice(idx) {
+            var dev = discoveredDevices[idx];
+            var existIdx = -1;
+            for (var i = 0; i < selectedDevices.length; i++) {
+                if (selectedDevices[i].mac === dev.mac) { existIdx = i; break; }
+            }
+            if (existIdx >= 0) {
+                selectedDevices.splice(existIdx, 1);
+            } else {
+                selectedDevices.push(dev);
+            }
+            renderDiscovered();
+            updateSelectedInfo();
+        }
+
+        function updateSelectedInfo() {
+            var form = document.getElementById('add-form');
+            var info = document.getElementById('selected-devices-info');
+            if (selectedDevices.length === 0) {
+                form.style.display = 'none';
+                return;
+            }
+            form.style.display = 'block';
+            info.innerHTML = '<div style="font-size:0.82rem;color:var(--tx2);margin-bottom:6px">' + t('selected_prefix') + '</div>' +
+                selectedDevices.map(function (d) {
+                    var name = d.hostname || d.manufacturer || d.ip;
+                    return '<span class="device-tag">' + name + ' (' + d.mac + ')</span>';
+                }).join(' ');
+
+            // Auto-suggest name from hostname
+            var nameInput = document.getElementById('f-name');
+            if (!nameInput.value && selectedDevices[0].hostname) {
+                nameInput.value = selectedDevices[0].hostname;
+            }
+        }
+
+        async function addUserFromSelection() {
+            var name = document.getElementById('f-name').value.trim();
+            if (!name) { showMsg('add-msg', t('err_name'), true); return; }
+            if (selectedDevices.length === 0) { showMsg('add-msg', t('err_select'), true); return; }
+
+            var userId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'user-' + Date.now();
+            var devices = selectedDevices.map(function (d) {
+                return { type: 'mac', address: d.mac };
+            });
+            // Also add IP for the selected devices (faster initial detection)
+            selectedDevices.forEach(function (d) {
+                if (d.ip) devices.push({ type: 'ip', address: d.ip });
+            });
+
+            try {
+                var r = await fetch(BASE + '/users', {
+                    method: 'POST', headers: h,
+                    body: JSON.stringify({ user_id: userId, name: name, devices: devices })
+                });
+                if (r.ok) {
+                    showMsg('add-msg', t('added'), false);
+                    document.getElementById('f-name').value = '';
+                    selectedDevices = [];
+                    document.getElementById('add-form').style.display = 'none';
+                    document.getElementById('discover-list').style.display = 'none';
+                    loadUsers(); loadStatus();
+                }
+            } catch (e) { showMsg('add-msg', String(e), true); }
+        }
+
+        /* ── Manual add (advanced) ───────────────────────────── */
+        async function addUserManual() {
+            var id = document.getElementById('m-uid').value.trim();
+            var name = document.getElementById('m-name').value.trim();
+            if (!id || !name) { showMsg('add-msg-manual', t('err_required'), true); return; }
+            var devices = [];
+            var ip = document.getElementById('m-ip').value.trim();
+            var mac = document.getElementById('m-mac').value.trim();
+            var bt = document.getElementById('m-bt').value.trim();
+            if (ip) devices.push({ type: 'ip', address: ip });
+            if (mac) devices.push({ type: 'mac', address: mac });
+            if (bt) devices.push({ type: 'bluetooth', address: bt });
+
+            try {
+                var r = await fetch(BASE + '/users', {
+                    method: 'POST', headers: h,
+                    body: JSON.stringify({ user_id: id, name: name, devices: devices })
+                });
+                if (r.ok) {
+                    showMsg('add-msg-manual', t('added'), false);
+                    document.getElementById('m-uid').value = '';
+                    document.getElementById('m-name').value = '';
+                    document.getElementById('m-ip').value = '';
+                    document.getElementById('m-mac').value = '';
+                    document.getElementById('m-bt').value = '';
+                    loadUsers(); loadStatus();
+                }
+            } catch (e) { showMsg('add-msg-manual', String(e), true); }
+        }
+
+        function showMsg(id, msg, isErr) {
+            var el = document.getElementById(id);
+            el.textContent = msg;
+            el.className = 'msg ' + (isErr ? 'err-msg' : 'ok-msg');
+            setTimeout(function () { el.textContent = ''; }, 3000);
+        }
+
+        /* ── QR Invite ───────────────────────────────────────── */
+        var currentInviteToken = null;
+        var pollTimer = null;
+
+        function openQrInvite() {
+            document.getElementById('qr-modal').style.display = 'flex';
+            document.getElementById('qr-name-row').style.display = 'block';
+            document.getElementById('qr-gen-btn').style.display = 'inline-block';
+            document.getElementById('qr-result').style.display = 'none';
+            document.getElementById('qr-name').value = '';
+            currentInviteToken = null;
+            applyLang();
+        }
+
+        function closeQrModal() {
+            document.getElementById('qr-modal').style.display = 'none';
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+
+        async function generateQrInvite() {
+            var name = document.getElementById('qr-name').value.trim();
+            if (!name) return;
+            document.getElementById('qr-gen-btn').disabled = true;
+            try {
+                var r = await fetch(BASE + '/invite', {
+                    method: 'POST', headers: h,
+                    body: JSON.stringify({ name: name, base_url: window.location.origin })
+                });
+                if (!r.ok) throw new Error('Failed');
+                var d = await r.json();
+                currentInviteToken = d.token;
+                // Show QR
+                document.getElementById('qr-name-row').style.display = 'none';
+                document.getElementById('qr-gen-btn').style.display = 'none';
+                document.getElementById('qr-result').style.display = 'block';
+                document.getElementById('qr-svg-box').innerHTML = d.qr_svg || '<p>QR unavailable</p>';
+                document.getElementById('qr-status').textContent = t('qr_waiting');
+                document.getElementById('qr-status').className = 'status-line';
+                // Start polling
+                pollTimer = setInterval(pollInviteStatus, 3000);
+            } catch (e) { }
+            document.getElementById('qr-gen-btn').disabled = false;
+        }
+
+        async function pollInviteStatus() {
+            if (!currentInviteToken) return;
+            try {
+                var r = await fetch(BASE + '/invite/' + currentInviteToken, { headers: h });
+                if (!r.ok) return;
+                var d = await r.json();
+                if (d.status === 'completed') {
+                    document.getElementById('qr-status').textContent = t('qr_done');
+                    document.getElementById('qr-status').className = 'status-line done';
+                    clearInterval(pollTimer); pollTimer = null;
+                    loadUsers(); loadStatus();
+                } else if (d.status === 'expired') {
+                    document.getElementById('qr-status').textContent = t('qr_expired');
+                    document.getElementById('qr-status').className = 'status-line err-msg';
+                    clearInterval(pollTimer); pollTimer = null;
+                }
+            } catch (e) { }
+        }
+
+        /* ── History per user ─────────────────────────────────── */
+        async function loadHistory(userId) {
+            var container = document.getElementById('hist-' + userId);
+            if (!container) return;
+            if (container.innerHTML) { container.innerHTML = ''; return; } // toggle
+            try {
+                var r = await fetch(BASE + '/users/' + userId + '/history?limit=20', { headers: h });
+                if (!r.ok) return;
+                var d = await r.json();
+                var items = d.history || [];
+                if (items.length === 0) {
+                    container.innerHTML = '<div class="history-row" style="color:var(--tx3)">No history yet</div>';
+                    return;
+                }
+                container.innerHTML = items.map(function (ev) {
+                    var time = new Date(ev.timestamp).toLocaleString();
+                    var label = ev.state === 'home' ? '\u25CF ' + t('home') : '\u25CF ' + t('away');
+                    return '<div class="history-row"><div class="history-dot ' + ev.state + '"></div>' + label + '<span style="margin-left:auto">' + time + '</span></div>';
+                }).join('');
+            } catch (e) { }
+        }
+
+        /* ── Push Subscriptions ───────────────────────────── */
+        async function loadPushSubscriptions() {
+            try {
+                var r = await fetch(BASE + '/push/subscriptions', { headers: h });
+                if (!r.ok) { document.getElementById('push-list').innerHTML = '<div style="color:var(--tx3);font-size:0.85rem">' + t('push_no_subs') + '</div>'; return; }
+                var d = await r.json();
+                var subs = d.subscriptions || [];
+                document.getElementById('push-count').textContent = subs.length;
+                if (!subs.length) {
+                    document.getElementById('push-list').innerHTML = '<div style="color:var(--tx3);font-size:0.85rem">' + t('push_no_subs') + '</div>';
+                    return;
+                }
+                document.getElementById('push-list').innerHTML = subs.map(function (s) {
+                    var dt = s.created_at ? new Date(s.created_at * 1000).toLocaleDateString() : '\u2014';
+                    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--sf2)">' +
+                        '<div style="font-size:0.85rem;flex:1"><strong>' + (s.user_id || '\u2014') + '</strong>' +
+                        ' <span style="color:var(--tx3);font-size:0.75rem">' + (s.platform || '?') + '</span>' +
+                        '<div style="color:var(--tx3);font-size:0.75rem">' + dt + '</div></div>' +
+                        '<button class="btn btn-sec btn-sm" onclick="testPush(\'' + (s.user_id || '') + '\')">' + t('push_test') + '</button>' +
+                        '</div>';
+                }).join('');
+            } catch (e) {
+                document.getElementById('push-list').innerHTML = '<div style="color:var(--tx3);font-size:0.85rem">' + t('push_no_subs') + '</div>';
+            }
+        }
+
+        async function testPush(userId) {
+            var btns = document.querySelectorAll('#push-list .btn');
+            btns.forEach(function (b) { if (b.onclick && b.textContent === t('push_test')) b.disabled = true; });
+            try {
+                var r = await fetch(BASE + '/push-test/' + encodeURIComponent(userId), { method: 'POST', headers: h });
+                if (r.ok) { showToast(t('push_sent')); }
+                else { showToast(t('push_failed')); }
+            } catch (e) { showToast(t('push_failed')); }
+            btns.forEach(function (b) { b.disabled = false; });
+        }
+
+        async function copyVapid() {
+            try {
+                var r = await fetch(BASE + '/push/vapid-public-key', { headers: h });
+                if (!r.ok) return;
+                var d = await r.json();
+                var key = d.public_key || '';
+                document.getElementById('push-vapid-key').textContent = key;
+                if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(key);
+                    document.getElementById('push-copy-btn').textContent = t('push_copied');
+                    setTimeout(function () { document.getElementById('push-copy-btn').textContent = t('push_copy'); }, 2000);
+                }
+            } catch (e) { }
+        }
+
+        function showToast(msg) {
+            var el = document.getElementById('toast');
+            if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--sf2);color:var(--tx);padding:10px 20px;border-radius:8px;font-size:0.85rem;z-index:9999;opacity:0;transition:opacity .3s'; document.body.appendChild(el); }
+            el.textContent = msg; el.style.opacity = '1';
+            setTimeout(function () { el.style.opacity = '0'; }, 2500);
         }
 
         applyLang();
         loadStatus();
         loadUsers();
+        loadPushSubscriptions();
+        copyVapid();
         setInterval(loadStatus, 15000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
+
+</html>
 
 </html>
