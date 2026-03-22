@@ -7,7 +7,7 @@ pydantic==2.7.4
 pydantic-settings==2.3.4
 httpx==0.27.0
 docker==7.1.0
-cryptography==42.0.8
+cryptography==46.0.5
 qrcode[pil]==7.4.2
 vosk==0.3.45
 piper-tts==1.4.1
@@ -24,3 +24,14 @@ python-dotenv==1.0.1
 slowapi==0.1.9
 pywebpush==2.0.0
 psutil==6.0.0
+
+# Pinned transitive dependencies (security)
+zipp>=3.19.1
+numpy>=1.22.2
+torch>=2.10.0
+wheel>=0.46.2
+aiohttp>=3.13.3
+urllib3>=2.6.3
+requests>=2.32.4
+setuptools>=78.1.1
+scikit-learn>=1.5.0
