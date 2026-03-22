@@ -538,7 +538,7 @@ export default function Wizard() {
   };
 
   return (
-    <div className={cn("min-h-screen bg-zinc-950 text-zinc-50 flex flex-col items-center p-3 pt-4 font-sans transition-[padding]", kbTarget && "pb-52")}>
+    <div className={cn("h-screen overflow-y-auto bg-zinc-950 text-zinc-50 flex flex-col items-center p-3 pt-4 font-sans transition-[padding]", kbTarget && "pb-52")}>
       <div className="w-full max-w-3xl">
 
         {/* ── Provisioning Screen ── */}

@@ -891,3 +891,43 @@ html.light .ws-label {
 html.light .min-h-screen {
   background: var(--bg) !important;
 }
+
+/* ── Light theme — critical missing overrides ── */
+
+/* Primary text: zinc-50 and white stay visible on light surfaces */
+html.light .text-zinc-50,
+html.light .text-white {
+  color: var(--tx) !important;
+}
+
+/* Hover text states */
+html.light .hover\:text-zinc-50:hover,
+html.light .hover\:text-white:hover {
+  color: var(--tx) !important;
+}
+
+/* Hover background (wizard footer buttons, back/skip) */
+html.light .hover\:bg-zinc-800:hover {
+  background-color: var(--sf3) !important;
+}
+
+/* Semi-transparent dark card surfaces in wizard */
+html.light .bg-zinc-900\/50 {
+  background-color: var(--sf) !important;
+}
+
+html.light .bg-zinc-900\/30 {
+  background-color: var(--sf2) !important;
+}
+
+/* Button text on dark+colored backgrounds should stay white */
+html.light .bg-emerald-500 .text-zinc-950,
+html.light .bg-blue-600 .text-white,
+html.light .bg-blue-500 .text-white {
+  color: #fff !important;
+}
+
+/* Wizard badge pills bg-zinc-800 text */
+html.light .bg-zinc-800 .text-zinc-400 {
+  color: var(--tx2) !important;
+}
