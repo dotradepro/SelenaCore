@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Automation Engine Settings</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #f1f5f9;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            color: #64748b;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin: 0;
+        }
+
+        .btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .btn-primary {
+            background: #0ea5e9;
+            color: #fff;
+        }
+
+        .btn-danger {
+            background: rgba(248, 113, 113, 0.15);
+            color: #f87171;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 12px;
+        }
+
+        textarea {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 10px;
+            color: #f1f5f9;
+            font-size: 12px;
+            font-family: monospace;
+            resize: vertical;
+            min-height: 200px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+
+        .rule-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .rule-name {
+            flex: 1;
+            font-size: 13px;
+        }
+
+        .rule-trigger {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge.on {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+
+        .badge.off {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94a3b8;
+        }
+
+        .stat-bar {
+            display: flex;
+            gap: 24px;
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat .num {
+            font-size: 22px;
+            font-weight: 700;
+            color: #f59e0b;
+        }
+
+        .stat .desc {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .msg {
+            font-size: 12px;
+            color: #34d399;
+            margin-left: 10px;
+            display: none;
+        }
+
+        .err-msg {
+            color: #f87171;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>⚙️ Automation Engine</h1>
+        <p class="subtitle">YAML-based rule engine — triggers → actions</p>
+
+        <div class="stat-bar">
+            <div class="stat">
+                <div class="num" id="s-total">0</div>
+                <div class="desc">Total rules</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-enabled">0</div>
+                <div class="desc">Enabled</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-runs">0</div>
+                <div class="desc">Runs</div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-errors" style="color:#f87171">0</div>
+                <div class="desc">Errors</div>
+            </div>
+        </div>
+
+        <!-- Rule list -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Active Rules</h2>
+                <button class="btn btn-primary btn-sm" onclick="loadRules()">↻ Refresh</button>
+            </div>
+            <div id="rules-container">Loading…</div>
+        </div>
+
+        <!-- YAML import -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Import / Add Rules (YAML)</h2>
+            </div>
+            <p style="color:#64748b;font-size:12px;margin-bottom:8px">Paste a YAML list of automation rules:</p>
+            <textarea id="yaml-input" placeholder="automations:
+  - id: lights_morning
+    name: &quot;Turn on lights at 7:00&quot;
+    trigger:
+      type: time
+      at: &quot;07:00&quot;
+    actions:
+      - type: device_command
+        device_id: &quot;your-device-id&quot;
+        state:
+          state: ON
+"></textarea>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+                <button class="btn btn-primary" onclick="importYaml()">Import Rules</button>
+                <span class="msg" id="import-msg">✓ Imported</span>
+                <span class="msg err-msg" id="import-err"></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE = "http://localhost:8108";
+        const TOKEN = window.SELENA_TOKEN || "";
+        const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
+
+        async function loadStatus() {
+            try {
+                const r = await fetch(BASE + "/status", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                document.getElementById("s-total").textContent = d.rules_total ?? 0;
+                document.getElementById("s-enabled").textContent = d.rules_enabled ?? 0;
+                document.getElementById("s-runs").textContent = d.run_count ?? 0;
+                document.getElementById("s-errors").textContent = d.error_count ?? 0;
+            } catch { }
+        }
+
+        async function loadRules() {
+            try {
+                const r = await fetch(BASE + "/rules", { headers: h });
+                if (!r.ok) return;
+                const d = await r.json();
+                const container = document.getElementById("rules-container");
+                const rules = d.rules ?? [];
+                if (rules.length === 0) {
+                    container.innerHTML = '<p style="color:#475569;font-size:13px">No rules loaded.</p>';
+                    return;
+                }
+                container.innerHTML = rules.map(rule => `
+      <div class="rule-row">
+        <div>
+          <div class="rule-name">${rule.name}</div>
+          <div class="rule-trigger">trigger: ${rule.trigger?.type ?? "?"} ${rule.trigger?.at || rule.trigger?.event_type || ""}</div>
+        </div>
+        <span class="badge ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? 'ON' : 'OFF'}</span>
+        <button class="btn btn-sm ${rule.enabled ? 'btn-danger' : 'btn-primary'}"
+          onclick="toggleRule('${rule.id}', ${!rule.enabled})">
+          ${rule.enabled ? 'Disable' : 'Enable'}
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRule('${rule.id}')">✕</button>
+      </div>
+    `).join("");
+            } catch { }
+        }
+
+        async function toggleRule(id, enabled) {
+            try {
+                await fetch(BASE + "/rules/" + id + "/enabled", {
+                    method: "PATCH", headers: h, body: JSON.stringify({ enabled })
+                });
+                loadRules();
+                loadStatus();
+            } catch { }
+        }
+
+        async function deleteRule(id) {
+            if (!confirm("Delete this rule?")) return;
+            try {
+                await fetch(BASE + "/rules/" + id, { method: "DELETE", headers: h });
+                loadRules();
+                loadStatus();
+            } catch { }
+        }
+
+        async function importYaml() {
+            const yaml_text = document.getElementById("yaml-input").value.trim();
+            if (!yaml_text) return;
+            const errEl = document.getElementById("import-err");
+            const okEl = document.getElementById("import-msg");
+            errEl.style.display = "none";
+            try {
+                const r = await fetch(BASE + "/rules/import", {
+                    method: "POST", headers: h, body: JSON.stringify({ yaml_text })
+                });
+                if (r.ok) {
+                    const d = await r.json();
+                    okEl.textContent = `✓ Imported ${d.imported} rule(s)`;
+                    okEl.style.display = "inline";
+                    setTimeout(() => okEl.style.display = "none", 3000);
+                    loadRules();
+                    loadStatus();
+                } else {
+                    const e = await r.json();
+                    errEl.textContent = e.detail || "Import failed";
+                    errEl.style.display = "inline";
+                }
+            } catch (ex) {
+                errEl.textContent = String(ex);
+                errEl.style.display = "inline";
+            }
+        }
+
+        loadStatus();
+        loadRules();
+        setInterval(loadStatus, 10000);
+    </script>
+</body>
+
+</html>

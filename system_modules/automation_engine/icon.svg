@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="12" fill="#1e293b"/>
+  <!-- Gear outer -->
+  <circle cx="32" cy="32" r="14" stroke="#f59e0b" stroke-width="3"/>
+  <!-- Gear inner -->
+  <circle cx="32" cy="32" r="6" fill="#f59e0b"/>
+  <!-- Gear teeth -->
+  <rect x="29" y="10" width="6" height="8" rx="2" fill="#f59e0b"/>
+  <rect x="29" y="46" width="6" height="8" rx="2" fill="#f59e0b"/>
+  <rect x="10" y="29" width="8" height="6" rx="2" fill="#f59e0b"/>
+  <rect x="46" y="29" width="8" height="6" rx="2" fill="#f59e0b"/>
+  <!-- diagonal teeth -->
+  <rect x="14" y="14" width="6" height="8" rx="2" transform="rotate(45 17 18)" fill="#f59e0b"/>
+  <rect x="44" y="14" width="6" height="8" rx="2" transform="rotate(-45 47 18)" fill="#f59e0b"/>
+  <rect x="14" y="43" width="6" height="8" rx="2" transform="rotate(-45 17 47)" fill="#f59e0b"/>
+  <rect x="44" y="43" width="6" height="8" rx="2" transform="rotate(45 47 47)" fill="#f59e0b"/>
+  <!-- Lightning bolt -->
+  <path d="M34 25 L28 33 H33 L30 41 L36 33 H31 L34 25Z" fill="#1e293b"/>
+</svg>

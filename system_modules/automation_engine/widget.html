@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, sans-serif;
+        }
+
+        body {
+            background: transparent;
+            color: #f8fafc;
+            font-size: 13px;
+            height: 100%;
+        }
+
+        .widget {
+            display: flex;
+            gap: 12px;
+            padding: 10px;
+            height: 100%;
+        }
+
+        .panel {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .panel h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 12px;
+        }
+
+        .val {
+            font-weight: 600;
+        }
+
+        .rule-item {
+            font-size: 11px;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 4px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .rule-item .name {
+            color: #cbd5e1;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .badge {
+            padding: 1px 6px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .badge.on {
+            background: rgba(52, 211, 153, 0.15);
+            color: #34d399;
+        }
+
+        .badge.off {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94a3b8;
+        }
+
+        .big {
+            font-size: 28px;
+            font-weight: 700;
+            color: #f59e0b;
+            margin-bottom: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="widget">
+        <!-- Left: stats -->
+        <div class="panel">
+            <h3>Automation Engine</h3>
+            <div class="big" id="rules-total">—</div>
+            <div style="font-size:11px;color:#64748b;margin-bottom:10px">rules loaded</div>
+            <div class="stat"><span>Enabled</span><span class="val" id="rules-enabled">—</span></div>
+            <div class="stat"><span>Runs today</span><span class="val" id="run-count">—</span></div>
+            <div class="stat"><span>Errors</span><span class="val" style="color:#f87171" id="err-count">—</span></div>
+        </div>
+        <!-- Right: rule list -->
+        <div class="panel">
+            <h3>Rules</h3>
+            <div id="rules-list">
+                <div class="rule-item" style="color:#475569">Loading…</div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const BASE = "http://localhost:8108";
+        const TOKEN = window.SELENA_TOKEN || "";
+        const h = { "Authorization": "Bearer " + TOKEN };
+
+        async function refresh() {
+            try {
+                const [statusR, rulesR] = await Promise.all([
+                    fetch(BASE + "/status", { headers: h }),
+                    fetch(BASE + "/rules", { headers: h }),
+                ]);
+                if (statusR.ok) {
+                    const s = await statusR.json();
+                    document.getElementById("rules-total").textContent = s.rules_total ?? 0;
+                    document.getElementById("rules-enabled").textContent = s.rules_enabled ?? 0;
+                    document.getElementById("run-count").textContent = s.run_count ?? 0;
+                    document.getElementById("err-count").textContent = s.error_count ?? 0;
+                }
+                if (rulesR.ok) {
+                    const d = await rulesR.json();
+                    const rules = d.rules ?? [];
+                    const el = document.getElementById("rules-list");
+                    if (rules.length === 0) {
+                        el.innerHTML = '<div class="rule-item" style="color:#475569">No rules defined</div>';
+                    } else {
+                        el.innerHTML = rules.slice(0, 7).map(r =>
+                            `<div class="rule-item">
+            <span class="name">${r.name}</span>
+            <span class="badge ${r.enabled ? 'on' : 'off'}">${r.enabled ? 'ON' : 'OFF'}</span>
+          </div>`
+                        ).join("");
+                    }
+                }
+            } catch { }
+        }
+
+        refresh();
+        setInterval(refresh, 8000);
+    </script>
+</body>
+
+</html>
