@@ -1,0 +1,31 @@
+{
+    "name": "device-watchdog",
+    "version": "0.1.0",
+    "description": "Мониторинг доступности устройств: ICMP ping, MQTT/Zigbee heartbeat",
+    "type": "SYSTEM",
+    "ui_profile": "ICON_SETTINGS",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "port": 8110,
+    "permissions": [
+        "device.read",
+        "device.write",
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "1x1"
+        },
+        "settings": "settings.html"
+    },
+    "resources": {
+        "memory_mb": 64,
+        "cpu": 0.1
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}

@@ -1,0 +1,4 @@
+icmplib>=3.0
+httpx>=0.27
+fastapi>=0.111
+uvicorn>=0.29

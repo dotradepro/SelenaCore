@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Device Watchdog — Settings</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            color: #94a3b8;
+            margin-top: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+
+        input[type=number],
+        input[type=checkbox] {
+            padding: 7px 10px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        input[type=checkbox] {
+            width: auto;
+        }
+
+        button {
+            padding: 8px 18px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+
+        button.secondary {
+            background: #334155;
+        }
+
+        #msg {
+            margin-top: 10px;
+            font-size: 0.88rem;
+            color: #4ade80;
+            min-height: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🔍 Device Watchdog</h1>
+
+    <h2>Scan Settings</h2>
+    <div class="form-group">
+        <label>Check interval (seconds)</label>
+        <input type="number" id="check_interval_sec" min="10" max="3600" />
+    </div>
+    <div class="form-group">
+        <label>Ping timeout (seconds)</label>
+        <input type="number" id="ping_timeout_sec" min="0.5" max="10" step="0.5" />
+    </div>
+    <div class="form-group">
+        <label>MQTT offline threshold (seconds)</label>
+        <input type="number" id="mqtt_timeout_sec" min="30" />
+    </div>
+    <div class="form-group">
+        <label>Zigbee/Z-Wave offline threshold (seconds)</label>
+        <input type="number" id="protocol_timeout_sec" min="60" />
+    </div>
+    <div class="form-group">
+        <label>Consecutive failures before marking offline</label>
+        <input type="number" id="offline_threshold" min="1" max="10" />
+    </div>
+    <div class="form-group">
+        <label><input type="checkbox" id="notify_on_offline" /> Publish device.offline event</label>
+    </div>
+    <button onclick="saveConfig()">Save</button>
+    <button class="secondary" onclick="scanNow()">Scan Now</button>
+    <div id="msg"></div>
+
+    <script>
+        async function loadConfig() {
+            const r = await fetch('/config');
+            const d = await r.json();
+            for (const [k, v] of Object.entries(d)) {
+                const el = document.getElementById(k);
+                if (!el) continue;
+                if (el.type === 'checkbox') el.checked = v;
+                else el.value = v;
+            }
+        }
+
+        async function saveConfig() {
+            const body = {};
+            ['check_interval_sec', 'ping_timeout_sec', 'mqtt_timeout_sec', 'protocol_timeout_sec', 'offline_threshold'].forEach(k => {
+                body[k] = parseFloat(document.getElementById(k).value);
+            });
+            body.notify_on_offline = document.getElementById('notify_on_offline').checked;
+            await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            document.getElementById('msg').textContent = '✓ Saved';
+            setTimeout(() => document.getElementById('msg').textContent = '', 3000);
+        }
+
+        async function scanNow() {
+            const r = await fetch('/scan', { method: 'POST' });
+            const d = await r.json();
+            document.getElementById('msg').textContent = `Scan done: ${d.online}/${d.checked} online, ${d.offline} offline`;
+        }
+
+        loadConfig();
+    </script>
+</body>
+
+</html>
