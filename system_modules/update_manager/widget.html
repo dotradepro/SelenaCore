@@ -5,6 +5,38 @@
     <meta charset="UTF-8">
     <title>Update Manager</title>
     <style>
+        :root {
+            --bg: #0B0C10;
+            --sf: #12131A;
+            --sf2: #191A22;
+            --sf3: #20212C;
+            --b: rgba(255, 255, 255, .07);
+            --b2: rgba(255, 255, 255, .13);
+            --tx: #EDEEF5;
+            --tx2: #888EA8;
+            --tx3: #484D66;
+            --ac: #4F8CF7;
+            --gr: #2EC98A;
+            --am: #F5A93A;
+            --rd: #E05454;
+        }
+
+        :root.light {
+            --bg: #F3F4F8;
+            --sf: #FFFFFF;
+            --sf2: #F0F1F5;
+            --sf3: #E4E5ED;
+            --b: rgba(0, 0, 0, .08);
+            --b2: rgba(0, 0, 0, .14);
+            --tx: #1A1C24;
+            --tx2: #5C6178;
+            --tx3: #9498AD;
+            --ac: #3B7AE8;
+            --gr: #1FAF75;
+            --am: #DB8F1C;
+            --rd: #C94040;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -13,13 +45,13 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0f1117;
-            color: #e0e0e0;
+            background: var(--bg);
+            color: var(--tx);
             padding: 20px;
         }
 
         .card {
-            background: #1a1d27;
+            background: var(--sf);
             border-radius: 12px;
             padding: 20px;
         }
@@ -27,12 +59,12 @@
         .version {
             font-size: 2rem;
             font-weight: 700;
-            color: #50c878;
+            color: var(--gr);
         }
 
         .label {
             font-size: 0.85rem;
-            color: #aaa;
+            color: var(--tx2);
             margin-bottom: 4px;
         }
 
@@ -42,27 +74,27 @@
             border-radius: 20px;
             font-size: 0.85rem;
             margin: 10px 0;
-            background: #2a2a3a;
+            background: var(--b2);
         }
 
         .state.update_available {
             background: rgba(255, 200, 0, 0.2);
-            color: #FFD700;
+            color: var(--am);
         }
 
         .state.applied {
             background: rgba(80, 200, 120, 0.2);
-            color: #50c878;
+            color: var(--gr);
         }
 
         .state.error {
             background: rgba(220, 50, 50, 0.2);
-            color: #e06c75;
+            color: var(--rd);
         }
 
         button {
-            background: #5c8ee6;
-            color: #fff;
+            background: var(--ac);
+            color: var(--tx);
             border: none;
             border-radius: 8px;
             padding: 10px 18px;
@@ -72,13 +104,13 @@
         }
 
         button:hover {
-            background: #4a7bd4;
+            background: var(--ac);
         }
 
         #msg {
             margin-top: 10px;
             font-size: 0.85rem;
-            color: #aaa;
+            color: var(--tx2);
         }
     </style>
 </head>
@@ -88,7 +120,7 @@
         <div class="label">Current version</div>
         <div class="version" id="cur-ver">—</div>
         <div class="label" style="margin-top:12px;">Latest available</div>
-        <div id="latest-ver" style="font-size:1.2rem;color:#aaa;">—</div>
+        <div id="latest-ver" style="font-size:1.2rem;color:var(--tx2);">—</div>
         <div><span class="state" id="state-badge">idle</span></div>
         <button onclick="checkNow()">🔄 Check for Updates</button>
         <div id="msg"></div>
@@ -116,6 +148,7 @@
         }
         load(); setInterval(load, 30000);
     </script>
+    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 
 </html>

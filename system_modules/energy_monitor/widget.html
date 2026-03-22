@@ -6,6 +6,38 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Energy Monitor</title>
     <style>
+        :root {
+            --bg: #0B0C10;
+            --sf: #12131A;
+            --sf2: #191A22;
+            --sf3: #20212C;
+            --b: rgba(255, 255, 255, .07);
+            --b2: rgba(255, 255, 255, .13);
+            --tx: #EDEEF5;
+            --tx2: #888EA8;
+            --tx3: #484D66;
+            --ac: #4F8CF7;
+            --gr: #2EC98A;
+            --am: #F5A93A;
+            --rd: #E05454;
+        }
+
+        :root.light {
+            --bg: #F3F4F8;
+            --sf: #FFFFFF;
+            --sf2: #F0F1F5;
+            --sf3: #E4E5ED;
+            --b: rgba(0, 0, 0, .08);
+            --b2: rgba(0, 0, 0, .14);
+            --tx: #1A1C24;
+            --tx2: #5C6178;
+            --tx3: #9498AD;
+            --ac: #3B7AE8;
+            --gr: #1FAF75;
+            --am: #DB8F1C;
+            --rd: #C94040;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -14,8 +46,8 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #1a0a00 0%, #1e1400 100%);
-            color: #e0e0e0;
+            background: var(--bg);
+            color: var(--tx);
             min-height: 100vh;
             display: flex;
             align-items: flex-start;
@@ -40,11 +72,11 @@
         .total-w {
             font-size: 3rem;
             font-weight: 700;
-            color: #FFD700;
+            color: var(--am);
         }
 
         .total-label {
-            color: #aaa;
+            color: var(--tx2);
             font-size: 0.9rem;
         }
 
@@ -55,13 +87,13 @@
             border-radius: 20px;
             padding: 4px 14px;
             font-size: 0.85rem;
-            color: #FFD700;
+            color: var(--am);
         }
 
         .devices-list {}
 
         .device-row {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--b);
             border-radius: 10px;
             padding: 10px 14px;
             margin-bottom: 8px;
@@ -72,18 +104,18 @@
 
         .device-name {
             font-size: 0.9rem;
-            color: #ccc;
+            color: var(--tx2);
         }
 
         .device-watts {
             font-size: 1.1rem;
             font-weight: 600;
-            color: #FFD700;
+            color: var(--am);
         }
 
         .loading {
             text-align: center;
-            color: #666;
+            color: var(--tx3);
             padding: 40px;
         }
     </style>
@@ -111,7 +143,7 @@
           <div class="device-name">${id}</div>
           <div>
             <span class="device-watts">${w.toFixed(0)} W</span>
-            <div style="font-size:0.75rem;color:#888;">${((today.devices || {})[id] || 0).toFixed(3)} kWh</div>
+            <div style="font-size:0.75rem;color:var(--tx2);">${((today.devices || {})[id] || 0).toFixed(3)} kWh</div>
           </div>
         </div>
       `).join('');
@@ -122,16 +154,17 @@
         <div class="total-label">Total current power</div>
         <span class="kwh-badge">Today: ${(today.total_kwh || 0).toFixed(3)} kWh</span>
       </div>
-      <div class="devices-list">${deviceRows || '<div style="text-align:center;color:#555;padding:20px;">No devices</div>'}</div>
+      <div class="devices-list">${deviceRows || '<div style="text-align:center;color:var(--tx3);padding:20px;">No devices</div>'}</div>
     `;
             } catch (e) {
-                document.getElementById('content').innerHTML = `<div class="loading" style="color:#e06c75;">⚠️ ${e.message}</div>`;
+                document.getElementById('content').innerHTML = `<div class="loading" style="color:var(--rd);">⚠️ ${e.message}</div>`;
             }
         }
 
         load();
         setInterval(load, 10000);
     </script>
+    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 
 </html>
