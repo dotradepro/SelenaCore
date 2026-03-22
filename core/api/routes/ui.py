@@ -13,11 +13,12 @@ import os
 import shutil
 import subprocess
 import time
+import weakref
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from core.config import get_settings, get_yaml_config
@@ -27,6 +28,40 @@ from core.registry.service import DeviceNotFoundError, DeviceRegistry
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ui"])
+
+# ── SSE broadcast: set of per-client asyncio.Queue ──────────────────────────
+_sse_clients: weakref.WeakSet[asyncio.Queue] = weakref.WeakSet()
+
+def _broadcast(event: dict[str, Any]) -> None:
+    """Push event to all connected SSE clients (fire-and-forget)."""
+    data = json.dumps(event)
+    for q in list(_sse_clients):
+        try:
+            q.put_nowait(data)
+        except asyncio.QueueFull:
+            pass
+
+# Public helper so other routes can broadcast (e.g. after module start/stop)
+def broadcast_event(event_type: str, payload: dict[str, Any] | None = None) -> None:
+    _broadcast({"type": event_type, "payload": payload or {}})
+
+# ── Layout persistence ───────────────────────────────────────────────────────
+_LAYOUT_PATH = Path(os.environ.get("CORE_DATA_DIR", "/var/lib/selena")) / "widget_layout.json"
+
+def _load_layout() -> dict[str, Any]:
+    try:
+        if _LAYOUT_PATH.exists():
+            return json.loads(_LAYOUT_PATH.read_text())
+    except Exception:
+        pass
+    return {"pinned": [], "sizes": {}}
+
+def _save_layout(layout: dict[str, Any]) -> None:
+    try:
+        _LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LAYOUT_PATH.write_text(json.dumps(layout))
+    except Exception as e:
+        logger.warning("Failed to save widget layout: %s", e)
 
 
 # ---------- Pydantic schemas ----------
@@ -215,6 +250,7 @@ async def ui_stop_module(name: str) -> dict[str, Any]:
     if module.type == "SYSTEM":
         raise HTTPException(status_code=403, detail="Cannot stop SYSTEM modules")
     info = await manager.stop(name)
+    broadcast_event("module.stopped", {"name": info.name})
     return {"name": info.name, "status": info.status.value}
 
 
@@ -226,6 +262,7 @@ async def ui_start_module(name: str) -> dict[str, Any]:
     if module is None:
         raise HTTPException(status_code=404, detail="Module not found")
     info = await manager.start(name)
+    broadcast_event("module.started", {"name": info.name})
     return {"name": info.name, "status": info.status.value}
 
 
@@ -239,6 +276,59 @@ async def ui_remove_module(name: str) -> None:
     if module.type == "SYSTEM":
         raise HTTPException(status_code=403, detail="Cannot remove SYSTEM modules")
     await manager.remove(name)
+    broadcast_event("module.removed", {"name": name})
+
+
+# ---------- SSE — real-time sync stream ----------
+
+@router.get("/stream")
+async def ui_sse_stream(request: Request) -> StreamingResponse:
+    """Server-Sent Events stream for real-time sync between browser tabs/devices."""
+    queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
+    _sse_clients.add(queue)
+
+    async def generator():
+        # Send initial handshake so the client knows it's connected
+        yield "data: {\"type\":\"connected\"}\n\n"
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=20.0)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # keepalive ping
+                    yield "data: {\"type\":\"ping\"}\n\n"
+        finally:
+            _sse_clients.discard(queue)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ---------- Widget layout persistence (cross-device sync) ----------
+
+@router.get("/layout")
+async def get_layout() -> dict[str, Any]:
+    """Return persisted widget layout (shared across all browsers)."""
+    return _load_layout()
+
+
+@router.post("/layout")
+async def save_layout(request: Request) -> dict[str, Any]:
+    """Persist widget layout and broadcast change to all connected browsers."""
+    layout = await request.json()
+    _save_layout(layout)
+    broadcast_event("layout_changed", layout)
+    return {"ok": True}
 
 
 # ---------- Module Content Proxy ----------

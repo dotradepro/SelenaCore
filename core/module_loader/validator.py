@@ -10,7 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REQUIRED_FIELDS = ["name", "version", "type", "api_version", "port", "permissions"]
+REQUIRED_FIELDS = ["name", "version", "type", "api_version", "permissions"]
+# "port" is required only for non-SYSTEM modules (user-installed modules
+# that run as separate Docker containers — see AGENTS.md §SYSTEM_MODULES).
 
 VALID_TYPES = {"SYSTEM", "UI", "INTEGRATION", "DRIVER", "AUTOMATION", "IMPORT_SOURCE"}
 VALID_PROFILES = {"HEADLESS", "SETTINGS_ONLY", "ICON_SETTINGS", "FULL"}
@@ -78,10 +80,22 @@ def validate_manifest(manifest: dict[str, Any]) -> ValidationResult:
     if runtime_mode not in VALID_RUNTIME:
         errors.append(f"Invalid runtime_mode '{runtime_mode}': must be one of {VALID_RUNTIME}")
 
-    # Port
-    port = manifest.get("port")
-    if not isinstance(port, int) or port not in PORT_RANGE:
-        errors.append(f"Invalid port {port}: must be in range 8100-8200")
+    # Port — required only for non-SYSTEM modules (Docker sandbox needs a port)
+    if module_type != "SYSTEM":
+        if "port" not in manifest:
+            errors.append(
+                "Missing required field: 'port' (required for non-SYSTEM modules)"
+            )
+        else:
+            port = manifest.get("port")
+            if not isinstance(port, int) or port not in PORT_RANGE:
+                errors.append(f"Invalid port {port}: must be in range 8100-8200")
+    elif "port" in manifest:
+        # SYSTEM modules must NOT have a port — they run in-process
+        errors.append(
+            "SYSTEM modules must not specify 'port' — they run in-process, not as "
+            "separate containers. Remove 'port' from manifest.json."
+        )
 
     # Permissions
     permissions = manifest.get("permissions", [])

@@ -3,6 +3,7 @@ core/module_loader/loader.py — Plugin Manager orchestrator
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -91,13 +92,19 @@ class PluginManager:
 
         logger.info("Auto-discovered %d module(s) from %s", len(registered), modules_dir)
 
-        # Auto-start always_on modules
-        for info in registered:
-            if info.runtime_mode == "always_on" and info.status == ModuleStatus.READY:
-                try:
-                    await self._sandbox.start_local(info.name)
-                except Exception as e:
-                    logger.error("Failed to auto-start module %s: %s", info.name, e)
+        # Auto-start always_on modules in parallel
+        to_start = [
+            info for info in registered
+            if info.runtime_mode == "always_on" and info.status == ModuleStatus.READY
+        ]
+        if to_start:
+            results = await asyncio.gather(
+                *[self._sandbox.start_local(info.name) for info in to_start],
+                return_exceptions=True,
+            )
+            for info, result in zip(to_start, results):
+                if isinstance(result, Exception):
+                    logger.error("Failed to auto-start module %s: %s", info.name, result)
 
         return len(registered)
 

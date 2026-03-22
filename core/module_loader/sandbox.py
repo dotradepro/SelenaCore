@@ -38,8 +38,8 @@ class ModuleInfo:
     type: str
     status: ModuleStatus
     runtime_mode: str
-    port: int
     installed_at: float
+    port: int = 0  # 0 for SYSTEM modules (in-process, no port needed)
     container_id: str | None = None
     error: str | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
@@ -47,7 +47,11 @@ class ModuleInfo:
 
 
 class DockerSandbox:
-    """Manages module containers via Docker SDK."""
+    """Manages module lifecycle.
+
+    SYSTEM modules (type=SYSTEM) are loaded in-process via importlib.
+    User modules (UI/INTEGRATION/DRIVER/etc.) run in Docker sandbox containers.
+    """
 
     def __init__(self) -> None:
         try:
@@ -58,6 +62,20 @@ class DockerSandbox:
             logger.warning("Docker SDK unavailable — only local module execution supported")
         self._modules: dict[str, ModuleInfo] = {}
         self._processes: dict[str, subprocess.Popen] = {}
+        # In-process instances for SYSTEM modules
+        self._in_process: dict[str, Any] = {}  # name -> SystemModule instance
+        self._session_factory: Any = None  # async_sessionmaker, set by main.py
+
+    def set_session_factory(self, factory: Any) -> None:
+        """Inject the SQLAlchemy async_sessionmaker for SYSTEM modules.
+
+        Must be called before scan_local_modules() starts SYSTEM modules.
+        """
+        self._session_factory = factory
+
+    def get_in_process_module(self, name: str) -> Any | None:
+        """Return the in-process SystemModule instance, or None."""
+        return self._in_process.get(name)
 
     def list_modules(self) -> list[ModuleInfo]:
         return list(self._modules.values())
@@ -83,13 +101,13 @@ class DockerSandbox:
             type=manifest["type"],
             status=ModuleStatus.READY,
             runtime_mode=manifest.get("runtime_mode", "always_on"),
-            port=manifest["port"],
+            port=manifest.get("port", 0),  # 0 for SYSTEM modules (no port)
             installed_at=datetime.now(timezone.utc).timestamp(),
             manifest=manifest,
             module_dir=str(module_dir) if module_dir else None,
         )
         self._modules[name] = info
-        logger.info("Registered module '%s' v%s (port %d)", name, info.version, info.port)
+        logger.info("Registered module '%s' v%s type=%s", name, info.version, info.type)
         return info
 
     async def install(self, zip_path: Path, manifest: dict[str, Any]) -> ModuleInfo:
@@ -108,7 +126,7 @@ class DockerSandbox:
             type=manifest["type"],
             status=ModuleStatus.READY,
             runtime_mode=manifest.get("runtime_mode", "always_on"),
-            port=manifest["port"],
+            port=manifest.get("port", 0),
             installed_at=datetime.now(timezone.utc).timestamp(),
             manifest=manifest,
         )
@@ -120,12 +138,20 @@ class DockerSandbox:
         return info
 
     async def start_local(self, name: str) -> ModuleInfo:
-        """Start a locally-discovered module as a subprocess."""
+        """Start a locally-discovered module.
+
+        SYSTEM modules are loaded in-process via importlib (no subprocess).
+        All other types are launched as uvicorn subprocesses.
+        """
         info = self._modules.get(name)
         if info is None:
             raise KeyError(f"Module not found: {name}")
         if not info.module_dir:
             raise ValueError(f"Module {name} has no module_dir — cannot start locally")
+
+        # SYSTEM modules run inside the core process — no subprocess, no port
+        if info.type == "SYSTEM":
+            return await self._start_in_process(info)
 
         module_dir = info.module_dir
         project_root = str(Path(module_dir).parent.parent)
@@ -173,6 +199,66 @@ class DockerSandbox:
         proc.terminate()
         logger.error("Module %s startup timed out", name)
         return info
+
+    async def _start_in_process(self, info: ModuleInfo) -> ModuleInfo:
+        """Load and start a SYSTEM module in-process via importlib."""
+        import importlib
+
+        from core.eventbus.bus import get_event_bus
+        from core.module_loader.system_module import SystemModule
+
+        module_dir = Path(info.module_dir)
+        pkg_name = f"system_modules.{module_dir.name}"
+
+        try:
+            pkg = importlib.import_module(pkg_name)
+        except ImportError as exc:
+            info.status = ModuleStatus.ERROR
+            info.error = f"Import failed: {exc}"
+            logger.error("Failed to import system module %s: %s", pkg_name, exc)
+            return info
+
+        module_cls = getattr(pkg, "module_class", None)
+        if module_cls is None:
+            info.status = ModuleStatus.ERROR
+            info.error = (
+                f"No 'module_class' exported from {pkg_name}. "
+                "Add 'from .module import XxxModule as module_class' to __init__.py"
+            )
+            logger.error(info.error)
+            return info
+
+        if not (isinstance(module_cls, type) and issubclass(module_cls, SystemModule)):
+            info.status = ModuleStatus.ERROR
+            info.error = f"{module_cls} is not a SystemModule subclass"
+            logger.error(info.error)
+            return info
+
+        instance: SystemModule = module_cls()
+
+        if self._session_factory is None:
+            logger.warning(
+                "session_factory not set — module %s will have no DB access. "
+                "Call sandbox.set_session_factory() before scan_local_modules().",
+                info.name,
+            )
+        instance.setup(get_event_bus(), self._session_factory)
+
+        try:
+            await instance.start()
+        except Exception as exc:
+            info.status = ModuleStatus.ERROR
+            info.error = f"start() raised: {exc}"
+            logger.error(
+                "System module %s start() failed: %s", info.name, exc, exc_info=True
+            )
+            return info
+
+        self._in_process[info.name] = instance
+        info.status = ModuleStatus.RUNNING
+        logger.info("System module '%s' started in-process", info.name)
+        return info
+
 
     async def start(self, name: str) -> ModuleInfo:
         info = self._modules.get(name)
@@ -227,7 +313,7 @@ class DockerSandbox:
         if info is None:
             raise KeyError(f"Module not found: {name}")
         if info.type == "SYSTEM":
-            raise PermissionError("Cannot stop SYSTEM modules")
+            raise PermissionError("Cannot stop SYSTEM modules via the user API")
 
         # Stop local subprocess
         if name in self._processes:
@@ -256,6 +342,20 @@ class DockerSandbox:
         info.status = ModuleStatus.STOPPED
         info.container_id = None
         return info
+
+    async def shutdown_in_process_modules(self) -> None:
+        """Gracefully stop all in-process SYSTEM modules. Called on core shutdown."""
+        for name, instance in list(self._in_process.items()):
+            try:
+                await instance.stop()
+                if name in self._modules:
+                    self._modules[name].status = ModuleStatus.STOPPED
+                logger.info("System module '%s' stopped gracefully", name)
+            except Exception as exc:
+                logger.error(
+                    "Error stopping system module '%s': %s", name, exc, exc_info=True
+                )
+        self._in_process.clear()
 
     async def remove(self, name: str) -> None:
         info = self._modules.get(name)

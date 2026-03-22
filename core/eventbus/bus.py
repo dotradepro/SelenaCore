@@ -60,10 +60,24 @@ class Subscription:
     secret: str = ""
 
 
+@dataclass
+class DirectSubscription:
+    """In-process subscription — calls an async Python callback instead of a webhook.
+
+    Used exclusively by SYSTEM modules that run inside the core process.
+    """
+
+    subscription_id: str
+    module_id: str
+    event_types: list[str]
+    callback: Any  # Callable[[Event], Awaitable[None]]
+
+
 class EventBus:
     def __init__(self) -> None:
         self._queue: asyncio.Queue[Event] = asyncio.Queue()
         self._subscriptions: dict[str, Subscription] = {}
+        self._direct_subs: dict[str, DirectSubscription] = {}
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -108,6 +122,34 @@ class EventBus:
     def unsubscribe(self, subscription_id: str) -> None:
         self._subscriptions.pop(subscription_id, None)
 
+    def subscribe_direct(
+        self,
+        module_id: str,
+        event_types: list[str],
+        callback: Any,
+    ) -> str:
+        """Subscribe with a direct async Python callback (for SYSTEM modules).
+
+        No HTTP webhook — the callback is called directly in the dispatch loop.
+        Returns the subscription ID.
+        """
+        sub_id = str(uuid.uuid4())
+        self._direct_subs[sub_id] = DirectSubscription(
+            subscription_id=sub_id,
+            module_id=module_id,
+            event_types=event_types,
+            callback=callback,
+        )
+        logger.info(
+            "Direct subscription created: %s → in-process callback for %s",
+            sub_id,
+            event_types,
+        )
+        return sub_id
+
+    def unsubscribe_direct(self, subscription_id: str) -> None:
+        self._direct_subs.pop(subscription_id, None)
+
     async def publish(self, type: str, source: str, payload: dict[str, Any]) -> Event:
         event = Event.create(type=type, source=source, payload=payload)
         await self._queue.put(event)
@@ -137,6 +179,14 @@ class EventBus:
                 self._deliver_to_webhook(event, sub),
                 name=f"webhook-{sub.subscription_id}-{event.event_id[:8]}",
             )
+
+        # Dispatch to in-process (SYSTEM module) callbacks
+        for sub in list(self._direct_subs.values()):
+            if event.type in sub.event_types or "*" in sub.event_types:
+                asyncio.create_task(
+                    sub.callback(event),
+                    name=f"direct-{sub.module_id}-{event.event_id[:8]}",
+                )
 
     async def _deliver_to_webhook(self, event: Event, sub: Subscription) -> None:
         body = event.to_dict()

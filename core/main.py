@@ -61,6 +61,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.db_session_factory = session_factory
     app.state.db_engine = engine
 
+    # Inject session factory into sandbox BEFORE module scanning
+    # so that SYSTEM modules have DB access from their start() call.
+    from core.module_loader.sandbox import get_sandbox
+    sandbox = get_sandbox()
+    sandbox.set_session_factory(session_factory)
+
     # Start event bus
     bus = get_event_bus()
     await bus.start()
@@ -76,9 +82,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cloud_sync = get_cloud_sync()
     await cloud_sync.start()
 
-    # Auto-discover modules from local directory
+    # Auto-discover system modules (pre-installed, type=SYSTEM)
     from core.module_loader.loader import get_plugin_manager
     manager = get_plugin_manager()
+    system_modules_dir = Path("/opt/selena-core/system_modules")
+    await manager.scan_local_modules(system_modules_dir)
+
+    # Mount each in-process system module's router into the core app
+    # Routes become available at /api/ui/modules/{name}/*
+    from core.module_loader.sandbox import ModuleStatus
+    for mod_info in sandbox.list_modules():
+        if mod_info.type == "SYSTEM" and mod_info.status == ModuleStatus.RUNNING:
+            instance = sandbox.get_in_process_module(mod_info.name)
+            if instance:
+                router = instance.get_router()
+                if router:
+                    app.include_router(
+                        router,
+                        prefix=f"/api/ui/modules/{mod_info.name}",
+                        tags=[f"system:{mod_info.name}"],
+                    )
+                    logger.info("Mounted router for system module '%s'", mod_info.name)
+
+    # Auto-discover user-installed modules
     modules_dir = Path("/opt/selena-core/modules")
     await manager.scan_local_modules(modules_dir)
 
@@ -94,6 +120,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         source="core",
         payload={},
     )
+    # Gracefully stop all in-process system modules
+    await sandbox.shutdown_in_process_modules()
     await bus.stop()
     await engine.dispose()
     logger.info("SelenaCore shutdown complete")

@@ -33,7 +33,7 @@ class CoreSettings(BaseSettings):
     debug: bool = False
 
     # UI
-    ui_port: int = 8080
+    ui_port: int = 80
     ui_https: bool = True
 
     # Agent
