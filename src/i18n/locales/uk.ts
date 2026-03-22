@@ -94,6 +94,16 @@ const uk = {
         // ── Settings ──
         settings: {
             title: 'Налаштування',
+            appearance: 'Зовнішній вигляд',
+            appearanceDesc: 'Тема, мова та налаштування відображення.',
+            theme: 'Тема',
+            themeAuto: 'Авто',
+            themeAutoDesc: 'За системними налаштуваннями',
+            themeDark: 'Темна',
+            themeDarkDesc: 'Завжди темна тема',
+            themeLight: 'Світла',
+            themeLightDesc: 'Завжди світла тема',
+            language: 'Мова',
             voiceAndLlm: 'Голос і LLM',
             audio: 'Аудіо',
             networkAndVpn: 'Мережа і VPN',

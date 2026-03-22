@@ -94,6 +94,16 @@ const en = {
         // ── Settings ──
         settings: {
             title: 'Settings',
+            appearance: 'Appearance',
+            appearanceDesc: 'Theme, language, and display preferences.',
+            theme: 'Theme',
+            themeAuto: 'Auto',
+            themeAutoDesc: 'Follow system preference',
+            themeDark: 'Dark',
+            themeDarkDesc: 'Always dark mode',
+            themeLight: 'Light',
+            themeLightDesc: 'Always light mode',
+            language: 'Language',
             voiceAndLlm: 'Voice & LLM',
             audio: 'Audio',
             networkAndVpn: 'Network & VPN',

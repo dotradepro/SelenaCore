@@ -86,11 +86,32 @@ function saveWidgetLayout(layout: WidgetLayout) {
   }).catch(() => { /* ignore network errors */ });
 }
 
+export type ThemeMode = 'auto' | 'light' | 'dark';
+
+function loadTheme(): ThemeMode {
+  const stored = localStorage.getItem('selena-theme');
+  if (stored === 'light' || stored === 'dark' || stored === 'auto') return stored;
+  return 'auto';
+}
+
+function applyThemeClass(mode: ThemeMode) {
+  const root = document.documentElement;
+  if (mode === 'auto') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    root.classList.toggle('light', !prefersDark);
+  } else {
+    root.classList.toggle('light', mode === 'light');
+  }
+}
+
 interface AppState {
   isConfigured: boolean;
   wizardLoading: boolean;
   setupStage: 'landing' | 'wizard';
   selectedLanguage: string;
+  theme: ThemeMode;
+  setTheme: (mode: ThemeMode) => void;
+  initThemeListener: () => () => void;
   wizardRequirements: WizardRequirements | null;
   user: { name: string; role: string } | null;
   health: Health | null;
@@ -136,6 +157,7 @@ export const useStore = create<AppState>((set, get) => ({
   wizardLoading: true,
   setupStage: 'landing',
   selectedLanguage: localStorage.getItem('selena-lang') || 'en',
+  theme: loadTheme(),
   wizardRequirements: null,
   user: null,
   health: null,
@@ -153,6 +175,19 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedLanguage: (lang) => {
     changeLanguage(lang);
     set({ selectedLanguage: lang });
+  },
+  setTheme: (mode) => {
+    localStorage.setItem('selena-theme', mode);
+    applyThemeClass(mode);
+    set({ theme: mode });
+  },
+  initThemeListener: () => {
+    const theme = get().theme;
+    applyThemeClass(theme);
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = () => { if (get().theme === 'auto') applyThemeClass('auto'); };
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
   },
 
   fetchWizardStatus: async () => {

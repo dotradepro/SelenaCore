@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu } from 'lucide-react';
+import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -10,6 +10,7 @@ export default function Settings() {
   const location = useLocation();
 
   const tabs = [
+    { id: 'appearance', label: t('settings.appearance'), icon: Palette, path: '/settings/appearance' },
     { id: 'voice', label: t('settings.voiceAndLlm'), icon: Mic, path: '/settings/voice' },
     { id: 'audio', label: t('settings.audio'), icon: Volume2, path: '/settings/audio' },
     { id: 'network', label: t('settings.networkAndVpn'), icon: Network, path: '/settings/network' },
@@ -21,7 +22,7 @@ export default function Settings() {
 
   const activeId =
     tabs.find(tab => location.pathname === tab.path)?.id ??
-    (location.pathname === '/settings' ? 'voice' : '');
+    (location.pathname === '/settings' ? 'appearance' : '');
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -53,7 +54,8 @@ export default function Settings() {
       {/* Settings content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
         <Routes>
-          <Route path="/" element={<VoiceSettings />} />
+          <Route path="/" element={<AppearanceSettings />} />
+          <Route path="/appearance" element={<AppearanceSettings />} />
           <Route path="/voice" element={<VoiceSettings />} />
           <Route path="/audio" element={<AudioSettings />} />
           <Route path="/network" element={<NetworkSettings />} />
@@ -61,6 +63,97 @@ export default function Settings() {
           <Route path="/system-modules" element={<SystemModulesSettings />} />
           <Route path="*" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
         </Routes>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ //
+//  Appearance Settings                                                //
+// ================================================================ //
+
+import type { ThemeMode } from '../store/useStore';
+
+function AppearanceSettings() {
+  const { t } = useTranslation();
+  const theme = useStore(s => s.theme);
+  const setTheme = useStore(s => s.setTheme);
+  const selectedLanguage = useStore(s => s.selectedLanguage);
+  const setSelectedLanguage = useStore(s => s.setSelectedLanguage);
+
+  const themeOptions: { value: ThemeMode; label: string; desc: string; icon: string }[] = [
+    { value: 'auto', label: t('settings.themeAuto'), desc: t('settings.themeAutoDesc'), icon: '🖥️' },
+    { value: 'dark', label: t('settings.themeDark'), desc: t('settings.themeDarkDesc'), icon: '🌙' },
+    { value: 'light', label: t('settings.themeLight'), desc: t('settings.themeLightDesc'), icon: '☀️' },
+  ];
+
+  const languages = [
+    { code: 'en', label: 'English', flag: '🇬🇧' },
+    { code: 'uk', label: 'Українська', flag: '🇺🇦' },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div>
+        <h3 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: 'var(--tx)' }}>{t('settings.appearance')}</h3>
+        <p style={{ fontSize: 13, color: 'var(--tx2)' }}>{t('settings.appearanceDesc')}</p>
+      </div>
+
+      {/* Theme selector */}
+      <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
+        <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.theme')}</h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          {themeOptions.map(opt => {
+            const isActive = theme === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setTheme(opt.value)}
+                style={{
+                  padding: '16px 12px',
+                  borderRadius: 10,
+                  border: `2px solid ${isActive ? 'var(--ac)' : 'var(--b)'}`,
+                  background: isActive ? 'rgba(79,140,247,.08)' : 'var(--sf2)',
+                  cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  transition: 'all .15s',
+                }}
+              >
+                <span style={{ fontSize: 28 }}>{opt.icon}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--ac)' : 'var(--tx)' }}>{opt.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--tx3)', textAlign: 'center' }}>{opt.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Language selector */}
+      <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
+        <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.language')}</h4>
+        <div style={{ display: 'flex', gap: 12 }}>
+          {languages.map(lang => {
+            const isActive = selectedLanguage === lang.code;
+            return (
+              <button
+                key={lang.code}
+                onClick={() => setSelectedLanguage(lang.code)}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: 10,
+                  border: `2px solid ${isActive ? 'var(--ac)' : 'var(--b)'}`,
+                  background: isActive ? 'rgba(79,140,247,.08)' : 'var(--sf2)',
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  transition: 'all .15s',
+                }}
+              >
+                <span style={{ fontSize: 22 }}>{lang.flag}</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: isActive ? 'var(--ac)' : 'var(--tx)' }}>{lang.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

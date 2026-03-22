@@ -28,11 +28,18 @@ export default function App() {
   const fetchWizardStatus = useStore((state) => state.fetchWizardStatus);
   const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
   const connectSyncStream = useStore((state) => state.connectSyncStream);
+  const initThemeListener = useStore((state) => state.initThemeListener);
 
   useEffect(() => {
     fetchWizardStatus();
     fetchWizardRequirements();
   }, [fetchWizardStatus, fetchWizardRequirements]);
+
+  // Apply theme and listen for system preference changes
+  useEffect(() => {
+    const cleanup = initThemeListener();
+    return cleanup;
+  }, [initThemeListener]);
 
   // Connect real-time sync stream (layout + module state) once on mount
   useEffect(() => {
@@ -42,8 +49,8 @@ export default function App() {
 
   if (wizardLoading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4 text-zinc-400">
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="flex flex-col items-center gap-4" style={{ color: 'var(--tx2)' }}>
           <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
         </div>
       </div>

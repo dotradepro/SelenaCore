@@ -6,7 +6,7 @@
 }
 
 /* =====================================================
-   DESIGN TOKENS v3 — matches selena-core-ui-v3.html
+   DESIGN TOKENS v3 — Dark theme (default)
    ===================================================== */
 :root {
   --bg: #0B0C10;
@@ -27,6 +27,27 @@
   --topbar: 42px;
   --sidebar: 52px;
   --r: 12px;
+}
+
+/* =====================================================
+   DESIGN TOKENS v3 — Light theme
+   ===================================================== */
+html.light {
+  --bg: #F3F4F8;
+  --sf: #FFFFFF;
+  --sf2: #F0F1F5;
+  --sf3: #E4E5ED;
+  --b: rgba(0, 0, 0, .08);
+  --b2: rgba(0, 0, 0, .14);
+  --tx: #1A1C24;
+  --tx2: #5C6178;
+  --tx3: #9498AD;
+  --ac: #3B7AE8;
+  --gr: #1FAF75;
+  --am: #DB8F1C;
+  --rd: #C94040;
+  --pu: #7C52D8;
+  --tl: #1E9AA8;
 }
 
 html,
@@ -769,4 +790,104 @@ body,
 
 .live-dot {
   animation: blink-dot 2s ease-in-out infinite;
+}
+
+/* =====================================================
+   LIGHT THEME — Tailwind class overrides
+   Remaps hardcoded zinc-* classes used in Settings etc.
+   ===================================================== */
+html.light {
+  color-scheme: light;
+}
+
+html.light .bg-black {
+  background-color: var(--bg) !important;
+}
+
+html.light .bg-zinc-900 {
+  background-color: var(--sf) !important;
+}
+
+html.light .bg-zinc-950 {
+  background-color: var(--sf2) !important;
+}
+
+html.light .bg-zinc-800 {
+  background-color: var(--sf3) !important;
+}
+
+html.light .border-zinc-800 {
+  border-color: var(--b) !important;
+}
+
+html.light .border-zinc-700 {
+  border-color: var(--b2) !important;
+}
+
+html.light .text-zinc-200 {
+  color: var(--tx) !important;
+}
+
+html.light .text-zinc-300 {
+  color: var(--tx) !important;
+}
+
+html.light .text-zinc-400 {
+  color: var(--tx2) !important;
+}
+
+html.light .text-zinc-500 {
+  color: var(--tx3) !important;
+}
+
+html.light .hover\:text-zinc-200:hover {
+  color: var(--tx) !important;
+}
+
+html.light .hover\:border-zinc-700:hover {
+  border-color: var(--b2) !important;
+}
+
+html.light .hover\:bg-zinc-700:hover {
+  background-color: var(--sf3) !important;
+}
+
+html.light .focus\:border-emerald-500:focus {
+  border-color: var(--ac) !important;
+}
+
+html.light .focus\:ring-offset-zinc-900 {
+  --tw-ring-offset-color: var(--sf) !important;
+}
+
+html.light select,
+html.light input[type="text"],
+html.light input[type="password"] {
+  background-color: var(--sf2) !important;
+  border-color: var(--b) !important;
+  color: var(--tx) !important;
+}
+
+html.light .text-emerald-500 {
+  color: var(--gr) !important;
+}
+
+html.light .bg-emerald-500 {
+  background-color: var(--gr) !important;
+  color: #fff !important;
+}
+
+html.light .text-zinc-950 {
+  color: #fff !important;
+}
+
+/* Light theme — widget shell */
+html.light .ws-label {
+  color: rgba(0, 0, 0, .45);
+  background: linear-gradient(transparent, rgba(255, 255, 255, .5));
+}
+
+/* Light theme — loading spinner */
+html.light .min-h-screen {
+  background: var(--bg) !important;
 }
