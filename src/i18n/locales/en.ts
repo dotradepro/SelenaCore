@@ -158,6 +158,13 @@ const en = {
             resetWizardDesc: 'Reset the setup wizard to re-run the initial configuration from scratch.',
             resetWizardBtn: 'Reset setup wizard',
             resetWizardConfirm: 'Reset the setup wizard? The page will reload and you will start from step 1.',
+            systemModules: 'System Modules',
+            systemModulesDesc: 'Configure and pin system modules to the dashboard.',
+            noSystemModules: 'No system modules found.',
+            pin: 'Pin',
+            pinned: 'Pinned',
+            noSettingsAvailable: 'No settings available for this module.',
+            selectModuleToConfig: 'Select a module to configure.',
         },
 
         // ── Wizard ──

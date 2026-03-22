@@ -366,6 +366,79 @@ body,
   border-color: var(--b2);
 }
 
+/* ── Widget edit bar (shows in edit mode) ── */
+.ws-edit-bar {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  display: flex;
+  gap: 3px;
+  z-index: 20;
+  pointer-events: all;
+}
+
+.ws-eb-btn {
+  flex: 1;
+  height: 18px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, .65);
+  color: var(--tx2);
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  border: 1px solid var(--b2);
+  cursor: pointer;
+  padding: 0;
+  transition: all .1s;
+}
+
+.ws-eb-btn:hover:not(:disabled) {
+  background: var(--sf3);
+  color: var(--tx);
+}
+
+.ws-eb-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.ws-eb-btn.ws-eb-red:hover {
+  background: rgba(224, 84, 84, .3);
+  color: var(--rd);
+}
+
+/* ── Add system module panel ── */
+.add-mod-panel {
+  position: absolute;
+  top: 36px;
+  right: 6px;
+  width: 200px;
+  background: var(--sf2);
+  border: 1px solid var(--b2);
+  border-radius: 10px;
+  padding: 10px;
+  z-index: 40;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+
+.add-mod-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--tx2);
+  transition: all .15s;
+}
+
+.add-mod-item:hover {
+  background: var(--sf3);
+  color: var(--tx);
+}
+
 /* ── Widget span classes ── */
 .sp-1x1 {
   grid-column: span 1;

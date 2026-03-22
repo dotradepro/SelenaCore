@@ -23,7 +23,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 CORE_API = os.environ.get("CORE_API_URL", "http://localhost:7070/api/v1")
-UI_URL_BASE = os.environ.get("UI_URL", "http://localhost:8080")
+UI_URL_BASE = os.environ.get("UI_URL", "http://localhost")
 REFRESH_SEC = 5
 WIZARD_STATE_FILE = Path("/var/lib/selena/wizard_state.json")
 
@@ -99,7 +99,7 @@ def _fetch_requirements() -> dict[str, Any]:
     try:
         import urllib.request
         req = urllib.request.Request(
-            "http://localhost:8080/api/ui/wizard/requirements",
+            "http://localhost/api/ui/wizard/requirements",
             headers={"Accept": "application/json"},
         )
         with urllib.request.urlopen(req, timeout=3) as resp:

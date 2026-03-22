@@ -96,13 +96,13 @@ def _get_ui_url(request: Request) -> str:
     """Build the UI URL from the incoming request Host header or env override."""
     host_env = os.environ.get("HOST_IP", "").strip()
     if host_env:
-        return f"http://{host_env}:8080"
+        return f"http://{host_env}"
     host_header = request.headers.get("host", "").strip()
     if host_header:
-        # host_header may already include port (e.g. 192.168.8.123:8080)
+        # host_header may already include port (e.g. 192.168.8.123:80)
         host_no_port = host_header.split(":")[0]
-        return f"http://{host_no_port}:8080"
-    return f"http://{_get_local_ip()}:8080"
+        return f"http://{host_no_port}"
+    return f"http://{_get_local_ip()}"
 
 
 @router.get("/api/ui/setup/qr", tags=["ap-mode"])
@@ -159,7 +159,7 @@ async def get_network_info() -> JSONResponse:
     local_ip = _get_local_ip()
     return JSONResponse({
         "local_ip": local_ip,
-        "ui_url": f"http://{local_ip}:8080",
+        "ui_url": f"http://{local_ip}",
         "core_url": f"http://{local_ip}:7070",
         "default_route": default_route,
     })

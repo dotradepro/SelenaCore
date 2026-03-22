@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe } from 'lucide-react';
+import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
+import { useStore } from '../store/useStore';
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -15,41 +16,49 @@ export default function Settings() {
     { id: 'users', label: t('settings.users'), icon: Users, path: '/settings/users' },
     { id: 'system', label: t('settings.system'), icon: Activity, path: '/settings/system' },
     { id: 'security', label: t('settings.security'), icon: Shield, path: '/settings/security' },
+    { id: 'system-modules', label: t('settings.systemModules'), icon: Cpu, path: '/settings/system-modules' },
   ];
 
+  const activeId =
+    tabs.find(tab => location.pathname === tab.path)?.id ??
+    (location.pathname === '/settings' ? 'voice' : '');
+
   return (
-    <div className="max-w-6xl mx-auto flex gap-8 h-full">
-      {/* Settings Sidebar */}
-      <div className="w-64 shrink-0 space-y-1">
-        <h2 className="text-lg font-semibold mb-4 px-3">{t('settings.title')}</h2>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* Horizontal tab bar */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--b)', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
         {tabs.map((tab) => {
-          const isActive = location.pathname.includes(tab.path) || (location.pathname === '/settings' && tab.id === 'voice');
+          const isActive = tab.id === activeId;
           return (
             <Link
               key={tab.id}
               to={tab.path}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-zinc-800 text-zinc-50"
-                  : "text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800/50"
-              )}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '10px 16px',
+                fontSize: 12, fontWeight: isActive ? 600 : 400,
+                color: isActive ? 'var(--tx)' : 'var(--tx3)',
+                borderBottom: `2px solid ${isActive ? 'var(--ac)' : 'transparent'}`,
+                whiteSpace: 'nowrap', cursor: 'pointer',
+                transition: 'color .15s', textDecoration: 'none',
+              }}
             >
-              <tab.icon size={18} />
+              <tab.icon size={13} />
               {tab.label}
             </Link>
           );
         })}
       </div>
 
-      {/* Settings Content */}
-      <div className="flex-1 bg-zinc-900/30 border border-zinc-800 rounded-2xl p-8 overflow-auto">
+      {/* Settings content */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
         <Routes>
           <Route path="/" element={<VoiceSettings />} />
           <Route path="/voice" element={<VoiceSettings />} />
           <Route path="/audio" element={<AudioSettings />} />
           <Route path="/network" element={<NetworkSettings />} />
           <Route path="/system" element={<SystemSettings />} />
+          <Route path="/system-modules" element={<SystemModulesSettings />} />
           <Route path="*" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
         </Routes>
       </div>
@@ -533,6 +542,127 @@ function SystemSettings() {
         >
           {resetting ? t('common.loading') : t('settings.resetWizardBtn')}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================ //
+//  System Modules Settings                                           //
+// ================================================================ //
+function SystemModulesSettings() {
+  const { t } = useTranslation();
+  const modules = useStore(s => s.modules);
+  const fetchModules = useStore(s => s.fetchModules);
+  const widgetLayout = useStore(s => s.widgetLayout);
+  const pinModule = useStore(s => s.pinModule);
+  const unpinModule = useStore(s => s.unpinModule);
+  const [selectedMod, setSelectedMod] = useState<string | null>(null);
+
+  useEffect(() => { fetchModules(); }, [fetchModules]);
+
+  const systemMods = modules.filter(m => m.type === 'SYSTEM');
+  const selected = systemMods.find(m => m.name === selectedMod);
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <h3 className="text-xl font-semibold mb-1">{t('settings.systemModules')}</h3>
+        <p className="text-sm text-zinc-400">{t('settings.systemModulesDesc')}</p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 16, height: 520 }}>
+        {/* Module list */}
+        <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto' }}>
+          {systemMods.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--tx3)', padding: '8px 0' }}>
+              {t('settings.noSystemModules')}
+            </div>
+          ) : systemMods.map(m => {
+            const isPinned = widgetLayout.pinned.includes(m.name);
+            const isSelected = m.name === selectedMod;
+            const isRunning = m.status === 'RUNNING';
+            const hasWidget = !!m.ui?.widget?.file;
+            return (
+              <div
+                key={m.name}
+                onClick={() => setSelectedMod(isSelected ? null : m.name)}
+                style={{
+                  padding: '8px 10px', borderRadius: 8,
+                  background: isSelected ? 'var(--sf2)' : 'var(--sf)',
+                  border: `1px solid ${isSelected ? 'var(--b2)' : 'var(--b)'}`,
+                  cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5,
+                  transition: 'all .15s',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                    background: isRunning ? 'var(--gr)' : 'var(--tx3)',
+                  }} />
+                  <span style={{
+                    fontSize: 12, fontWeight: 500, color: 'var(--tx)',
+                    flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {m.name}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: 'var(--tx3)', fontFamily: 'var(--font-mono)' }}>
+                    :{m.port}
+                  </span>
+                  {hasWidget && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        isPinned ? unpinModule(m.name) : pinModule(m.name);
+                      }}
+                      style={{
+                        marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 4,
+                        background: isPinned ? 'rgba(79,140,247,.15)' : 'var(--sf3)',
+                        color: isPinned ? 'var(--ac)' : 'var(--tx3)',
+                        border: `1px solid ${isPinned ? 'rgba(79,140,247,.3)' : 'var(--b)'}`,
+                        cursor: 'pointer', fontWeight: 500,
+                      }}
+                    >
+                      {isPinned ? t('settings.pinned') : t('settings.pin')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Settings iframe */}
+        <div style={{
+          flex: 1, background: 'var(--sf)', border: '1px solid var(--b)',
+          borderRadius: 12, overflow: 'hidden',
+        }}>
+          {selected && selected.ui?.settings ? (
+            <iframe
+              key={selected.name}
+              src={`/api/ui/modules/${selected.name}/settings`}
+              style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+              title={`${selected.name} settings`}
+              sandbox="allow-scripts allow-same-origin allow-forms"
+            />
+          ) : selected ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '100%', color: 'var(--tx3)', fontSize: 12,
+            }}>
+              {t('settings.noSettingsAvailable')}
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '100%', color: 'var(--tx3)', fontSize: 12,
+            }}>
+              {t('settings.selectModuleToConfig')}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

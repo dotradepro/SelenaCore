@@ -220,7 +220,7 @@ async def get_setup_qr() -> JSONResponse:
         except Exception:
             host_ip = "127.0.0.1"
 
-    ui_url = f"http://{host_ip}:8080"
+    ui_url = f"http://{host_ip}"
 
     try:
         import qrcode  # type: ignore

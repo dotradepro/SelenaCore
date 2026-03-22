@@ -3,16 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import { useStore, Module } from '../store/useStore';
 
 /* ── Widget Shell ── */
-function WidgetShell({ mod, editMode }: { mod: Module; editMode: boolean }) {
+function WidgetShell({
+  mod, editMode, size = 'normal', onUnpin, onResize, onMoveLeft, onMoveRight, canMoveLeft, canMoveRight,
+}: {
+  mod: Module;
+  editMode: boolean;
+  size?: 'compact' | 'normal';
+  onUnpin?: () => void;
+  onResize?: () => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
+}) {
   const navigate = useNavigate();
   const isRunning = mod.status === 'RUNNING';
   const isErr = mod.status === 'ERROR';
   const dotCls = isRunning ? 'wsd-run' : isErr ? 'wsd-err' : 'wsd-stop';
   const initial = (mod.name || '?')[0].toUpperCase();
 
-  // Use widget size from manifest, with fallback heuristic
-  const widgetSize = mod.ui?.widget?.size;
-  const span = widgetSize ? `sp-${widgetSize}` : (mod.type === 'SYSTEM' ? 'sp-1x1' : 'sp-2x1');
+  // Size: compact = 1x1, normal = manifest size or fallback
+  const manifestSize = mod.ui?.widget?.size;
+  const span = size === 'compact' ? 'sp-1x1' : (manifestSize ? `sp-${manifestSize}` : (mod.type === 'SYSTEM' ? 'sp-1x1' : 'sp-2x1'));
 
   // Listen for openSettings postMessage from widget iframe
   useEffect(() => {
@@ -28,14 +40,25 @@ function WidgetShell({ mod, editMode }: { mod: Module; editMode: boolean }) {
   return (
     <div className={`ws ${span}${editMode ? ' edit-mode' : ''}`}>
       <div className={`ws-dot ${dotCls}`} />
-      {editMode && <div className="ws-remove">−</div>}
+      {/* Edit mode control bar */}
+      {editMode && (
+        <div className="ws-edit-bar">
+          <button className="ws-eb-btn ws-eb-red" onClick={onUnpin} title="Unpin">−</button>
+          <button className="ws-eb-btn" onClick={onResize} title={size === 'compact' ? 'Expand' : 'Compact'}>
+            {size === 'compact' ? '⊞' : '⊟'}
+          </button>
+          <button className="ws-eb-btn" onClick={onMoveLeft} disabled={!canMoveLeft} title="Move left">←</button>
+          <button className="ws-eb-btn" onClick={onMoveRight} disabled={!canMoveRight} title="Move right">→</button>
+        </div>
+      )}
+
       {isRunning ? (
         <iframe
           src={`/api/ui/modules/${mod.name}/widget`}
           sandbox="allow-scripts allow-same-origin"
           scrolling="no"
           title={mod.name}
-          style={{ width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: 'auto' }}
+          style={{ width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: editMode ? 'none' : 'auto' }}
         />
       ) : (
         <div
@@ -43,9 +66,9 @@ function WidgetShell({ mod, editMode }: { mod: Module; editMode: boolean }) {
             width: '100%', height: '100%',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
-            gap: 5, opacity: .4, cursor: 'pointer',
+            gap: 5, opacity: .4, cursor: editMode ? 'default' : 'pointer',
           }}
-          onClick={() => navigate(`/modules/${mod.name}`)}
+          onClick={() => !editMode && navigate(`/modules/${mod.name}`)}
         >
           <div style={{
             width: 32, height: 32, borderRadius: 9,
@@ -66,184 +89,40 @@ function WidgetShell({ mod, editMode }: { mod: Module; editMode: boolean }) {
   );
 }
 
-/* ── Voice System Widget (pinned, always screen 0) ── */
-function VoiceSystemWidget() {
-  const voiceStatus = useStore((s) => s.voiceStatus);
-  const setVoiceStatus = useStore((s) => s.setVoiceStatus);
-  const [open, setOpen] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [vstatus, setVstatus] = useState('Ready');
-
-  const isListening = voiceStatus === 'listening';
-  const isSpeaking = voiceStatus === 'speaking';
-  const statusColor = isListening ? 'var(--gr)' : isSpeaking ? 'var(--ac)' : 'var(--tx3)';
-  const statusLabel = isListening ? 'Listening…' : isSpeaking ? 'Speaking…' : 'Ready';
-
-  function triggerListen() {
-    if (voiceStatus === 'listening') {
-      setVoiceStatus('idle');
-      setVstatus('Ready');
-      return;
-    }
-    setVoiceStatus('listening');
-    setVstatus('Listening…');
-    setTranscript('');
-    setTimeout(() => {
-      setTranscript('«turn on kitchen lights»');
-      setVoiceStatus('speaking');
-      setVstatus('Speaking…');
-      setTimeout(() => {
-        setVoiceStatus('idle');
-        setVstatus('✓ Done');
-        setTranscript('Kitchen lights on (3 lamps, 70%)');
-      }, 1200);
-    }, 2200);
-  }
-
-  function closeModal() {
-    setOpen(false);
-    if (voiceStatus !== 'idle') {
-      setVoiceStatus('idle');
-      setVstatus('Ready');
-      setTranscript('');
-    }
-  }
-
-  return (
-    <>
-      {/* Widget card in grid */}
-      <div
-        className="ws sp-2x2"
-        style={{ cursor: 'pointer' }}
-        onClick={() => setOpen(true)}
-      >
-        <div className="ws-dot wsd-run" />
-        <div style={{
-          width: '100%', height: '100%',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'space-between',
-          padding: '10px 8px 8px',
-        }}>
-          {/* Label row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start' }}>
-            <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--tx3)' }}>
-              Voice · Core
-            </div>
-            <div style={{
-              width: 5, height: 5, borderRadius: '50%',
-              background: statusColor,
-              boxShadow: voiceStatus !== 'idle' ? `0 0 5px ${statusColor}` : 'none',
-              transition: 'all .3s',
-            }} />
-          </div>
-
-          {/* Mic ring */}
-          <div
-            className={`vring${isListening ? ' listening' : ''}`}
-            style={{ width: 52, height: 52 }}
-            onClick={(e) => { e.stopPropagation(); triggerListen(); }}
-          >
-            <svg viewBox="0 0 26 26" fill="none" width="20" height="20">
-              <rect x="9" y="2" width="8" height="13" rx="4" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M4.5 12c0 4.7 3.8 8.5 8.5 8.5S21.5 16.7 21.5 12M13 20.5V24M9 24h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </div>
-
-          {/* Status */}
-          <div style={{ fontSize: 10, color: statusColor, transition: 'color .3s' }}>
-            {statusLabel}
-          </div>
-
-          {/* Transcript preview */}
-          <div style={{
-            fontSize: 9, color: 'var(--tx2)',
-            textAlign: 'center', maxWidth: '90%',
-            overflow: 'hidden', whiteSpace: 'nowrap',
-            textOverflow: 'ellipsis', minHeight: 11,
-          }}>
-            {transcript}
-          </div>
-        </div>
-        <div className="ws-label">Voice · System Module</div>
-      </div>
-
-      {/* Full voice popup modal */}
-      {open && (
-        <div
-          className="vov open"
-          style={{ position: 'fixed' }}
-          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
-        >
-          <div className="vmodal">
-            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx3)', textTransform: 'uppercase', letterSpacing: '.06em', alignSelf: 'flex-start' }}>
-              Voice Assistant · SelenaCore
-            </div>
-            <div className={`vring${isListening ? ' listening' : ''}`} onClick={triggerListen}>
-              <svg viewBox="0 0 26 26" fill="none" width="26" height="26">
-                <rect x="9" y="2" width="8" height="13" rx="4" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M4.5 12c0 4.7 3.8 8.5 8.5 8.5S21.5 16.7 21.5 12M13 20.5V24M9 24h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </div>
-            <div style={{ fontSize: 12, color: isListening ? 'var(--ac)' : vstatus.startsWith('✓') ? 'var(--gr)' : 'var(--tx2)' }}>
-              {vstatus}
-            </div>
-            {transcript && (
-              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--tx)', textAlign: 'center' }}>
-                {transcript}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, justifyContent: 'center' }}>
-              {['Turn on lights', 'Set 22° climate', 'Night scene', 'Status report', 'Lock front door'].map((s) => (
-                <div key={s} className="vsug" onClick={() => {
-                  setTranscript(`«${s.toLowerCase()}»`);
-                  setVstatus('Processing…');
-                  setVoiceStatus('speaking');
-                  setTimeout(() => {
-                    setVstatus('✓ Done');
-                    setVoiceStatus('idle');
-                    setTranscript(s);
-                  }, 800);
-                }}>
-                  {s}
-                </div>
-              ))}
-            </div>
-            <div
-              style={{ fontSize: 10, color: 'var(--tx3)', cursor: 'pointer', marginTop: 2 }}
-              onClick={closeModal}
-            >
-              ✕ close
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
 /* ── Dashboard (Widget Homescreen) ── */
 export default function Dashboard() {
   const modules = useStore((s) => s.modules);
   const fetchModules = useStore((s) => s.fetchModules);
+  const widgetLayout = useStore((s) => s.widgetLayout);
+  const pinModule = useStore((s) => s.pinModule);
+  const unpinModule = useStore((s) => s.unpinModule);
+  const setWidgetSize = useStore((s) => s.setWidgetSize);
+  const moveWidget = useStore((s) => s.moveWidget);
 
   const [currentScreen, setCurrentScreen] = useState(0);
   const [editMode, setEditMode] = useState(false);
+  const [showAddPanel, setShowAddPanel] = useState(false);
   const swipeRef = useRef<number | null>(null);
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
 
-  // Screen 0: VoiceSystemWidget (sp-2x2 = 4 cells) + up to 4 module widgets
-  // Screen 1+: up to 6 module widgets
-  const SLOTS_S0 = 4;
-  const PER_SCREEN = 6;
-  const allMods = modules;
-  const overflow = Math.max(0, allMods.length - SLOTS_S0);
-  const totalScreens = 1 + (overflow > 0 ? Math.ceil(overflow / PER_SCREEN) : 0);
+  // Pinned modules in display order
+  const pinnedMods = widgetLayout.pinned
+    .map(name => modules.find(m => m.name === name))
+    .filter(Boolean) as Module[];
 
-  function getScreenMods(si: number): Module[] {
-    if (si === 0) return allMods.slice(0, SLOTS_S0);
-    const start = SLOTS_S0 + (si - 1) * PER_SCREEN;
-    return allMods.slice(start, start + PER_SCREEN);
+  // Unpinned system modules with a widget (available to add to dashboard)
+  const unpinnedSystemMods = modules.filter(m =>
+    m.type === 'SYSTEM' && !!m.ui?.widget?.file && !widgetLayout.pinned.includes(m.name)
+  );
+
+  const PER_SCREEN = 6;
+  const totalScreens = Math.max(1, Math.ceil(pinnedMods.length / PER_SCREEN));
+
+  function getScreenMods(si: number): Array<{ mod: Module; pinIdx: number }> {
+    const startIdx = si * PER_SCREEN;
+    const endIdx = startIdx + PER_SCREEN;
+    return pinnedMods.slice(startIdx, endIdx).map((mod, i) => ({ mod, pinIdx: startIdx + i }));
   }
 
   // Sidebar is 52px; total viewport 800px
@@ -267,14 +146,35 @@ export default function Dashboard() {
       onTouchEnd={onTouchEnd}
     >
       {/* Edit toggle */}
-      <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 30 }}>
+      <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 30, display: 'flex', gap: 6, alignItems: 'center' }}>
+        {editMode && unpinnedSystemMods.length > 0 && (
+          <div className="edit-toggle" onClick={() => setShowAddPanel(v => !v)}>
+            + Add ({unpinnedSystemMods.length})
+          </div>
+        )}
         <div
           className={`edit-toggle${editMode ? ' on' : ''}`}
-          onClick={() => setEditMode(!editMode)}
+          onClick={() => { setEditMode(v => !v); setShowAddPanel(false); }}
         >
           {editMode ? 'Done' : 'Edit'}
         </div>
       </div>
+
+      {/* Add system module panel */}
+      {editMode && showAddPanel && (
+        <div className="add-mod-panel">
+          <div style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--tx3)', marginBottom: 6 }}>
+            Add to Dashboard
+          </div>
+          {unpinnedSystemMods.map(m => (
+            <div key={m.name} className="add-mod-item" onClick={() => { pinModule(m.name); setShowAddPanel(false); }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: m.status === 'RUNNING' ? 'var(--gr)' : 'var(--tx3)', flexShrink: 0 }} />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+              <span style={{ color: 'var(--ac)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}>+</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Left arrow */}
       {currentScreen > 0 && (
@@ -303,7 +203,7 @@ export default function Dashboard() {
       }}>
         {Array.from({ length: totalScreens }, (_, si) => {
           const mods = getScreenMods(si);
-          const maxSlots = si === 0 ? SLOTS_S0 : PER_SCREEN;
+          const maxSlots = PER_SCREEN;
           return (
             <div key={si} style={{ flexShrink: 0, width: SCREEN_W, height: '100%', padding: 10 }}>
               <div style={{
@@ -314,11 +214,19 @@ export default function Dashboard() {
                 width: '100%',
                 height: 'calc(100% - 20px)',
               }}>
-                {/* Voice system widget — always first on screen 0 */}
-                {si === 0 && <VoiceSystemWidget />}
-
-                {mods.map((mod) => (
-                  <WidgetShell key={mod.name} mod={mod} editMode={editMode} />
+                {mods.map(({ mod, pinIdx }) => (
+                  <WidgetShell
+                    key={mod.name}
+                    mod={mod}
+                    editMode={editMode}
+                    size={widgetLayout.sizes[mod.name] ?? 'normal'}
+                    onUnpin={() => unpinModule(mod.name)}
+                    onResize={() => setWidgetSize(mod.name, (widgetLayout.sizes[mod.name] ?? 'normal') === 'compact' ? 'normal' : 'compact')}
+                    onMoveLeft={() => moveWidget(mod.name, -1)}
+                    onMoveRight={() => moveWidget(mod.name, 1)}
+                    canMoveLeft={pinIdx > 0}
+                    canMoveRight={pinIdx < pinnedMods.length - 1}
+                  />
                 ))}
 
                 {/* Add slot (edit mode) */}

@@ -57,7 +57,7 @@ def _chromium_available() -> bool:
     return False
 
 
-def launch_kiosk(url: str = "http://localhost:8080") -> subprocess.Popen | None:
+def launch_kiosk(url: str = "http://localhost") -> subprocess.Popen | None:
     """Launch Chromium in kiosk mode pointing at the UI URL."""
     for binary in ("chromium-browser", "chromium", "google-chrome"):
         result = subprocess.run(["which", binary], capture_output=True, timeout=3)

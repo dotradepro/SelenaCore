@@ -60,6 +60,32 @@ export interface WizardRequirements {
   steps: Record<string, StepStatus>;
 }
 
+// ── Widget layout — persisted to backend (synced across all browsers/kiosk) ──
+export interface WidgetLayout {
+  pinned: string[];
+  sizes: Record<string, 'compact' | 'normal'>;
+  hidden: string[];
+}
+function loadWidgetLayout(): WidgetLayout {
+  // Initial value from localStorage (fast, synchronous); will be overridden
+  // by the backend value once connectSyncStream() fetches it.
+  try {
+    const raw = localStorage.getItem('selena-widget-layout');
+    if (raw) return { hidden: [], ...JSON.parse(raw) } as WidgetLayout;
+  } catch { /* ignore */ }
+  return { pinned: [], sizes: {}, hidden: [] };
+}
+function saveWidgetLayout(layout: WidgetLayout) {
+  // Mirror to localStorage for instant rehydration on next page load
+  try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
+  // Persist to backend (async, no await — fire-and-forget)
+  fetch('/api/ui/layout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(layout),
+  }).catch(() => { /* ignore network errors */ });
+}
+
 interface AppState {
   isConfigured: boolean;
   wizardLoading: boolean;
@@ -89,6 +115,13 @@ interface AppState {
   updateDeviceState: (deviceId: string, state: Record<string, unknown>) => Promise<void>;
   voiceStatus: 'idle' | 'listening' | 'speaking';
   setVoiceStatus: (status: 'idle' | 'listening' | 'speaking') => void;
+  widgetLayout: WidgetLayout;
+  initWidgetLayout: (modules: Module[]) => void;
+  pinModule: (name: string) => void;
+  unpinModule: (name: string) => void;
+  setWidgetSize: (name: string, size: 'compact' | 'normal') => void;
+  moveWidget: (name: string, dir: -1 | 1) => void;
+  connectSyncStream: () => () => void;
 }
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -197,7 +230,9 @@ export const useStore = create<AppState>((set, get) => ({
     set({ modulesLoading: true });
     try {
       const data = await apiFetch('/api/ui/modules');
-      set({ modules: data?.modules ?? [] });
+      const mods = data?.modules ?? [];
+      set({ modules: mods });
+      get().initWidgetLayout(mods);
     } catch (e) {
       console.error('fetchModules failed', e);
     } finally {
@@ -227,6 +262,113 @@ export const useStore = create<AppState>((set, get) => ({
       body: JSON.stringify({ state }),
     });
     get().fetchDevices();
+  },
+
+  widgetLayout: loadWidgetLayout(),
+  initWidgetLayout: (modules) => {
+    set(state => {
+      const layout = { pinned: [...state.widgetLayout.pinned], sizes: { ...state.widgetLayout.sizes }, hidden: [...(state.widgetLayout.hidden ?? [])] };
+      let changed = false;
+      modules.forEach(m => {
+        const hasWidget = !!m.ui?.widget?.file;
+        if (!hasWidget) return;
+        if (!(m.name in layout.sizes)) { layout.sizes[m.name] = 'normal'; changed = true; }
+        // Only auto-pin non-SYSTEM modules that are not explicitly hidden
+        if (m.type !== 'SYSTEM' && !layout.pinned.includes(m.name) && !layout.hidden.includes(m.name)) {
+          layout.pinned.push(m.name); changed = true;
+        }
+      });
+      if (changed) saveWidgetLayout(layout);
+      return changed ? { widgetLayout: { ...layout } } : state;
+    });
+  },
+  pinModule: (name) => {
+    set(state => {
+      if (state.widgetLayout.pinned.includes(name)) return state;
+      const hidden = (state.widgetLayout.hidden ?? []).filter(n => n !== name);
+      const layout: WidgetLayout = {
+        pinned: [...state.widgetLayout.pinned, name],
+        sizes: { ...state.widgetLayout.sizes, [name]: state.widgetLayout.sizes[name] ?? 'normal' },
+        hidden,
+      };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  unpinModule: (name) => {
+    set(state => {
+      const hidden = [...(state.widgetLayout.hidden ?? [])];
+      if (!hidden.includes(name)) hidden.push(name);
+      const layout: WidgetLayout = { ...state.widgetLayout, pinned: state.widgetLayout.pinned.filter(n => n !== name), hidden };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  setWidgetSize: (name, size) => {
+    set(state => {
+      const layout: WidgetLayout = { ...state.widgetLayout, sizes: { ...state.widgetLayout.sizes, [name]: size } };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  moveWidget: (name, dir) => {
+    set(state => {
+      const pinned = [...state.widgetLayout.pinned];
+      const idx = pinned.indexOf(name);
+      if (idx < 0) return state;
+      const newIdx = idx + dir;
+      if (newIdx < 0 || newIdx >= pinned.length) return state;
+      [pinned[idx], pinned[newIdx]] = [pinned[newIdx], pinned[idx]];
+      const layout: WidgetLayout = { ...state.widgetLayout, pinned };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+
+  connectSyncStream: () => {
+    // Fetch layout from backend first (authoritative, shared across devices)
+    fetch('/api/ui/layout')
+      .then(r => r.json())
+      .then((raw: Record<string, unknown>) => {
+        if (raw && Array.isArray(raw.pinned)) {
+          const layout: WidgetLayout = {
+            pinned: raw.pinned as string[],
+            sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
+            hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
+          };
+          try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
+          set({ widgetLayout: layout });
+        }
+      })
+      .catch(() => { /* ignore */ });
+
+    // Open SSE stream for real-time sync
+    const es = new EventSource('/api/ui/stream');
+    es.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data) as { type: string; payload?: unknown };
+        if (msg.type === 'layout_changed' && msg.payload) {
+          const raw = msg.payload as Record<string, unknown>;
+          const layout: WidgetLayout = {
+            pinned: Array.isArray(raw.pinned) ? raw.pinned as string[] : [],
+            sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
+            hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
+          };
+          try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
+          set({ widgetLayout: layout });
+        } else if (
+          msg.type === 'module.started' ||
+          msg.type === 'module.stopped' ||
+          msg.type === 'module.removed'
+        ) {
+          get().fetchModules();
+        }
+      } catch { /* ignore */ }
+    };
+    es.onerror = () => {
+      // Reconnect handled automatically by EventSource; nothing to do here.
+    };
+    return () => es.close();
   },
 }));
 

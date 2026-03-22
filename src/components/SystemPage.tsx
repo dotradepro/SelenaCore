@@ -9,8 +9,8 @@ function fmtUptime(sec: number): string {
 }
 
 export default function SystemPage() {
-  const stats      = useStore((s) => s.stats);
-  const health     = useStore((s) => s.health);
+  const stats = useStore((s) => s.stats);
+  const health = useStore((s) => s.health);
   const fetchStats = useStore((s) => s.fetchStats);
 
   useEffect(() => {
@@ -19,10 +19,10 @@ export default function SystemPage() {
     return () => clearInterval(id);
   }, [fetchStats]);
 
-  const cpuPct  = stats ? Math.round(stats.cpuTemp) : 0;
-  const ramPct  = stats ? Math.round((stats.ramUsedMb / stats.ramTotalMb) * 100) : 0;
+  const cpuPct = stats ? Math.round(stats.cpuTemp) : 0;
+  const ramPct = stats ? Math.round((stats.ramUsedMb / stats.ramTotalMb) * 100) : 0;
   const diskPct = stats ? Math.round((stats.diskUsedGb / stats.diskTotalGb) * 100) : 0;
-  const tmpPct  = stats ? Math.min(100, Math.round((stats.cpuTemp / 90) * 100)) : 0;
+  const tmpPct = stats ? Math.min(100, Math.round((stats.cpuTemp / 90) * 100)) : 0;
 
   function barColor(pct: number): string {
     if (pct < 60) return 'var(--gr)';
@@ -33,7 +33,7 @@ export default function SystemPage() {
   return (
     <div className="generic-page">
       {/* Core + Network */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div className="card">
           <div className="card-title">Core</div>
           <div className="sysrow">
@@ -46,7 +46,7 @@ export default function SystemPage() {
           </div>
           <div className="sysrow">
             <span className="srl">UI</span>
-            <span className="srv">:8080</span>
+            <span className="srv">:80</span>
           </div>
           <div className="sysrow">
             <span className="srl">Uptime</span>
@@ -76,7 +76,7 @@ export default function SystemPage() {
           </div>
           <div className="sysrow">
             <span className="srl">mDNS</span>
-            <span className="srv" style={{ color:'var(--ac)' }}>smarthome.local</span>
+            <span className="srv" style={{ color: 'var(--ac)' }}>smarthome.local</span>
           </div>
           <div className="sysrow">
             <span className="srl">API port</span>
@@ -84,7 +84,7 @@ export default function SystemPage() {
           </div>
           <div className="sysrow">
             <span className="srl">UI port</span>
-            <span className="srv">8080</span>
+            <span className="srv">80</span>
           </div>
           <div className="sysrow">
             <span className="srl">Integrity</span>
@@ -96,35 +96,35 @@ export default function SystemPage() {
       </div>
 
       {/* Hardware */}
-      <div className="card" style={{ marginTop:8 }}>
+      <div className="card" style={{ marginTop: 8 }}>
         <div className="card-title">Hardware</div>
         <div className="hwgrid">
           <div className="hwitem">
             <div className="hwlabel">CPU Temp</div>
             <div className="hwval">{stats ? `${stats.cpuTemp.toFixed(0)}°` : '—'}</div>
             <div className="hwbar">
-              <div className="hwfill" style={{ width:`${tmpPct}%`, background: barColor(tmpPct) }} />
+              <div className="hwfill" style={{ width: `${tmpPct}%`, background: barColor(tmpPct) }} />
             </div>
           </div>
           <div className="hwitem">
             <div className="hwlabel">RAM</div>
             <div className="hwval">{stats ? `${(stats.ramUsedMb / 1024).toFixed(1)} GB` : '—'}</div>
             <div className="hwbar">
-              <div className="hwfill" style={{ width:`${ramPct}%`, background: barColor(ramPct) }} />
+              <div className="hwfill" style={{ width: `${ramPct}%`, background: barColor(ramPct) }} />
             </div>
           </div>
           <div className="hwitem">
             <div className="hwlabel">Disk</div>
             <div className="hwval">{stats ? `${stats.diskUsedGb.toFixed(1)} G` : '—'}</div>
             <div className="hwbar">
-              <div className="hwfill" style={{ width:`${diskPct}%`, background: barColor(diskPct) }} />
+              <div className="hwfill" style={{ width: `${diskPct}%`, background: barColor(diskPct) }} />
             </div>
           </div>
           <div className="hwitem">
             <div className="hwlabel">RAM total</div>
             <div className="hwval">{stats ? `${(stats.ramTotalMb / 1024).toFixed(0)} GB` : '—'}</div>
             <div className="hwbar">
-              <div className="hwfill" style={{ width:'100%', background:'var(--sf3)' }} />
+              <div className="hwfill" style={{ width: '100%', background: 'var(--sf3)' }} />
             </div>
           </div>
         </div>

@@ -27,11 +27,18 @@ export default function App() {
   const setSetupStage = useStore((state) => state.setSetupStage);
   const fetchWizardStatus = useStore((state) => state.fetchWizardStatus);
   const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
+  const connectSyncStream = useStore((state) => state.connectSyncStream);
 
   useEffect(() => {
     fetchWizardStatus();
     fetchWizardRequirements();
   }, [fetchWizardStatus, fetchWizardRequirements]);
+
+  // Connect real-time sync stream (layout + module state) once on mount
+  useEffect(() => {
+    const disconnect = connectSyncStream();
+    return disconnect;
+  }, [connectSyncStream]);
 
   if (wizardLoading) {
     return (

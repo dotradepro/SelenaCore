@@ -747,7 +747,7 @@ export default function Wizard() {
                             <div><span className="text-zinc-500">{t('wizard.apPassword')}:</span> <span className="text-zinc-200 font-mono">{apPassword}</span></div>
                           </div>
                           <div className="text-[10px] text-zinc-400">
-                            {t('wizard.apOpenUrl')}: <span className="text-cyan-400 font-mono">http://{apIp}:8080</span>
+                            {t('wizard.apOpenUrl')}: <span className="text-cyan-400 font-mono">http://{apIp}</span>
                           </div>
                         </div>
                       )}
