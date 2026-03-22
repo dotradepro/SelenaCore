@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Widget</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .widget {
+    width: 100%;
+    max-width: 380px;
+  }
+  .current {
+    background: rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .emoji { font-size: 3rem; }
+  .temp { font-size: 3rem; font-weight: 700; margin: 8px 0; }
+  .condition { font-size: 1.1rem; color: #aaa; margin-bottom: 12px; }
+  .details {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    font-size: 0.85rem;
+  }
+  .detail-item {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 8px;
+    text-align: center;
+  }
+  .detail-label { color: #888; font-size: 0.75rem; }
+  .forecast {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .forecast-day {
+    background: rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 10px;
+    text-align: center;
+    font-size: 0.8rem;
+  }
+  .forecast-date { color: #888; margin-bottom: 4px; }
+  .forecast-emoji { font-size: 1.4rem; }
+  .forecast-temps { margin-top: 4px; }
+  .max-temp { color: #FFD700; }
+  .min-temp { color: #88c0d0; }
+  .loading { text-align: center; color: #666; padding: 40px; font-size: 1.2rem; }
+  .error { text-align: center; color: #e06c75; padding: 20px; }
+</style>
+</head>
+<body>
+<div class="widget">
+  <div id="content" class="loading">⏳ Loading weather…</div>
+</div>
+<script>
+async function load() {
+  const base = window.location.origin;
+  try {
+    const [cur, fore] = await Promise.all([
+      fetch(`${base}/weather/current`).then(r => {
+        if (!r.ok) throw new Error('No data');
+        return r.json();
+      }),
+      fetch(`${base}/weather/forecast`).then(r => r.json()),
+    ]);
+
+    const formatDate = d => {
+      const dt = new Date(d);
+      return dt.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+    };
+
+    const forecastHTML = (fore.forecast || []).map(f => `
+      <div class="forecast-day">
+        <div class="forecast-date">${f.date ? formatDate(f.date) : '—'}</div>
+        <div class="forecast-emoji">${f.condition_emoji || '❓'}</div>
+        <div>${f.condition || '—'}</div>
+        <div class="forecast-temps">
+          <span class="max-temp">${f.temp_max != null ? Math.round(f.temp_max) + '°' : '—'}</span>
+          / <span class="min-temp">${f.temp_min != null ? Math.round(f.temp_min) + '°' : '—'}</span>
+        </div>
+        ${f.precipitation ? `<div>💧 ${f.precipitation} mm</div>` : ''}
+      </div>
+    `).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div class="current">
+        <div class="emoji">${cur.condition_emoji || '❓'}</div>
+        <div class="temp">${cur.temperature != null ? Math.round(cur.temperature) + '°' : '—'}</div>
+        <div class="condition">${cur.condition || '—'}</div>
+        <div class="details">
+          <div class="detail-item">
+            <div class="detail-label">Feels like</div>
+            <div>${cur.feels_like != null ? Math.round(cur.feels_like) + '°' : '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Humidity</div>
+            <div>${cur.humidity != null ? cur.humidity + '%' : '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Wind</div>
+            <div>${cur.wind_speed != null ? cur.wind_speed + ' km/h' : '—'}</div>
+          </div>
+          <div class="detail-item">
+            <div class="detail-label">Precipitation</div>
+            <div>${cur.precipitation != null ? cur.precipitation + ' mm' : '—'}</div>
+          </div>
+        </div>
+      </div>
+      <div class="forecast">${forecastHTML}</div>
+    `;
+  } catch (e) {
+    document.getElementById('content').innerHTML =
+      `<div class="error">⚠️ Weather data unavailable<br><small>${e.message}</small></div>`;
+  }
+}
+
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

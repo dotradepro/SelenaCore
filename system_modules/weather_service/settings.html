@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Service Settings</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #e0e0e0;
+    padding: 24px;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 24px; color: #fff; }
+  .section {
+    background: #1a1d27;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .section h2 { font-size: 1rem; color: #aaa; margin-bottom: 16px; }
+  label { display: block; font-size: 0.85rem; color: #aaa; margin-bottom: 4px; }
+  input, select {
+    width: 100%;
+    background: #0f1117;
+    border: 1px solid #333;
+    border-radius: 8px;
+    color: #e0e0e0;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    margin-bottom: 14px;
+  }
+  input:focus, select:focus { outline: none; border-color: #5c8ee6; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  button {
+    width: 100%;
+    background: #5c8ee6;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 1rem;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:hover { background: #4a7bd4; }
+  #status-panel {
+    background: #111827;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-top: 12px;
+    white-space: pre-wrap;
+  }
+  .msg { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.9rem; }
+  .msg.ok { background: rgba(80,200,120,0.15); color: #50c878; }
+  .msg.err { background: rgba(220,50,50,0.15); color: #e06c75; }
+</style>
+</head>
+<body>
+<h1>🌤️ Weather Service Settings</h1>
+
+<div class="section">
+  <h2>Location</h2>
+  <div class="row">
+    <div>
+      <label>Latitude</label>
+      <input type="number" id="lat" step="0.0001" placeholder="50.4501">
+    </div>
+    <div>
+      <label>Longitude</label>
+      <input type="number" id="lon" step="0.0001" placeholder="30.5234">
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Preferences</h2>
+  <label>Units</label>
+  <select id="units">
+    <option value="metric">Metric (°C, km/h)</option>
+    <option value="imperial">Imperial (°F, mph)</option>
+  </select>
+  <label>Update interval (seconds, min 60)</label>
+  <input type="number" id="interval" step="60" min="60" placeholder="1800">
+</div>
+
+<div class="section">
+  <h2>Alert Thresholds</h2>
+  <div class="row">
+    <div>
+      <label>Rain alert (mm)</label>
+      <input type="number" id="alert_rain" step="0.5" min="0" placeholder="10">
+    </div>
+    <div>
+      <label>Wind alert (km/h)</label>
+      <input type="number" id="alert_wind" step="1" min="0" placeholder="50">
+    </div>
+  </div>
+</div>
+
+<button onclick="save()">Save Settings</button>
+<button onclick="refresh()" style="background:#444; margin-top:8px;">🔄 Refresh Now</button>
+<div id="msg"></div>
+
+<div class="section" style="margin-top:16px;">
+  <h2>Current Status</h2>
+  <div id="status-panel">Loading…</div>
+</div>
+
+<script>
+const base = window.location.origin;
+
+async function loadStatus() {
+  try {
+    const s = await fetch(`${base}/weather/status`).then(r => r.json());
+    document.getElementById('status-panel').textContent = JSON.stringify(s, null, 2);
+    if (s.latitude) document.getElementById('lat').value = s.latitude;
+    if (s.longitude) document.getElementById('lon').value = s.longitude;
+    if (s.units) document.getElementById('units').value = s.units;
+    if (s.update_interval_sec) document.getElementById('interval').value = s.update_interval_sec;
+  } catch (e) {
+    document.getElementById('status-panel').textContent = 'Error loading status: ' + e.message;
+  }
+}
+
+async function save() {
+  const body = {};
+  const lat = parseFloat(document.getElementById('lat').value);
+  const lon = parseFloat(document.getElementById('lon').value);
+  const interval = parseInt(document.getElementById('interval').value);
+  const units = document.getElementById('units').value;
+  const alertRain = parseFloat(document.getElementById('alert_rain').value);
+  const alertWind = parseFloat(document.getElementById('alert_wind').value);
+  if (!isNaN(lat)) body.latitude = lat;
+  if (!isNaN(lon)) body.longitude = lon;
+  if (!isNaN(interval) && interval >= 60) body.update_interval_sec = interval;
+  if (units) body.units = units;
+  if (!isNaN(alertRain)) body.alert_rain_mm = alertRain;
+  if (!isNaN(alertWind)) body.alert_wind_kmh = alertWind;
+  try {
+    await fetch(`${base}/weather/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    showMsg('Settings saved!', 'ok');
+    loadStatus();
+  } catch (e) {
+    showMsg('Error: ' + e.message, 'err');
+  }
+}
+
+async function refresh() {
+  try {
+    await fetch(`${base}/weather/refresh`, { method: 'POST' });
+    showMsg('Refreshed!', 'ok');
+    loadStatus();
+  } catch (e) {
+    showMsg('Error: ' + e.message, 'err');
+  }
+}
+
+function showMsg(text, type) {
+  const el = document.getElementById('msg');
+  el.className = 'msg ' + type;
+  el.textContent = text;
+  setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
+}
+
+loadStatus();
+</script>
+</body>
+</html>
