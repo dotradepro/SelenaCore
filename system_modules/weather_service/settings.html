@@ -373,7 +373,8 @@
     </div>
 
     <button onclick="save()" style="width:100%" data-i18n="save_btn"></button>
-    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;" data-i18n="refresh_btn"></button>
+    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;"
+        data-i18n="refresh_btn"></button>
     <div id="msg"></div>
 
     <div class="section" style="margin-top:14px">
@@ -384,7 +385,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
-        var L = {
+        var TR = {
             en: {
                 title: '🌤️ Weather Service Settings',
                 h_location: '📍 Location', change_btn: 'Change', detect_btn: '📡 Detect My Location',
@@ -422,7 +423,7 @@
                 refreshed: 'Погода оновлена!'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function t(k) { return (TR[LANG] || TR.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
         window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
 
