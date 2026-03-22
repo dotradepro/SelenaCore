@@ -144,51 +144,51 @@
 </head>
 
 <body>
-    <h1>🔔 Notification Router Settings</h1>
+    <h1 data-i18n="title"></h1>
 
     <div class="section">
-        <h2>Add Channel</h2>
-        <label>Channel type</label>
+        <h2 data-i18n="add_channel"></h2>
+        <label data-i18n="channel_type"></label>
         <select id="ch-type">
-            <option value="telegram">Telegram</option>
-            <option value="webhook">Webhook</option>
-            <option value="tts">TTS (voice)</option>
-            <option value="push">Web Push</option>
+            <option value="telegram" data-i18n="opt_telegram">Telegram</option>
+            <option value="webhook" data-i18n="opt_webhook">Webhook</option>
+            <option value="tts" data-i18n="opt_tts">TTS (voice)</option>
+            <option value="push" data-i18n="opt_push">Web Push</option>
         </select>
         <div id="ch-fields"></div>
-        <button onclick="addChannel()">Add Channel</button>
+        <button onclick="addChannel()" data-i18n="add_channel_btn"></button>
         <div id="ch-msg"></div>
     </div>
 
     <div class="section">
-        <h2>Add Routing Rule</h2>
-        <label>Channel</label>
+        <h2 data-i18n="add_rule"></h2>
+        <label data-i18n="channel_lbl"></label>
         <select id="rule-channel">
             <option value="telegram">telegram</option>
             <option value="webhook">webhook</option>
             <option value="tts">tts</option>
             <option value="push">push</option>
         </select>
-        <label>Priority (lower = first)</label>
+        <label data-i18n="priority_lbl"></label>
         <input type="number" id="rule-priority" value="100" min="1">
-        <label>Level filter (blank = all)</label>
+        <label data-i18n="level_filter"></label>
         <select id="rule-level">
-            <option value="">All</option>
+            <option value="" data-i18n="opt_all">All</option>
             <option value="info">info</option>
             <option value="warning">warning</option>
             <option value="critical">critical</option>
         </select>
-        <button onclick="addRule()">Add Rule</button>
+        <button onclick="addRule()" data-i18n="add_rule_btn"></button>
         <div id="rule-msg"></div>
     </div>
 
     <div class="section">
-        <h2>Active Channels</h2>
+        <h2 data-i18n="active_channels"></h2>
         <table>
             <thead>
                 <tr>
-                    <th>Name</th>
-                    <th>Sent</th>
+                    <th data-i18n="col_name"></th>
+                    <th data-i18n="col_sent"></th>
                 </tr>
             </thead>
             <tbody id="channels-body"></tbody>
@@ -196,14 +196,14 @@
     </div>
 
     <div class="section">
-        <h2>Active Rules</h2>
+        <h2 data-i18n="active_rules"></h2>
         <table>
             <thead>
                 <tr>
-                    <th>Priority</th>
-                    <th>Channel</th>
-                    <th>Level</th>
-                    <th>Events</th>
+                    <th data-i18n="col_priority"></th>
+                    <th data-i18n="col_channel"></th>
+                    <th data-i18n="col_level"></th>
+                    <th data-i18n="col_events"></th>
                 </tr>
             </thead>
             <tbody id="rules-body"></tbody>
@@ -211,6 +211,15 @@
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { title: '🔔 Notification Router Settings', add_channel: 'Add Channel', channel_type: 'Channel type', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (voice)', opt_push: 'Web Push', add_channel_btn: 'Add Channel', add_rule: 'Add Routing Rule', channel_lbl: 'Channel', priority_lbl: 'Priority (lower = first)', level_filter: 'Level filter (blank = all)', opt_all: 'All', add_rule_btn: 'Add Rule', active_channels: 'Active Channels', col_name: 'Name', col_sent: 'Sent', active_rules: 'Active Rules', col_priority: 'Priority', col_channel: 'Channel', col_level: 'Level', col_events: 'Events', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Channel added', rule_added: '✓ Rule added', no_channels: 'No channels', no_rules: 'No rules' },
+            uk: { title: '🔔 Налаштування маршрутизації сповіщень', add_channel: 'Додати канал', channel_type: 'Тип каналу', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (голос)', opt_push: 'Web Push', add_channel_btn: 'Додати канал', add_rule: 'Додати правило маршрутизації', channel_lbl: 'Канал', priority_lbl: 'Пріоритет (Менший = перший)', level_filter: 'Фільтр рівня (пусто = усі)', opt_all: 'Усі', add_rule_btn: 'Додати правило', active_channels: 'Активні канали', col_name: 'Назва', col_sent: 'Надіслано', active_rules: 'Активні правила', col_priority: 'Пріоритет', col_channel: 'Канал', col_level: 'Рівень', col_events: 'Події', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Канал додано', rule_added: '✓ Правило додано', no_channels: 'Немає каналів', no_rules: 'Немає правил' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); } });
+
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         document.getElementById('ch-type').addEventListener('change', renderChFields);
@@ -220,11 +229,11 @@
             const f = document.getElementById('ch-fields');
             if (type === 'telegram') {
                 f.innerHTML = `
-      <label>Bot Token</label><input id="tg-token" type="password" placeholder="1234:ABCD...">
-      <label>Chat ID</label><input id="tg-chat" placeholder="-1001234567890">
+      <label>${t('tg_token')}</label><input id="tg-token" type="password" placeholder="1234:ABCD...">
+      <label>${t('tg_chat')}</label><input id="tg-chat" placeholder="-1001234567890">
     `;
             } else if (type === 'webhook') {
-                f.innerHTML = `<label>Webhook URL</label><input id="wh-url" placeholder="https://...">`;
+                f.innerHTML = `<label>${t('wh_url')}</label><input id="wh-url" placeholder="https://...">`;
             } else {
                 f.innerHTML = '';
             }
@@ -242,7 +251,7 @@
             try {
                 const r = await fetch(`${base}/channels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, config }) });
                 const d = await r.json();
-                if (r.ok) { showMsg('ch-msg', '✓ Channel added', 'ok'); await loadStatus(); }
+                if (r.ok) { showMsg('ch-msg', t('ch_added'), 'ok'); await loadStatus(); }
                 else showMsg('ch-msg', d.detail || 'Error', 'err');
             } catch (e) { showMsg('ch-msg', e.message, 'err'); }
         }
@@ -256,7 +265,7 @@
             try {
                 const r = await fetch(`${base}/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                 const d = await r.json();
-                if (r.ok) { showMsg('rule-msg', '✓ Rule added', 'ok'); await loadStatus(); }
+                if (r.ok) { showMsg('rule-msg', t('rule_added'), 'ok'); await loadStatus(); }
                 else showMsg('rule-msg', d.detail || 'Error', 'err');
             } catch (e) { showMsg('rule-msg', e.message, 'err'); }
         }
@@ -269,10 +278,10 @@
                 ]);
                 document.getElementById('channels-body').innerHTML = Object.entries(chs.channels || {})
                     .map(([n, v]) => `<tr><td>${n}</td><td>${v.stats || 0}</td></tr>`).join('') ||
-                    '<tr><td colspan="2" style="color:var(--tx3)">No channels</td></tr>';
+                    '<tr><td colspan="2" style="color:var(--tx3)">' + t('no_channels') + '</td></tr>';
                 document.getElementById('rules-body').innerHTML = (rules.rules || [])
                     .map(r => `<tr><td>${r.priority}</td><td>${r.channel}</td><td>${r.level || 'all'}</td><td>${(r.event_types || []).join(',') || 'all'}</td></tr>`)
-                    .join('') || '<tr><td colspan="4" style="color:var(--tx3)">No rules</td></tr>';
+                    .join('') || '<tr><td colspan="4" style="color:var(--tx3)">' + t('no_rules') + '</td></tr>';
             } catch (e) { }
         }
 
@@ -283,9 +292,10 @@
             setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
         }
 
+        applyLang();
         loadStatus();
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

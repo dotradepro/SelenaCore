@@ -204,7 +204,7 @@
 
     <!-- Top label -->
     <div class="top">
-        <div class="lbl">Voice · Core</div>
+        <div class="lbl" data-i18n="voice_label"></div>
         <div class="sdot" id="statusDot"></div>
         <span id="privBadge" class="priv hidden">🔇</span>
     </div>
@@ -222,7 +222,7 @@
 
     <!-- Bottom: status + info -->
     <div class="bottom">
-        <div class="status" id="statusText" style="color:var(--tx3)">Ready</div>
+        <div class="status" id="statusText" style="color:var(--tx3)" data-i18n="ready"></div>
         <div class="info">
             <span><span class="dot" id="sttDot"></span>STT</span>
             <span><span class="dot" id="wakeDot"></span>Wake</span>
@@ -231,6 +231,14 @@
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { voice_label: 'Voice · Core', ready: 'Ready', offline: 'Offline' },
+            uk: { voice_label: 'Voice · Core', ready: 'Готово', offline: 'Офлайн' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
         (function () {
             const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
             const $ = id => document.getElementById(id);
@@ -252,7 +260,7 @@
                     $('sttDot').className = 'dot off';
                     $('ttsDot').className = 'dot off';
                     $('wakeDot').className = 'dot off';
-                    $('statusText').textContent = 'Offline';
+                    $('statusText').textContent = t('offline');
                     $('statusText').style.color = 'var(--rd)';
                 }
                 try {
@@ -269,6 +277,7 @@
             load();
             setInterval(load, 30000);
         })();
+        applyLang();
     </script>
     <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>

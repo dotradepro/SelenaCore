@@ -43,7 +43,8 @@
             padding: 0;
         }
 
-        html, body {
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
@@ -123,15 +124,24 @@
 
 <body>
     <div class="card">
-        <div class="label">Current version</div>
+        <div class="label" data-i18n="lbl_current"></div>
         <div class="version" id="cur-ver">—</div>
-        <div class="label" style="margin-top:12px;">Latest available</div>
+        <div class="label" style="margin-top:12px;" data-i18n="lbl_latest"></div>
         <div id="latest-ver" style="font-size:1.2rem;color:var(--tx2);">—</div>
-        <div><span class="state" id="state-badge">idle</span></div>
-        <button onclick="checkNow()">🔄 Check for Updates</button>
+        <div><span class="state" id="state-badge" data-i18n="state_idle"></span></div>
+        <button onclick="checkNow()" data-i18n="check_btn"></button>
         <div id="msg"></div>
     </div>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { lbl_current: 'Current version', lbl_latest: 'Latest available', state_idle: 'idle', check_btn: '🔄 Check for Updates', checking: 'Checking…', update_available: '✅ Update available: ', up_to_date: '✓ Up to date' },
+            uk: { lbl_current: 'Поточна версія', lbl_latest: 'Остання доступна', state_idle: 'очікування', check_btn: '🔄 Перевірити оновлення', checking: 'Перевірка…', update_available: '✅ Доступне оновлення: ', up_to_date: '✓ Актуально' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function load() {
             try {
@@ -148,13 +158,14 @@
             document.getElementById('msg').textContent = 'Checking…';
             try {
                 const r = await fetch(`${base}/update/check`, { method: 'POST' }).then(r => r.json());
-                document.getElementById('msg').textContent = r.update_available ? `✅ Update available: ${r.version}` : '✓ Up to date';
+                document.getElementById('msg').textContent = r.update_available ? t('update_available') + r.version : t('up_to_date');
                 load();
             } catch (e) { document.getElementById('msg').textContent = '⚠️ ' + e.message; }
         }
+        applyLang();
         load(); setInterval(load, 30000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

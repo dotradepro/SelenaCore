@@ -317,11 +317,18 @@
     <div class="root" id="root">
         <div class="state-center">
             <div class="ico pulse">🌤</div>
-            <div>Loading…</div>
+            <div data-i18n="loading"></div>
         </div>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { loading: 'Loading…', feels_like: 'Feels like' },
+            uk: { loading: 'Завантаження…', feels_like: 'Відчувається' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
         (function () {
             const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
@@ -332,7 +339,7 @@
 
             function shortDay(s) {
                 if (!s) return '—';
-                return new Date(s + 'T12:00:00').toLocaleDateString('en', {
+                return new Date(s + 'T12:00:00').toLocaleDateString(LANG, {
                     weekday: 'short', month: 'short', day: 'numeric'
                 });
             }
@@ -367,7 +374,7 @@
         ${f.precipitation ? `<div class="fday-prec">💧 ${f.precipitation}mm</div>` : '<div></div>'}
       </div>`).join('');
 
-                const now = new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
+                const now = new Date().toLocaleTimeString(LANG, { hour: '2-digit', minute: '2-digit' });
 
                 document.getElementById('root').innerHTML = `
       <div class="top">
@@ -385,7 +392,7 @@
       <div class="forecast">${days}</div>
 
       <div class="bottom-bar">
-        <div class="feels">Feels like <span>${r(cur.feels_like)}${tu}</span></div>
+        <div class="feels">${t('feels_like')} <span>${r(cur.feels_like)}${tu}</span></div>
         <div class="updated">↻ ${now}</div>
       </div>`;
 
@@ -411,6 +418,8 @@
                 }
             }
 
+            window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+            applyLang();
             load();
             setInterval(load, 5 * 60 * 1000);
             window.addEventListener('resize', checkCompact);

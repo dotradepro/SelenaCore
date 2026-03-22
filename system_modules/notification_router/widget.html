@@ -44,7 +44,8 @@
             padding: 0;
         }
 
-        html, body {
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
@@ -111,13 +112,22 @@
 
 <body>
     <div class="header">
-        <h2>🔔 Notifications</h2>
+        <h2 data-i18n="title"></h2>
         <span class="badge" id="count">0</span>
     </div>
     <div id="list">
-        <div class="empty">No notifications</div>
+        <div class="empty" data-i18n="no_notifications"></div>
     </div>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { title: '🔔 Notifications', no_notifications: 'No notifications' },
+            uk: { title: '🔔 Сповіщення', no_notifications: 'Немає сповіщень' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function load() {
             try {
@@ -125,7 +135,7 @@
                 const items = (data.history || []).reverse();
                 document.getElementById('count').textContent = items.length;
                 if (!items.length) {
-                    document.getElementById('list').innerHTML = '<div class="empty">No notifications</div>';
+                    document.getElementById('list').innerHTML = '<div class="empty">' + t('no_notifications') + '</div>';
                     return;
                 }
                 document.getElementById('list').innerHTML = items.map(n => `
@@ -138,9 +148,10 @@
                 document.getElementById('list').innerHTML = `<div class="empty">⚠️ ${e.message}</div>`;
             }
         }
+        applyLang();
         load(); setInterval(load, 10000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

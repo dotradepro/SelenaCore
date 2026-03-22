@@ -210,73 +210,98 @@
 
 <body>
     <div class="container">
-        <h1>🏠 Presence Detection</h1>
-        <p class="subtitle">Track who is home via IP, MAC, or Bluetooth</p>
+        <h1 data-i18n="title"></h1>
+        <p class="subtitle" data-i18n="subtitle"></p>
 
         <div class="stat-bar">
             <div class="stat">
                 <div class="num" id="s-home">0</div>
-                <div class="desc">Home</div>
+                <div class="desc" data-i18n="stat_home"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-away" style="color:var(--rd)">0</div>
-                <div class="desc">Away</div>
+                <div class="desc" data-i18n="stat_away"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-total" style="color:var(--ac)">0</div>
-                <div class="desc">Tracked</div>
+                <div class="desc" data-i18n="stat_tracked"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-interval" style="color:var(--am)">—</div>
-                <div class="desc">Scan interval (s)</div>
+                <div class="desc" data-i18n="stat_interval"></div>
             </div>
         </div>
 
         <!-- User list -->
         <div class="card">
             <div class="card-header">
-                <h2>Tracked Users</h2>
+                <h2 data-i18n="tracked_users"></h2>
                 <div>
-                    <button class="btn btn-primary btn-sm" onclick="triggerScan()">Scan Now</button>
+                    <button class="btn btn-primary btn-sm" onclick="triggerScan()" data-i18n="scan_now"></button>
                     <button class="btn btn-primary btn-sm" onclick="loadUsers()" style="margin-left:4px">↻</button>
                 </div>
             </div>
-            <div id="users-container">Loading…</div>
+            <div id="users-container" data-i18n="loading"></div>
         </div>
 
         <!-- Add user -->
         <div class="card">
             <div class="card-header">
-                <h2>Add User</h2>
+                <h2 data-i18n="add_user_title"></h2>
             </div>
             <div class="form-row">
-                <label>User ID</label>
+                <label data-i18n="lbl_uid"></label>
                 <input id="new-user-id" placeholder="user-uuid-001" />
             </div>
             <div class="form-row">
-                <label>Name</label>
+                <label data-i18n="lbl_name"></label>
                 <input id="new-user-name" placeholder="Alice" />
             </div>
             <div class="form-row">
-                <label>IP address (optional)</label>
+                <label data-i18n="lbl_ip"></label>
                 <input id="new-ip" placeholder="192.168.1.101" />
             </div>
             <div class="form-row">
-                <label>MAC address (optional)</label>
+                <label data-i18n="lbl_mac"></label>
                 <input id="new-mac" placeholder="aa:bb:cc:dd:ee:ff" />
             </div>
             <div class="form-row">
-                <label>Bluetooth address (optional)</label>
+                <label data-i18n="lbl_bt"></label>
                 <input id="new-bt" placeholder="AA:BB:CC:DD:EE:FF" />
             </div>
             <div style="display:flex;align-items:center">
-                <button class="btn btn-primary" onclick="addUser()">Add User</button>
-                <span class="msg" id="add-msg">✓ Added</span>
+                <button class="btn btn-primary" onclick="addUser()" data-i18n="add_user_btn"></button>
+                <span class="msg" id="add-msg" data-i18n="added"></span>
             </div>
         </div>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '🏠 Presence Detection', subtitle: 'Track who is home via IP, MAC, or Bluetooth',
+                stat_home: 'Home', stat_away: 'Away', stat_tracked: 'Tracked', stat_interval: 'Scan interval (s)',
+                tracked_users: 'Tracked Users', scan_now: 'Scan Now', loading: 'Loading…',
+                add_user_title: 'Add User', lbl_uid: 'User ID', lbl_name: 'Name',
+                lbl_ip: 'IP address (optional)', lbl_mac: 'MAC address (optional)', lbl_bt: 'Bluetooth address (optional)',
+                add_user_btn: 'Add User', added: '✓ Added', no_users: 'No users. Add one below.',
+                err_required: 'User ID and Name are required.', remove_confirm: 'Remove user?'
+            },
+            uk: {
+                title: '🏠 Виявлення присутності', subtitle: 'Відстежуйте, хто вдома, за IP, MAC або Bluetooth',
+                stat_home: 'Вдома', stat_away: 'Відсутні', stat_tracked: 'Відстежується', stat_interval: 'Інтервал (с)',
+                tracked_users: 'Відстежувані користувачі', scan_now: 'Сканувати', loading: 'Завантаження…',
+                add_user_title: 'Додати користувача', lbl_uid: 'User ID', lbl_name: 'Ім\'я',
+                lbl_ip: 'IP-адреса (необов\'язково)', lbl_mac: 'MAC-адреса (необов\'язково)', lbl_bt: 'Bluetooth-адреса (необов\'язково)',
+                add_user_btn: 'Додати', added: '✓ Додано', no_users: 'Немає користувачів. Додайте нижче.',
+                err_required: 'User ID та Ім\'я обов\'язкові.', remove_confirm: 'Видалити користувача?'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); loadUsers(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const h = { "Authorization": "Bearer " + (window.SELENA_TOKEN || ""), "Content-Type": "application/json" };
 
@@ -300,7 +325,7 @@
                 const container = document.getElementById("users-container");
                 const users = d.users ?? [];
                 if (users.length === 0) {
-                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">No users. Add one below.</p>';
+                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + t('no_users') + '</p>';
                     return;
                 }
                 container.innerHTML = users.map(u => `
@@ -317,7 +342,7 @@
         }
 
         async function removeUser(id) {
-            if (!confirm("Remove user?")) return;
+            if (!confirm(t('remove_confirm'))) return;
             await fetch(BASE + "/users/" + id, { method: "DELETE", headers: h });
             loadUsers();
             loadStatus();
@@ -333,7 +358,7 @@
         async function addUser() {
             const id = document.getElementById("new-user-id").value.trim();
             const name = document.getElementById("new-user-name").value.trim();
-            if (!id || !name) { alert("User ID and Name are required."); return; }
+            if (!id || !name) { alert(t('err_required')); return; }
 
             const devices = [];
             const ip = document.getElementById("new-ip").value.trim();
@@ -355,11 +380,12 @@
             }
         }
 
+        applyLang();
         loadStatus();
         loadUsers();
         setInterval(loadStatus, 15000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

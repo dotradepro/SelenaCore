@@ -251,61 +251,61 @@
 
 <body>
     <div class="container">
-        <h1>⚡ Protocol Bridge</h1>
-        <p class="subtitle">MQTT / HTTP / Zigbee gateway — device state synchronization</p>
+        <h1 data-i18n="title"></h1>
+        <p class="subtitle" data-i18n="subtitle"></p>
 
         <!-- Status bar -->
         <div class="status-bar">
             <div class="stat">
                 <div class="num" id="s-bridged">0</div>
-                <div class="desc">Bridged devices</div>
+                <div class="desc" data-i18n="lbl_bridged"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-msg">0</div>
-                <div class="desc">Messages/min</div>
+                <div class="desc" data-i18n="lbl_msgrate"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-err">0</div>
-                <div class="desc">Errors</div>
+                <div class="desc" data-i18n="lbl_errors"></div>
             </div>
             <div class="stat">
-                <div id="s-mqtt-badge" class="badge disconnected">MQTT offline</div>
+                <div id="s-mqtt-badge" class="badge disconnected" data-i18n="mqtt_offline"></div>
             </div>
         </div>
 
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('mqtt')">MQTT</div>
-            <div class="tab" onclick="switchTab('http')">HTTP Poll</div>
-            <div class="tab" onclick="switchTab('zigbee')">Zigbee / Z-Wave</div>
-            <div class="tab" onclick="switchTab('advanced')">Advanced</div>
+            <div class="tab active" onclick="switchTab('mqtt')" data-i18n="tab_mqtt"></div>
+            <div class="tab" onclick="switchTab('http')" data-i18n="tab_http"></div>
+            <div class="tab" onclick="switchTab('zigbee')" data-i18n="tab_zigbee"></div>
+            <div class="tab" onclick="switchTab('advanced')" data-i18n="tab_advanced"></div>
         </div>
 
         <!-- MQTT tab -->
         <div class="tab-content active" id="tab-mqtt">
             <div class="card">
-                <h2>MQTT Broker</h2>
+                <h2 data-i18n="h_mqtt_broker"></h2>
                 <div class="form-row">
-                    <label>Broker host</label>
+                    <label data-i18n="lbl_broker_host"></label>
                     <input id="mqtt-host" placeholder="localhost" />
                 </div>
                 <div class="form-row">
-                    <label>Port</label>
+                    <label data-i18n="lbl_port"></label>
                     <input id="mqtt-port" type="number" value="1883" />
                 </div>
                 <div class="form-row">
-                    <label>Username (optional)</label>
+                    <label data-i18n="lbl_user_opt"></label>
                     <input id="mqtt-user" placeholder="mqtt_user" />
                 </div>
                 <div class="form-row">
-                    <label>Password (optional)</label>
+                    <label data-i18n="lbl_pass_opt"></label>
                     <input id="mqtt-pass" type="password" placeholder="••••••••" />
                 </div>
             </div>
             <div class="card">
-                <h2>Subscriptions</h2>
+                <h2 data-i18n="h_subscriptions"></h2>
                 <div class="toggle-row">
                     <div>
-                        <div class="toggle-label">Home Assistant Discovery</div>
+                        <div class="toggle-label" data-i18n="tgl_ha_discovery"></div>
                         <div class="toggle-desc">homeassistant/+/+/config</div>
                     </div>
                     <input type="checkbox" id="ha-discovery" checked />
@@ -318,7 +318,7 @@
                     <input type="checkbox" id="z2m-enabled" checked />
                 </div>
                 <div class="form-row" style="margin-top:10px">
-                    <label>zigbee2mqtt base topic</label>
+                    <label data-i18n="lbl_z2m_topic"></label>
                     <input id="z2m-topic" value="zigbee2mqtt" />
                 </div>
             </div>
@@ -327,20 +327,20 @@
         <!-- HTTP Poll tab -->
         <div class="tab-content" id="tab-http">
             <div class="card">
-                <h2>HTTP Polling</h2>
+                <h2 data-i18n="h_http_polling"></h2>
                 <div class="toggle-row">
                     <div>
-                        <div class="toggle-label">Enable HTTP polling</div>
-                        <div class="toggle-desc">Auto-poll devices with poll_url in meta</div>
+                        <div class="toggle-label" data-i18n="tgl_http_enable"></div>
+                        <div class="toggle-desc" data-i18n="tgl_http_desc"></div>
                     </div>
                     <input type="checkbox" id="http-enabled" checked />
                 </div>
                 <div class="form-row" style="margin-top:10px">
-                    <label>Default poll interval (seconds)</label>
+                    <label data-i18n="lbl_poll_interval"></label>
                     <input id="http-interval" type="number" value="30" />
                 </div>
                 <div class="form-row">
-                    <label>Request timeout (seconds)</label>
+                    <label data-i18n="lbl_req_timeout"></label>
                     <input id="http-timeout" type="number" value="5" />
                 </div>
             </div>
@@ -349,29 +349,27 @@
         <!-- Zigbee / Z-Wave tab -->
         <div class="tab-content" id="tab-zigbee">
             <div class="card">
-                <h2>Zigbee via MQTT</h2>
-                <p style="color:var(--tx3);font-size:12px;margin-bottom:12px">
-                    Zigbee devices are bridged via zigbee2mqtt. Configure the zigbee2mqtt topic in the MQTT tab.
-                </p>
+                <h2 data-i18n="h_zigbee"></h2>
+                <p style="color:var(--tx3);font-size:12px;margin-bottom:12px" data-i18n="zigbee_info"></p>
                 <div class="toggle-row">
                     <div>
-                        <div class="toggle-label">Auto-register discovered Zigbee devices</div>
-                        <div class="toggle-desc">Add to Device Registry on first message</div>
+                        <div class="toggle-label" data-i18n="tgl_zigbee_autoreg"></div>
+                        <div class="toggle-desc" data-i18n="tgl_zigbee_autoreg_desc"></div>
                     </div>
                     <input type="checkbox" id="zigbee-auto-register" checked />
                 </div>
             </div>
             <div class="card">
-                <h2>Z-Wave via MQTT</h2>
+                <h2 data-i18n="h_zwave"></h2>
                 <div class="toggle-row">
                     <div>
-                        <div class="toggle-label">Enable Z-Wave JS UI discovery</div>
+                        <div class="toggle-label" data-i18n="tgl_zwave"></div>
                         <div class="toggle-desc">zwave-js-ui/+/status topic</div>
                     </div>
                     <input type="checkbox" id="zwave-enabled" />
                 </div>
                 <div class="form-row" style="margin-top:10px">
-                    <label>Z-Wave MQTT base topic</label>
+                    <label data-i18n="lbl_zwave_topic"></label>
                     <input id="zwave-topic" value="zwave" />
                 </div>
             </div>
@@ -380,28 +378,69 @@
         <!-- Advanced tab -->
         <div class="tab-content" id="tab-advanced">
             <div class="card">
-                <h2>General</h2>
+                <h2 data-i18n="h_general"></h2>
                 <div class="toggle-row">
                     <div>
-                        <div class="toggle-label">Reconnect on disconnect</div>
-                        <div class="toggle-desc">Exponential backoff up to 60s</div>
+                        <div class="toggle-label" data-i18n="tgl_reconnect"></div>
+                        <div class="toggle-desc" data-i18n="tgl_reconnect_desc"></div>
                     </div>
                     <input type="checkbox" id="reconnect" checked />
                 </div>
                 <div class="form-row" style="margin-top:10px">
-                    <label>Max reconnect delay (seconds)</label>
+                    <label data-i18n="lbl_reconnect_max"></label>
                     <input id="reconnect-max" type="number" value="60" />
                 </div>
             </div>
         </div>
 
         <div class="actions">
-            <button class="btn btn-primary" onclick="save()">Save &amp; Reconnect</button>
-            <span id="save-msg">✓ Saved</span>
+            <button class="btn btn-primary" onclick="save()" data-i18n="save_btn"></button>
+            <span id="save-msg" data-i18n="saved"></span>
         </div>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '⚡ Protocol Bridge', subtitle: 'MQTT / HTTP / Zigbee gateway — device state synchronization',
+                lbl_bridged: 'Bridged devices', lbl_msgrate: 'Messages/min', lbl_errors: 'Errors',
+                mqtt_offline: 'MQTT offline', mqtt_online: 'MQTT online',
+                tab_mqtt: 'MQTT', tab_http: 'HTTP Poll', tab_zigbee: 'Zigbee / Z-Wave', tab_advanced: 'Advanced',
+                h_mqtt_broker: 'MQTT Broker', lbl_broker_host: 'Broker host', lbl_port: 'Port',
+                lbl_user_opt: 'Username (optional)', lbl_pass_opt: 'Password (optional)',
+                h_subscriptions: 'Subscriptions', tgl_ha_discovery: 'Home Assistant Discovery', lbl_z2m_topic: 'zigbee2mqtt base topic',
+                h_http_polling: 'HTTP Polling', tgl_http_enable: 'Enable HTTP polling', tgl_http_desc: 'Auto-poll devices with poll_url in meta',
+                lbl_poll_interval: 'Default poll interval (seconds)', lbl_req_timeout: 'Request timeout (seconds)',
+                h_zigbee: 'Zigbee via MQTT', zigbee_info: 'Zigbee devices are bridged via zigbee2mqtt. Configure the zigbee2mqtt topic in the MQTT tab.',
+                tgl_zigbee_autoreg: 'Auto-register discovered Zigbee devices', tgl_zigbee_autoreg_desc: 'Add to Device Registry on first message',
+                h_zwave: 'Z-Wave via MQTT', tgl_zwave: 'Enable Z-Wave JS UI discovery', lbl_zwave_topic: 'Z-Wave MQTT base topic',
+                h_general: 'General', tgl_reconnect: 'Reconnect on disconnect', tgl_reconnect_desc: 'Exponential backoff up to 60s',
+                lbl_reconnect_max: 'Max reconnect delay (seconds)',
+                save_btn: 'Save & Reconnect', saved: '✓ Saved'
+            },
+            uk: {
+                title: '⚡ Міст протоколів', subtitle: 'MQTT / HTTP / Zigbee шлюз — синхронізація стану пристроїв',
+                lbl_bridged: 'Пристрої', lbl_msgrate: 'Повід./хв', lbl_errors: 'Помилки',
+                mqtt_offline: 'MQTT офлайн', mqtt_online: 'MQTT онлайн',
+                tab_mqtt: 'MQTT', tab_http: 'HTTP Poll', tab_zigbee: 'Zigbee / Z-Wave', tab_advanced: 'Налаштування',
+                h_mqtt_broker: 'MQTT брокер', lbl_broker_host: 'Хост брокера', lbl_port: 'Порт',
+                lbl_user_opt: 'Користувач (необов\'язково)', lbl_pass_opt: 'Пароль (необов\'язково)',
+                h_subscriptions: 'Підписки', tgl_ha_discovery: 'Виявлення Home Assistant', lbl_z2m_topic: 'zigbee2mqtt base topic',
+                h_http_polling: 'HTTP опитування', tgl_http_enable: 'Увімкнути HTTP-опитування', tgl_http_desc: 'Автоопит пристроїв з poll_url у meta',
+                lbl_poll_interval: 'Інтервал опитування (секунд)', lbl_req_timeout: 'Таймаут запиту (секунд)',
+                h_zigbee: 'Zigbee через MQTT', zigbee_info: 'Zigbee-пристрої бриджуються через zigbee2mqtt. Налаштуйте zigbee2mqtt topic у вкладці MQTT.',
+                tgl_zigbee_autoreg: 'Автореєстрація Zigbee-пристроїв', tgl_zigbee_autoreg_desc: 'Додати в Device Registry при першому повідомленні',
+                h_zwave: 'Z-Wave через MQTT', tgl_zwave: 'Z-Wave JS UI discovery', lbl_zwave_topic: 'Z-Wave MQTT base topic',
+                h_general: 'Загальне', tgl_reconnect: 'Відновлення після роз\'єднання', tgl_reconnect_desc: 'Експоненціальне збільшення до 60с',
+                lbl_reconnect_max: 'Макс. затримка перед повторним підключенням (с)',
+                save_btn: 'Зберегти і перепідключити', saved: '✓ Збережено'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); loadConfig(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const TOKEN = window.SELENA_TOKEN || "";
         const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
@@ -422,8 +461,8 @@
                 document.getElementById("s-msg").textContent = d.messages_per_min ?? 0;
                 document.getElementById("s-err").textContent = d.error_count ?? 0;
                 const badge = document.getElementById("s-mqtt-badge");
-                if (d.mqtt?.connected) { badge.textContent = "MQTT online"; badge.className = "badge connected"; }
-                else { badge.textContent = "MQTT offline"; badge.className = "badge disconnected"; }
+                if (d.mqtt?.connected) { badge.textContent = t('mqtt_online'); badge.className = "badge connected"; }
+                else { badge.textContent = t('mqtt_offline'); badge.className = "badge disconnected"; }
             } catch { }
         }
 
@@ -475,11 +514,12 @@
             } catch { }
         }
 
+        applyLang();
         loadStatus();
         loadConfig();
         setInterval(loadStatus, 10000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

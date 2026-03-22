@@ -280,6 +280,53 @@ function MyComponent() {
 - Интерполяция: `t('devices.registryInfo', { count: 5 })` → `"5 devices registered."`
 - Не использовать `t` как имя переменной в `map()` и циклах (конфликт с `useTranslation`)
 
+### Правила для системных HTML-виджетов (widget.html / settings.html)
+
+Каждый файл `widget.html` и `settings.html` системного модуля **обязан** реализовывать
+встроенную локализацию EN/UK по следующему стандартному шаблону:
+
+```javascript
+// 1. В начале <script> (до любых других объявлений):
+var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+var L = {
+    en: { key: 'English text', ... },
+    uk: { key: 'Текст', ... }
+};
+function t(k) { return (L[LANG] || L.en)[k] || k; }
+function applyLang() {
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+        el.textContent = t(el.getAttribute('data-i18n'));
+    });
+}
+window.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'lang_changed') {
+        try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+        applyLang();
+        // Вызвать функции перезагрузки данных (refresh(), loadStatus(), load() и т.д.)
+    }
+});
+
+// 2. Статические HTML-элементы получают атрибут data-i18n="key":
+// <h1 data-i18n="title"></h1>
+// <label data-i18n="lbl_name"></label>
+
+// 3. Динамические строки в JS используют t('key') вместо литералов:
+// innerHTML = '<span>' + t('no_devices') + '</span>';
+// showToast(t('saved_ok'));
+
+// 4. applyLang() вызывается при инициализации (до первого refresh/load)
+```
+
+**Обязательные правила:**
+
+- ⛔ Нельзя хардкодить UI-текст на любом языке в HTML или JavaScript-коде виджетов/настроек
+- Язык читается из `localStorage('selena-lang')` — значения `'en'` | `'uk'`
+- Словари обоих языков (`en` и `uk`) должны содержать одинаковый набор ключей
+- `applyLang()` должна вызываться до первого вызова `refresh()` / `load()` / `loadStatus()`
+- При смене языка (`lang_changed` postMessage) — вызвать `applyLang()` и перегрузить данные
+- Аббревиатуры (MQTT, STT, TTS, LLM, ID) и технические имена переводить не нужно
+- В шаблонных литералах `${...}` использовать `t('key')` для локализуемых строк
+
 ### Правила для документации
 
 - Вся документация (`docs/`, `README.md`, `CONTRIBUTING.md`) хранится на **двух языках**:
@@ -1325,6 +1372,7 @@ in-progress / blocked / needs-review
 ⛔ Указывать "port" в manifest.json для SYSTEM-модулей (порты только для пользовательских модулей)
 ⛔ Использовать httpx/HTTP для связи между системным модулем и ядром (только прямые вызовы Python)
 ⛔ Хардкодить localhost:PORT в HTML-виджетах (использовать window.location.pathname для BASE URL)
+⛔ Хардкодить UI-текст в widget.html / settings.html без локализации через var L = {en:{...}, uk:{...}} / t('key') / data-i18n
 ```
 
 ---

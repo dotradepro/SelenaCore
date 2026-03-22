@@ -208,43 +208,43 @@
 
 <body>
     <div class="container">
-        <h1>⚙️ Automation Engine</h1>
-        <p class="subtitle">YAML-based rule engine — triggers → actions</p>
+        <h1 data-i18n="title"></h1>
+        <p class="subtitle" data-i18n="subtitle"></p>
 
         <div class="stat-bar">
             <div class="stat">
                 <div class="num" id="s-total">0</div>
-                <div class="desc">Total rules</div>
+                <div class="desc" data-i18n="total_rules"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-enabled">0</div>
-                <div class="desc">Enabled</div>
+                <div class="desc" data-i18n="enabled"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-runs">0</div>
-                <div class="desc">Runs</div>
+                <div class="desc" data-i18n="runs"></div>
             </div>
             <div class="stat">
                 <div class="num" id="s-errors" style="color:var(--rd)">0</div>
-                <div class="desc">Errors</div>
+                <div class="desc" data-i18n="errors"></div>
             </div>
         </div>
 
         <!-- Rule list -->
         <div class="card">
             <div class="card-header">
-                <h2>Active Rules</h2>
-                <button class="btn btn-primary btn-sm" onclick="loadRules()">↻ Refresh</button>
+                <h2 data-i18n="active_rules"></h2>
+                <button class="btn btn-primary btn-sm" onclick="loadRules()" data-i18n="refresh"></button>
             </div>
-            <div id="rules-container">Loading…</div>
+            <div id="rules-container" data-i18n="loading"></div>
         </div>
 
         <!-- YAML import -->
         <div class="card">
             <div class="card-header">
-                <h2>Import / Add Rules (YAML)</h2>
+                <h2 data-i18n="import_title"></h2>
             </div>
-            <p style="color:var(--tx3);font-size:12px;margin-bottom:8px">Paste a YAML list of automation rules:</p>
+            <p style="color:var(--tx3);font-size:12px;margin-bottom:8px" data-i18n="paste_yaml"></p>
             <textarea id="yaml-input" placeholder="automations:
   - id: lights_morning
     name: &quot;Turn on lights at 7:00&quot;
@@ -258,14 +258,23 @@
           state: ON
 "></textarea>
             <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-                <button class="btn btn-primary" onclick="importYaml()">Import Rules</button>
-                <span class="msg" id="import-msg">✓ Imported</span>
+                <button class="btn btn-primary" onclick="importYaml()" data-i18n="import_btn"></button>
+                <span class="msg" id="import-msg"></span>
                 <span class="msg err-msg" id="import-err"></span>
             </div>
         </div>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { title: '⚙️ Automation Engine', subtitle: 'YAML-based rule engine — triggers → actions', total_rules: 'Total rules', enabled: 'Enabled', runs: 'Runs', errors: 'Errors', active_rules: 'Active Rules', refresh: '↻ Refresh', loading: 'Loading…', no_rules: 'No rules loaded.', import_title: 'Import / Add Rules (YAML)', paste_yaml: 'Paste a YAML list of automation rules:', import_btn: 'Import Rules', imported_ok: '✓ Imported', trigger_lbl: 'trigger: ', on: 'ON', off: 'OFF', disable: 'Disable', enable: 'Enable', delete_confirm: 'Delete this rule?' },
+            uk: { title: '⚙️ Рушій автоматизації', subtitle: 'Рушій правил на базі YAML — тригери → дії', total_rules: 'Всього правил', enabled: 'Увімкнено', runs: 'Запуски', errors: 'Помилки', active_rules: 'Активні правила', refresh: '↻ Оновити', loading: 'Завантаження…', no_rules: 'Правила не завантажені.', import_title: 'Імпорт / Додати правила (YAML)', paste_yaml: 'Вставте список правил автоматизації у форматі YAML:', import_btn: 'Імпортувати правила', imported_ok: '✓ Імпортовано', trigger_lbl: 'тригер: ', on: 'ВКЛ', off: 'ВИКЛ', disable: 'Вимкнути', enable: 'Увімкнути', delete_confirm: 'Видалити це правило?' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadRules(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const TOKEN = window.SELENA_TOKEN || "";
         const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
@@ -290,19 +299,19 @@
                 const container = document.getElementById("rules-container");
                 const rules = d.rules ?? [];
                 if (rules.length === 0) {
-                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">No rules loaded.</p>';
+                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + t('no_rules') + '</p>';
                     return;
                 }
                 container.innerHTML = rules.map(rule => `
       <div class="rule-row">
         <div>
           <div class="rule-name">${rule.name}</div>
-          <div class="rule-trigger">trigger: ${rule.trigger?.type ?? "?"} ${rule.trigger?.at || rule.trigger?.event_type || ""}</div>
+          <div class="rule-trigger">${t('trigger_lbl')}${rule.trigger?.type ?? "?"} ${rule.trigger?.at || rule.trigger?.event_type || ""}</div>
         </div>
-        <span class="badge ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? 'ON' : 'OFF'}</span>
+        <span class="badge ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? t('on') : t('off')}</span>
         <button class="btn btn-sm ${rule.enabled ? 'btn-danger' : 'btn-primary'}"
           onclick="toggleRule('${rule.id}', ${!rule.enabled})">
-          ${rule.enabled ? 'Disable' : 'Enable'}
+          ${rule.enabled ? t('disable') : t('enable')}
         </button>
         <button class="btn btn-danger btn-sm" onclick="deleteRule('${rule.id}')">✕</button>
       </div>
@@ -321,7 +330,7 @@
         }
 
         async function deleteRule(id) {
-            if (!confirm("Delete this rule?")) return;
+            if (!confirm(t('delete_confirm'))) return;
             try {
                 await fetch(BASE + "/rules/" + id, { method: "DELETE", headers: h });
                 loadRules();
@@ -341,7 +350,7 @@
                 });
                 if (r.ok) {
                     const d = await r.json();
-                    okEl.textContent = `✓ Imported ${d.imported} rule(s)`;
+                    okEl.textContent = t('imported_ok') + ' ' + d.imported + ' rule(s)';
                     okEl.style.display = "inline";
                     setTimeout(() => okEl.style.display = "none", 3000);
                     loadRules();
@@ -357,11 +366,12 @@
             }
         }
 
+        applyLang();
         loadStatus();
         loadRules();
         setInterval(loadStatus, 10000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

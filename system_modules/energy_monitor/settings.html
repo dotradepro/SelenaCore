@@ -102,32 +102,41 @@
 </head>
 
 <body>
-    <h1>⚡ Energy Monitor Settings</h1>
+    <h1 data-i18n="title"></h1>
 
     <div class="section">
-        <h2>Status</h2>
-        <pre id="status-pre">Loading…</pre>
+        <h2 data-i18n="status"></h2>
+        <pre id="status-pre" data-i18n="loading"></pre>
     </div>
 
     <div class="section">
-        <h2>All Devices</h2>
+        <h2 data-i18n="all_devices"></h2>
         <table id="devices-table">
             <thead>
                 <tr>
-                    <th>Device ID</th>
-                    <th>Current (W)</th>
-                    <th>Today (kWh)</th>
+                    <th data-i18n="device_id"></th>
+                    <th data-i18n="current_w"></th>
+                    <th data-i18n="today_kwh"></th>
                 </tr>
             </thead>
             <tbody id="devices-body">
                 <tr>
-                    <td colspan="3" style="text-align:center;color:var(--tx3)">Loading…</td>
+                    <td colspan="3" style="text-align:center;color:var(--tx3)" data-i18n="loading"></td>
                 </tr>
             </tbody>
         </table>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { title: '⚡ Energy Monitor Settings', status: 'Status', loading: 'Loading…', all_devices: 'All Devices', device_id: 'Device ID', current_w: 'Current (W)', today_kwh: 'Today (kWh)', no_readings: 'No readings yet', error_prefix: 'Error: ' },
+            uk: { title: '⚡ Налаштування енергомонітору', status: 'Статус', loading: 'Завантаження…', all_devices: 'Усі пристрої', device_id: 'ID пристрою', current_w: 'Потужність (W)', today_kwh: 'Сьогодні (kWh)', no_readings: 'Даних ще немає', error_prefix: 'Помилка: ' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         async function load() {
@@ -146,7 +155,7 @@
 
                 if (!ids.length) {
                     document.getElementById('devices-body').innerHTML =
-                        '<tr><td colspan="3" style="text-align:center;color:var(--tx3)">No readings yet</td></tr>';
+                        '<tr><td colspan="3" style="text-align:center;color:var(--tx3)">' + t('no_readings') + '</td></tr>';
                 } else {
                     document.getElementById('devices-body').innerHTML = ids
                         .sort()
@@ -157,14 +166,15 @@
         </tr>`).join('');
                 }
             } catch (e) {
-                document.getElementById('status-pre').textContent = 'Error: ' + e.message;
+                document.getElementById('status-pre').textContent = t('error_prefix') + e.message;
             }
         }
 
+        applyLang();
         load();
         setInterval(load, 30000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

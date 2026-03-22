@@ -43,7 +43,8 @@
             font-family: system-ui, sans-serif;
         }
 
-        html, body {
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
@@ -135,22 +136,32 @@
     <div class="widget">
         <!-- Left: stats -->
         <div class="panel">
-            <h3>Automation Engine</h3>
+            <h3 data-i18n="panel_title"></h3>
             <div class="big" id="rules-total">—</div>
-            <div style="font-size:11px;color:var(--tx3);margin-bottom:10px">rules loaded</div>
-            <div class="stat"><span>Enabled</span><span class="val" id="rules-enabled">—</span></div>
-            <div class="stat"><span>Runs today</span><span class="val" id="run-count">—</span></div>
-            <div class="stat"><span>Errors</span><span class="val" style="color:var(--rd)" id="err-count">—</span></div>
+            <div style="font-size:11px;color:var(--tx3);margin-bottom:10px" data-i18n="rules_loaded"></div>
+            <div class="stat"><span data-i18n="enabled"></span><span class="val" id="rules-enabled">—</span></div>
+            <div class="stat"><span data-i18n="runs_today"></span><span class="val" id="run-count">—</span></div>
+            <div class="stat"><span data-i18n="errors"></span><span class="val" style="color:var(--rd)"
+                    id="err-count">—</span></div>
         </div>
         <!-- Right: rule list -->
         <div class="panel">
-            <h3>Rules</h3>
+            <h3 data-i18n="rules_title"></h3>
             <div id="rules-list">
-                <div class="rule-item" style="color:var(--tx3)">Loading…</div>
+                <div class="rule-item" style="color:var(--tx3)" data-i18n="loading"></div>
             </div>
         </div>
     </div>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { panel_title: 'Automation Engine', rules_loaded: 'rules loaded', enabled: 'Enabled', runs_today: 'Runs today', errors: 'Errors', rules_title: 'Rules', loading: 'Loading…', no_rules: 'No rules defined', on: 'ON', off: 'OFF' },
+            uk: { panel_title: 'Автоматизація', rules_loaded: 'правил завантажено', enabled: 'Увімкнено', runs_today: 'Запусків сьогодні', errors: 'Помилки', rules_title: 'Правила', loading: 'Завантаження…', no_rules: 'Правила не визначені', on: 'ВКЛ', off: 'ВИКЛ' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); refresh(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const TOKEN = window.SELENA_TOKEN || "";
         const h = { "Authorization": "Bearer " + TOKEN };
@@ -173,12 +184,12 @@
                     const rules = d.rules ?? [];
                     const el = document.getElementById("rules-list");
                     if (rules.length === 0) {
-                        el.innerHTML = '<div class="rule-item" style="color:var(--tx3)">No rules defined</div>';
+                        el.innerHTML = '<div class="rule-item" style="color:var(--tx3)">' + t('no_rules') + '</div>';
                     } else {
                         el.innerHTML = rules.slice(0, 7).map(r =>
                             `<div class="rule-item">
             <span class="name">${r.name}</span>
-            <span class="badge ${r.enabled ? 'on' : 'off'}">${r.enabled ? 'ON' : 'OFF'}</span>
+            <span class="badge ${r.enabled ? 'on' : 'off'}">${r.enabled ? t('on') : t('off')}</span>
           </div>`
                         ).join("");
                     }
@@ -186,10 +197,11 @@
             } catch { }
         }
 
+        applyLang();
         refresh();
         setInterval(refresh, 8000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

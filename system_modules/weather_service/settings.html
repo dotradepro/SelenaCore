@@ -305,11 +305,11 @@
 </head>
 
 <body>
-    <h1>🌤️ Weather Service Settings</h1>
+    <h1 data-i18n="title"></h1>
 
     <!-- Location Section -->
     <div class="section">
-        <h2>📍 Location</h2>
+        <h2 data-i18n="h_location"></h2>
 
         <div class="location-display" id="loc-display" style="display:none">
             <div class="pin">📌</div>
@@ -317,13 +317,11 @@
                 <div class="name" id="loc-name">—</div>
                 <div class="coords" id="loc-coords">—</div>
             </div>
-            <button class="change-btn" onclick="showLocationPicker()">Change</button>
+            <button class="change-btn" onclick="showLocationPicker()" data-i18n="change_btn"></button>
         </div>
 
         <div id="loc-picker">
-            <button class="btn-detect" onclick="detectLocation()">
-                📡 Detect My Location
-            </button>
+            <button class="btn-detect" onclick="detectLocation()" data-i18n="detect_btn"></button>
 
             <div class="search-wrap">
                 <input type="text" id="search-city" placeholder="Search city name…" oninput="onSearchInput()"
@@ -336,11 +334,11 @@
 
             <div class="row" style="margin-bottom:4px">
                 <div>
-                    <label>Latitude</label>
+                    <label data-i18n="lbl_lat"></label>
                     <input type="number" id="lat" step="0.0001" placeholder="50.4501">
                 </div>
                 <div>
-                    <label>Longitude</label>
+                    <label data-i18n="lbl_lon"></label>
                     <input type="number" id="lon" step="0.0001" placeholder="30.5234">
                 </div>
             </div>
@@ -349,42 +347,85 @@
 
     <!-- Preferences -->
     <div class="section">
-        <h2>⚙️ Preferences</h2>
-        <label>Units</label>
+        <h2 data-i18n="h_prefs"></h2>
+        <label data-i18n="lbl_units"></label>
         <select id="units">
-            <option value="metric">Metric (°C, km/h)</option>
-            <option value="imperial">Imperial (°F, mph)</option>
+            <option value="metric" data-i18n="opt_metric"></option>
+            <option value="imperial" data-i18n="opt_imperial"></option>
         </select>
-        <label>Update interval (seconds, min 60)</label>
+        <label data-i18n="lbl_interval"></label>
         <input type="number" id="interval" step="60" min="60" placeholder="1800">
     </div>
 
     <!-- Alert Thresholds -->
     <div class="section">
-        <h2>⚠️ Alert Thresholds</h2>
+        <h2 data-i18n="h_alerts"></h2>
         <div class="row">
             <div>
-                <label>Rain alert (mm)</label>
+                <label data-i18n="lbl_rain"></label>
                 <input type="number" id="alert_rain" step="0.5" min="0" placeholder="10">
             </div>
             <div>
-                <label>Wind alert (km/h)</label>
+                <label data-i18n="lbl_wind"></label>
                 <input type="number" id="alert_wind" step="1" min="0" placeholder="50">
             </div>
         </div>
     </div>
 
-    <button onclick="save()" style="width:100%">💾 Save Settings</button>
-    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;">🔄 Refresh Now</button>
+    <button onclick="save()" style="width:100%" data-i18n="save_btn"></button>
+    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;" data-i18n="refresh_btn"></button>
     <div id="msg"></div>
 
     <div class="section" style="margin-top:14px">
-        <h2>Status</h2>
-        <div id="status-panel">Loading…</div>
+        <h2 data-i18n="h_status"></h2>
+        <div id="status-panel" data-i18n="loading"></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '🌤️ Weather Service Settings',
+                h_location: '📍 Location', change_btn: 'Change', detect_btn: '📡 Detect My Location',
+                lbl_lat: 'Latitude', lbl_lon: 'Longitude',
+                h_prefs: '⚙️ Preferences', lbl_units: 'Units',
+                opt_metric: 'Metric (°C, km/h)', opt_imperial: 'Imperial (°F, mph)',
+                lbl_interval: 'Update interval (seconds, min 60)',
+                h_alerts: '⚠️ Alert Thresholds', lbl_rain: 'Rain alert (mm)', lbl_wind: 'Wind alert (km/h)',
+                save_btn: '💾 Save Settings', refresh_btn: '🔄 Refresh Now',
+                h_status: 'Status', loading: 'Loading…',
+                geo_notsupported: 'Geolocation is not supported by this browser',
+                detecting: 'Detecting location…', detected: 'Location detected!',
+                detected_ip: 'Location detected via IP',
+                detect_failed: 'Could not detect location. Please search for your city.',
+                detect_failed_err: 'Could not detect location: ',
+                saved: 'Settings saved! Weather will refresh shortly.',
+                refreshed: 'Weather refreshed!'
+            },
+            uk: {
+                title: '🌤️ Налаштування погоди',
+                h_location: '📍 Місцезнаходження', change_btn: 'Змінити', detect_btn: '📡 Визначити моє місцезнаходження',
+                lbl_lat: 'Широта', lbl_lon: 'Довгота',
+                h_prefs: '⚙️ Настрої', lbl_units: 'Одиниці',
+                opt_metric: 'Метричні (°C, км/г)', opt_imperial: 'Імперські (°F, миля/г)',
+                lbl_interval: 'Інтервал оновлення (секунд, мін 60)',
+                h_alerts: '⚠️ Пороги сповіщень', lbl_rain: 'Сповіщення про дощ (mm)', lbl_wind: 'Сповіщення про вітер (км/г)',
+                save_btn: '💾 Зберегти', refresh_btn: '🔄 Оновити',
+                h_status: 'Статус', loading: 'Завантаження…',
+                geo_notsupported: 'Геолокація не підтримується цим браузером',
+                detecting: 'Визначення місцезнаходження…', detected: 'Місцезнаходження визначено!',
+                detected_ip: 'Місцезнаходження визначено через IP',
+                detect_failed: 'Не вдалося визначити місце. Шукайте місто.',
+                detect_failed_err: 'Не вдалося визначити місце: ',
+                saved: 'Налаштування збережено! Погода скоро оновиться.',
+                refreshed: 'Погода оновлена!'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         let map, marker;
@@ -445,10 +486,10 @@
         // ── Detect Location (Browser Geolocation API) ──
         function detectLocation() {
             if (!navigator.geolocation) {
-                showMsg('Geolocation is not supported by this browser', 'err');
+                showMsg(t('geo_notsupported'), 'err');
                 return;
             }
-            showMsg('Detecting location…', 'ok');
+            showMsg(t('detecting'), 'ok');
             navigator.geolocation.getCurrentPosition(
                 function (pos) {
                     const lat = pos.coords.latitude;
@@ -456,7 +497,7 @@
                     setLocation(lat, lon, '');
                     initMap(lat, lon);
                     reverseGeocode(lat, lon);
-                    showMsg('Location detected!', 'ok');
+                    showMsg(t('detected'), 'ok');
                 },
                 function (err) {
                     // Fallback: use IP-based location
@@ -475,12 +516,12 @@
                     const name = [d.city, d.country].filter(Boolean).join(', ');
                     setLocation(d.lat, d.lon, name);
                     initMap(d.lat, d.lon);
-                    showMsg('Location detected via IP', 'ok');
+                    showMsg(t('detected_ip'), 'ok');
                 } else {
-                    showMsg('Could not detect location. Please search for your city.', 'err');
+                    showMsg(t('detect_failed'), 'err');
                 }
             } catch (e) {
-                showMsg('Could not detect location: ' + e.message, 'err');
+                showMsg(t('detect_failed_err') + e.message, 'err');
             }
         }
 
@@ -615,7 +656,7 @@
                     body: JSON.stringify(body),
                 });
                 if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                showMsg('Settings saved! Weather will refresh shortly.', 'ok');
+                showMsg(t('saved'), 'ok');
                 if (selectedName) showLocationCompact();
                 loadStatus();
             } catch (e) {
@@ -626,7 +667,7 @@
         async function refreshWeather() {
             try {
                 await fetch(`${BASE}/weather/refresh`, { method: 'POST' });
-                showMsg('Weather refreshed!', 'ok');
+                showMsg(t('refreshed'), 'ok');
                 loadStatus();
             } catch (e) {
                 showMsg('Error: ' + e.message, 'err');
@@ -641,9 +682,10 @@
         }
 
         // ── Init ──
+        applyLang();
         loadStatus();
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

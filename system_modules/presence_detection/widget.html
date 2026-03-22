@@ -43,7 +43,8 @@
             font-family: system-ui, sans-serif;
         }
 
-        html, body {
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
@@ -137,20 +138,29 @@
 <body>
     <div class="widget">
         <div class="panel">
-            <h3>Presence</h3>
+            <h3 data-i18n="presence"></h3>
             <div class="big" id="home-count">—</div>
-            <div class="label">users home</div>
-            <div class="stat"><span>Away</span><span id="away-count">—</span></div>
-            <div class="stat"><span>Total tracked</span><span id="total-count">—</span></div>
+            <div class="label" data-i18n="users_home"></div>
+            <div class="stat"><span data-i18n="away"></span><span id="away-count">—</span></div>
+            <div class="stat"><span data-i18n="total_tracked"></span><span id="total-count">—</span></div>
         </div>
         <div class="panel">
-            <h3>Users</h3>
+            <h3 data-i18n="users_title"></h3>
             <div id="users-list">
-                <div style="color:var(--tx3);font-size:11px">Loading…</div>
+                <div style="color:var(--tx3);font-size:11px" data-i18n="loading"></div>
             </div>
         </div>
     </div>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { presence: 'Presence', users_home: 'users home', away: 'Away', total_tracked: 'Total tracked', users_title: 'Users', loading: 'Loading…', no_users: 'No users tracked.' },
+            uk: { presence: 'Присутність', users_home: 'вдома', away: 'Відсутні', total_tracked: 'Всього відстежується', users_title: 'Користувачі', loading: 'Завантаження…', no_users: 'Немає відстежуваних користувачів.' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); refresh(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         const h = { "Authorization": "Bearer " + (window.SELENA_TOKEN || "") };
 
@@ -171,7 +181,7 @@
                     const list = document.getElementById("users-list");
                     const users = d.users ?? [];
                     if (users.length === 0) {
-                        list.innerHTML = '<div style="color:var(--tx3);font-size:11px">No users tracked.</div>';
+                    list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + t('no_users') + '</div>';
                     } else {
                         list.innerHTML = users.slice(0, 6).map(u =>
                             `<div class="user-item">
@@ -185,10 +195,11 @@
             } catch { }
         }
 
+        applyLang();
         refresh();
         setInterval(refresh, 15000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

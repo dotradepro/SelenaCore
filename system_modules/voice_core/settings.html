@@ -321,7 +321,7 @@
 
 <body>
 
-    <h2>🎙️ Voice Core Settings</h2>
+    <h2 data-i18n="title"></h2>
 
     <!-- Status -->
     <div class="card" id="statusCard">
@@ -344,12 +344,12 @@
     </div>
 
     <!-- STT Settings -->
-    <h3>Speech-to-Text (STT)</h3>
+    <h3 data-i18n="h_stt"></h3>
     <div class="card">
         <div class="row">
             <div>
-                <div class="row-label">STT Model</div>
-                <div class="row-sub">Vosk offline recognition model</div>
+                <div class="row-label" data-i18n="lbl_stt_model"></div>
+                <div class="row-sub" data-i18n="sub_stt_model"></div>
             </div>
             <select id="sttModel">
                 <option value="vosk-model-small-uk">🇺🇦 Ukrainian (small)</option>
@@ -362,12 +362,12 @@
     </div>
 
     <!-- TTS Settings -->
-    <h3>Text-to-Speech (TTS)</h3>
+    <h3 data-i18n="h_tts"></h3>
     <div class="card">
         <div class="row">
             <div>
-                <div class="row-label">TTS Voice</div>
-                <div class="row-sub">Piper offline voice model</div>
+                <div class="row-label" data-i18n="lbl_tts_voice"></div>
+                <div class="row-sub" data-i18n="sub_tts_voice"></div>
             </div>
             <select id="ttsVoice">
                 <option value="uk_UA-ukrainian_tts-medium">🇺🇦 Ukrainian TTS</option>
@@ -380,20 +380,20 @@
         </div>
         <div class="row">
             <div>
-                <div class="row-label">Test TTS</div>
-                <div class="row-sub">Speak a test phrase</div>
+                <div class="row-label" data-i18n="lbl_test_tts"></div>
+                <div class="row-sub" data-i18n="sub_test_tts"></div>
             </div>
-            <button class="btn btn-secondary" id="testTtsBtn">▶ Test</button>
+            <button class="btn btn-secondary" id="testTtsBtn" data-i18n="test_btn"></button>
         </div>
     </div>
 
     <!-- Wake Word -->
-    <h3>Wake Word</h3>
+    <h3 data-i18n="h_wake"></h3>
     <div class="card">
         <div class="row">
             <div>
-                <div class="row-label">Wake Word Model</div>
-                <div class="row-sub">openWakeWord activation phrase</div>
+                <div class="row-label" data-i18n="lbl_wake_model"></div>
+                <div class="row-sub" data-i18n="sub_wake_model"></div>
             </div>
             <select id="wakeWordModel">
                 <option value="hey_selena">hey selena</option>
@@ -403,8 +403,8 @@
         </div>
         <div class="row">
             <div>
-                <div class="row-label">Detection Threshold</div>
-                <div class="row-sub">Higher = fewer false positives</div>
+                <div class="row-label" data-i18n="lbl_threshold"></div>
+                <div class="row-sub" data-i18n="sub_threshold"></div>
             </div>
             <div class="range-row">
                 <input type="range" id="wakeThreshold" min="0.1" max="1.0" step="0.05" value="0.5">
@@ -413,19 +413,19 @@
         </div>
         <div class="row">
             <div>
-                <div class="row-label">Detector Status</div>
+                <div class="row-label" data-i18n="lbl_detector_status"></div>
             </div>
             <span id="wakeStatus" class="badge badge-off">—</span>
         </div>
     </div>
 
     <!-- Speaker ID -->
-    <h3>Speaker Identification</h3>
+    <h3 data-i18n="h_speaker"></h3>
     <div class="card">
         <div class="row">
             <div>
-                <div class="row-label">Similarity Threshold</div>
-                <div class="row-sub">Min confidence for voice match</div>
+                <div class="row-label" data-i18n="lbl_similarity"></div>
+                <div class="row-sub" data-i18n="sub_similarity"></div>
             </div>
             <div class="range-row">
                 <input type="range" id="speakerThreshold" min="0.3" max="1.0" step="0.05" value="0.75">
@@ -434,7 +434,7 @@
         </div>
         <div class="row">
             <div>
-                <div class="row-label">Enrolled Speakers</div>
+                <div class="row-label" data-i18n="lbl_enrolled"></div>
             </div>
             <span id="speakerCount" class="badge badge-ok">—</span>
         </div>
@@ -442,18 +442,18 @@
     </div>
 
     <!-- Audio Devices -->
-    <h3>Audio Devices</h3>
+    <h3 data-i18n="h_audio"></h3>
     <div class="card" id="audioCard">
         <div class="row">
             <div>
-                <div class="row-label">Input Devices</div>
+                <div class="row-label" data-i18n="lbl_inputs"></div>
             </div>
             <span id="inputCount" class="badge badge-ok">—</span>
         </div>
         <ul class="device-list" id="inputList"></ul>
         <div class="row" style="margin-top:8px">
             <div>
-                <div class="row-label">Output Devices</div>
+                <div class="row-label" data-i18n="lbl_outputs"></div>
             </div>
             <span id="outputCount" class="badge badge-ok">—</span>
         </div>
@@ -462,13 +462,62 @@
 
     <!-- Actions -->
     <div class="actions">
-        <button class="btn btn-primary" id="saveBtn">Save Settings</button>
-        <button class="btn btn-secondary" id="refreshBtn">↻ Refresh</button>
+        <button class="btn btn-primary" id="saveBtn" data-i18n="save_btn"></button>
+        <button class="btn btn-secondary" id="refreshBtn" data-i18n="refresh_btn"></button>
     </div>
 
     <div class="toast" id="toast"></div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '�️ Voice Core Settings', loading: 'Loading…',
+                lbl_module_status: 'Module Status', lbl_privacy: 'Privacy Mode', sub_privacy: 'Disables microphone and wake word',
+                h_stt: 'Speech-to-Text (STT)', lbl_stt_model: 'STT Model', sub_stt_model: 'Vosk offline recognition model',
+                h_tts: 'Text-to-Speech (TTS)', lbl_tts_voice: 'TTS Voice', sub_tts_voice: 'Piper offline voice model',
+                lbl_test_tts: 'Test TTS', sub_test_tts: 'Speak a test phrase', test_btn: '▶ Test',
+                h_wake: 'Wake Word', lbl_wake_model: 'Wake Word Model', sub_wake_model: 'openWakeWord activation phrase',
+                lbl_threshold: 'Detection Threshold', sub_threshold: 'Higher = fewer false positives',
+                lbl_detector_status: 'Detector Status',
+                h_speaker: 'Speaker Identification', lbl_similarity: 'Similarity Threshold', sub_similarity: 'Min confidence for voice match',
+                lbl_enrolled: 'Enrolled Speakers',
+                h_audio: 'Audio Devices', lbl_inputs: 'Input Devices', lbl_outputs: 'Output Devices',
+                save_btn: 'Save Settings', refresh_btn: '↻ Refresh',
+                status_running: 'Running', status_offline: 'Offline',
+                wake_active: 'Active', wake_stopped: 'Stopped',
+                no_speakers: 'No speakers enrolled', speaker_removed: ' removed', no_devices: 'No devices detected',
+                saved_ok: 'Settings saved ✓', save_failed: 'Save failed: ',
+                priv_on: 'Privacy mode ON 🔇', priv_off: 'Privacy mode OFF 🎤️',
+                toggle_failed: 'Toggle failed',
+                speaking: '⏳ Speaking…', tts_test_ok: 'TTS test complete ✓', tts_test_failed: 'TTS test failed',
+                refreshed: 'Refreshed'
+            },
+            uk: {
+                title: '�️ Налаштування Voice Core', loading: 'Завантаження…',
+                lbl_module_status: 'Статус модуля', lbl_privacy: 'Режим приватності', sub_privacy: 'Вимикає мікрофон та wake word',
+                h_stt: 'Розпізнавання мовлення (STT)', lbl_stt_model: 'Модель STT', sub_stt_model: 'Офлайн-модель Vosk',
+                h_tts: 'Синтез мовлення (TTS)', lbl_tts_voice: 'Голос TTS', sub_tts_voice: 'Офлайн-голос Piper',
+                lbl_test_tts: 'Тест TTS', sub_test_tts: 'Вимовити тестову фразу', test_btn: '▶ Тест',
+                h_wake: 'Wake Word', lbl_wake_model: 'Модель Wake Word', sub_wake_model: 'Фраза активації openWakeWord',
+                lbl_threshold: 'Поріг виявлення', sub_threshold: 'Вищий = менше хибних спрацьовувань',
+                lbl_detector_status: 'Статус детектора',
+                h_speaker: 'Ідентифікація мовця', lbl_similarity: 'Поріг схожості', sub_similarity: 'Мін. впевненість для збігу голосу',
+                lbl_enrolled: 'Зареєстровані мовці',
+                h_audio: 'Аудіопристрої', lbl_inputs: 'Пристрої введення', lbl_outputs: 'Пристрої виведення',
+                save_btn: 'Зберегти', refresh_btn: '↻ Оновити',
+                status_running: 'Запущено', status_offline: 'Офлайн',
+                wake_active: 'Активний', wake_stopped: 'Зупинено',
+                no_speakers: 'Немає зареєстрованих мовців', speaker_removed: ' видалено', no_devices: 'Пристроїв не виявлено',
+                saved_ok: 'Збережено ✓', save_failed: 'Помилка збереження: ',
+                priv_on: 'Режим приватності УВІМК 🔇', priv_off: 'Режим приватності ВИМК 🎤️',
+                toggle_failed: 'Помилка перемикання',
+                speaking: '⏳ Вимовляється…', tts_test_ok: 'Тест TTS завершено ✓', tts_test_failed: 'Тест TTS не вдався',
+                refreshed: 'Оновлено'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
         (function () {
             const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
@@ -499,10 +548,10 @@
                     $('speakerThreshold').value = cfg.speaker_threshold || 0.75;
                     $('speakerThresholdVal').textContent = (cfg.speaker_threshold || 0.75).toFixed(2);
                     $('privacyToggle').checked = cfg.privacy_mode || false;
-                    $('moduleStatus').textContent = 'Running';
+                    $('moduleStatus').textContent = t('status_running');
                     $('moduleStatus').className = 'badge badge-ok';
                 } catch (e) {
-                    $('moduleStatus').textContent = 'Offline';
+                    $('moduleStatus').textContent = t('status_offline');
                     $('moduleStatus').className = 'badge badge-off';
                 }
             }
@@ -511,7 +560,7 @@
             async function loadWakeStatus() {
                 try {
                     const s = await api('/wakeword/status');
-                    $('wakeStatus').textContent = s.running ? 'Active' : 'Stopped';
+                    $('wakeStatus').textContent = s.running ? t('wake_active') : t('wake_stopped');
                     $('wakeStatus').className = s.running ? 'badge badge-ok' : 'badge badge-off';
                 } catch { $('wakeStatus').textContent = '—'; }
             }
@@ -525,7 +574,7 @@
                     const ul = $('speakerList');
                     ul.innerHTML = '';
                     if (list.length === 0) {
-                        ul.innerHTML = '<li class="empty">No speakers enrolled</li>';
+                        ul.innerHTML = '<li class="empty">' + t('no_speakers') + '</li>';
                     } else {
                         list.forEach(id => {
                             const li = document.createElement('li');
@@ -537,7 +586,7 @@
                             btn.addEventListener('click', async function () {
                                 const uid = this.getAttribute('data-uid');
                                 await api('/speakers/' + encodeURIComponent(uid), { method: 'DELETE' });
-                                showToast('Speaker ' + uid + ' removed');
+                                showToast('Speaker ' + uid + t('speaker_removed'));
                                 loadSpeakers();
                             });
                         });
@@ -557,7 +606,7 @@
                     const renderList = (items, ul) => {
                         ul.innerHTML = '';
                         if (items.length === 0) {
-                            ul.innerHTML = '<li class="empty">No devices detected</li>';
+                            ul.innerHTML = '<li class="empty">' + t('no_devices') + '</li>';
                         } else {
                             items.forEach(dev => {
                                 const li = document.createElement('li');
@@ -590,9 +639,9 @@
                             privacy_mode: $('privacyToggle').checked,
                         }),
                     });
-                    showToast('Settings saved ✓');
+                    showToast(t('saved_ok'));
                 } catch (e) {
-                    showToast('Save failed: ' + e.message);
+                    showToast(t('save_failed') + e.message);
                 }
             });
 
@@ -604,10 +653,10 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ privacy_mode: this.checked }),
                     });
-                    showToast(this.checked ? 'Privacy mode ON 🔇' : 'Privacy mode OFF 🎙️');
+                    showToast(this.checked ? t('priv_on') : t('priv_off'));
                     loadWakeStatus();
                 } catch (e) {
-                    showToast('Toggle failed');
+                    showToast(t('toggle_failed'));
                 }
             });
 
@@ -615,19 +664,19 @@
             $('testTtsBtn').addEventListener('click', async () => {
                 const btn = $('testTtsBtn');
                 btn.disabled = true;
-                btn.textContent = '⏳ Speaking…';
+                btn.textContent = t('speaking');
                 try {
                     await api('/tts/test', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ text: 'Привіт! Голосовий модуль працює.', voice: $('ttsVoice').value }),
                     });
-                    showToast('TTS test complete ✓');
+                    showToast(t('tts_test_ok'));
                 } catch (e) {
-                    showToast('TTS test failed');
+                    showToast(t('tts_test_failed'));
                 } finally {
                     btn.disabled = false;
-                    btn.textContent = '▶ Test';
+                    btn.textContent = t('test_btn');
                 }
             });
 
@@ -642,14 +691,16 @@
             // ── Refresh ──────────────────────────────────────────────────
             $('refreshBtn').addEventListener('click', () => {
                 loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
-                showToast('Refreshed');
+                showToast(t('refreshed'));
             });
 
             // ── Init ──────────────────────────────────────────────────────
+            window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio(); } });
+            applyLang();
             loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
         })();
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

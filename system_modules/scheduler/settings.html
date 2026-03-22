@@ -131,32 +131,32 @@
 </head>
 
 <body>
-    <h1>⏱ Scheduler</h1>
+    <h1 data-i18n="title"></h1>
 
-    <h2>Location &amp; Timezone</h2>
+    <h2 data-i18n="h_loc_tz"></h2>
     <div class="form-group">
-        <label>Latitude (° -90..90)</label>
+        <label data-i18n="lbl_lat"></label>
         <input type="number" id="lat" step="0.0001" min="-90" max="90" />
     </div>
     <div class="form-group">
-        <label>Longitude (° -180..180)</label>
+        <label data-i18n="lbl_lon"></label>
         <input type="number" id="lon" step="0.0001" min="-180" max="180" />
     </div>
     <div class="form-group">
-        <label>Timezone</label>
+        <label data-i18n="lbl_tz"></label>
         <input type="text" id="tz" placeholder="Europe/Kyiv" />
     </div>
-    <button onclick="saveConfig()">Save</button>
+    <button onclick="saveConfig()" data-i18n="save"></button>
     <div id="msg"></div>
 
-    <h2>Active Jobs</h2>
+    <h2 data-i18n="h_jobs"></h2>
     <table id="jobs-table">
         <thead>
             <tr>
-                <th>Job ID</th>
-                <th>Trigger</th>
-                <th>Owner</th>
-                <th>Next Run</th>
+                <th data-i18n="col_jobid"></th>
+                <th data-i18n="col_trigger"></th>
+                <th data-i18n="col_owner"></th>
+                <th data-i18n="col_next"></th>
                 <th></th>
             </tr>
         </thead>
@@ -164,6 +164,27 @@
     </table>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '⏱ Scheduler', h_loc_tz: 'Location & Timezone',
+                lbl_lat: 'Latitude (° -90..90)', lbl_lon: 'Longitude (° -180..180)', lbl_tz: 'Timezone',
+                save: 'Save', saved: '✓ Saved',
+                h_jobs: 'Active Jobs', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Owner', col_next: 'Next Run',
+                remove_confirm: 'Remove job '
+            },
+            uk: {
+                title: '⏱ Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
+                lbl_lat: 'Широта (° -90..90)', lbl_lon: 'Довгота (° -180..180)', lbl_tz: 'Часовий пояс',
+                save: 'Зберегти', saved: '✓ Збережено',
+                h_jobs: 'Активні завдання', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Власник', col_next: 'Наступний запуск',
+                remove_confirm: 'Видалити завдання '
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadConfig(); loadJobs(); } });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         async function loadConfig() {
@@ -181,7 +202,7 @@
                 timezone: document.getElementById('tz').value || 'UTC',
             };
             await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            document.getElementById('msg').textContent = '✓ Saved';
+            document.getElementById('msg').textContent = t('saved');
             setTimeout(() => document.getElementById('msg').textContent = '', 3000);
         }
 
@@ -199,16 +220,17 @@
         }
 
         async function removeJob(jobId) {
-            if (!confirm('Remove job ' + jobId + '?')) return;
+            if (!confirm(t('remove_confirm') + jobId + '?')) return;
             await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
             loadJobs();
         }
 
+        applyLang();
         loadConfig();
         loadJobs();
         setInterval(loadJobs, 30000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

@@ -114,22 +114,45 @@
 </head>
 
 <body>
-    <h1>🔄 Update Manager</h1>
+    <h1 data-i18n="title"></h1>
 
     <div class="section">
-        <h2>Status</h2>
-        <pre id="status-pre">Loading…</pre>
+        <h2 data-i18n="h_status"></h2>
+        <pre id="status-pre" data-i18n="loading"></pre>
     </div>
 
     <div class="section">
-        <h2>Actions</h2>
-        <button onclick="doCheck()">Check for Updates</button>
-        <button onclick="doDownload()">Download Update</button>
-        <button onclick="doRollback()" class="danger">Rollback</button>
+        <h2 data-i18n="h_actions"></h2>
+        <button onclick="doCheck()" data-i18n="check_btn"></button>
+        <button onclick="doDownload()" data-i18n="download_btn"></button>
+        <button onclick="doRollback()" class="danger" data-i18n="rollback_btn"></button>
         <div id="action-msg" class="msg"></div>
     </div>
 
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                title: '🔄 Update Manager', h_status: 'Status', loading: 'Loading…', h_actions: 'Actions',
+                check_btn: 'Check for Updates', download_btn: 'Download Update', rollback_btn: 'Rollback',
+                checking: 'Checking…', update_avail: '✅ Update available', up_to_date: '✓ Up to date',
+                downloading: 'Downloading…', downloaded: '✅ Downloaded: ', failed: '⚠️ Failed',
+                rolling_back: 'Rolling back…', rolled_back: '✅ Rolled back. State: ',
+                rollback_confirm: 'Roll back to previous version?'
+            },
+            uk: {
+                title: '🔄 Менеджер оновлень', h_status: 'Статус', loading: 'Завантаження…', h_actions: 'Дії',
+                check_btn: 'Перевірити оновлення', download_btn: 'Завантажити', rollback_btn: 'Відкат',
+                checking: 'Перевірка…', update_avail: '✅ Доступне оновлення', up_to_date: '✓ Актуально',
+                downloading: 'Завантаження…', downloaded: '✅ Завантажено: ', failed: '⚠️ Помилка',
+                rolling_back: 'Відкат…', rolled_back: '✅ Відкачено. Стан: ',
+                rollback_confirm: 'Відкатити до попередньої версії?'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
+        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); } });
+
         const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function loadStatus() {
             try {
@@ -138,27 +161,27 @@
             } catch (e) { document.getElementById('status-pre').textContent = 'Error: ' + e.message; }
         }
         async function doCheck() {
-            showMsg('Checking…', '');
+            showMsg(t('checking'), '');
             try {
                 const r = await fetch(`${base}/update/check`, { method: 'POST' }).then(r => r.json());
-                showMsg(r.update_available ? `✅ Update ${r.version} available` : '✓ Up to date', 'ok');
+                showMsg(r.update_available ? t('update_avail') + ' ' + r.version : t('up_to_date'), 'ok');
                 loadStatus();
             } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
         }
         async function doDownload() {
-            showMsg('Downloading…', '');
+            showMsg(t('downloading'), '');
             try {
                 const r = await fetch(`${base}/update/download`, { method: 'POST' }).then(r => r.json());
-                showMsg(r.ok ? '✅ Downloaded: ' + r.path : '⚠️ Failed', r.ok ? 'ok' : 'err');
+                showMsg(r.ok ? t('downloaded') + r.path : t('failed'), r.ok ? 'ok' : 'err');
                 loadStatus();
             } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
         }
         async function doRollback() {
-            if (!confirm('Roll back to previous version?')) return;
-            showMsg('Rolling back…', '');
+            if (!confirm(t('rollback_confirm'))) return;
+            showMsg(t('rolling_back'), '');
             try {
                 const r = await fetch(`${base}/update/rollback`, { method: 'POST' }).then(r => r.json());
-                showMsg('✅ Rolled back. State: ' + r.state, 'ok');
+                showMsg(t('rolled_back') + r.state, 'ok');
                 loadStatus();
             } catch (e) { showMsg('⚠️ ' + e.message, 'err'); }
         }
@@ -167,9 +190,10 @@
             el.textContent = text;
             el.className = 'msg ' + cls;
         }
+        applyLang();
         loadStatus(); setInterval(loadStatus, 30000);
     </script>
-    <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>
