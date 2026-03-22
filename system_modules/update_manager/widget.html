@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Update Manager</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0f1117; color:#e0e0e0; padding:20px; }
+  .card { background:#1a1d27; border-radius:12px; padding:20px; }
+  .version { font-size:2rem; font-weight:700; color:#50c878; }
+  .label { font-size:0.85rem; color:#aaa; margin-bottom:4px; }
+  .state { display:inline-block; padding:4px 12px; border-radius:20px; font-size:0.85rem; margin:10px 0; background:#2a2a3a; }
+  .state.update_available { background:rgba(255,200,0,0.2); color:#FFD700; }
+  .state.applied { background:rgba(80,200,120,0.2); color:#50c878; }
+  .state.error { background:rgba(220,50,50,0.2); color:#e06c75; }
+  button { background:#5c8ee6; color:#fff; border:none; border-radius:8px; padding:10px 18px; cursor:pointer; margin-top:12px; font-size:0.9rem; }
+  button:hover { background:#4a7bd4; }
+  #msg { margin-top:10px; font-size:0.85rem; color:#aaa; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="label">Current version</div>
+  <div class="version" id="cur-ver">—</div>
+  <div class="label" style="margin-top:12px;">Latest available</div>
+  <div id="latest-ver" style="font-size:1.2rem;color:#aaa;">—</div>
+  <div><span class="state" id="state-badge">idle</span></div>
+  <button onclick="checkNow()">🔄 Check for Updates</button>
+  <div id="msg"></div>
+</div>
+<script>
+const base = window.location.origin;
+async function load() {
+  try {
+    const s = await fetch(`${base}/update/status`).then(r => r.json());
+    document.getElementById('cur-ver').textContent = s.current_version || '—';
+    document.getElementById('latest-ver').textContent = s.latest_version || '—';
+    const badge = document.getElementById('state-badge');
+    badge.textContent = s.state;
+    badge.className = 'state ' + s.state;
+    if (s.error) document.getElementById('msg').textContent = '⚠️ ' + s.error;
+  } catch (e) { document.getElementById('msg').textContent = e.message; }
+}
+async function checkNow() {
+  document.getElementById('msg').textContent = 'Checking…';
+  try {
+    const r = await fetch(`${base}/update/check`, { method:'POST' }).then(r => r.json());
+    document.getElementById('msg').textContent = r.update_available ? `✅ Update available: ${r.version}` : '✓ Up to date';
+    load();
+  } catch (e) { document.getElementById('msg').textContent = '⚠️ ' + e.message; }
+}
+load(); setInterval(load, 30000);
+</script>
+</body>
+</html>
