@@ -1,0 +1,4 @@
+python-vlc>=3.0.20115
+httpx>=0.27
+mutagen>=1.47
+aiofiles>=23.0

@@ -1,0 +1,28 @@
+{
+    "name": "media-player",
+    "version": "0.1.0",
+    "description": "Media player: internet radio, USB, SMB, Internet Archive. Voice control, cover art.",
+    "type": "SYSTEM",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "permissions": [
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2",
+            "max_size": "2x2"
+        },
+        "settings": "settings.html"
+    },
+    "resources": {
+        "memory_mb": 128,
+        "cpu": 0.5
+    },
+    "author": "SelenaCore Community",
+    "license": "MIT"
+}
