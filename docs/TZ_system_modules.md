@@ -2014,6 +2014,1382 @@ git push origin main
 
 ---
 
+## Модуль 11: `media_player`
+
+**Тип:** SYSTEM  
+**ui_profile:** FULL  
+**Память:** 128 MB  
+**CPU:** 0.5  
+
+### Назначение
+
+Медиаплеер: интернет-радио, USB/SD, SMB/CIFS сетевые шары, Internet Archive. Голосовое управление, обложки альбомов, плейлисты M3U/PLS.
+
+### 11.1 Движок воспроизведения
+
+```python
+# Бэкенд: libvlc (python-vlc) в headless-режиме
+# Поддерживаемые форматы: MP3, OGG, FLAC, WAV, OPUS, HTTP streams, M3U/PLS
+
+SUPPORTED_EXTENSIONS = {".mp3", ".ogg", ".flac", ".wav", ".opus", ".m3u", ".pls"}
+```
+
+### 11.2 Источники аудио
+
+**Интернет-радио (RadioBrowser API):**
+
+```python
+# RadioBrowserSource — поиск по тегу, стране, языку
+# Локальная библиотека станций: /var/lib/selena/modules/media-player/stations.json
+# Эндпоинт: POST /api/import/radiobrowser?tag=jazz&country=uk
+```
+
+**USB/SD медиа:**
+
+```python
+# USBSource — автодетект подключённых USB-дисков
+# Рекурсивный скан аудиофайлов
+# Эндпоинт: GET /import/usb/scan
+```
+
+**SMB/CIFS сетевые шары:**
+
+```python
+# SMBSource — подключение к сетевым папкам
+# Учётные данные: username, password, domain (default: WORKGROUP)
+# Эндпоинт: POST /api/import/smb
+```
+
+**Internet Archive.org:**
+
+```python
+# InternetArchiveSource — публичные коллекции (музыка, аудиокниги)
+# Эндпоинт: POST /api/import/archive?query=public+radio
+```
+
+### 11.3 Обложки альбомов
+
+```python
+# CoverFetcher — Last.fm API (требует API ключ)
+# Кеш: /var/lib/selena/modules/media-player/covers/
+# Конфиг: MEDIA_LASTFM_API_KEY
+```
+
+### 11.4 Голосовое управление
+
+```python
+# MediaVoiceHandler — слушает voice.intent события
+# Интенты: media.play_artist, media.pause, media.stop, media.next, media.previous
+# Триггер: "включи музыку", "поставь на паузу", "следующий трек"
+```
+
+### 11.5 API модуля
+
+```
+GET  /player/state              → текущее состояние (track, position, volume)
+POST /player/play               → начать воспроизведение
+POST /player/pause              → пауза
+POST /player/stop               → стоп
+POST /player/next               → следующий трек
+POST /player/previous           → предыдущий трек
+POST /player/volume             → { volume: 0-100 }
+POST /player/seek               → { position: <seconds> }
+
+GET  /radio/stations            → список станций
+POST /radio/add-station         → добавить станцию
+POST /radio/import-m3u          → импорт M3U плейлиста
+POST /import/radiobrowser       → импорт из RadioBrowser
+POST /import/smb                → импорт с SMB шары
+POST /import/archive            → импорт с Internet Archive
+GET  /import/usb/scan           → скан USB-дисков
+
+POST /config                    → обновить настройки
+```
+
+### 11.6 Трансляция состояния
+
+```python
+# Каждые 3 секунды во время воспроизведения:
+await self.publish_event("media.state_changed", {
+    "state":    "playing",      # "playing" | "paused" | "stopped"
+    "track":    "Song Name",
+    "artist":   "Artist",
+    "album":    "Album",
+    "cover_url": "/covers/abc.jpg",
+    "position": 45.2,           # секунды
+    "duration": 210.0,
+})
+```
+
+### 11.7 Events
+
+**Публикуемые:**
+
+```
+media.state_changed    { state, track, artist, album, cover_url, position, duration }
+```
+
+**Слушает:**
+
+```
+voice.intent           → обработка media.* интентов
+```
+
+### 11.8 Настройки
+
+```
+MEDIA_LASTFM_API_KEY=...       # API ключ Last.fm для обложек
+MEDIA_DEFAULT_VOLUME=70         # громкость по умолчанию (0-100)
+MEDIA_STREAM_BUFFER_MS=1000     # буфер потока (мс)
+MEDIA_NORMALIZE=false           # нормализация громкости
+```
+
+### widget.html (FULL, размер 2x2)
+
+```
+Обложка альбома (если доступна)
+Название трека · Исполнитель
+Прогресс-бар с таймером
+Кнопки: ⏮ ▶/⏸ ⏭ 🔊
+Мини-плейлист: 3-5 треков
+```
+
+**Зависимости:**
+
+```
+python-vlc>=3.0
+httpx>=0.27
+smbprotocol>=1.10       # для SMB
+```
+
+**Тесты:**
+
+```python
+# test: play/pause/stop/next/previous state transitions
+# test: radio station added and persisted
+# test: M3U playlist imported correctly
+# test: USB scan finds audio files
+# test: media.state_changed event published every 3 sec
+# test: voice intent media.pause triggers pause
+# test: volume set correctly (0-100 range validation)
+```
+
+---
+
+## Модуль 12: `voice_core`
+
+**Тип:** SYSTEM  
+**ui_profile:** FULL  
+**Память:** 256 MB  
+**CPU:** 0.5  
+
+### Назначение
+
+Голосовая подсистема SelenaCore. Включает: распознавание речи (STT, Vosk), синтез речи (TTS, Piper), детектор wake-word (openWakeWord), идентификацию говорящего (resemblyzer), режим приватности (отключение микрофонов через GPIO).
+
+### 12.1 Распознавание речи (STT)
+
+```python
+# Движок: Vosk (офлайн, поддержка украинского и русского)
+# Модель: настраивается через VOSK_MODEL (default: vosk-model-small-uk)
+# Sample rate: 16 kHz, mono
+# WebSocket стриминг: WS /api/ui/modules/voice-core/stream
+
+# Реальное время: аудио с микрофона → Vosk → текст → Intent Router
+```
+
+### 12.2 Синтез речи (TTS)
+
+```python
+# Движок: Piper (нейросетевой, локальный)
+# Голоса:
+VOICES = {
+    "uk_UA-ukrainian_tts-medium": "Українська (середня якість)",
+    "uk_UA-lada-medium":          "Українська Lada",
+    "ru_RU-irina-medium":         "Русский Irina",
+    "ru_RU-ruslan-medium":        "Русский Ruslan",
+    "en_US-amy-medium":           "English Amy",
+    "en_US-ryan-high":            "English Ryan (HQ)",
+}
+
+# Эндпоинты:
+# GET  /tts/voices     → список голосов
+# POST /tts/test       → тест синтеза (возвращает WAV)
+```
+
+### 12.3 Детектор wake-word
+
+```python
+# Движок: openWakeWord (ONNX inference)
+# Wake-word по умолчанию: "hey_selena"
+# Порог: 0.1–1.0 (default 0.5, настраивается)
+# Фоновый цикл: постоянное прослушивание микрофона через asyncio
+
+# При обнаружении → публикует voice.wake_word событие
+# → запускает STT запись → текст → Intent Router
+```
+
+### 12.4 Идентификация говорящего (Speaker ID)
+
+```python
+# Движок: resemblyzer (голосовые эмбеддинги)
+# Хранение: numpy arrays в /var/lib/selena/speaker_embeddings/
+# Порог схожести: 0.75 (настраивается)
+
+# Эндпоинты:
+# GET    /speakers                → список зарегистрированных
+# DELETE /speakers/{user_id}      → удалить голосовой слепок
+```
+
+### 12.5 Режим приватности
+
+```python
+# GPIO кнопка (pin 17, настраивается) + голосовая команда
+# При активации:
+#   - Полная остановка STT/wake-word прослушивания
+#   - LED индикатор (если подключён)
+#   - Публикация voice.privacy_on события
+
+# Эндпоинты:
+# GET  /privacy                → текущий статус
+# POST /privacy/toggle         → переключить
+```
+
+### 12.6 История голосовых запросов
+
+```python
+# Хранение: SQLite в /var/lib/selena/selena.db
+# Таблица: voice_history(id, timestamp, user_id, wake_word,
+#                         recognized_text, intent, response, duration_ms)
+# Ротация: максимум 10,000 записей
+
+# Эндпоинт: GET /history?limit=50
+```
+
+### 12.7 Управление аудиоустройствами
+
+```python
+# Автодетект: ALSA карты (/proc/asound/cards) + PulseAudio/PipeWire (Bluetooth)
+# Приоритет входа:  USB > I2S GPIO > Bluetooth > HDMI > встроенный
+# Приоритет выхода: USB > I2S GPIO > Bluetooth > HDMI > jack
+
+# Эндпоинт: GET /audio/devices → список входов и выходов
+```
+
+### 12.8 API модуля
+
+```
+GET  /config               → настройки STT/TTS/wake-word
+POST /config               → обновить настройки
+GET  /privacy              → статус режима приватности
+POST /privacy/toggle       → переключить приватность
+GET  /audio/devices        → список аудиоустройств
+GET  /stt/status           → статус STT
+WS   /stream               → WebSocket стриминг аудио
+GET  /tts/voices           → список голосов TTS
+POST /tts/test             → тестовый синтез
+GET  /wakeword/status      → статус wake-word детектора
+GET  /speakers             → список зарегистрированных голосов
+DELETE /speakers/{user_id} → удалить голосовой слепок
+GET  /history?limit=50     → история запросов
+```
+
+### 12.9 Events
+
+**Публикуемые:**
+
+```
+voice.wake_word        { wake_word, score }
+voice.recognized       { text, user_id, duration_ms }
+voice.privacy_on       { privacy_mode: true }
+voice.privacy_off      { privacy_mode: false }
+voice.speak_done       { text }
+```
+
+**Слушает:**
+
+```
+voice.speak            { text, lang?, volume? }  → синтез TTS и воспроизведение
+```
+
+### widget.html (FULL, размер 2x2)
+
+```
+Индикатор микрофона (активен / приватность)
+Последний распознанный текст
+Статус STT/TTS/Wake-word (зелёный/красный)
+Кнопка "Тест TTS"
+Кнопка "Приватность вкл/выкл"
+```
+
+**Зависимости:**
+
+```
+vosk>=0.3
+piper-tts>=1.0
+openwakeword>=0.6
+resemblyzer>=0.1
+pyaudio>=0.2
+RPi.GPIO>=0.7        # опционально, только Raspberry Pi
+```
+
+**Тесты:**
+
+```python
+# test: STT возвращает текст из аудио (mock Vosk)
+# test: TTS генерирует WAV (mock Piper)
+# test: wake-word обнаружен при score > threshold (mock)
+# test: speaker ID совпадает с зарегистрированным (mock resemblyzer)
+# test: privacy toggle публикует voice.privacy_on/off
+# test: voice.speak событие → TTS → воспроизведение
+# test: history ротация при > 10,000 записей
+# test: аудио devices endpoint возвращает корректную структуру
+```
+
+---
+
+## Модуль 13: `llm_engine`
+
+**Тип:** SYSTEM  
+**ui_profile:** SETTINGS_ONLY  
+**Память:** 512 MB – 2 GB (зависит от модели)  
+**CPU:** 1.0 – 2.0  
+
+### Назначение
+
+LLM движок и маршрутизатор интентов. Трёхуровневая архитектура: Fast Matcher (ключевые слова/regex, 0 мс) → Module Intents (HTTP к модулям, <1 с) → Ollama LLM (2–10 с). Автоматическое отключение LLM при нехватке RAM.
+
+### 13.1 Fast Matcher (уровень 1)
+
+```python
+# Конфиг: /opt/selena-core/config/intent_rules.yaml
+# Формат: YAML правила с keywords, regex шаблонами, response шаблонами, действиями
+
+# Пример правила:
+# - name: lights_on
+#   keywords: ["включи свет", "turn on lights"]
+#   regex: "(включи|turn on)\\s+(свет|light)"
+#   response: "Включаю свет"
+#   action: { type: "device_state", device_id: "@lights", state: { power: true } }
+
+# Время отклика: < 1 мс (in-memory lookup)
+# Перезагрузка: reload() обновляет правила из файла на лету
+```
+
+### 13.2 Module Intents (уровень 2)
+
+```python
+# Зарегистрированные модули могут объявить свои интенты
+# Intent Router запрашивает каждый модуль HTTP POST /intent
+# Если модуль понимает запрос — возвращает результат
+# Время отклика: < 1 с
+```
+
+### 13.3 Ollama LLM (уровень 3)
+
+```python
+# Эндпоинт: http://localhost:11434 (настраивается OLLAMA_URL)
+# Модель по умолчанию: phi3:mini (настраивается OLLAMA_MODEL)
+
+# Рекомендуемые модели:
+MODELS = {
+    "phi3:mini":     {"params": "3.8B", "size": "2.2 GB", "note": "default, fast"},
+    "gemma2:2b":     {"params": "2B",   "size": "1.6 GB", "note": "multilingual"},
+    "qwen2.5:0.5b":  {"params": "0.5B", "size": "0.4 GB", "note": "ultra-lightweight"},
+    "llama3.2:1b":   {"params": "1B",   "size": "0.7 GB", "note": "small English"},
+}
+
+# Авто-отключение: если свободная RAM < 5 GB (настраивается OLLAMA_MIN_RAM_GB)
+# Temperature: 0.7 (настраивается)
+# Max tokens: 512 (на запрос)
+# API: /api/generate (streaming и non-streaming)
+```
+
+### 13.4 Model Manager
+
+```python
+# Управление моделями Ollama:
+# - Список рекомендуемых моделей с статусом установки
+# - Скачивание моделей через Ollama pull
+# - Переключение активной модели (персистентно)
+# - Автодетект невалидного выбора
+```
+
+### 13.5 Динамический системный промпт
+
+```python
+# При вызове LLM — автоматически формируется system prompt:
+# - Список зарегистрированных устройств
+# - Список доступных команд
+# - Текущее время и дата
+# - Статус присутствия (кто дома)
+# - Контекст последних 5 голосовых запросов
+```
+
+### 13.6 API модуля
+
+```
+POST /intent               → { text: "включи свет" } → IntentResult
+GET  /models               → список моделей с статусами
+POST /models/pull          → { model: "phi3:mini" } → запуск скачивания
+POST /models/switch        → { model: "gemma2:2b" } → переключить
+GET  /rules                → текущие правила Fast Matcher
+POST /rules/reload         → перезагрузить правила из YAML
+GET  /health               → статус LLM (доступен / отключён по RAM)
+```
+
+### 13.7 Events
+
+**Публикуемые:**
+
+```
+voice.intent           { intent, response, action, source, latency_ms }
+llm.model_switched     { model, previous }
+llm.disabled           { reason: "low_ram", available_gb }
+llm.enabled            { model }
+```
+
+**Слушает:**
+
+```
+voice.recognized       { text, user_id }  → запуск Intent Router
+```
+
+### Настройки
+
+```
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=phi3:mini
+OLLAMA_TIMEOUT=30              # секунды
+OLLAMA_MIN_RAM_GB=5.0          # порог отключения LLM
+FAST_MATCHER_RULES=/opt/selena-core/config/intent_rules.yaml
+```
+
+**Зависимости:**
+
+```
+httpx>=0.27
+pyyaml>=6.0
+psutil>=5.9
+```
+
+**Тесты:**
+
+```python
+# test: Fast Matcher находит интент по ключевому слову
+# test: Fast Matcher находит интент по regex
+# test: Fast Matcher miss → fallback к Ollama (mock)
+# test: Ollama отключён при RAM < 5 GB (mock psutil)
+# test: model switch сохраняется между рестартами
+# test: rules reload подхватывает изменения из YAML
+# test: IntentResult содержит source, latency
+# test: динамический system prompt содержит список устройств
+```
+
+---
+
+## Модуль 14: `secrets_vault`
+
+**Тип:** SYSTEM  
+**ui_profile:** SETTINGS_ONLY  
+**Память:** 64 MB  
+**CPU:** 0.1  
+
+### Назначение
+
+Защищённое хранилище секретов и OAuth-токенов. AES-256-GCM шифрование. OAuth Device Authorization Grant (RFC 8628) с QR-кодами. API-прокси для модулей — модули НИКОГДА не видят токены.
+
+### 14.1 Зашифрованное хранилище
+
+```python
+# Хранение: /secure/tokens/<service>.enc
+# Мастер-ключ: /secure/vault_key (base64, 256 бит)
+# Шифрование: AES-256-GCM с рандомным 96-бит nonce на каждый секрет
+# Ключ генерируется автоматически при первом запуске
+
+# Модель данных:
+@dataclass
+class SecretRecord:
+    access_token: str
+    refresh_token: str | None
+    expires_at: float | None
+    scopes: list[str]
+    extra: dict
+```
+
+### 14.2 OAuth Device Authorization Grant (RFC 8628)
+
+```python
+# Провайдеры: Google, GitHub (расширяемо через KNOWN_PROVIDERS)
+# Поток:
+# 1. POST /api/v1/secrets/oauth/start → session_id, user_code, verification_uri, QR
+# 2. Пользователь сканирует QR или вводит код на сайте провайдера
+# 3. Модуль поллит GET /api/v1/secrets/oauth/status/{session_id}
+# 4. При авторизации → токены шифруются и сохраняются в vault
+# QR-код: генерируется на лету (qrcode библиотека)
+# Экспирация сессии: 30 минут (настраивается)
+```
+
+### 14.3 API-прокси (Token Injection)
+
+```python
+# POST /api/v1/secrets/proxy
+# Назначение: пересылка HTTP-запросов к внешним API с подстановкой токена
+# Безопасность:
+#   - Только HTTPS URL (защита от SSRF)
+#   - Блокировка приватных IP-диапазонов (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8)
+#   - Токены НИКОГДА не возвращаются модулю
+#   - Максимальный размер ответа: 5 MB
+
+# Запрос:
+# { "service": "google", "method": "GET",
+#   "url": "https://gmail.googleapis.com/...",
+#   "extra_headers": {}, "json_body": null, "params": {} }
+
+# Ответ: { "status": 200, "headers": {...}, "body": {...} }
+```
+
+### 14.4 Автообновление токенов
+
+```python
+# Фоновая задача: проверяет все токены каждые 60 секунд
+# Авто-обновление: за 5 минут до истечения через refresh_token
+# PBKDF2: 600,000 итераций (RFC 8617)
+```
+
+### 14.5 API модуля
+
+```
+POST /api/v1/secrets/oauth/start          → начать OAuth-поток
+GET  /api/v1/secrets/oauth/status/{id}    → статус сессии
+GET  /api/v1/secrets/oauth/qr/{id}        → QR-код (PNG)
+POST /api/v1/secrets/proxy                → API-прокси запрос
+GET  /api/v1/secrets/services             → список подключённых сервисов
+DELETE /api/v1/secrets/services/{name}    → отключить сервис
+```
+
+### 14.6 Events
+
+**Публикуемые:**
+
+```
+secrets.token_refreshed   { service, expires_at }
+secrets.token_expired     { service, reason }
+secrets.oauth_completed   { service, module }
+```
+
+### Структура каталогов
+
+```
+/secure/
+  vault_key                    # Мастер-ключ (permissions 600)
+  tokens/
+    google.enc                 # Зашифрованные токены
+    github.enc
+    tuya.enc
+```
+
+**Зависимости:**
+
+```
+cryptography>=46.0
+httpx>=0.27
+qrcode>=7.4
+```
+
+**Тесты:**
+
+```python
+# test: store/retrieve секрет → расшифровка корректна
+# test: AES-256-GCM nonce уникален для каждого секрета
+# test: OAuth start возвращает session_id и user_code
+# test: OAuth status polling → authorized после мок-авторизации
+# test: proxy блокирует HTTP URL (только HTTPS)
+# test: proxy блокирует приватные IP (SSRF protection)
+# test: auto-refresh за 5 минут до истечения (mock time)
+# test: vault_key генерируется при первом запуске
+```
+
+---
+
+## Модуль 15: `user_manager`
+
+**Тип:** SYSTEM  
+**ui_profile:** FULL  
+**Память:** 128 MB  
+**CPU:** 0.2  
+
+### Назначение
+
+Управление пользователями SelenaCore. CRUD профилей (admin/resident/guest), PIN-аутентификация с rate limiting, Face ID через face_recognition, голосовая биометрия через resemblyzer, аудит-лог действий.
+
+### 15.1 Профили пользователей
+
+```python
+# Хранение: SQLite в /var/lib/selena/selena.db
+# Роли: admin | resident | guest
+
+# Таблица users:
+# user_id TEXT PK, username TEXT UNIQUE, display_name TEXT,
+# role TEXT DEFAULT 'resident', pin_hash TEXT,
+# created_at REAL, last_seen REAL,
+# face_enrolled INTEGER DEFAULT 0, voice_enrolled INTEGER DEFAULT 0,
+# active INTEGER DEFAULT 1
+```
+
+### 15.2 PIN-аутентификация
+
+```python
+# Алгоритм: SHA-256 с солью "selena-pin-salt-v1"
+# Защита от brute-force:
+#   - Максимум 5 неудачных попыток на пользователя
+#   - После 5 попыток → блокировка на 10 минут (LOCK_DURATION_SEC = 600)
+#   - Lock state: в памяти (сбрасывается при рестарте)
+```
+
+### 15.3 Face ID
+
+```python
+# Движок: face_recognition (dlib бэкенд)
+# Регистрация: JPEG из веб-камеры браузера → 128-мерный face encoding
+# Хранение: numpy arrays в /var/lib/selena/face_encodings/
+# Верификация: сравнение с всеми зарегистрированными
+# Порог: 0.5 (default, настраивается FACE_TOLERANCE, ниже = строже)
+
+# Функции:
+# enroll(user_id, jpeg_bytes) → bool
+# identify(jpeg_bytes) → user_id | None
+# list_enrolled() → list[user_id]
+```
+
+### 15.4 Голосовая биометрия
+
+```python
+# Движок: resemblyzer (через voice_core)
+# Регистрация: запись голоса → вычисление эмбеддинга → сохранение
+# Идентификация: сравнение с зарегистрированными эмбеддингами
+# Порог: 0.75 (default)
+```
+
+### 15.5 Аудит-лог
+
+```python
+# Хранение: SQLite таблица audit_log
+# Поля: timestamp, user_id, action, resource, result
+# Ротация: 10,000 записей
+# Действия: login, logout, pin_failed, face_enrolled, device_added, etc.
+```
+
+### 15.6 API модуля
+
+```
+GET    /users                      → список пользователей
+POST   /users                      → создать пользователя
+GET    /users/{user_id}            → профиль
+PUT    /users/{user_id}            → обновить
+DELETE /users/{user_id}            → удалить
+POST   /auth/pin                   → { user_id, pin } → аутентификация
+POST   /auth/face                  → multipart JPEG → идентификация
+POST   /users/{id}/face/enroll     → multipart JPEG → регистрация Face ID
+DELETE /users/{id}/face            → удалить Face ID
+POST   /users/{id}/voice/enroll    → аудио → регистрация голоса
+DELETE /users/{id}/voice           → удалить голосовой слепок
+GET    /audit?limit=100            → аудит-лог
+```
+
+### 15.7 Events
+
+**Публикуемые:**
+
+```
+user.authenticated     { user_id, method: "pin"|"face"|"voice" }
+user.login_failed      { user_id, method, reason }
+user.lockout           { user_id, duration_sec: 600 }
+user.created           { user_id, username, role }
+user.deleted           { user_id }
+```
+
+### widget.html (FULL, размер 2x1)
+
+```
+Список пользователей:
+  Аватар · Имя · Роль · Последний вход
+  Значки: 🔐 PIN | 👤 Face ID | 🎤 Voice ID
+Кнопка "Добавить пользователя"
+```
+
+**Зависимости:**
+
+```
+SQLAlchemy>=2.0
+aiosqlite>=0.19
+face_recognition>=1.3
+numpy>=1.24
+```
+
+**Тесты:**
+
+```python
+# test: создание пользователя → сохранение в БД
+# test: PIN-аутентификация → успех с корректным PIN
+# test: PIN-аутентификация → отказ при неверном PIN
+# test: 5 неудачных попыток → блокировка 10 минут
+# test: Face ID enroll → face_enrolled = 1
+# test: Face ID identify → корректный user_id
+# test: аудит-лог записывает все действия
+# test: ротация аудит-лога при > 10,000 записей
+```
+
+---
+
+## Модуль 16: `hw_monitor`
+
+**Тип:** SYSTEM  
+**ui_profile:** ICON_SETTINGS  
+**Память:** 32 MB  
+**CPU:** 0.05  
+
+### Назначение
+
+Мониторинг аппаратных ресурсов: температура CPU, использование RAM и диска. Алерты при превышении порогов. Автоматическая деградация (остановка модулей) при критической нагрузке.
+
+### 16.1 Сбор метрик
+
+```python
+# Источники данных:
+# CPU температура: /sys/class/thermal/ или vcgencmd (Raspberry Pi)
+# RAM: /proc/meminfo (процент, MB использовано, MB всего)
+# Диск: shutil.disk_usage() (процент, свободно GB)
+
+@dataclass
+class SystemMetrics:
+    cpu_temp_c: float | None     # °C
+    ram_used_pct: float          # %
+    ram_used_mb: float
+    ram_total_mb: float
+    disk_used_pct: float         # %
+    disk_free_gb: float
+```
+
+### 16.2 Пороги алертов
+
+```python
+CPU_TEMP_WARN  = 70.0   # °C
+CPU_TEMP_CRIT  = 85.0   # °C
+RAM_WARN_PCT   = 80     # %
+RAM_CRIT_PCT   = 92     # %
+DISK_WARN_PCT  = 85     # %
+DISK_CRIT_PCT  = 95     # %
+MONITOR_INTERVAL = 30   # секунды
+```
+
+### 16.3 Стратегия деградации RAM
+
+```python
+# При RAM > 92%:
+# 1. Отправить hw.ram_crit событие
+# 2. Остановить опциональные модули в порядке приоритета (low → high)
+# 3. Системные модули (voice_core, llm_engine) — последние
+# Модуль throttle.py управляет порядком остановки
+```
+
+### 16.4 API модуля
+
+```
+GET /metrics              → текущие метрики (CPU, RAM, диск)
+GET /metrics/history      → история за последний час
+GET /thresholds           → текущие пороги
+POST /thresholds          → обновить пороги
+```
+
+### 16.5 Events
+
+**Публикуемые:**
+
+```
+hw.metrics_collected   { cpu_temp_c, ram_used_pct, ram_used_mb, ram_total_mb, disk_used_pct, disk_free_gb }
+hw.cpu_temp_warn       { cpu_temp_c, threshold }
+hw.cpu_temp_crit       { cpu_temp_c, threshold }
+hw.ram_warn            { ram_used_pct, threshold }
+hw.ram_crit            { ram_used_pct, threshold } → может запустить деградацию
+hw.disk_warn           { disk_used_pct, threshold }
+hw.disk_crit           { disk_used_pct, threshold }
+```
+
+### widget.html (ICON_SETTINGS)
+
+```
+Иконка: термометр (зелёный < 70°, жёлтый < 85°, красный > 85°)
+Badge: "62°C · 74% RAM"
+```
+
+**Зависимости:**
+
+```
+psutil>=5.9              # fallback для /proc/meminfo
+```
+
+**Тесты:**
+
+```python
+# test: CPU температура читается из /sys/class/thermal (mock)
+# test: RAM использование из /proc/meminfo (mock)
+# test: hw.cpu_temp_warn при temperature > 70°C
+# test: hw.ram_crit при usage > 92%
+# test: метрики публикуются каждые 30 секунд
+# test: деградация останавливает модули в правильном порядке
+```
+
+---
+
+## Модуль 17: `network_scanner`
+
+**Тип:** SYSTEM  
+**ui_profile:** FULL  
+**Память:** 64 MB  
+**CPU:** 0.3  
+
+### Назначение
+
+Сканер сети. Обнаруживает устройства через ARP sweep (Layer 2), mDNS/Bonjour, SSDP/UPnP. Автоклассификация по OUI (производитель по MAC-адресу). Результаты → Device Registry.
+
+### 17.1 ARP Scanner (Layer 2)
+
+```python
+# Предпочтительный метод: arp-scan --localnet (активный L2 broadcast)
+# Запускается ОДИН РАЗ за цикл сканирования (не per-device)
+# Результат кешируется в set для O(1) lookup
+
+# Пассивный режим: чтение /proc/net/arp (без root)
+# Активный режим: arping команда (требует cap NET_RAW)
+# Ограничение: максимум /24 подсеть (256 адресов)
+# Конкурентность: asyncio.Semaphore(20) для arping вызовов
+
+# Время сканирования всей /24: ~1.9 секунды
+```
+
+### 17.2 mDNS/Bonjour
+
+```python
+# Библиотека: zeroconf (async-safe)
+# Мониторимые сервисы:
+MDNS_SERVICES = [
+    "_http._tcp.local.",         # HTTP-устройства
+    "_https._tcp.local.",        # HTTPS-устройства
+    "_hap._tcp.local.",          # HomeKit
+    "_googlecast._tcp.local.",   # Chromecast
+    "_airplay._tcp.local.",      # Apple AirPlay
+    "_ipp._tcp.local.",          # Принтеры
+    "_smartthings._tcp.local.",  # SmartThings
+    "_home-assistant._tcp.local.", # Home Assistant
+    "_esphomelib._tcp.local.",   # ESPHome
+]
+# Данные: имя, тип сервиса, hostname, IP, порт, properties
+```
+
+### 17.3 SSDP/UPnP
+
+```python
+# Протокол: мультикаст UDP на 239.255.255.250:1900
+# Пассивный: слушает NOTIFY и M-SEARCH ответы
+# Активный: отправляет M-SEARCH probe (ST: ssdp:all), таймаут 3 секунды
+# Данные: USN, LOCATION, SERVER, ST
+```
+
+### 17.4 OUI Lookup
+
+```python
+# База IEEE OUI: MAC prefix → производитель
+# Пример: AA:BB:CC → "Apple, Inc."
+# Цель: автоклассификация устройств по типу
+```
+
+### 17.5 API модуля
+
+```
+GET  /scan/arp              → запустить ARP scan, вернуть результаты
+GET  /scan/mdns             → список обнаруженных mDNS сервисов
+GET  /scan/ssdp             → список обнаруженных UPnP устройств
+POST /scan/full             → полный скан всеми методами
+GET  /devices               → все найденные устройства с классификацией
+GET  /oui/{mac}             → производитель по MAC-адресу
+```
+
+### 17.6 Events
+
+**Публикуемые:**
+
+```
+device.discovered          { name, ip, mac, protocol, manufacturer, service_type }
+device.offline             { device_id, ip, mac }
+device.online              { device_id, ip, mac }
+network.scan_complete      { method, found: N, new: N, duration_ms }
+```
+
+### widget.html (FULL, размер 2x1)
+
+```
+Сеть: 14 устройств · Последний скан: 2 мин назад
+Новые: 2 (показать)
+Список: IP · MAC · Производитель · Тип
+Кнопка "Сканировать сейчас"
+```
+
+**Зависимости:**
+
+```
+zeroconf>=0.131
+arp-scan               # системный пакет, установлен в Dockerfile
+arping                 # системный пакет
+```
+
+**Тесты:**
+
+```python
+# test: ARP scan парсит /proc/net/arp корректно
+# test: mDNS обнаруживает _googlecast сервис (mock zeroconf)
+# test: SSDP обнаруживает UPnP устройство (mock)
+# test: OUI lookup возвращает производителя по MAC
+# test: device.discovered событие при новом устройстве
+# test: полный скан объединяет результаты всех методов
+# test: arp-scan cache — одна операция на цикл
+```
+
+---
+
+## Модуль 18: `ui_core`
+
+**Тип:** SYSTEM  
+**ui_profile:** (является UI сервером)  
+**Память:** 96 MB  
+**CPU:** 0.2  
+
+### Назначение
+
+Веб-сервер пользовательского интерфейса. Раздаёт PWA (React SPA) на порту :80. Реверс-прокси к Core API :7070. Onboarding Wizard (9 шагов первого запуска). Автодетект режима дисплея.
+
+### 18.1 FastAPI сервер
+
+```python
+# Порт: 80 (UI_PORT)
+# Контент: статические файлы PWA из /static/ (собранные через npx vite build)
+# Прокси: /api/* → Core API :7070 (CoreApiProxyMiddleware)
+# SSE: поддержка стриминга через pure ASGI (не BaseHTTPMiddleware)
+```
+
+### 18.2 CoreApiProxyMiddleware
+
+```python
+# Реверс-прокси /api/* запросов к Core API :7070
+# X-Forwarded-For / X-Real-IP для трекинга клиентов
+# SSE поддержка (non-buffered, direct ASGI send)
+# Автоматический детект host/scheme
+# Реализация: pure ASGI (избегаем BaseHTTPMiddleware для zero-copy)
+```
+
+### 18.3 PWA (Progressive Web App)
+
+```python
+# Манифест: /manifest.json (имя, иконки, display mode)
+# Service Worker: /sw.js (кеширование + offline-страница)
+# Иконки: 192x192 и 512x512
+# Display mode: standalone (полный экран, без адресной строки)
+# Offline: cached shell + "No connection" fallback page
+```
+
+### 18.4 Onboarding Wizard (9 шагов)
+
+```python
+# Шаги первого запуска (последовательные):
+WIZARD_STEPS = [
+    "wifi",          # 1. Подключение к Wi-Fi
+    "language",      # 2. Выбор языка (en / uk)
+    "device_name",   # 3. Имя устройства (hostname)
+    "timezone",      # 4. Часовой пояс (TZ database)
+    "stt_model",     # 5. Выбор STT модели (Vosk)
+    "tts_voice",     # 6. Выбор TTS голоса (Piper)
+    "admin_user",    # 7. Создание admin пользователя + PIN
+    "platform",      # 8. Регистрация на платформе SmartHome LK
+    "import",        # 9. Импорт устройств (HA / Tuya / Hue)
+]
+
+# Хранение стейта: /var/lib/selena/wizard_state.json
+# Валидация: каждый шаг валидируется перед переходом к следующему
+
+# Эндпоинты:
+# GET  /api/ui/wizard/status    → текущий шаг и прогресс
+# POST /api/ui/wizard/step      → { step, data } → переход к следующему
+```
+
+### 18.5 Автодетект дисплея
+
+```python
+# Возможные режимы:
+# headless     → нет дисплея (server-only)
+# tty          → текстовый терминал (Textual TUI на TTY1)
+# kiosk        → Chromium в kiosk-режиме (Wayland cage)
+# framebuffer  → прямой вывод на framebuffer
+```
+
+### 18.6 AP Mode (первый запуск)
+
+```python
+# При отсутствии Wi-Fi — создаётся точка доступа:
+# SSID: Selena-<hash>
+# Без пароля (открытая)
+# Captive portal → redirect на wizard
+# QR-код для подключения (генерируется через qrcode)
+```
+
+### 18.7 Роутинг
+
+```
+/                    → index.html (PWA entrypoint)
+/manifest.json       → PWA manifest
+/sw.js               → Service Worker
+/icons/*             → иконки
+/api/*               → реверс-прокси к :7070 (Core API)
+/api/ui/wizard/*     → Wizard endpoints
+/api/ui/modules/*    → эндпоинты системных модулей
+```
+
+### Настройки
+
+```
+CORE_API_BASE=http://127.0.0.1:7070
+UI_PORT=80
+UI_HTTPS=true
+STATIC_DIR=/opt/selena-core/system_modules/ui_core/static/
+```
+
+**Зависимости:**
+
+```
+FastAPI>=0.111
+httpx>=0.27
+zeroconf>=0.131       # mDNS для onboarding
+qrcode>=7.4           # QR для AP mode
+```
+
+**Тесты:**
+
+```python
+# test: GET / возвращает index.html
+# test: /api/* проксируется к :7070 (mock httpx)
+# test: wizard status возвращает текущий шаг
+# test: wizard step валидирует данные
+# test: wizard step advancing сохраняет стейт
+# test: SSE стриминг через прокси
+# test: AP mode QR-код генерируется
+```
+
+---
+
+## Модуль 19: `backup_manager`
+
+**Тип:** SYSTEM  
+**ui_profile:** SETTINGS_ONLY  
+**Память:** 96 MB  
+**CPU:** 0.3  
+
+### Назначение
+
+Локальный и облачный бэкап. Локальные бэкапы на USB/SD в .tar.gz. Облачные бэкапы с E2E шифрованием (PBKDF2-HMAC-SHA256 + AES-256-GCM). QR-перенос секретов между устройствами.
+
+### 19.1 Локальный бэкап
+
+```python
+# Директории: /var/lib/selena/ (registry, history) + /etc/selena/ (config)
+# Исключения: /secure/vault_key (НИКОГДА не бэкапится)
+# Формат: .tar.gz без шифрования
+# Имя: selena_backup_{YYYYMMDDTHHMMSSZ}.tar.gz
+# Ретенция: 5 последних (настраивается MAX_LOCAL_BACKUPS)
+# Каталог: /var/lib/selena/backups/
+# Права: 0o600 (только владелец)
+```
+
+### 19.2 Облачный бэкап (E2E)
+
+```python
+# Шифрование: PBKDF2-HMAC-SHA256 + AES-256-GCM
+# PBKDF2: 600,000 итераций, рандомная 16-байт соль на бэкап
+# Nonce: рандомный 12-байт на бэкап (в заголовке)
+# Формат файла: salt(16) + nonce(12) + ciphertext
+
+# Загрузка: POST на PLATFORM_BACKUP_URL
+# Заголовки:
+#   X-Selena-Device: {device_hash}
+#   X-Archive-Hash: {SHA256 plaintext}
+#   Content-Type: application/octet-stream
+```
+
+### 19.3 QR-перенос секретов
+
+```python
+# Кодирование секретов в QR-код (сжатые чанки)
+# Для переноса между устройствами
+# Чтение через камеру нового устройства
+```
+
+### 19.4 API модуля
+
+```
+POST /api/backup/local/create        → создать локальный бэкап
+GET  /api/backup/local/list          → список локальных бэкапов
+POST /api/backup/cloud/create        → создать и загрузить облачный
+GET  /api/backup/cloud/list          → список облачных бэкапов
+POST /api/backup/restore             → восстановить из бэкапа
+GET  /api/backup/status              → статус текущей операции
+```
+
+### 19.5 Events
+
+**Публикуемые:**
+
+```
+backup.created_local   { path, size_mb, sha256 }
+backup.created_cloud   { backup_id, size_mb, encrypted: true }
+backup.restored        { source, restored_at }
+backup.failed          { operation, error }
+```
+
+### Настройки (settings.html)
+
+```
+Локальный бэкап:
+  Каталог: /var/lib/selena/backups
+  Максимум копий: 5
+  [Создать бэкап сейчас]
+
+Облачный бэкап:
+  Пароль шифрования: [input]
+  [Создать E2E бэкап]
+
+Восстановление:
+  Выбор файла / загрузка
+  [Восстановить]
+
+QR-перенос:
+  [Сгенерировать QR секретов]
+```
+
+**Зависимости:**
+
+```
+cryptography>=46.0
+httpx>=0.27
+qrcode>=7.4
+```
+
+**Тесты:**
+
+```python
+# test: локальный бэкап создаёт .tar.gz с правильным содержимым
+# test: vault_key НЕ включён в бэкап
+# test: облачный бэкап шифрует AES-256-GCM
+# test: расшифровка возвращает оригинальные данные
+# test: PBKDF2 использует 600,000 итераций
+# test: ретенция — оставляет только 5 последних
+# test: backup.failed при I/O ошибке
+```
+
+---
+
+## Модуль 20: `notify_push`
+
+**Тип:** SYSTEM  
+**ui_profile:** SETTINGS_ONLY  
+**Память:** 32 MB  
+**CPU:** 0.1  
+
+### Назначение
+
+Web Push уведомления (RFC 8292, VAPID). Генерация VAPID ключей, управление подписками браузеров, доставка push-уведомлений. Используется notification_router для канала "push".
+
+### 20.1 VAPID ключи
+
+```python
+# Стандарт: RFC 8292 (Voluntary Application Server Identification)
+# Библиотека: pywebpush
+# Приватный ключ: /secure/vapid_private.pem (генерируется при первом запуске)
+# Публичный ключ: экспонируется через API для подписки браузера
+# Claims: VAPID_CLAIMS_SUB (e.g., "mailto:admin@selena.local")
+```
+
+### 20.2 Управление подписками
+
+```python
+# Хранение: /var/lib/selena/push_subscriptions.json
+# Модель: PushSubscription { endpoint, keys: { auth, p256dh }, user_id }
+# Регистрация: браузер → Service Worker API → POST /subscribe
+# Удаление: при unsubscribe или explicit DELETE
+```
+
+### 20.3 Доставка
+
+```python
+# Payload: JSON { title, body, icon, data }
+# Доставка: HTTP POST на endpoint подписки с VAPID-Auth заголовком
+# Ретрай: до 3 попыток с backoff
+# Обработка ответов:
+#   201/204 → успех
+#   410     → endpoint истёк → удалить подписку
+#   413     → payload слишком большой → отклонить
+#   4xx/5xx → retry с backoff
+```
+
+### 20.4 API модуля
+
+```
+GET    /api/push/vapid-public-key      → публичный ключ для подписки
+POST   /api/push/subscribe             → зарегистрировать подписку
+GET    /api/push/subscriptions         → список подписок (admin)
+DELETE /api/push/subscriptions/{id}    → удалить подписку
+POST   /api/push/test/{user_id}       → отправить тестовое уведомление
+```
+
+### 20.5 Events
+
+**Публикуемые:**
+
+```
+notification.sent        { user_id, title }
+notification.failed      { user_id, error }
+notification.subscribed  { user_id, endpoint }
+```
+
+**Слушает:**
+
+```
+push.send               { title, body, icon, data, user_id? }
+```
+
+**Зависимости:**
+
+```
+pywebpush>=2.0
+py-vapid>=1.9
+```
+
+**Тесты:**
+
+```python
+# test: VAPID ключи генерируются при первом запуске
+# test: subscribe сохраняет подписку в JSON
+# test: push доставляется через pywebpush (mock)
+# test: 410 → подписка удалена
+# test: retry при network failure
+# test: test endpoint отправляет тестовое уведомление
+```
+
+---
+
+## Модуль 21: `remote_access`
+
+**Тип:** SYSTEM  
+**ui_profile:** SETTINGS_ONLY  
+**Память:** 32 MB  
+**CPU:** 0.15  
+
+### Назначение
+
+Безопасный удалённый доступ через Tailscale VPN. Подключение к WireGuard-mesh сети без открытия портов и port forwarding. Управление через настройки UI.
+
+### 21.1 Tailscale интеграция
+
+```python
+# Предварительные условия: tailscaled (демон) установлен на хосте
+# Авторизация:
+# 1. Сгенерировать auth key в Tailscale admin console
+# 2. Установить TAILSCALE_AUTH_KEY в env
+# 3. connect() → устройство подключается к mesh-сети
+# 4. Доступ через Tailscale IP из любой точки мира
+
+async def get_status() -> TailscaleStatus:
+    # tailscale status --json
+    # Возвращает: connected, tailscale_ip, hostname, version
+
+async def connect(auth_key: str | None = None) -> bool:
+    # tailscale up --auth-key {key} --accept-routes
+
+async def disconnect() -> bool:
+    # tailscale logout
+```
+
+### 21.2 API модуля
+
+```
+GET  /api/remote/status         → статус подключения Tailscale
+POST /api/remote/connect        → подключиться (auth_key в body)
+POST /api/remote/disconnect     → отключиться
+```
+
+### 21.3 Events
+
+**Публикуемые:**
+
+```
+remote.connected       { tailscale_ip, hostname }
+remote.disconnected    { reason }
+```
+
+### Настройки (settings.html)
+
+```
+Статус: ● Подключён / ○ Отключён
+Tailscale IP: 100.64.x.x
+Auth Key: [input, masked]
+[Подключить] / [Отключить]
+Ссылка: "Получить Auth Key в admin.tailscale.com"
+```
+
+**Зависимости:**
+
+```
+tailscale              # системный пакет на хосте
+```
+
+**Тесты:**
+
+```python
+# test: get_status парсит tailscale status --json (mock subprocess)
+# test: connect вызывает tailscale up с auth key
+# test: disconnect вызывает tailscale logout
+# test: remote.connected событие при успешном подключении
+```
+
+---
+
+## Полная таблица системных модулей
+
+| # | Модуль | Тип | ui_profile | Память | CPU | Описание |
+|---|--------|-----|------------|--------|-----|----------|
+| 1 | scheduler | SYSTEM | SETTINGS_ONLY | 64 MB | 0.15 | Планировщик: cron, interval, sunrise/sunset |
+| 2 | device_watchdog | SYSTEM | ICON_SETTINGS | 64 MB | 0.1 | Мониторинг доступности устройств |
+| 3 | protocol_bridge | SYSTEM | FULL | 256 MB | 0.3 | MQTT / Zigbee / Z-Wave / HTTP шлюз |
+| 4 | automation_engine | SYSTEM | FULL | 128 MB | 0.3 | Движок автоматизаций (если X → то Y) |
+| 5 | presence_detection | SYSTEM | FULL | 64 MB | 0.15 | ARP/BT/GPS определение присутствия |
+| 6 | weather_service | SYSTEM | FULL | 64 MB | 0.1 | Погода (open-meteo, без API ключа) |
+| 7 | energy_monitor | SYSTEM | FULL | 64 MB | 0.1 | Мониторинг энергопотребления |
+| 8 | notification_router | SYSTEM | SETTINGS_ONLY | 64 MB | 0.1 | Маршрутизатор уведомлений |
+| 9 | update_manager | SYSTEM | FULL | 64 MB | 0.1 | OTA-обновления с SHA256 верификацией |
+| 10 | import_adapters | SYSTEM | SETTINGS_ONLY | 128 MB | 0.2 | Импорт из HA / Tuya / Hue |
+| 11 | media_player | SYSTEM | FULL | 128 MB | 0.5 | Медиаплеер: радио, USB, SMB |
+| 12 | voice_core | SYSTEM | FULL | 256 MB | 0.5 | STT / TTS / Wake-word / Speaker ID |
+| 13 | llm_engine | SYSTEM | SETTINGS_ONLY | 512+ MB | 1.0+ | Fast Matcher + Ollama LLM |
+| 14 | secrets_vault | SYSTEM | SETTINGS_ONLY | 64 MB | 0.1 | AES-256-GCM хранилище + OAuth + прокси |
+| 15 | user_manager | SYSTEM | FULL | 128 MB | 0.2 | Профили / PIN / Face ID / Voice ID |
+| 16 | hw_monitor | SYSTEM | ICON_SETTINGS | 32 MB | 0.05 | CPU / RAM / Disk мониторинг |
+| 17 | network_scanner | SYSTEM | FULL | 64 MB | 0.3 | ARP / mDNS / SSDP сканер |
+| 18 | ui_core | SYSTEM | — | 96 MB | 0.2 | PWA сервер :80 + Wizard + прокси |
+| 19 | backup_manager | SYSTEM | SETTINGS_ONLY | 96 MB | 0.3 | Локальный + E2E облачный бэкап |
+| 20 | notify_push | SYSTEM | SETTINGS_ONLY | 32 MB | 0.1 | Web Push VAPID уведомления |
+| 21 | remote_access | SYSTEM | SETTINGS_ONLY | 32 MB | 0.15 | Tailscale VPN удалённый доступ |
+
+**Общее потребление RAM (все 21 модуль):** ~1.8 GB (без LLM модели) / ~4 GB (с LLM phi3:mini)
+
+---
+
 ## Связанные документы
 
 ```
