@@ -160,7 +160,7 @@
 </head>
 
 <body>
-    <div id="dbg" style="position:fixed;top:0;left:0;font-size:9px;color:var(--am);z-index:99;padding:1px 4px"></div>
+
     <div class="widget">
         <div class="panel">
             <h3 data-i18n="presence"></h3>
@@ -193,16 +193,13 @@
         window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); refresh(); } });
 
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        var _dbg = document.getElementById('dbg');
 
         async function refresh() {
             try {
-                _dbg.textContent = 'fetching ' + BASE;
                 const [sr, ur] = await Promise.all([
                     fetch(BASE + "/status"),
                     fetch(BASE + "/users"),
                 ]);
-                _dbg.textContent = 'S:' + sr.status + ' U:' + ur.status;
                 if (sr.ok) {
                     const s = await sr.json();
                     document.getElementById("home-count").textContent = s.users_home ?? 0;
@@ -235,7 +232,6 @@
                     document.getElementById("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">users: ' + ur.status + ' ' + (await ur.text()).substring(0, 60) + '</div>';
                 }
             } catch (err) {
-                _dbg.textContent = 'ERR: ' + (err.message || '?');
                 document.getElementById("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">ERR: ' + (err.message || 'fetch error') + '</div>';
             }
         }

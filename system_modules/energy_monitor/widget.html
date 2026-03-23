@@ -56,10 +56,16 @@
             background: var(--bg);
             color: var(--tx);
             padding: 16px;
+            display: flex;
+            flex-direction: column;
         }
 
         .widget {
             width: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
         }
 
         .total-card {
@@ -92,7 +98,11 @@
             color: var(--am);
         }
 
-        .devices-list {}
+        .devices-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+        }
 
         .device-row {
             background: var(--b);
