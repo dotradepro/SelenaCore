@@ -826,6 +826,8 @@ class PresenceDetector:
                 "state": "unknown",
                 "last_seen": None,
                 "confidence": 0.0,
+                "detected": False,   # raw result of last arp-scan (no threshold)
+                "away_in_sec": None,  # seconds until away transition (null when home)
             }
         else:
             # Update devices list
@@ -878,9 +880,13 @@ class PresenceDetector:
             prev_state = user["state"]
             now = datetime.now(tz=timezone.utc).isoformat()
 
+            # Update raw detection result (no threshold — what arp-scan saw NOW)
+            user["detected"] = detected
+
             if detected:
                 user["last_seen"] = now
                 user["confidence"] = 1.0
+                user["away_in_sec"] = None
                 if prev_state != "home":
                     user["state"] = "home"
                     self._log_history(user_id, "home")
@@ -890,24 +896,32 @@ class PresenceDetector:
                         "timestamp": now,
                     })
             else:
-                # Only switch to away after threshold
+                # Only switch to away after threshold (Deep Sleep protection)
                 if user["last_seen"] is not None:
                     last_seen_dt = datetime.fromisoformat(user["last_seen"])
                     now_dt = datetime.now(tz=timezone.utc)
                     elapsed = (now_dt - last_seen_dt).total_seconds()
+                    remaining = max(0, self._away_threshold - elapsed)
+                    # Decay confidence over the threshold window
+                    user["confidence"] = round(max(0.0, 1.0 - elapsed / self._away_threshold), 2)
                     if elapsed >= self._away_threshold and prev_state == "home":
                         user["state"] = "away"
                         user["confidence"] = 0.0
+                        user["away_in_sec"] = None
                         self._log_history(user_id, "away")
                         await self._publish_event("presence.away", {
                             "user_id": user_id,
                             "name": user.get("name", ""),
                             "timestamp": now,
                         })
+                    elif prev_state == "home":
+                        # Still "home" but phone not seen — show countdown
+                        user["away_in_sec"] = int(remaining)
                 elif prev_state == "unknown":
                     user["state"] = "away"
+                    user["away_in_sec"] = None
 
-            results.append({"user_id": user_id, "state": user["state"]})
+            results.append({"user_id": user_id, "state": user["state"], "detected": detected})
 
         await self._publish_event("presence.scan", {
             "users": results,

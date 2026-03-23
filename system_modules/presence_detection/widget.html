@@ -122,6 +122,17 @@
             background: var(--tx2);
         }
 
+        /* home but not detected in last arp-scan (Deep Sleep / leaving) */
+        .dot.pending {
+            background: var(--am);
+            animation: blink 1.2s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         .user-name {
             font-size: 12px;
             color: var(--tx);
@@ -131,6 +142,12 @@
         .user-state {
             font-size: 11px;
             color: var(--tx3);
+        }
+
+        .sub-warn {
+            font-size: 10px;
+            color: var(--am);
+            margin-right: 4px;
         }
     </style>
 </head>
@@ -155,8 +172,10 @@
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { presence: 'Presence', users_home: 'users home', away: 'Away', total_tracked: 'Total tracked', users_title: 'Users', loading: 'Loading…', no_users: 'No users tracked.' },
-            uk: { presence: 'Присутність', users_home: 'вдома', away: 'Відсутні', total_tracked: 'Всього відстежується', users_title: 'Користувачі', loading: 'Завантаження…', no_users: 'Немає відстежуваних користувачів.' }
+            en: { presence: 'Presence', users_home: 'users home', away: 'Away', total_tracked: 'Total tracked', users_title: 'Users', loading: 'Loading…', no_users: 'No users tracked.',
+                  state_home: 'home', state_away: 'away', state_unknown: 'unknown', not_seen: 'not seen', away_in: 'away in' },
+            uk: { presence: 'Присутність', users_home: 'вдома', away: 'Відсутні', total_tracked: 'Всього відстежується', users_title: 'Користувачі', loading: 'Завантаження…', no_users: 'Немає відстежуваних користувачів.',
+                  state_home: 'вдома', state_away: 'відсутній', state_unknown: 'невідомо', not_seen: 'не видно', away_in: 'відїде ч/з' }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
@@ -186,13 +205,20 @@
                     if (users.length === 0) {
                         list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + t('no_users') + '</div>';
                     } else {
-                        list.innerHTML = users.slice(0, 6).map(u =>
-                            `<div class="user-item">
-            <div class="dot ${u.state}"></div>
-            <span class="user-name">${u.name}</span>
-            <span class="user-state">${u.state}</span>
-          </div>`
-                        ).join("");
+                        list.innerHTML = users.slice(0, 6).map(u => {
+                            // Dot class: if detected=false but state=home → amber (Deep Sleep)
+                            var dotClass = u.state;
+                            if (u.state === 'home' && u.detected === false) dotClass = 'pending';
+                            // Sub-label: show countdown or "not seen"
+                            var subLabel = '';
+                            if (u.state === 'home' && u.detected === false) {
+                                subLabel = u.away_in_sec != null
+                                    ? '<span class="sub-warn">' + t('away_in') + ' ' + u.away_in_sec + 's</span>'
+                                    : '<span class="sub-warn">' + t('not_seen') + '</span>';
+                            }
+                            var stateLabel = t('state_' + u.state) || u.state;
+                            return '<div class="user-item"><div class="dot ' + dotClass + '"></div><span class="user-name">' + u.name + '</span>' + subLabel + '<span class="user-state">' + stateLabel + '</span></div>';
+                        }).join("");
                     }
                 } else {
                     document.getElementById("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">users: ' + ur.status + ' ' + (await ur.text()).substring(0, 60) + '</div>';
