@@ -196,6 +196,35 @@ const en = {
             selectModuleToConfig: 'Select a module to configure.',
         },
 
+        // ── Users & Presence ──
+        users: {
+            title: 'Users & Presence',
+            desc: 'Manage tracked people, their devices, and push notification subscriptions.',
+            noUsers: 'No tracked users yet. Scan the network or send a QR invite to add someone.',
+            home: 'Home',
+            away: 'Away',
+            unknown: 'Unknown',
+            devices: 'devices',
+            editUser: 'Edit user',
+            personName: 'Name',
+            namePlaceholder: 'e.g. Alex',
+            trackedDevices: 'Tracked devices',
+            deviceName: 'Label',
+            addDevice: 'Add device',
+            addPerson: 'Add person',
+            addUserBtn: 'Add user',
+            scanAndAdd: 'Scan & Add',
+            scanNetwork: 'Scan network',
+            scanning: 'Scanning…',
+            qrInvite: 'QR Invite',
+            qrDesc: 'Generate a QR code for a person to register their device automatically.',
+            generateQr: 'Generate QR',
+            pushSubscriptions: 'Push subscriptions',
+            noPushSubs: 'No push subscriptions registered yet.',
+            test: 'Test',
+            confirmDelete: 'Remove this user and all their devices?',
+        },
+
         // ── Wizard ──
         wizard: {
             coreTitle: 'SmartHome LK Core',

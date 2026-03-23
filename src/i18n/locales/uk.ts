@@ -196,6 +196,35 @@ const uk = {
             selectModuleToConfig: 'Оберіть модуль для налаштування.',
         },
 
+        // ── Users & Presence ──
+        users: {
+            title: 'Користувачі та присутність',
+            desc: 'Керування відстежуваними людьми, їхніми пристроями та push-підписками.',
+            noUsers: 'Немає відстежуваних користувачів. Скануйте мережу або надішліть QR-запрошення.',
+            home: 'Вдома',
+            away: 'Відсутній',
+            unknown: 'Невідомо',
+            devices: 'пристроїв',
+            editUser: 'Редагувати',
+            personName: 'Ім\'я',
+            namePlaceholder: 'напр. Олекс',
+            trackedDevices: 'Відстежувані пристрої',
+            deviceName: 'Назва',
+            addDevice: 'Додати пристрій',
+            addPerson: 'Додати людину',
+            addUserBtn: 'Додати',
+            scanAndAdd: 'Сканувати і додати',
+            scanNetwork: 'Сканувати мережу',
+            scanning: 'Сканування…',
+            qrInvite: 'QR-запрошення',
+            qrDesc: 'Згенеруйте QR-код, щоб людина зареєструвала свій пристрій автоматично.',
+            generateQr: 'Згенерувати QR',
+            pushSubscriptions: 'Push-підписки',
+            noPushSubs: 'Немає зареєстрованих push-підписок.',
+            test: 'Тест',
+            confirmDelete: 'Видалити цього користувача та всі його пристрої?',
+        },
+
         // ── Wizard ──
         wizard: {
             coreTitle: 'SmartHome LK Core',

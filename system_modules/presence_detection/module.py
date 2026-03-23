@@ -25,6 +25,11 @@ class UserRequest(BaseModel):
     devices: list[dict] = []
 
 
+class UserUpdateRequest(BaseModel):
+    name: str | None = None
+    devices: list[dict] | None = None
+
+
 class InviteRequest(BaseModel):
     name: str
     base_url: str = ""
@@ -117,6 +122,23 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             svc._detector.remove_user(user_id)
             return Response(status_code=204)
+
+        @router.patch("/users/{user_id}")
+        async def update_user(user_id: str, req: UserUpdateRequest) -> dict:
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            user = svc._detector.get_user(user_id)
+            if not user:
+                raise HTTPException(404, "User not found")
+            update: dict = {}
+            if req.name is not None:
+                update["name"] = req.name
+            if req.devices is not None:
+                update["devices"] = req.devices
+            if update:
+                update["user_id"] = user_id
+                svc._detector.add_user(update)
+            return svc._detector.get_user(user_id) or {}
 
         @router.post("/scan")
         async def trigger_scan() -> dict:
@@ -299,6 +321,13 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             subs = svc._detector.get_all_push_subscriptions()
             return JSONResponse({"subscriptions": subs})
+
+        @router.delete("/push/subscriptions", status_code=204, response_class=Response, response_model=None)
+        async def delete_push_subscription(endpoint: str = Query(...)) -> Response:
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            svc._detector.delete_push_subscription(endpoint)
+            return Response(status_code=204)
 
         @router.post("/push/reset")
         async def reset_push() -> JSONResponse:
