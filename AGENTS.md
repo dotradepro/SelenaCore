@@ -1785,5 +1785,102 @@ router = instance.get_router()   # монтируется в app
 
 ---
 
+## 18. PRESENCE DETECTION — АЛГОРИТМ ОБНАРУЖЕНИЯ
+
+> Правильное присутствие = Layer 2 ARP, а не ping!
+> Роутер хранит DHCP-аренды ещё долго после ухода. Таблица ARP имеет статус STALE даже после выключения телефона. ICMP/TCP ping блокируется файрволом и режимом сна.
+
+### 18.1 Принцип работы
+
+**Почему ARP (Layer 2):**
+- Любое устройство на Wi-Fi **обязано** отвечать на ARP-запросы — иначе оно выпадет из сети
+- Работает даже когда экран заблокирован, телефон в кармане
+- Мгновенный результат: ≈1.9 сек на весь сегмент /24
+
+**Почему НЕ надо использовать:**
+- `ping` — телефоны блокируют ICMP, файрволы блокируют TCP
+- пассивный `/proc/net/arp` — содержит STALE записи (устройства ушли, но запись осталась)
+- DHCP-аренды — хранятся часами после ухода устройства
+
+### 18.2 Стратегия детектора (priority order)
+
+```
+1. arp-scan --localnet (L2, активный)  ← ПРЕДПОЧТИТЕЛЬНЫЙ
+   → Отправляет Ethernet ARP broadcast, слушает ответы
+   → Запускается ОДИН РАЗ на цикл сканирования (не per-device)
+   → Возвращает множество активных MAC за 1.9 сек
+
+2. ip neigh + ping (L3 fallback)       ← если arp-scan недоступен
+   → ping -c 1 -W 1 <ip>  (триггер ARP-резолюция ядра)
+   → ip neigh show <ip>    (проверить статус)
+   → Принять:   REACHABLE | DELAY | PROBE
+   → Отклонить: STALE | FAILED | пустая строка
+
+3. Bluetooth BLE                       ← для BT-устройств
+```
+
+### 18.3 Таймаут «отсутствия» (Consider Away — 5 минут)
+
+Современные iPhone/Android уходят в **Deep Sleep** и могут отключить Wi-Fi на 2–4 минуты для экономии батареи. Если сканировать каждые 60 секунд — система ложно посчитает хозяина «ушедшим».
+
+**Правило:** не переходить в `away` мгновенно — ждать `away_threshold_sec` (по умолчанию **300 с**).
+
+```
+Устройство появилось  → сразу "home"   (без задержки)
+Устройство пропало    → ждём 5 минут → если не вернулось → "away"
+```
+
+```python
+# PresenceDetector defaults
+scan_interval_sec  = 60    # сканировать каждые 60 секунд
+away_threshold_sec = 300   # 5 минут ожидания перед "away"
+# Переопределить через env:
+# PRESENCE_SCAN_INTERVAL=60
+# PRESENCE_AWAY_THRESHOLD=300
+```
+
+### 18.4 Установка arp-scan (Dockerfile.core)
+
+```dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    arp-scan \
+    arping \
+    ...
+```
+
+Проверить в контейнере:
+```bash
+docker exec selena-core arp-scan --localnet -q
+# → список живых устройств за ~2 сек
+```
+
+### 18.5 Status API
+
+```http
+GET /api/ui/modules/presence-detection/status
+
+Response 200:
+{
+  "detection_method": "arp-scan (L2)",   // или "ip-neigh (L3)"
+  "arp_scan_available": true,
+  "scan_interval_sec": 60,
+  "away_threshold_sec": 300,
+  ...
+}
+```
+
+### 18.6 Критические правила
+
+```
+✅ arp-scan запускается ОДИН РАЗ за цикл (_scan_all), результат кешируется в _arp_scan_cache
+✅ Каждый MAC проверяется через O(1) lookup в set — не N×arp-scan вызовов
+✅ away_threshold_sec = 300 (5 мин) — защита от фазы Deep Sleep телефонов
+⛔ Нельзя использовать ping_ip() для определения присутствия — телефоны его блокируют
+⛔ Нельзя опираться только на /proc/net/arp — там STALE записи мёртвых устройств
+⛔ STALE статус ip neigh НЕ является подтверждением присутствия — только REACHABLE/DELAY/PROBE
+```
+
+---
+
 *SelenaCore · AGENTS.md · SmartHome LK · Open Source MIT*
 *Репозиторий: https://github.com/dotradepro/SelenaCore*

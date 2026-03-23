@@ -61,7 +61,7 @@ class PresenceDetectionModule(SystemModule):
         self._detector = PresenceDetector(
             publish_event_cb=self.publish,
             scan_interval_sec=int(os.environ.get("PRESENCE_SCAN_INTERVAL", "60")),
-            away_threshold_sec=int(os.environ.get("PRESENCE_AWAY_THRESHOLD", "180")),
+            away_threshold_sec=int(os.environ.get("PRESENCE_AWAY_THRESHOLD", "300")),
             db_path=db_path,
         )
         await self._detector.start()

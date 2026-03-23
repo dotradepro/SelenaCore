@@ -31,7 +31,9 @@ import io
 import json
 import ipaddress
 import logging
+import re
 import secrets
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -70,6 +72,92 @@ try:
 except ImportError:
     BLEAK_AVAILABLE = False
     logger.info("bleak not available — Bluetooth detection disabled")
+
+
+# ── ARP scanning availability ────────────────────────────────────────────────
+
+#: True if arp-scan binary is on PATH inside this process environment.
+#: arp-scan sends real Ethernet ARP frames — works even when phones are asleep.
+ARP_SCAN_AVAILABLE: bool = shutil.which("arp-scan") is not None
+if ARP_SCAN_AVAILABLE:
+    logger.info("arp-scan found — L2 ARP presence detection enabled")
+else:
+    logger.info("arp-scan not found — falling back to ip-neigh / ping detection")
+
+
+# ── L2 ARP helpers ───────────────────────────────────────────────────────────
+
+async def _run_arp_scan() -> set[str]:
+    """Run arp-scan --localnet and return a set of lowercase MAC addresses that
+    are currently alive on the local network segment.
+
+    arp-scan sends raw ARP frames at Layer 2 — every Wi-Fi device MUST reply, even
+    phones with disabled ICMP / TCP firewall rules or sleeping screens.
+    Returns an empty set on any error.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "arp-scan", "--localnet", "-q",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
+        macs: set[str] = set()
+        for line in stdout.decode().splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                mac = parts[1].lower()
+                if len(mac) == 17 and mac.count(":") == 5:
+                    macs.add(mac)
+        return macs
+    except Exception as exc:
+        logger.debug("arp-scan run failed: %s", exc)
+        return set()
+
+
+async def _check_ip_neigh(ip: str) -> bool:
+    """Check if ``ip`` is actively present via ARP neighbour state.
+
+    Algorithm (Linux-native, no extra tools):
+      1. Send a single "tickle" ping (1 packet, 1 s timeout).
+         The ping reply is irrelevant — the purpose is to force the kernel's
+         ARP resolver to send an ARP request and update the neighbour table.
+      2. Wait 500 ms for the ARP reply to arrive.
+      3. Read ``ip neigh show <ip>`` and accept the following states:
+           REACHABLE — kernel confirmed the device is alive very recently.
+           DELAY      — ARP probe sent, awaiting reply (= likely present).
+           PROBE      — being actively queried right now.
+
+      STALE means "was here before" — phone might have left. Rejected.
+      FAILED / empty = device is gone.
+    """
+    # Step 1 — trigger ARP resolution (fire-and-forget)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ping", "-c", "1", "-W", "1", ip,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=3)
+    except Exception:
+        pass
+
+    # Step 2 — allow ARP reply to land
+    await asyncio.sleep(0.5)
+
+    # Step 3 — read neighbour table entry
+    try:
+        proc2 = await asyncio.create_subprocess_exec(
+            "ip", "neigh", "show", ip,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc2.communicate(), timeout=3)
+        entry = stdout.decode().upper()
+        return any(s in entry for s in ("REACHABLE", "DELAY", "PROBE"))
+    except Exception as exc:
+        logger.debug("ip neigh check failed for %s: %s", ip, exc)
+        return False
 
 
 # ── Low-level ping helpers ────────────────────────────────────────────────────
@@ -176,22 +264,39 @@ class NetworkDevice:
 async def discover_network(do_active_sweep: bool = False) -> list[NetworkDevice]:
     """Scan the local network and return list of discovered devices with names.
 
-    Uses:
-      1. /proc/net/arp (passive — always)
-      2. arping sweep (active — optional, sends ARP requests)
+    Uses (in priority order):
+      1. arp-scan --localnet (active L2, most accurate — only truly alive devices)
+      2. /proc/net/arp fallback (passive, may include STALE entries)
       3. Reverse DNS for hostnames (gethostbyaddr)
       4. OUI lookup for manufacturer names
     """
-    arp = _read_arp_table()
-
-    # Optional active sweep: ping broadcast to refresh ARP cache
-    if do_active_sweep:
+    # Build ip→mac map — prefer arp-scan (active L2) over passive ARP cache
+    arp: dict[str, str] = {}
+    if ARP_SCAN_AVAILABLE:
         try:
-            await _refresh_arp_cache()
-            # Re-read after refresh
-            arp = _read_arp_table()
+            proc = await asyncio.create_subprocess_exec(
+                "arp-scan", "--localnet", "-q",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=20)
+            for line in stdout.decode().splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[0].count(".") == 3:
+                    ip, mac = parts[0], parts[1].lower()
+                    if len(mac) == 17 and mac.count(":") == 5:
+                        arp[ip] = mac
         except Exception as exc:
-            logger.debug("ARP refresh failed: %s", exc)
+            logger.debug("arp-scan for discovery failed: %s", exc)
+
+    # Fallback to passive ARP table (adds STALE entries but better than nothing)
+    if not arp:
+        arp = _read_arp_table()
+    elif do_active_sweep:
+        # Merge passive table (adds devices arp-scan might miss, e.g. bridge interfaces)
+        for ip, mac in _read_arp_table().items():
+            if ip not in arp:
+                arp[ip] = mac
 
     # OUI lookup (try network_scanner, fallback gracefully)
     oui_lookup = None
@@ -273,7 +378,7 @@ class PresenceDetector:
         self,
         publish_event_cb: Callable,
         scan_interval_sec: int = 60,
-        away_threshold_sec: int = 180,
+        away_threshold_sec: int = 300,
         db_path: str = ":memory:",
     ) -> None:
         self._publish_event = publish_event_cb
@@ -283,6 +388,9 @@ class PresenceDetector:
         self._task: asyncio.Task | None = None
         self._db_path = db_path
         self._db: sqlite3.Connection | None = None
+        # Cache of MAC addresses seen in the last arp-scan cycle.
+        # Set to None when arp-scan is unavailable or between cycles.
+        self._arp_scan_cache: set[str] | None = None
         self._init_db()
         self._load_users_from_db()
 
@@ -754,6 +862,16 @@ class PresenceDetector:
                 logger.error(f"Presence scan error: {exc}")
 
     async def _scan_all(self) -> None:
+        # ── Layer 2 ARP scan (run ONCE per cycle, not per device) ─────────────
+        # arp-scan sends raw Ethernet ARP frames — every connected device must
+        # reply regardless of OS firewall rules or sleep state.
+        # Running once and caching avoids N×arp-scan calls for N users.
+        if ARP_SCAN_AVAILABLE:
+            self._arp_scan_cache = await _run_arp_scan()
+            logger.debug("arp-scan: %d active devices on network", len(self._arp_scan_cache))
+        else:
+            self._arp_scan_cache = None
+
         results = []
         for user_id, user in list(self._users.items()):
             detected = await self._detect_user(user)
@@ -806,25 +924,40 @@ class PresenceDetector:
         return any(r is True for r in results)
 
     async def _check_device(self, device: dict) -> bool:
+        """Detect whether a single tracked device is currently present.
+
+        Detection priority:
+          MAC + arp-scan cache  → most reliable (L2, works even when phone sleeps)
+          MAC + ip neigh        → fallback when arp-scan unavailable
+          IP  + ip neigh        → ARP probe then kernel neighbour table
+          Bluetooth             → BLE scanner
+        """
         dtype = device.get("type", "")
         address = device.get("address", "")
         if not address:
             return False
 
-        if dtype == "ip":
-            return await ping_ip(address)
-        elif dtype == "mac":
-            # Check ARP table for MAC → also get IP if found
-            found, resolved_ip = mac_in_arp_table(address)
-            if found:
-                return True
-            # MAC not in ARP cache — try pinging known IP to refresh it
+        if dtype == "mac":
+            target = address.lower().replace("-", ":")
+            # ── Method 1: arp-scan cache (fastest, most reliable) ─────────────
+            if self._arp_scan_cache is not None:
+                return target in self._arp_scan_cache
+            # ── Method 2: ip neigh after ARP probe ───────────────────────────
+            # Resolve IP from passive ARP table first, then trigger + check
+            _, resolved_ip = mac_in_arp_table(address)
             if resolved_ip:
-                if await ping_ip(resolved_ip):
-                    return True
+                return await _check_ip_neigh(resolved_ip)
+            # MAC not in ARP table at all → device not seen recently
             return False
+
+        elif dtype == "ip":
+            # ARP probe then ip neigh status — more reliable than TCP/ICMP ping
+            # (phones reject ping but must reply to ARP to stay on Wi-Fi)
+            return await _check_ip_neigh(address)
+
         elif dtype == "bluetooth":
             return await self._check_bluetooth(address)
+
         return False
 
     async def _check_bluetooth(self, bt_address: str) -> bool:
@@ -870,6 +1003,8 @@ class PresenceDetector:
             "users_away": sum(1 for u in self._users.values() if u["state"] == "away"),
             "scan_interval_sec": self._scan_interval,
             "away_threshold_sec": self._away_threshold,
+            "detection_method": "arp-scan (L2)" if ARP_SCAN_AVAILABLE else "ip-neigh (L3)",
+            "arp_scan_available": ARP_SCAN_AVAILABLE,
             "icmplib_available": ICMPLIB_AVAILABLE,
             "bluetooth_available": BLEAK_AVAILABLE,
         }
@@ -886,7 +1021,6 @@ def _parse_device_name(user_agent: str) -> str:
         return "Mac"
     if "android" in ua:
         # Try to extract model: "... Build/MODEL ..." or "... ; MODEL Build/..."
-        import re
         m = re.search(r";\s*([^;)]+?)\s*build/", ua)
         if m:
             return m.group(1).strip().title()

@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
     _detector = PresenceDetector(
         publish_event_cb=_publish_event,
         scan_interval_sec=int(os.environ.get("PRESENCE_SCAN_INTERVAL", "60")),
-        away_threshold_sec=int(os.environ.get("PRESENCE_AWAY_THRESHOLD", "180")),
+        away_threshold_sec=int(os.environ.get("PRESENCE_AWAY_THRESHOLD", "300")),
     )
     await _detector.start()
     await _subscribe_events()
