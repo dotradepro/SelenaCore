@@ -15,7 +15,8 @@
         "icon": "icon.svg",
         "widget": {
             "file": "widget.html",
-            "size": "2x2"
+            "size": "2x2",
+            "max_size": "2x2"
         },
         "settings": "settings.html"
     },

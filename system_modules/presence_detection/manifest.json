@@ -15,9 +15,9 @@
         "icon": "icon.svg",
         "widget": {
             "file": "widget.html",
-            "size": "2x1"
-        },
-        "settings": "settings.html"
+            "size": "2x1",
+            "max_size": "2x2"
+        }
     },
     "oauth": null,
     "resources": {
