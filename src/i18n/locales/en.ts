@@ -67,6 +67,7 @@ const en = {
             done: 'Done',
             addWidget: 'Add widget',
             addBtn: 'Add',
+            addScreen: 'Screen',
             allPinned: 'All available widgets are already on the dashboard.',
         },
 

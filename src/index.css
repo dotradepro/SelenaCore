@@ -280,9 +280,20 @@ body,
   cursor: grabbing;
 }
 
+/* Widget being dragged — lifted, faded, no wobble */
+.ws.ws-dragging {
+  opacity: 0.35;
+  animation: none !important;
+  transform: scale(0.94) !important;
+  box-shadow: none;
+  z-index: 1;
+}
+
 .ws.drag-over {
   border-color: var(--ac);
   border-width: 2px;
+  box-shadow: 0 0 0 2px rgba(79, 140, 247, .25);
+  animation: none !important;
 }
 
 @keyframes wobble {
@@ -370,21 +381,30 @@ body,
 }
 
 .ws-empty {
-  border: 1.5px dashed var(--b);
-  background: transparent;
+  border: 1.5px dashed var(--b2);
+  background: rgba(255, 255, 255, .02);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  cursor: pointer;
-  opacity: .3;
-  transition: opacity .15s;
+  cursor: default;
+  opacity: .45;
+  transition: opacity .15s, border-color .15s, background .15s;
+  animation: none !important;
 }
 
 .ws-empty:hover {
-  opacity: .6;
+  opacity: .65;
   border-color: var(--b2);
+}
+
+.ws-empty.drag-over {
+  border-color: var(--ac);
+  border-width: 2px;
+  opacity: 0.85;
+  background: rgba(79, 140, 247, .1);
+  box-shadow: 0 0 0 2px rgba(79, 140, 247, .2);
 }
 
 /* ── Widget edit bar (shows in edit mode) ── */
@@ -427,6 +447,35 @@ body,
 .ws-eb-btn.ws-eb-red:hover {
   background: rgba(224, 84, 84, .3);
   color: var(--rd);
+}
+
+/* ── Widget resize handle (bottom-right corner drag) ── */
+.ws-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 20;
+  display: none;
+  border-radius: 0 0 var(--r) 0;
+  background: linear-gradient(135deg, transparent 50%, var(--ac) 50%);
+  opacity: 0.5;
+  transition: opacity .15s;
+  touch-action: none;
+}
+
+.ws.edit-mode .ws-resize-handle {
+  display: block;
+}
+
+.ws.ws-dragging .ws-resize-handle {
+  display: none;
+}
+
+.ws-resize-handle:hover {
+  opacity: 0.9;
 }
 
 /* ── Add system module panel ── */

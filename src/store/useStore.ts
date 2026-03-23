@@ -65,15 +65,18 @@ export interface WidgetLayout {
   pinned: string[];
   sizes: Record<string, 'compact' | 'normal'>;
   hidden: string[];
+  screens: number;
+  positions: Record<string, number>; // widget name -> absolute slot index (screen * PER_SCREEN + slot)
+  spans: Record<string, { cols: number; rows: number }>; // widget name -> grid span
 }
 function loadWidgetLayout(): WidgetLayout {
   // Initial value from localStorage (fast, synchronous); will be overridden
   // by the backend value once connectSyncStream() fetches it.
   try {
     const raw = localStorage.getItem('selena-widget-layout');
-    if (raw) return { hidden: [], ...JSON.parse(raw) } as WidgetLayout;
+    if (raw) return { hidden: [], screens: 1, positions: {}, spans: {}, ...JSON.parse(raw) } as WidgetLayout;
   } catch { /* ignore */ }
-  return { pinned: [], sizes: {}, hidden: [] };
+  return { pinned: [], sizes: {}, hidden: [], screens: 1, positions: {}, spans: {} };
 }
 function saveWidgetLayout(layout: WidgetLayout) {
   // Mirror to localStorage for instant rehydration on next page load
@@ -138,10 +141,14 @@ interface AppState {
   setVoiceStatus: (status: 'idle' | 'listening' | 'speaking') => void;
   widgetLayout: WidgetLayout;
   initWidgetLayout: (modules: Module[]) => void;
-  pinModule: (name: string) => void;
+  pinModule: (name: string, preferredSlot?: number) => void;
   unpinModule: (name: string) => void;
   setWidgetSize: (name: string, size: 'compact' | 'normal') => void;
   moveWidget: (name: string, dir: -1 | 1) => void;
+  swapWidgets: (nameA: string, nameB: string) => void;
+  moveWidgetToSlot: (name: string, slot: number) => void;
+  setWidgetSpan: (name: string, cols: number, rows: number) => void;
+  addScreen: () => void;
   connectSyncStream: () => () => void;
 }
 
@@ -337,29 +344,63 @@ export const useStore = create<AppState>((set, get) => ({
   widgetLayout: loadWidgetLayout(),
   initWidgetLayout: (modules) => {
     set(state => {
-      const layout = { pinned: [...state.widgetLayout.pinned], sizes: { ...state.widgetLayout.sizes }, hidden: [...(state.widgetLayout.hidden ?? [])] };
+      const layout = {
+        pinned: [...state.widgetLayout.pinned],
+        sizes: { ...state.widgetLayout.sizes },
+        hidden: [...(state.widgetLayout.hidden ?? [])],
+        screens: state.widgetLayout.screens ?? 1,
+        positions: { ...(state.widgetLayout.positions ?? {}) },
+        spans: { ...(state.widgetLayout.spans ?? {}) },
+      };
       let changed = false;
+      const occupiedSlots = new Set(Object.values(layout.positions));
       modules.forEach(m => {
         const hasWidget = !!m.ui?.widget?.file;
         if (!hasWidget) return;
         if (!(m.name in layout.sizes)) { layout.sizes[m.name] = 'normal'; changed = true; }
         // Only auto-pin non-SYSTEM modules that are not explicitly hidden
         if (m.type !== 'SYSTEM' && !layout.pinned.includes(m.name) && !layout.hidden.includes(m.name)) {
-          layout.pinned.push(m.name); changed = true;
+          layout.pinned.push(m.name);
+          let slot = 0;
+          while (occupiedSlots.has(slot)) slot++;
+          layout.positions[m.name] = slot;
+          occupiedSlots.add(slot);
+          changed = true;
+        }
+      });
+      // Assign positions for already-pinned modules that don't have one yet
+      layout.pinned.forEach((name, idx) => {
+        if (!(name in layout.positions)) {
+          let slot = idx;
+          while (occupiedSlots.has(slot)) slot++;
+          layout.positions[name] = slot;
+          occupiedSlots.add(slot);
+          changed = true;
         }
       });
       if (changed) saveWidgetLayout(layout);
       return changed ? { widgetLayout: { ...layout } } : state;
     });
   },
-  pinModule: (name) => {
+  pinModule: (name, preferredSlot) => {
     set(state => {
       if (state.widgetLayout.pinned.includes(name)) return state;
       const hidden = (state.widgetLayout.hidden ?? []).filter(n => n !== name);
+      const occupiedSlots = new Set(Object.values(state.widgetLayout.positions ?? {}));
+      let slot: number;
+      if (preferredSlot !== undefined && !occupiedSlots.has(preferredSlot)) {
+        slot = preferredSlot;
+      } else {
+        slot = 0;
+        while (occupiedSlots.has(slot)) slot++;
+      }
       const layout: WidgetLayout = {
         pinned: [...state.widgetLayout.pinned, name],
         sizes: { ...state.widgetLayout.sizes, [name]: state.widgetLayout.sizes[name] ?? 'normal' },
         hidden,
+        screens: state.widgetLayout.screens ?? 1,
+        positions: { ...(state.widgetLayout.positions ?? {}), [name]: slot },
+        spans: { ...(state.widgetLayout.spans ?? {}) },
       };
       saveWidgetLayout(layout);
       return { widgetLayout: layout };
@@ -369,7 +410,11 @@ export const useStore = create<AppState>((set, get) => ({
     set(state => {
       const hidden = [...(state.widgetLayout.hidden ?? [])];
       if (!hidden.includes(name)) hidden.push(name);
-      const layout: WidgetLayout = { ...state.widgetLayout, pinned: state.widgetLayout.pinned.filter(n => n !== name), hidden };
+      const positions = { ...(state.widgetLayout.positions ?? {}) };
+      delete positions[name];
+      const spans = { ...(state.widgetLayout.spans ?? {}) };
+      delete spans[name];
+      const layout: WidgetLayout = { ...state.widgetLayout, pinned: state.widgetLayout.pinned.filter(n => n !== name), hidden, positions, spans };
       saveWidgetLayout(layout);
       return { widgetLayout: layout };
     });
@@ -382,6 +427,7 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
   moveWidget: (name, dir) => {
+    // legacy: kept for compatibility
     set(state => {
       const pinned = [...state.widgetLayout.pinned];
       const idx = pinned.indexOf(name);
@@ -390,6 +436,47 @@ export const useStore = create<AppState>((set, get) => ({
       if (newIdx < 0 || newIdx >= pinned.length) return state;
       [pinned[idx], pinned[newIdx]] = [pinned[newIdx], pinned[idx]];
       const layout: WidgetLayout = { ...state.widgetLayout, pinned };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  swapWidgets: (nameA, nameB) => {
+    set(state => {
+      const positions = state.widgetLayout.positions ?? {};
+      const posA = positions[nameA];
+      const posB = positions[nameB];
+      if (posA === undefined || posB === undefined) return state;
+      const layout: WidgetLayout = {
+        ...state.widgetLayout,
+        positions: { ...positions, [nameA]: posB, [nameB]: posA },
+      };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  moveWidgetToSlot: (name, slotIdx) => {
+    set(state => {
+      const layout: WidgetLayout = {
+        ...state.widgetLayout,
+        positions: { ...(state.widgetLayout.positions ?? {}), [name]: slotIdx },
+      };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  setWidgetSpan: (name, cols, rows) => {
+    set(state => {
+      const layout: WidgetLayout = {
+        ...state.widgetLayout,
+        spans: { ...(state.widgetLayout.spans ?? {}), [name]: { cols, rows } },
+      };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
+    });
+  },
+  addScreen: () => {
+    set(state => {
+      const layout: WidgetLayout = { ...state.widgetLayout, screens: (state.widgetLayout.screens ?? 1) + 1 };
       saveWidgetLayout(layout);
       return { widgetLayout: layout };
     });
@@ -405,6 +492,11 @@ export const useStore = create<AppState>((set, get) => ({
             pinned: raw.pinned as string[],
             sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
             hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
+            screens: typeof raw.screens === 'number' ? raw.screens : 1,
+            positions: (raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions))
+              ? raw.positions as Record<string, number> : {},
+            spans: (raw.spans && typeof raw.spans === 'object' && !Array.isArray(raw.spans))
+              ? raw.spans as Record<string, { cols: number; rows: number }> : {},
           };
           try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
           set({ widgetLayout: layout });
@@ -423,6 +515,11 @@ export const useStore = create<AppState>((set, get) => ({
             pinned: Array.isArray(raw.pinned) ? raw.pinned as string[] : [],
             sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
             hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
+            screens: typeof raw.screens === 'number' ? raw.screens : 1,
+            positions: (raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions))
+              ? raw.positions as Record<string, number> : {},
+            spans: (raw.spans && typeof raw.spans === 'object' && !Array.isArray(raw.spans))
+              ? raw.spans as Record<string, { cols: number; rows: number }> : {},
           };
           try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
           set({ widgetLayout: layout });

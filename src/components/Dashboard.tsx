@@ -1,32 +1,58 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useStore, Module } from '../store/useStore';
 
+// Fixed grid: always 6 columns × 5 rows — cells scale to fill any screen
+const GRID_COLS = 6;
+const GRID_ROWS = 5;
+const PER_SCREEN = GRID_COLS * GRID_ROWS; // 30 slots
+const GRID_GAP = 8;
+const GRID_PAD = 10;  // padding on each screen div side
+const TOOLBAR_H = 40;  // space reserved for the Edit toolbar
+
 /* ── Widget Shell ── */
 function WidgetShell({
-  mod, editMode, size = 'normal', onUnpin, onResize, onMoveLeft, onMoveRight, canMoveLeft, canMoveRight,
+  mod, editMode, col, row, spanCols, spanRows, contentScale, isDragging, isDropOver,
+  onUnpin, onPointerDown, onResizeHandleDown,
 }: {
   mod: Module;
   editMode: boolean;
-  size?: 'compact' | 'normal';
+  col: number;
+  row: number;
+  spanCols: number;
+  spanRows: number;
+  contentScale: number;
+  isDragging?: boolean;
+  isDropOver?: boolean;
   onUnpin?: () => void;
-  onResize?: () => void;
-  onMoveLeft?: () => void;
-  onMoveRight?: () => void;
-  canMoveLeft?: boolean;
-  canMoveRight?: boolean;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onResizeHandleDown?: (e: React.PointerEvent) => void;
 }) {
   const navigate = useNavigate();
   const isRunning = mod.status === 'RUNNING';
   const isErr = mod.status === 'ERROR';
   const dotCls = isRunning ? 'wsd-run' : isErr ? 'wsd-err' : 'wsd-stop';
   const initial = (mod.name || '?')[0].toUpperCase();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Size: compact = 1x1, normal = manifest size or fallback
-  const manifestSize = mod.ui?.widget?.size;
-  const span = size === 'compact' ? 'sp-1x1' : (manifestSize ? `sp-${manifestSize}` : (mod.type === 'SYSTEM' ? 'sp-1x1' : 'sp-2x1'));
+  // Inject CSS zoom into iframe content so fonts/layout scale with cell size
+  const injectScale = useCallback(() => {
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      if (!doc?.head) return;
+      doc.getElementById('__selena_scale')?.remove();
+      const s = doc.createElement('style');
+      s.id = '__selena_scale';
+      s.textContent = `html { zoom: ${contentScale.toFixed(3)} !important; }`;
+      doc.head.appendChild(s);
+    } catch { /* cross-origin or not yet loaded */ }
+  }, [contentScale]);
+
+  // Re-inject whenever scale changes (e.g. window resize)
+  useEffect(() => { injectScale(); }, [injectScale]);
 
   // Listen for openSettings postMessage from widget iframe
   useEffect(() => {
@@ -40,26 +66,55 @@ function WidgetShell({
   }, [mod.name, navigate]);
 
   return (
-    <div className={`ws ${span}${editMode ? ' edit-mode' : ''}`}>
+    <div
+      className={[
+        'ws',
+        editMode ? 'edit-mode' : '',
+        isDragging ? 'ws-dragging' : '',
+        isDropOver ? 'drag-over' : '',
+      ].filter(Boolean).join(' ')}
+      data-drop={`widget-${mod.name}`}
+      onPointerDown={editMode ? onPointerDown : undefined}
+      style={{
+        touchAction: editMode ? 'none' : 'auto',
+        gridColumn: `${col} / span ${spanCols}`,
+        gridRow: `${row} / span ${spanRows}`,
+      }}
+    >
       <div className={`ws-dot ${dotCls}`} />
+
       {/* Edit mode control bar */}
       {editMode && (
         <div className="ws-edit-bar">
-          <button className="ws-eb-btn ws-eb-red" onClick={onUnpin} title="Unpin">−</button>
-          <button className="ws-eb-btn" onClick={onResize} title={size === 'compact' ? 'Expand' : 'Compact'}>
-            {size === 'compact' ? '⊞' : '⊟'}
-          </button>
-          <button className="ws-eb-btn" onClick={onMoveLeft} disabled={!canMoveLeft} title="Move left">←</button>
-          <button className="ws-eb-btn" onClick={onMoveRight} disabled={!canMoveRight} title="Move right">→</button>
+          <button
+            className="ws-eb-btn ws-eb-red"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onUnpin?.(); }}
+            title="Remove"
+          >×</button>
         </div>
+      )}
+
+      {/* Corner resize handle — drag to resize widget */}
+      {editMode && (
+        <div
+          className="ws-resize-handle"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onResizeHandleDown?.(e);
+          }}
+        />
       )}
 
       {isRunning ? (
         <iframe
+          ref={iframeRef}
           src={`/api/ui/modules/${mod.name}/widget`}
           sandbox="allow-scripts allow-same-origin"
           scrolling="no"
           title={mod.name}
+          onLoad={injectScale}
           style={{ width: '100%', height: '100%', border: 'none', display: 'block', pointerEvents: editMode ? 'none' : 'auto' }}
         />
       ) : (
@@ -87,6 +142,19 @@ function WidgetShell({
         </div>
       )}
       <div className="ws-label">{mod.name} · :{mod.port}</div>
+    </div>
+  );
+}
+
+/* ── Empty Slot — drop target visible in edit mode ── */
+function EmptySlot({ globalIdx, col, row, isDropOver }: { globalIdx: number; col: number; row: number; isDropOver: boolean }) {
+  return (
+    <div
+      className={`ws ws-empty${isDropOver ? ' drag-over' : ''}`}
+      data-drop={`empty-${globalIdx}`}
+      style={{ gridColumn: `${col} / span 1`, gridRow: `${row} / span 1` }}
+    >
+      <span style={{ fontSize: 16, lineHeight: 1, pointerEvents: 'none' }}>+</span>
     </div>
   );
 }
@@ -263,15 +331,62 @@ export default function Dashboard() {
   const pinModule = useStore((s) => s.pinModule);
   const unpinModule = useStore((s) => s.unpinModule);
   const setWidgetSize = useStore((s) => s.setWidgetSize);
-  const moveWidget = useStore((s) => s.moveWidget);
+  const swapWidgets = useStore((s) => s.swapWidgets);
+  const moveWidgetToSlot = useStore((s) => s.moveWidgetToSlot);
+  const setWidgetSpan = useStore((s) => s.setWidgetSpan);
+  const addScreen = useStore((s) => s.addScreen);
 
   const [currentScreen, setCurrentScreen] = useState(0);
   const [editMode, setEditMode] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
-  const swipeRef = useRef<number | null>(null);
 
-  useEffect(() => { fetchModules(); }, [fetchModules]);
+  // ── Screen size — measured from container ────────────────────────────────
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [screenW, setScreenW] = useState(0);
+  const [cellW, setCellW] = useState(0);
+  const [cellH, setCellH] = useState(0);
 
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (!width || !height) return;
+      const usableW = width - GRID_PAD * 2;
+      const usableH = height - GRID_PAD * 2 - TOOLBAR_H;
+      setScreenW(width);
+      setCellW((usableW - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS);
+      setCellH((usableH - GRID_GAP * (GRID_ROWS - 1)) / GRID_ROWS);
+    };
+    measure();
+    const obs = new ResizeObserver(measure);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Use measured width or sensible fallback until first measurement
+  const SCREEN_W = screenW || 748;
+
+  // Content scale: ratio of actual cell height to baseline 90px.
+  // Applied as CSS zoom inside each widget iframe so fonts/layout grow with cell size.
+  const contentScale = cellH > 0 ? Math.round((cellH / 90) * 100) / 100 : 1;
+
+  // ── Drag state ──────────────────────────────────────────────────────────────
+  const [dragName, setDragName] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null); // 'widget-NAME' or 'empty-N'
+  const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 });
+  // swipeStart: tracks a finger/pointer that may turn into a screen swipe
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  // swipeLocked: true while dragging/resizing — disables swipe
+  const swipeLocked = useRef(false);
+  const edgeScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Resize state ─────────────────────────────────────────────────────────────────
+  const [resizeState, setResizeState] = useState<{
+    name: string;
+    startX: number; startY: number;
+    startCols: number; startRows: number;
+    currentCols: number; currentRows: number;
+  } | null>(null);
   // Pinned modules in display order
   const pinnedMods = widgetLayout.pinned
     .map(name => modules.find(m => m.name === name))
@@ -282,40 +397,184 @@ export default function Dashboard() {
     (m) => !!m.ui?.widget?.file && !widgetLayout.pinned.includes(m.name)
   );
 
-  const PER_SCREEN = 6;
-  const totalScreens = Math.max(1, Math.ceil(pinnedMods.length / PER_SCREEN));
+  // Build slot map from positions (absolute slot index -> Module)
+  const slotMap = new Map<number, Module>();
+  pinnedMods.forEach(mod => {
+    const pos = (widgetLayout.positions ?? {})[mod.name];
+    if (pos !== undefined) slotMap.set(pos, mod);
+  });
 
-  function getScreenMods(si: number): Array<{ mod: Module; pinIdx: number }> {
-    const startIdx = si * PER_SCREEN;
-    const endIdx = startIdx + PER_SCREEN;
-    return pinnedMods.slice(startIdx, endIdx).map((mod, i) => ({ mod, pinIdx: startIdx + i }));
+  /** Returns the saved grid span; defaults to 1×1 — only the resize handle sets a larger span */
+  function getWidgetSpan(mod: Module): { cols: number; rows: number } {
+    const custom = (widgetLayout.spans ?? {})[mod.name];
+    if (custom) return custom;
+    return { cols: 1, rows: 1 };
   }
 
-  // Sidebar is 52px; total viewport 800px
-  const SCREEN_W = 748;
+  // Compute which slots are covered by non-anchor cells of multi-cell widgets.
+  // Spans are clamped to the current grid size — a span saved on a wide-screen PC
+  // must not overflow the grid on a narrower device.
+  const coveredSlots = new Set<number>();
+  slotMap.forEach((mod, slotIdx) => {
+    const rawSpan = resizeState?.name === mod.name
+      ? { cols: resizeState.currentCols, rows: resizeState.currentRows }
+      : getWidgetSpan(mod);
+    if (rawSpan.cols === 1 && rawSpan.rows === 1) return;
+    const localIdx = slotIdx % PER_SCREEN;
+    const screenIdx = Math.floor(slotIdx / PER_SCREEN);
+    const anchorCol = localIdx % GRID_COLS;
+    const anchorRow = Math.floor(localIdx / GRID_COLS);
+    // Clamp so we never reach past the edge of the grid on any screen size
+    const spanCols = Math.min(rawSpan.cols, GRID_COLS - anchorCol);
+    const spanRows = Math.min(rawSpan.rows, GRID_ROWS - anchorRow);
+    for (let r = 0; r < spanRows; r++) {
+      for (let c = 0; c < spanCols; c++) {
+        if (r === 0 && c === 0) continue; // anchor itself
+        const li = (anchorRow + r) * GRID_COLS + (anchorCol + c);
+        if (li < PER_SCREEN) coveredSlots.add(screenIdx * PER_SCREEN + li);
+      }
+    }
+  });
 
+  // Total screens = max(user minimum, screens needed to show all positioned widgets)
+  const maxOccupiedSlot = pinnedMods.reduce((mx, m) => {
+    const pos = (widgetLayout.positions ?? {})[m.name];
+    return pos !== undefined ? Math.max(mx, pos) : mx;
+  }, -1);
+  const screensByPosition = maxOccupiedSlot >= 0 ? Math.ceil((maxOccupiedSlot + 1) / PER_SCREEN) : 1;
+  const totalScreens = Math.max(
+    widgetLayout.screens ?? 1,
+    screensByPosition
+  );
+
+  // Circular: left swipe from screen 0 → last screen, right swipe from last → screen 0
   const go = (dir: number) =>
-    setCurrentScreen((s) => Math.max(0, Math.min(totalScreens - 1, s + dir)));
+    setCurrentScreen((s) => (s + dir + totalScreens) % totalScreens);
 
-  function onTouchStart(e: React.TouchEvent) { swipeRef.current = e.touches[0].clientX; }
-  function onTouchEnd(e: React.TouchEvent) {
-    if (swipeRef.current === null) return;
-    const dx = e.changedTouches[0].clientX - swipeRef.current;
-    if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1);
-    swipeRef.current = null;
+  // ── Drag handlers ────────────────────────────────────────────────────────────
+  function startDrag(name: string, e: React.PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Capture pointer so move/up events always reach the container
+    const container = containerRef.current;
+    if (container) container.setPointerCapture(e.pointerId);
+    setDragName(name);
+    setGhostPos({ x: e.clientX, y: e.clientY });
+    setDropTarget(null);
+    swipeLocked.current = true;
+  }
+
+  function startResize(name: string, e: React.PointerEvent, cols: number, rows: number) {
+    e.preventDefault();
+    const container = containerRef.current;
+    if (container) container.setPointerCapture(e.pointerId);
+    setResizeState({ name, startX: e.clientX, startY: e.clientY, startCols: cols, startRows: rows, currentCols: cols, currentRows: rows });
+    swipeLocked.current = true;
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (dragName) {
+      setGhostPos({ x: e.clientX, y: e.clientY });
+
+      // Find element under pointer (ghost has pointer-events:none so it's ignored)
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const target = el?.closest('[data-drop]') as HTMLElement | null;
+      setDropTarget(target?.dataset.drop ?? null);
+
+      // Auto-scroll to adjacent screen when dragging near left/right edges
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const EDGE = 55;
+        const relX = e.clientX - rect.left;
+        if (edgeScrollTimer.current) {
+          clearTimeout(edgeScrollTimer.current);
+          edgeScrollTimer.current = null;
+        }
+        if (relX < EDGE && currentScreen > 0) {
+          edgeScrollTimer.current = setTimeout(() => go(-1), 500);
+        } else if (rect.width - relX < EDGE && currentScreen < totalScreens - 1) {
+          edgeScrollTimer.current = setTimeout(() => go(1), 500);
+        }
+      }
+    } else if (resizeState && cellW > 0 && cellH > 0) {
+      const deltaCols = Math.round((e.clientX - resizeState.startX) / (cellW + GRID_GAP));
+      const deltaRows = Math.round((e.clientY - resizeState.startY) / (cellH + GRID_GAP));
+      // Clamp span to grid bounds starting from the anchor position
+      const anchorSlot = (widgetLayout.positions ?? {})[resizeState.name];
+      const localIdx = anchorSlot !== undefined ? anchorSlot % PER_SCREEN : 0;
+      const anchorCol = localIdx % GRID_COLS;
+      const anchorRow = Math.floor(localIdx / GRID_COLS);
+      const newCols = Math.max(1, Math.min(GRID_COLS - anchorCol, resizeState.startCols + deltaCols));
+      const newRows = Math.max(1, Math.min(GRID_ROWS - anchorRow, resizeState.startRows + deltaRows));
+      if (newCols !== resizeState.currentCols || newRows !== resizeState.currentRows) {
+        setResizeState(s => s ? { ...s, currentCols: newCols, currentRows: newRows } : null);
+      }
+    } else if (swipeStart.current) {
+      // Prevent browser swipe-back/forward when horizontal movement dominates
+      const dx = e.clientX - swipeStart.current.x;
+      const dy = e.clientY - swipeStart.current.y;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8) {
+        e.preventDefault();
+      }
+    }
+  }
+
+  function handlePointerUp(e?: React.PointerEvent) {
+    if (dragName && dropTarget) {
+      if (dropTarget.startsWith('widget-')) {
+        const dstName = dropTarget.slice(7);
+        if (dstName !== dragName) swapWidgets(dragName, dstName);
+      } else if (dropTarget.startsWith('empty-')) {
+        const dstIdx = parseInt(dropTarget.slice(6), 10);
+        if (!isNaN(dstIdx)) moveWidgetToSlot(dragName, dstIdx);
+      }
+    }
+    if (resizeState) {
+      setWidgetSpan(resizeState.name, resizeState.currentCols, resizeState.currentRows);
+      setResizeState(null);
+    }
+    if (swipeStart.current && e) {
+      const dx = e.clientX - swipeStart.current.x;
+      const dy = e.clientY - swipeStart.current.y;
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+        go(dx < 0 ? 1 : -1);
+      }
+      swipeStart.current = null;
+    }
+    if (edgeScrollTimer.current) { clearTimeout(edgeScrollTimer.current); edgeScrollTimer.current = null; }
+    setDragName(null);
+    setDropTarget(null);
+    swipeLocked.current = false;
+  }
+
+  function handleContainerPointerDown(e: React.PointerEvent) {
+    // Only track swipe when not dragging/resizing/editing
+    if (swipeLocked.current || editMode) return;
+    // Only start swipe tracking on direct container taps (not widget buttons)
+    const target = e.target as HTMLElement;
+    if (target.closest('.ws') || target.closest('.edit-toggle')) return;
+    swipeStart.current = { x: e.clientX, y: e.clientY };
   }
 
   return (
     <div
-      style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
+      ref={containerRef}
+      style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', touchAction: 'none' }}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={dragName || resizeState || swipeStart.current ? handlePointerMove : undefined}
+      onPointerUp={dragName || resizeState || swipeStart.current ? handlePointerUp : undefined}
+      onPointerCancel={dragName || resizeState || swipeStart.current ? handlePointerUp : undefined}
     >
-      {/* Edit toggle */}
+      {/* ── Toolbar ── */}
       <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 30, display: 'flex', gap: 6, alignItems: 'center' }}>
         {editMode && unpinnedWidgetMods.length > 0 && (
           <div className="edit-toggle" onClick={() => setShowAddDrawer(v => !v)}>
             + {t('dashboard.addWidget', 'Add')} ({unpinnedWidgetMods.length})
+          </div>
+        )}
+        {editMode && (
+          <div className="edit-toggle" onClick={addScreen} title={t('dashboard.addScreen', 'Add screen')}>
+            ⊕ {t('dashboard.addScreen', 'Screen')}
           </div>
         )}
         <div
@@ -325,8 +584,6 @@ export default function Dashboard() {
           {editMode ? t('dashboard.done', 'Done') : t('dashboard.edit', 'Edit')}
         </div>
       </div>
-
-      {/* Add system module panel (legacy small dropdown — hidden now) */}
 
       {/* Left arrow */}
       {currentScreen > 0 && (
@@ -346,74 +603,140 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Screens track */}
+      {/* ── Screens track ── */}
       <div style={{
         display: 'flex',
         height: '100%',
-        transition: 'transform .35s cubic-bezier(.4,0,.2,1)',
+        transition: dragName ? 'none' : 'transform .35s cubic-bezier(.4,0,.2,1)',
         transform: `translateX(-${currentScreen * SCREEN_W}px)`,
       }}>
         {Array.from({ length: totalScreens }, (_, si) => {
-          const mods = getScreenMods(si);
-          const maxSlots = PER_SCREEN;
+          const startIdx = si * PER_SCREEN;
+          // Build all PER_SCREEN slots for this screen: widget or empty
+          const slots = Array.from({ length: PER_SCREEN }, (_, i) => {
+            const globalIdx = startIdx + i;
+            const col = (i % GRID_COLS) + 1;
+            const row = Math.floor(i / GRID_COLS) + 1;
+            return { mod: slotMap.get(globalIdx) ?? null, globalIdx, col, row };
+          });
+
           return (
             <div key={si} style={{ flexShrink: 0, width: SCREEN_W, height: '100%', padding: 10 }}>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gridTemplateRows: 'repeat(3, 1fr)',
-                gap: 8,
-                width: '100%',
-                height: 'calc(100% - 20px)',
-              }}>
-                {mods.map(({ mod, pinIdx }) => (
-                  <WidgetShell
-                    key={mod.name}
-                    mod={mod}
-                    editMode={editMode}
-                    size={widgetLayout.sizes[mod.name] ?? 'normal'}
-                    onUnpin={() => unpinModule(mod.name)}
-                    onResize={() => setWidgetSize(mod.name, (widgetLayout.sizes[mod.name] ?? 'normal') === 'compact' ? 'normal' : 'compact')}
-                    onMoveLeft={() => moveWidget(mod.name, -1)}
-                    onMoveRight={() => moveWidget(mod.name, 1)}
-                    canMoveLeft={pinIdx > 0}
-                    canMoveRight={pinIdx < pinnedMods.length - 1}
-                  />
-                ))}
-
-                {/* Add slot (edit mode) — opens the full add drawer */}
-                {editMode && mods.length < maxSlots && (
-                  <div
-                    className="ws ws-empty sp-1x1"
-                    onClick={() => setShowAddDrawer(true)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <svg viewBox="0 0 16 16" fill="none" width="18" height="18" style={{ color: 'var(--ac)' }}>
-                      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
-                      <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    </svg>
-                    <div style={{ fontSize: 9, color: 'var(--ac)', marginTop: 2 }}>
-                      {t('dashboard.addBtn', 'Add')}
-                    </div>
-                  </div>
-                )}
+              <div
+                className={editMode ? 'widget-grid widget-grid--edit' : 'widget-grid'}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`,
+                  gridTemplateRows: `repeat(${GRID_ROWS}, 1fr)`,
+                  gap: GRID_GAP,
+                  width: '100%',
+                  height: `calc(100% - ${GRID_PAD * 2}px)`,
+                }}
+              >
+                {slots.map(({ mod, globalIdx, col, row }) => {
+                  // Skip empty slots that are visually covered by a multi-cell widget.
+                  // Never skip a slot that has a real widget anchor — render it at 1×1 instead.
+                  const isCovered = coveredSlots.has(globalIdx);
+                  if (isCovered && !mod) return null;
+                  if (mod) {
+                    const baseSpan = getWidgetSpan(mod);
+                    const rawSpan = resizeState?.name === mod.name
+                      ? { cols: resizeState.currentCols, rows: resizeState.currentRows }
+                      : baseSpan;
+                    // Clamp to grid bounds from this anchor position;
+                    // if the anchor is itself covered by another widget, force 1×1
+                    const maxCols = GRID_COLS - (col - 1);
+                    const maxRows = GRID_ROWS - (row - 1);
+                    const wspan = isCovered ? { cols: 1, rows: 1 } : {
+                      cols: Math.min(rawSpan.cols, maxCols),
+                      rows: Math.min(rawSpan.rows, maxRows),
+                    };
+                    return (
+                      <WidgetShell
+                        key={mod.name}
+                        mod={mod}
+                        editMode={editMode}
+                        col={col}
+                        row={row}
+                        spanCols={wspan.cols}
+                        spanRows={wspan.rows}
+                        contentScale={contentScale}
+                        isDragging={dragName === mod.name}
+                        isDropOver={dropTarget === `widget-${mod.name}` && dragName !== mod.name}
+                        onUnpin={() => unpinModule(mod.name)}
+                        onPointerDown={(e) => startDrag(mod.name, e)}
+                        onResizeHandleDown={(e) => startResize(mod.name, e, wspan.cols, wspan.rows)}
+                      />
+                    );
+                  }
+                  // Empty slot: show dashed drop target in edit mode, nothing in view mode
+                  if (editMode) {
+                    return (
+                      <EmptySlot
+                        key={`empty-${globalIdx}`}
+                        globalIdx={globalIdx}
+                        col={col}
+                        row={row}
+                        isDropOver={dropTarget === `empty-${globalIdx}`}
+                      />
+                    );
+                  }
+                  return null;
+                })}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Add widget drawer */}
+      {/* ── Drag ghost ── */}
+      {dragName && createPortal(
+        <div style={{
+          position: 'fixed',
+          left: ghostPos.x,
+          top: ghostPos.y,
+          transform: 'translate(-50%, -50%) scale(1.12)',
+          minWidth: 64,
+          padding: '6px 10px',
+          background: 'var(--sf2)',
+          border: '2px solid var(--ac)',
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 10,
+          fontWeight: 600,
+          color: 'var(--ac)',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          boxShadow: '0 10px 32px rgba(0,0,0,.55)',
+          backdropFilter: 'blur(6px)',
+          letterSpacing: '0.03em',
+          whiteSpace: 'nowrap',
+        }}>
+          {dragName.length > 14 ? dragName.slice(0, 13) + '…' : dragName}
+        </div>,
+        document.body
+      )}
+
+      {/* ── Add widget drawer ── */}
       {editMode && showAddDrawer && (
         <AddWidgetDrawer
           modules={modules}
           pinned={widgetLayout.pinned}
-          onPin={pinModule}
+          onPin={(name) => {
+            // Find first slot not occupied by any anchor AND not covered by a multi-cell span
+            const allUsed = new Set<number>(slotMap.keys());
+            coveredSlots.forEach(s => allUsed.add(s));
+            let slot = 0;
+            while (allUsed.has(slot)) slot++;
+            pinModule(name, slot);
+          }}
           onClose={() => setShowAddDrawer(false)}
         />
       )}
 
-      {/* Page dots */}
+      {/* ── Page dots ── */}
       {totalScreens > 1 && (
         <div style={{
           position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)',
