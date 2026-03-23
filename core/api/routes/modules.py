@@ -42,6 +42,7 @@ class ModuleResponse(BaseModel):
     runtime_mode: str
     port: int
     installed_at: float
+    ui: dict | None = None   # from manifest.json "ui" section (widget, settings, icon)
 
 
 class ModuleListResponse(BaseModel):
@@ -57,6 +58,7 @@ def _to_response(info: ModuleInfo) -> ModuleResponse:
         runtime_mode=info.runtime_mode,
         port=info.port,
         installed_at=info.installed_at,
+        ui=info.manifest.get("ui") if info.manifest else None,
     )
 
 
