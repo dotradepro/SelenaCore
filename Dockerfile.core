@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2-dev \
     libsndfile1-dev \
     libspeex-dev \
+    libvlc-dev \
+    vlc-plugin-base \
+    vlc-bin \
     network-manager \
     rfkill \
     iputils-ping \
