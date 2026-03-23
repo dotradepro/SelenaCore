@@ -126,6 +126,7 @@ module.register_static_routes(app)
 | **notification_router** | **8116** |
 | **import_adapters** | **8117** |
 | notify_push | 8118 |
+| **media_player** | **8119** |
 
 ---
 
@@ -144,6 +145,7 @@ module.register_static_routes(app)
 Шаг 8:  notification_router ← используется в automation_engine
 Шаг 9:  update_manager
 Шаг 10: import_adapters     ← рефакторинг существующего
+Шаг 9.5: media_player      ← зависит от scheduler (sleep-таймер), voice_core (TTS)
 Шаг 11: pytest для всех модулей
 ```
 
