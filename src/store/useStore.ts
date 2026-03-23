@@ -23,7 +23,7 @@ export interface Module {
   installed_at: number;
   ui?: {
     icon?: string;
-    widget?: { file?: string; size?: string };
+    widget?: { file?: string; size?: string; max_size?: string };
     settings?: string;
   };
 }
@@ -100,11 +100,17 @@ function loadTheme(): ThemeMode {
 function applyThemeClass(mode: ThemeMode) {
   const root = document.documentElement;
   if (mode === 'auto') {
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    root.classList.toggle('light', !prefersDark);
+    const h = new Date().getHours();
+    root.classList.toggle('light', h >= 7 && h < 20);
   } else {
     root.classList.toggle('light', mode === 'light');
   }
+}
+
+function broadcastThemeToIframes() {
+  document.querySelectorAll('iframe').forEach(f => {
+    try { f.contentWindow?.postMessage({ type: 'theme_changed' }, '*'); } catch (_) { /* cross-origin */ }
+  });
 }
 
 interface AppState {
@@ -223,20 +229,42 @@ export const useStore = create<AppState>((set, get) => ({
   setVoiceStatus: (voiceStatus: 'idle' | 'listening' | 'speaking') => set({ voiceStatus }),
   setSelectedLanguage: (lang) => {
     changeLanguage(lang);
+    localStorage.setItem('selena-lang', lang);
     set({ selectedLanguage: lang });
+    // Broadcast to other browsers/devices
+    fetch('/api/ui/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: lang }),
+    }).catch(() => { });
+    // Notify iframes
+    document.querySelectorAll('iframe').forEach(f => {
+      try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
+    });
   },
   setTheme: (mode) => {
     localStorage.setItem('selena-theme', mode);
     applyThemeClass(mode);
     set({ theme: mode });
+    broadcastThemeToIframes();
+    // Broadcast to other browsers/devices
+    fetch('/api/ui/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme: mode }),
+    }).catch(() => { });
   },
   initThemeListener: () => {
     const theme = get().theme;
     applyThemeClass(theme);
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = () => { if (get().theme === 'auto') applyThemeClass('auto'); };
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    // Periodic re-check for time-of-day auto theme (every 60s)
+    const interval = setInterval(() => {
+      if (get().theme === 'auto') {
+        applyThemeClass('auto');
+        broadcastThemeToIframes();
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
   },
 
   fetchWizardStatus: async () => {
@@ -529,6 +557,23 @@ export const useStore = create<AppState>((set, get) => ({
           msg.type === 'module.removed'
         ) {
           debounceFetchModules(get);
+        } else if (msg.type === 'settings_changed' && msg.payload) {
+          const p = msg.payload as Record<string, string>;
+          if (p.theme && p.theme !== get().theme) {
+            localStorage.setItem('selena-theme', p.theme);
+            const mode = p.theme as ThemeMode;
+            applyThemeClass(mode);
+            set({ theme: mode });
+            broadcastThemeToIframes();
+          }
+          if (p.language && p.language !== get().selectedLanguage) {
+            localStorage.setItem('selena-lang', p.language);
+            changeLanguage(p.language);
+            set({ selectedLanguage: p.language });
+            document.querySelectorAll('iframe').forEach(f => {
+              try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
+            });
+          }
         }
       } catch { /* ignore */ }
     };

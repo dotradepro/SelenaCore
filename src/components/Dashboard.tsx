@@ -339,6 +339,30 @@ export default function Dashboard() {
   const [currentScreen, setCurrentScreen] = useState(0);
   const [editMode, setEditMode] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
+  const [modalMod, setModalMod] = useState<string | null>(null);
+
+  // ── Widget fullscreen modal (openWidgetModal / closeWidgetModal) ─────────
+  useEffect(() => {
+    function handleWidgetModal(e: MessageEvent) {
+      if (!e.data) return;
+      if (e.data.type === 'openWidgetModal' && typeof e.data.module === 'string')
+        setModalMod(e.data.module);
+      if (e.data.type === 'closeWidgetModal') {
+        // Notify the widget iframe to refresh its state immediately
+        const mod = e.data.module || modalMod;
+        if (mod) {
+          document.querySelectorAll<HTMLIFrameElement>('iframe').forEach(f => {
+            if (f.src.includes(`/modules/${mod}/widget`) && !f.src.includes('modal=1')) {
+              try { f.contentWindow?.postMessage({ type: 'refresh' }, '*'); } catch (_) { }
+            }
+          });
+        }
+        setModalMod(null);
+      }
+    }
+    window.addEventListener('message', handleWidgetModal);
+    return () => window.removeEventListener('message', handleWidgetModal);
+  }, []);
 
   // ── Screen size — measured from container ────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
@@ -404,11 +428,23 @@ export default function Dashboard() {
     if (pos !== undefined) slotMap.set(pos, mod);
   });
 
-  /** Returns the saved grid span; defaults to 1×1 — only the resize handle sets a larger span */
+  /** Parse manifest size string "2x2" to {cols, rows} */
+  function parseSize(s?: string): { cols: number; rows: number } | null {
+    if (!s) return null;
+    const m = s.match(/^(\d+)x(\d+)$/);
+    return m ? { cols: parseInt(m[1], 10), rows: parseInt(m[2], 10) } : null;
+  }
+
+  /** Returns the saved grid span; defaults to manifest size (or 1×1) */
   function getWidgetSpan(mod: Module): { cols: number; rows: number } {
     const custom = (widgetLayout.spans ?? {})[mod.name];
     if (custom) return custom;
-    return { cols: 1, rows: 1 };
+    return parseSize(mod.ui?.widget?.size) || { cols: 1, rows: 1 };
+  }
+
+  /** Returns max grid span from manifest max_size (or grid limits) */
+  function getMaxSpan(mod: Module): { cols: number; rows: number } {
+    return parseSize(mod.ui?.widget?.max_size) || { cols: GRID_COLS, rows: GRID_ROWS };
   }
 
   // Compute which slots are covered by non-anchor cells of multi-cell widgets.
@@ -499,13 +535,15 @@ export default function Dashboard() {
     } else if (resizeState && cellW > 0 && cellH > 0) {
       const deltaCols = Math.round((e.clientX - resizeState.startX) / (cellW + GRID_GAP));
       const deltaRows = Math.round((e.clientY - resizeState.startY) / (cellH + GRID_GAP));
-      // Clamp span to grid bounds starting from the anchor position
+      // Clamp span to grid bounds and manifest max_size
       const anchorSlot = (widgetLayout.positions ?? {})[resizeState.name];
       const localIdx = anchorSlot !== undefined ? anchorSlot % PER_SCREEN : 0;
       const anchorCol = localIdx % GRID_COLS;
       const anchorRow = Math.floor(localIdx / GRID_COLS);
-      const newCols = Math.max(1, Math.min(GRID_COLS - anchorCol, resizeState.startCols + deltaCols));
-      const newRows = Math.max(1, Math.min(GRID_ROWS - anchorRow, resizeState.startRows + deltaRows));
+      const resizeMod = modules.find(m => m.name === resizeState.name);
+      const maxSpan = resizeMod ? getMaxSpan(resizeMod) : { cols: GRID_COLS, rows: GRID_ROWS };
+      const newCols = Math.max(1, Math.min(GRID_COLS - anchorCol, maxSpan.cols, resizeState.startCols + deltaCols));
+      const newRows = Math.max(1, Math.min(GRID_ROWS - anchorRow, maxSpan.rows, resizeState.startRows + deltaRows));
       if (newCols !== resizeState.currentCols || newRows !== resizeState.currentRows) {
         setResizeState(s => s ? { ...s, currentCols: newCols, currentRows: newRows } : null);
       }
@@ -734,6 +772,42 @@ export default function Dashboard() {
           }}
           onClose={() => setShowAddDrawer(false)}
         />
+      )}
+
+      {/* ── Widget fullscreen modal ── */}
+      {modalMod && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }}>
+          {/* Backdrop */}
+          <div
+            onClick={() => setModalMod(null)}
+            style={{
+              position: 'absolute', inset: 0,
+              background: 'rgba(0,0,0,.72)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+            }}
+          />
+          {/* Panel */}
+          <div style={{
+            position: 'absolute',
+            top: '4%', left: '5%', right: '5%', bottom: '4%',
+            background: 'var(--sf)',
+            borderRadius: 20,
+            overflow: 'hidden',
+            boxShadow: '0 40px 120px rgba(0,0,0,.65)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            <iframe
+              src={`/api/ui/modules/${modalMod}/widget?modal=1`}
+              sandbox="allow-scripts allow-same-origin"
+              scrolling="no"
+              title="Widget source picker"
+              style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}
+            />
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Page dots ── */}

@@ -331,6 +331,25 @@ async def save_layout(request: Request) -> dict[str, Any]:
     return {"ok": True}
 
 
+# ---------- Settings sync (theme / language) across all browsers ----------
+
+class SettingsBody(BaseModel):
+    theme: str | None = None
+    language: str | None = None
+
+@router.post("/settings")
+async def save_settings(body: SettingsBody) -> dict[str, Any]:
+    """Broadcast a settings change to all connected browsers via SSE."""
+    payload: dict[str, Any] = {}
+    if body.theme is not None:
+        payload["theme"] = body.theme
+    if body.language is not None:
+        payload["language"] = body.language
+    if payload:
+        broadcast_event("settings_changed", payload)
+    return {"ok": True}
+
+
 # ---------- Module Content Proxy ----------
 
 def _get_module_or_404(name: str):
