@@ -723,7 +723,7 @@ function UserRow({
                                     <Smile size={16} />
                                 </button>
                                 {emojiOpen && (
-                                    <div className="absolute right-0 top-full mt-1 z-50 bg-zinc-800 border border-zinc-700 rounded-lg p-2 shadow-xl grid grid-cols-8 gap-1 w-72">
+                                    <div className="absolute right-0 bottom-full mb-1 z-50 bg-zinc-800 border border-zinc-700 rounded-lg p-2 shadow-xl grid grid-cols-8 gap-1 w-72">
                                         {['😀', '😂', '😍', '😎', '🥳', '😢', '😡', '🔥', '✅', '❌', '⚡', '💡', '🔔', '📢', '🏠', '🌡️', '💧', '🎉', '👋', '❤️', '⭐', '🚀', '🛡️', '⏰', '🔒', '📱', '💻', '🎵', '☀️', '🌙', '🌧️', '❄️'].map((e) => (
                                             <button
                                                 key={e}
