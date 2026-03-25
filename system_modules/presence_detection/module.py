@@ -183,6 +183,7 @@ class PresenceDetectionModule(SystemModule):
 
         @router.post("/invite", status_code=201)
         async def create_invite(req: InviteRequest, request: Request) -> JSONResponse:
+
             """Create an invite link + QR code for a person to register their device."""
             if svc._detector is None:
                 raise HTTPException(503, "Not running")
@@ -212,6 +213,25 @@ class PresenceDetectionModule(SystemModule):
             if not invite:
                 raise HTTPException(404, "Invite not found")
             return JSONResponse(invite)
+
+        @router.post("/users/{user_id}/invite", status_code=201)
+        async def invite_device_to_user(user_id: str, req: InviteRequest, request: Request) -> JSONResponse:
+            """Create a QR invite to add a device to an EXISTING presence user."""
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            user = svc._detector.get_user(user_id)
+            if not user:
+                raise HTTPException(404, "User not found")
+            invite = svc._detector.create_invite(user["name"], existing_user_id=user_id)
+            if req.base_url:
+                base = req.base_url.rstrip("/")
+            else:
+                host = request.headers.get("x-forwarded-host") or request.headers.get("host", "localhost")
+                base = f"https://{host}"
+            base = base.replace("http://", "https://")
+            join_url = f"{base}/api/ui/modules/presence-detection/join/{invite['token']}"
+            qr_svg = svc._detector.generate_qr_svg(join_url)
+            return JSONResponse({**invite, "join_url": join_url, "qr_svg": qr_svg}, status_code=201)
 
         @router.get("/join/{token}", response_class=HTMLResponse)
         async def join_page(token: str, request: Request) -> HTMLResponse:

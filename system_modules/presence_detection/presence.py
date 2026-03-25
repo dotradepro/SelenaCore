@@ -414,14 +414,21 @@ class PresenceDetector:
             pass  # column already exists
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS presence_invites (
-                token       TEXT PRIMARY KEY,
-                name        TEXT NOT NULL,
-                created_at  TEXT NOT NULL,
-                expires_at  TEXT NOT NULL,
-                status      TEXT NOT NULL DEFAULT 'pending',
-                user_id     TEXT
+                token            TEXT PRIMARY KEY,
+                name             TEXT NOT NULL,
+                created_at       TEXT NOT NULL,
+                expires_at       TEXT NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'pending',
+                user_id          TEXT,
+                existing_user_id TEXT
             )
         """)
+        # Migration: add existing_user_id if not present (safe for existing DBs)
+        try:
+            self._db.execute("ALTER TABLE presence_invites ADD COLUMN existing_user_id TEXT")
+            self._db.commit()
+        except Exception:
+            pass  # column already exists
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS presence_history (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -687,15 +694,16 @@ class PresenceDetector:
 
     # ── Invite system ─────────────────────────────────────────────────────────
 
-    def create_invite(self, name: str, expires_minutes: int = 15) -> dict:
-        """Create an invite token. Returns {token, name, expires_at, status}."""
+    def create_invite(self, name: str, expires_minutes: int = 15, existing_user_id: str | None = None) -> dict:
+        """Create an invite token. Returns {token, name, expires_at, status, existing_user_id}."""
         token = secrets.token_urlsafe(24)
         now = datetime.now(tz=timezone.utc)
         expires_at = now + timedelta(minutes=expires_minutes)
         if self._db:
             self._db.execute(
-                "INSERT INTO presence_invites (token, name, created_at, expires_at, status) VALUES (?, ?, ?, ?, ?)",
-                (token, name, now.isoformat(), expires_at.isoformat(), "pending"),
+                "INSERT INTO presence_invites (token, name, created_at, expires_at, status, existing_user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (token, name, now.isoformat(), expires_at.isoformat(), "pending", existing_user_id),
             )
             self._db.commit()
         return {
@@ -704,13 +712,15 @@ class PresenceDetector:
             "created_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
             "status": "pending",
+            "existing_user_id": existing_user_id,
         }
 
     def get_invite(self, token: str) -> dict | None:
         if self._db is None:
             return None
         row = self._db.execute(
-            "SELECT token, name, created_at, expires_at, status, user_id FROM presence_invites WHERE token=?",
+            "SELECT token, name, created_at, expires_at, status, user_id, existing_user_id "
+            "FROM presence_invites WHERE token=?",
             (token,),
         ).fetchone()
         if not row:
@@ -718,6 +728,7 @@ class PresenceDetector:
         invite = {
             "token": row[0], "name": row[1], "created_at": row[2],
             "expires_at": row[3], "status": row[4], "user_id": row[5],
+            "existing_user_id": row[6],
         }
         # Check expiry
         if invite["status"] == "pending":
@@ -731,32 +742,50 @@ class PresenceDetector:
         return invite
 
     def complete_invite(self, token: str, ip: str, mac: str, user_agent: str) -> dict | None:
-        """Complete an invite — register the device and create the user."""
+        """Complete an invite — register the device and create/update the user."""
         invite = self.get_invite(token)
         if not invite or invite["status"] != "pending":
             return None
 
-        # Determine device name from User-Agent
         device_name = _parse_device_name(user_agent)
-        name = invite["name"]
-        user_id = name.lower().replace(" ", "-")
-        user_id = "".join(c for c in user_id if c.isalnum() or c == "-") or f"user-{token[:8]}"
 
-        # Avoid duplicate user_id
-        if user_id in self._users:
-            user_id = f"{user_id}-{token[:6]}"
-
-        devices: list[dict] = []
+        # Build new device entries from this request
+        new_devices: list[dict] = []
         if mac and mac != "00:00:00:00:00:00":
-            devices.append({"type": "mac", "address": mac})
+            new_devices.append({"type": "mac", "address": mac})
         if ip:
-            devices.append({"type": "ip", "address": ip})
+            new_devices.append({"type": "ip", "address": ip})
 
-        user = self.add_user({
-            "user_id": user_id,
-            "name": name,
-            "devices": devices,
-        })
+        existing_uid = invite.get("existing_user_id")
+        if existing_uid and existing_uid in self._users:
+            # Append device to the existing presence user (deduplicate by address)
+            existing_user = self._users[existing_uid]
+            merged = list(existing_user.get("devices", []))
+            known = {d["address"] for d in merged}
+            for dev in new_devices:
+                if dev["address"] not in known:
+                    merged.append(dev)
+            self.add_user({
+                "user_id": existing_uid,
+                "name": existing_user["name"],
+                "devices": merged,
+            })
+            user_id = existing_uid
+            name = existing_user["name"]
+            devices = merged
+        else:
+            # Create a new presence user
+            name = invite["name"]
+            user_id = name.lower().replace(" ", "-")
+            user_id = "".join(c for c in user_id if c.isalnum() or c == "-") or f"user-{token[:8]}"
+            if user_id in self._users:
+                user_id = f"{user_id}-{token[:6]}"
+            devices = new_devices
+            self.add_user({
+                "user_id": user_id,
+                "name": name,
+                "devices": devices,
+            })
 
         # Mark invite completed
         if self._db:

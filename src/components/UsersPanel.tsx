@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Users, Plus, Trash2, Edit3, Key, Smartphone, QrCode,
     ChevronDown, ChevronUp, Shield, Check, X, AlertCircle,
-    Eye, EyeOff, RefreshCw, MapPin, Link, LinkOff, Wifi, Bell, Send,
+    Eye, EyeOff, RefreshCw, MapPin, Link, Unlink, Wifi, Bell, Send,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -189,6 +189,10 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [qrData, setQrData] = useState<{ image: string; join_url: string; expires_in: number } | null>(null);
     const [qrLoading, setQrLoading] = useState(false);
+    const [addTrackingOpen, setAddTrackingOpen] = useState(false);
+    const [addTrackingName, setAddTrackingName] = useState('');
+    const [addTrackingLoading, setAddTrackingLoading] = useState(false);
+    const [addTrackingQr, setAddTrackingQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
     const { requestElevation, pinModalProps } = useElevated();
 
     const load = useCallback(async () => {
@@ -243,6 +247,26 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
             setQrData({ image: d.qr_image, join_url: d.join_url, expires_in: d.expires_in });
         } catch { /* ignore */ } finally {
             setQrLoading(false);
+        }
+    };
+
+    const createTrackingInvite = async () => {
+        if (!addTrackingName.trim()) return;
+        setAddTrackingLoading(true);
+        try {
+            const res = await fetch(`${PD}/invite`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: addTrackingName.trim(), base_url: '' }),
+            });
+            if (res.ok) {
+                const d = await res.json();
+                setAddTrackingQr({ qr_svg: d.qr_svg, join_url: d.join_url });
+                setAddTrackingName('');
+                setAddTrackingOpen(false);
+            }
+        } catch { /* ignore */ } finally {
+            setAddTrackingLoading(false);
         }
     };
 
@@ -330,18 +354,58 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                 </div>
             )}
 
-            {/* Unlinked presence users */}
+            {/* Presence tracking section — always visible */}
             {(() => {
                 const unlinked = presenceUsers.filter(p => !p.linked_account_id);
-                if (unlinked.length === 0) return null;
                 return (
                     <div className="mt-6 space-y-3">
                         <div className="flex items-center gap-2">
                             <Wifi size={13} className="text-violet-400" />
-                            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 flex-1">
                                 {t('usersPanel.presenceOnly')}
                             </span>
+                            {canManage && (
+                                <button
+                                    onClick={() => { setAddTrackingOpen((o) => !o); setAddTrackingQr(null); }}
+                                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                                >
+                                    <Plus size={11} />
+                                    {t('usersPanel.presenceAddPerson')}
+                                </button>
+                            )}
                         </div>
+                        {/* Add person form */}
+                        {addTrackingOpen && (
+                            <div className="flex items-center gap-2 p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
+                                <input
+                                    value={addTrackingName}
+                                    onChange={(e) => setAddTrackingName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && createTrackingInvite()}
+                                    placeholder={t('usersPanel.presenceNewPersonName')}
+                                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={createTrackingInvite}
+                                    disabled={!addTrackingName.trim() || addTrackingLoading}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 transition-colors shrink-0"
+                                >
+                                    <QrCode size={12} />
+                                    {addTrackingLoading ? '…' : t('usersPanel.presenceGetQr')}
+                                </button>
+                                <button onClick={() => setAddTrackingOpen(false)} className="text-zinc-600 hover:text-zinc-300">
+                                    <X size={13} />
+                                </button>
+                            </div>
+                        )}
+                        {/* QR result */}
+                        {addTrackingQr && (
+                            <PresenceQrPanel
+                                qrSvg={addTrackingQr.qr_svg}
+                                joinUrl={addTrackingQr.join_url}
+                                onClose={() => setAddTrackingQr(null)}
+                            />
+                        )}
                         {unlinked.map((pu) => (
                             <UnlinkedPresenceRow
                                 key={pu.user_id}
@@ -399,7 +463,7 @@ function UserRow({
     const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'error'>('info');
     const [notifySending, setNotifySending] = useState(false);
     const [notifySent, setNotifySent] = useState(false);
-    const [presenceEditing, setPresenceEditing] = useState(false);
+    const [presenceQr, setPresenceQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
 
     const initial = user.username.slice(0, 1).toUpperCase();
     const canEditThis = isOwner || (canManage && user.role !== 'owner');
@@ -495,6 +559,25 @@ function UserRow({
             body: JSON.stringify({ device_name: newName.trim() }),
         });
         loadDevices();
+    };
+
+    const addPresenceDevice = async () => {
+        if (!presenceUser) return;
+        const res = await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: presenceUser.name, base_url: '' }),
+        });
+        if (res.ok) {
+            const d = await res.json();
+            setPresenceQr({ qr_svg: d.qr_svg, join_url: d.join_url });
+        }
+    };
+
+    const unlinkPresence = async () => {
+        if (!presenceUser) return;
+        await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}/link`, { method: 'DELETE' });
+        onRefresh();
     };
 
     return (
@@ -678,7 +761,7 @@ function UserRow({
                                 </div>
                             )}
 
-                            {/* Presence MAC/IP devices */}
+                            {/* Presence tracking */}
                             {presenceUser && (
                                 <div className="pt-2 border-t border-zinc-800/60">
                                     <div className="flex items-center gap-1 mb-1.5">
@@ -687,38 +770,46 @@ function UserRow({
                                             {t('usersPanel.presenceDevices')}
                                         </span>
                                         {canManage && (
-                                            <button
-                                                onClick={() => setPresenceEditing((e) => !e)}
-                                                className={cn(
-                                                    'p-0.5 transition-colors',
-                                                    presenceEditing ? 'text-violet-400' : 'text-zinc-600 hover:text-zinc-300',
-                                                )}
-                                                title={t('usersPanel.presenceEditTracking')}
-                                            >
-                                                <Edit3 size={10} />
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={addPresenceDevice}
+                                                    className="p-0.5 text-zinc-600 hover:text-violet-400 transition-colors"
+                                                    title={t('usersPanel.presenceDeviceQr')}
+                                                >
+                                                    <QrCode size={10} />
+                                                </button>
+                                                <button
+                                                    onClick={unlinkPresence}
+                                                    className="p-0.5 text-zinc-600 hover:text-red-400 transition-colors"
+                                                    title={t('usersPanel.presenceUnlink')}
+                                                >
+                                                    <Unlink size={10} />
+                                                </button>
+                                            </>
                                         )}
                                     </div>
-                                    {presenceEditing ? (
-                                        <TrackingEditor
-                                            presenceUser={presenceUser}
-                                            onDone={() => { setPresenceEditing(false); onRefresh(); }}
-                                        />
-                                    ) : (
-                                        <div className="space-y-1">
-                                            {presenceUser.devices.map((d, i) => (
-                                                <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
-                                                    <Wifi size={11} className="text-violet-500/60 shrink-0" />
-                                                    <span className="text-zinc-500 uppercase text-[10px] w-7 shrink-0">{d.type}</span>
-                                                    <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
-                                                    <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
-                                                </div>
-                                            ))}
-                                            {presenceUser.devices.length === 0 && (
-                                                <p className="text-[11px] text-zinc-600 italic">{t('usersPanel.noTrackingDevices')}</p>
-                                            )}
+                                    {presenceQr && (
+                                        <div className="mb-2">
+                                            <PresenceQrPanel
+                                                qrSvg={presenceQr.qr_svg}
+                                                joinUrl={presenceQr.join_url}
+                                                onClose={() => setPresenceQr(null)}
+                                            />
                                         </div>
                                     )}
+                                    <div className="space-y-1">
+                                        {presenceUser.devices.map((d, i) => (
+                                            <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+                                                <Wifi size={11} className="text-violet-500/60 shrink-0" />
+                                                <span className="text-zinc-500 uppercase text-[10px] w-7 shrink-0">{d.type}</span>
+                                                <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
+                                                <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                                            </div>
+                                        ))}
+                                        {presenceUser.devices.length === 0 && (
+                                            <p className="text-[11px] text-zinc-600 italic">{t('usersPanel.noTrackingDevices')}</p>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -968,124 +1059,30 @@ const SELECT_PERMS: { key: keyof RolePerms; options: string[] }[] = [
     { key: 'voice_commands', options: ['all', 'basic', 'none'] },
 ];
 
-// ─── Tracking device editor ───────────────────────────────────────────────────
-function TrackingEditor({
-    presenceUser, onDone,
-}: {
-    presenceUser: PresenceUser;
-    onDone: () => void;
-}) {
+// ─── Reusable inline QR panel for presence invites ───────────────────────────
+function PresenceQrPanel({ qrSvg, joinUrl, onClose }: { qrSvg: string; joinUrl: string; onClose: () => void }) {
     const { t } = useTranslation();
-    const [name, setName] = useState(presenceUser.name);
-    const [devices, setDevices] = useState([...presenceUser.devices]);
-    const [newType, setNewType] = useState<'mac' | 'ip'>('mac');
-    const [newAddr, setNewAddr] = useState('');
-    const [saving, setSaving] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-
-    const addDevice = () => {
-        const addr = newAddr.trim();
-        if (!addr) return;
-        setDevices((prev) => [...prev, { type: newType, address: addr }]);
-        setNewAddr('');
-    };
-
-    const removeDevice = (i: number) => setDevices((prev) => prev.filter((_, idx) => idx !== i));
-
-    const save = async () => {
-        setSaving(true);
-        try {
-            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name.trim() || presenceUser.name, devices }),
-            });
-        } catch { /* ignore */ } finally {
-            setSaving(false);
-        }
-        onDone();
-    };
-
-    const deleteUser = async () => {
-        if (!confirm(`${t('usersPanel.presenceDeleteUser')} "${presenceUser.name}"?`)) return;
-        setDeleting(true);
-        try {
-            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, { method: 'DELETE' });
-        } catch { /* ignore */ } finally {
-            setDeleting(false);
-        }
-        onDone();
-    };
-
     return (
-        <div className="space-y-2.5 pt-2">
-            {/* Name */}
-            <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-500 uppercase w-10 shrink-0">Name</span>
-                <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
+        <div className="p-3 bg-zinc-900 border border-violet-500/30 rounded-xl">
+            <div className="flex items-start gap-3">
+                <div
+                    className="w-28 h-28 shrink-0 bg-white rounded-lg p-1 overflow-hidden"
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
                 />
-            </div>
-            {/* Device list */}
-            <div className="space-y-1">
-                {devices.map((d, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs bg-zinc-950 rounded-lg px-3 py-2">
-                        <span className="text-[10px] text-violet-400/70 uppercase w-7 shrink-0">{d.type}</span>
-                        <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
-                        <button onClick={() => removeDevice(i)} className="text-zinc-600 hover:text-red-400 transition-colors p-0.5">
-                            <X size={11} />
-                        </button>
-                    </div>
-                ))}
-                {devices.length === 0 && (
-                    <p className="text-[11px] text-zinc-600 italic px-1">{t('usersPanel.noTrackingDevices')}</p>
-                )}
-            </div>
-            {/* Add device row */}
-            <div className="flex items-center gap-1.5">
-                <select
-                    value={newType}
-                    onChange={(e) => setNewType(e.target.value as 'mac' | 'ip')}
-                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500 w-16 shrink-0"
-                >
-                    <option value="mac">MAC</option>
-                    <option value="ip">IP</option>
-                </select>
-                <input
-                    value={newAddr}
-                    onChange={(e) => setNewAddr(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && addDevice()}
-                    placeholder={t('usersPanel.presenceAddrPlaceholder')}
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
-                />
-                <button
-                    onClick={addDevice}
-                    disabled={!newAddr.trim()}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-40 transition-colors shrink-0"
-                >
-                    <Plus size={11} />
-                    {t('usersPanel.presenceAddDevice')}
-                </button>
-            </div>
-            {/* Footer actions */}
-            <div className="flex items-center gap-2 pt-0.5">
-                <button
-                    onClick={deleteUser}
-                    disabled={deleting}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors disabled:opacity-50"
-                >
-                    <Trash2 size={10} />
-                    {t('usersPanel.presenceDeleteUser')}
-                </button>
-                <button
-                    onClick={save}
-                    disabled={saving}
-                    className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 transition-colors"
-                >
-                    <Check size={11} />
-                    {saving ? '…' : t('usersPanel.presenceSave')}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                    <p className="text-xs font-medium text-zinc-200">{t('usersPanel.presenceQrTitle')}</p>
+                    <p className="text-[11px] text-zinc-500">{t('usersPanel.presenceQrDesc')}</p>
+                    <a
+                        href={joinUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-violet-400 hover:underline break-all block"
+                    >
+                        {joinUrl}
+                    </a>
+                </div>
+                <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 shrink-0 mt-0.5">
+                    <X size={13} />
                 </button>
             </div>
         </div>
@@ -1104,7 +1101,8 @@ function UnlinkedPresenceRow({
     const { t } = useTranslation();
     const [linking, setLinking] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState('');
-    const [expanded, setExpanded] = useState(false);
+    const [qr, setQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     const doLink = async () => {
         if (!selectedAccount) return;
@@ -1118,6 +1116,29 @@ function UnlinkedPresenceRow({
             onRefresh();
         } catch { /* ignore */ } finally {
             setLinking(false);
+        }
+    };
+
+    const addDevice = async () => {
+        const res = await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: presenceUser.name, base_url: '' }),
+        });
+        if (res.ok) {
+            const d = await res.json();
+            setQr({ qr_svg: d.qr_svg, join_url: d.join_url });
+        }
+    };
+
+    const deleteUser = async () => {
+        if (!confirm(`${t('usersPanel.presenceDeleteUser')} "${presenceUser.name}"?`)) return;
+        setDeleting(true);
+        try {
+            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, { method: 'DELETE' });
+            onRefresh();
+        } catch { /* ignore */ } finally {
+            setDeleting(false);
         }
     };
 
@@ -1163,24 +1184,30 @@ function UnlinkedPresenceRow({
                             {t('usersPanel.linkBtn')}
                         </button>
                         <button
-                            onClick={() => setExpanded((e) => !e)}
-                            className={cn(
-                                'p-1.5 rounded-lg transition-colors',
-                                expanded ? 'text-violet-400 bg-violet-500/10' : 'text-zinc-600 hover:text-zinc-300',
-                            )}
-                            title={t('usersPanel.presenceEditTracking')}
+                            onClick={addDevice}
+                            className="p-1.5 text-zinc-600 hover:text-violet-400 transition-colors"
+                            title={t('usersPanel.presenceDeviceQr')}
                         >
-                            <Edit3 size={12} />
+                            <QrCode size={13} />
+                        </button>
+                        <button
+                            onClick={deleteUser}
+                            disabled={deleting}
+                            className="p-1.5 text-zinc-600 hover:text-red-400 transition-colors"
+                            title={t('usersPanel.presenceDeleteUser')}
+                        >
+                            <Trash2 size={13} />
                         </button>
                     </div>
                 )}
             </div>
-            {/* Editor panel */}
-            {expanded && (
-                <div className="px-4 pb-4 border-t border-zinc-800/60 bg-zinc-950/40">
-                    <TrackingEditor
-                        presenceUser={presenceUser}
-                        onDone={() => { setExpanded(false); onRefresh(); }}
+            {/* QR panel */}
+            {qr && (
+                <div className="px-4 pb-4 border-t border-zinc-800/60 bg-zinc-950/40 pt-3">
+                    <PresenceQrPanel
+                        qrSvg={qr.qr_svg}
+                        joinUrl={qr.join_url}
+                        onClose={() => setQr(null)}
                     />
                 </div>
             )}
