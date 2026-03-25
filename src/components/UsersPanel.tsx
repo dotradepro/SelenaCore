@@ -3,12 +3,13 @@
  * Talks to /api/ui/modules/user-manager/ endpoints.
  * Auth: X-Device-Token header + X-Elevated-Token for sensitive ops.
  */
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     Users, Plus, Trash2, Edit3, Key, Smartphone, QrCode,
     ChevronDown, ChevronUp, Shield, Check, X, AlertCircle,
-    Eye, EyeOff, RefreshCw, MapPin, Link, Wifi, Bell, Send,
+    Eye, EyeOff, RefreshCw, MapPin, Link, Wifi, Bell, Send, Smile,
+    Info, AlertTriangle, Siren,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -321,6 +322,8 @@ function UserRow({
     const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'critical'>('info');
     const [notifySending, setNotifySending] = useState(false);
     const [notifySent, setNotifySent] = useState(false);
+    const [emojiOpen, setEmojiOpen] = useState(false);
+    const notifyRef = useRef<HTMLTextAreaElement>(null);
     const [presenceQr, setPresenceQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
     const [setupTrackingQr, setSetupTrackingQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
 
@@ -702,20 +705,59 @@ function UserRow({
                     {activeDetailTab === 'notify' && (
                         <div className="px-4 py-3 bg-zinc-950/40 space-y-3">
                             <p className="text-[11px] text-zinc-500">{t('usersPanel.notifyDesc')}</p>
-                            <textarea
-                                value={notifyMsg}
-                                onChange={(e) => setNotifyMsg(e.target.value)}
-                                placeholder={t('usersPanel.notifyPlaceholder')}
-                                rows={3}
-                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 resize-none focus:outline-none focus:border-violet-500"
-                            />
+                            <div className="relative">
+                                <textarea
+                                    ref={notifyRef}
+                                    value={notifyMsg}
+                                    onChange={(e) => setNotifyMsg(e.target.value)}
+                                    placeholder={t('usersPanel.notifyPlaceholder')}
+                                    rows={3}
+                                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 pr-9 text-sm text-zinc-100 resize-none focus:outline-none focus:border-violet-500"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setEmojiOpen(!emojiOpen)}
+                                    className="absolute right-2 top-2 p-0.5 text-zinc-500 hover:text-zinc-300 transition-colors"
+                                    title="Emoji"
+                                >
+                                    <Smile size={16} />
+                                </button>
+                                {emojiOpen && (
+                                    <div className="absolute right-0 top-full mt-1 z-50 bg-zinc-800 border border-zinc-700 rounded-lg p-2 shadow-xl grid grid-cols-8 gap-1 w-72">
+                                        {['😀', '😂', '😍', '😎', '🥳', '😢', '😡', '🔥', '✅', '❌', '⚡', '💡', '🔔', '📢', '🏠', '🌡️', '💧', '🎉', '👋', '❤️', '⭐', '🚀', '🛡️', '⏰', '🔒', '📱', '💻', '🎵', '☀️', '🌙', '🌧️', '❄️'].map((e) => (
+                                            <button
+                                                key={e}
+                                                type="button"
+                                                onClick={() => {
+                                                    const ta = notifyRef.current;
+                                                    if (ta) {
+                                                        const s = ta.selectionStart ?? notifyMsg.length;
+                                                        setNotifyMsg(notifyMsg.slice(0, s) + e + notifyMsg.slice(s));
+                                                        setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = s + e.length; }, 0);
+                                                    } else {
+                                                        setNotifyMsg(notifyMsg + e);
+                                                    }
+                                                    setEmojiOpen(false);
+                                                }}
+                                                className="text-lg hover:bg-zinc-700 rounded p-0.5 leading-none transition-colors"
+                                            >
+                                                {e}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex items-center gap-2">
-                                {(['info', 'warning', 'critical'] as const).map((lvl) => (
+                                {([
+                                    { lvl: 'info' as const, icon: <Info size={11} />, emoji: 'ℹ️' },
+                                    { lvl: 'warning' as const, icon: <AlertTriangle size={11} />, emoji: '⚠️' },
+                                    { lvl: 'critical' as const, icon: <Siren size={11} />, emoji: '🚨' },
+                                ]).map(({ lvl, icon }) => (
                                     <button
                                         key={lvl}
                                         onClick={() => setNotifyLevel(lvl)}
                                         className={cn(
-                                            'px-2.5 py-1 text-[11px] font-medium rounded border transition-colors',
+                                            'flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded border transition-colors',
                                             notifyLevel === lvl
                                                 ? lvl === 'info'
                                                     ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
@@ -725,7 +767,7 @@ function UserRow({
                                                 : 'bg-zinc-800 border-zinc-700 text-zinc-500',
                                         )}
                                     >
-                                        {lvl}
+                                        {icon} {lvl}
                                     </button>
                                 ))}
                                 <button

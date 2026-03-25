@@ -229,13 +229,20 @@ class NotificationRouter:
             resp = await client.post(url, json={"chat_id": chat_id, "text": message})
             return resp.status_code == 200
 
+    _LEVEL_EMOJI = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}
+
     async def _deliver_push(self, config: dict, message: str, level: str) -> bool:
         push_url = config.get(
             "push_url",
             "http://localhost:7070/api/ui/modules/presence-detection/push/send",
         )
         user_id = config.get("user_id")  # None = send to all
-        payload: dict = {"title": f"Selena [{level.upper()}]", "body": message}
+        emoji = self._LEVEL_EMOJI.get(level, "ℹ️")
+        payload: dict = {
+            "title": f"{emoji} Selena — {level.upper()}",
+            "body": message,
+            "data": {"level": level, "tag": f"selena-{level}"},
+        }
         if user_id:
             payload["user_id"] = user_id
         async with httpx.AsyncClient(timeout=10.0) as client:
