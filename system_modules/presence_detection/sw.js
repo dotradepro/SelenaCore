@@ -20,9 +20,9 @@ self.addEventListener('push', function (event) {
     var options = {
         body: data.body || '',
         icon: '/api/ui/modules/presence-detection/icon.svg',
-        badge: '/api/ui/modules/presence-detection/icon.svg',
         data: data.data || {},
-        requireInteraction: false
+        requireInteraction: false,
+        tag: (data.data && data.data.tag) || 'selena-notification'
     };
     event.waitUntil(
         self.registration.showNotification(data.title || 'SelenaCore', options)

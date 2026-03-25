@@ -348,6 +348,12 @@ class PresenceDetectionModule(SystemModule):
                 headers={"Service-Worker-Allowed": "/"},
             )
 
+        @router.get("/icon.svg")
+        async def icon_svg() -> Response:
+            f = _MODULE_DIR / "icon.svg"
+            content = f.read_text() if f.exists() else '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#1e293b"/></svg>'
+            return Response(content=content, media_type="image/svg+xml")
+
         @router.get("/push/vapid-public-key")
         async def vapid_public_key() -> JSONResponse:
             if svc._detector is None:
