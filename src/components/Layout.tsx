@@ -246,12 +246,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={() => navigate('/settings/users')}
               style={{
                 width: 30, height: 30, borderRadius: '50%',
-                border: `2px solid ${
-                  user.role === 'owner' ? '#7c3aed'
-                  : user.role === 'admin' ? '#3b82f6'
-                  : user.role === 'user' ? '#10b981'
-                  : '#52525b'
-                }`,
+                border: `2px solid ${user.role === 'owner' ? '#7c3aed'
+                    : user.role === 'admin' ? '#3b82f6'
+                      : user.role === 'user' ? '#10b981'
+                        : '#52525b'
+                  }`,
                 background: 'var(--sf3)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 11, fontWeight: 700,

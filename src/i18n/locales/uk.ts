@@ -443,6 +443,11 @@ const uk = {
             confirm: 'Підтвердити',
             pinIncorrect: 'Невірний PIN',
             elevatedExpired: 'Сесія завершилась — підтвердіть PIN знову.',
+            wallSubtitle: 'Доступ обмежено',
+            wallNotice: 'Цей браузер не зареєстровано. Введіть імʼя користувача і PIN для продовження.',
+            wallEnter: 'Увійти',
+            wallFooter: 'SmartHome LK · Локальний хаб',
+            optional: 'необовʼязково',
         },
     },
 } as const;

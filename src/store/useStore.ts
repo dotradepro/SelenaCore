@@ -131,6 +131,7 @@ interface AppState {
   initThemeListener: () => () => void;
   wizardRequirements: WizardRequirements | null;
   user: AuthUser | null;
+  authLoading: boolean;
   elevatedToken: string | null;
   health: Health | null;
   stats: SystemStats | null;
@@ -226,6 +227,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   wizardRequirements: null,
   user: null,
+  authLoading: true,
   elevatedToken: null,
   health: null,
   stats: null,
@@ -245,6 +247,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* ignore */ }
   },
   initAuth: async () => {
+    set({ authLoading: true });
     // Restore elevated token from sessionStorage (survives page refresh)
     try {
       const saved = sessionStorage.getItem('selena_elevated');
@@ -259,7 +262,7 @@ export const useStore = create<AppState>((set, get) => ({
     } catch { /* ignore */ }
 
     if (!token) {
-      set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false } });
+      set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false }, authLoading: false });
       return;
     }
 
@@ -278,12 +281,13 @@ export const useStore = create<AppState>((set, get) => ({
             device_id: data.device_id ?? null,
             authenticated: data.authenticated ?? true,
           },
+          authLoading: false,
         });
         return;
       }
     } catch { /* network error — fall through to guest */ }
 
-    set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false } });
+    set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false }, authLoading: false });
   },
   setSetupStage: (stage) => set({ setupStage: stage }),
   setVoiceStatus: (voiceStatus: 'idle' | 'listening' | 'speaking') => set({ voiceStatus }),

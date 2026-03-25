@@ -443,6 +443,11 @@ const en = {
             confirm: 'Confirm',
             pinIncorrect: 'Incorrect PIN',
             elevatedExpired: 'Session expired — please confirm PIN again.',
+            wallSubtitle: 'Access restricted',
+            wallNotice: 'This browser is not registered. Log in with your username and PIN to continue.',
+            wallEnter: 'Sign in',
+            wallFooter: 'SmartHome LK · Local hub',
+            optional: 'optional',
         },
     },
 } as const;

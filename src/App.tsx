@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
+import type { AuthUser } from './store/useStore';
 import Wizard from './components/Wizard';
 import LanguageSelect from './components/LanguageSelect';
 import Layout from './components/Layout';
@@ -10,7 +11,7 @@ import ModuleDetail from './components/ModuleDetail';
 import SystemPage from './components/SystemPage';
 import IntegrityPage from './components/IntegrityPage';
 import Settings from './components/Settings';
-import DeviceAuthBanner from './components/DeviceAuthBanner';
+import AuthWall from './components/AuthWall';
 
 // Hide cursor when running on kiosk device (?kiosk=1)
 const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
@@ -31,6 +32,8 @@ export default function App() {
   const connectSyncStream = useStore((state) => state.connectSyncStream);
   const initThemeListener = useStore((state) => state.initThemeListener);
   const initAuth = useStore((state) => state.initAuth);
+  const user = useStore((state) => state.user);
+  const authLoading = useStore((state) => state.authLoading);
 
   useEffect(() => {
     fetchWizardStatus();
@@ -80,18 +83,50 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <DeviceAuthBanner />
-      <Layout>
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/modules" element={<Modules />} />
-          <Route path="/modules/:name" element={<ModuleDetail />} />
-          <Route path="/system" element={<SystemPage />} />
-          <Route path="/integrity" element={<IntegrityPage />} />
-          <Route path="/settings/*" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Layout>
+      <AuthGate authLoading={authLoading} user={user}>
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/modules" element={<Modules />} />
+            <Route path="/modules/:name" element={<ModuleDetail />} />
+            <Route path="/system" element={<SystemPage />} />
+            <Route path="/integrity" element={<IntegrityPage />} />
+            <Route path="/settings/*" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Layout>
+      </AuthGate>
     </BrowserRouter>
   );
+}
+
+// ─── AuthGate ──────────────────────────────────────────────────────────────────
+// Wraps the entire app. Shows a spinner while auth is resolving,
+// then shows AuthWall for unregistered browsers (unless running as kiosk).
+function AuthGate({
+  authLoading,
+  user,
+  children,
+}: {
+  authLoading: boolean;
+  user: AuthUser | null;
+  children: ReactNode;
+}) {
+  // Kiosk device (?kiosk=1) is always trusted — token comes from wizard
+  const isAuthenticated = !authLoading && user?.authenticated === true;
+  const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
+
+  if (authLoading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+        <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isKiosk && !isAuthenticated) {
+    return <AuthWall />;
+  }
+
+  return <>{children}</>;
 }
