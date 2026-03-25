@@ -411,6 +411,13 @@ const uk = {
             tab_detail_notify: 'Сповіщення',
             registeredSessions: 'Зареєстровані сесії',
             editDevice: 'Перейменувати',
+            presenceEditTracking: 'Редагувати трекінг',
+            presenceAddDevice: 'Додати',
+            presenceAddrPlaceholder: 'напр. AA:BB:CC:DD:EE:FF або 192.168.1.10',
+            presenceDeleteUser: 'Видалити трек. профіль',
+            presenceSave: 'Зберегти',
+            noTrackingDevices: 'Немає пристроїв трекінгу',
+
             notifyDesc: 'Надіслати сповіщення в усі налаштовані канали.',
             notifyPlaceholder: 'Текст повідомлення…',
             sendNotify: 'Надіслати',

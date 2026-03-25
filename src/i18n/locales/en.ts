@@ -411,6 +411,13 @@ const en = {
             tab_detail_notify: 'Notify',
             registeredSessions: 'Registered sessions',
             editDevice: 'Rename',
+            presenceEditTracking: 'Edit tracking',
+            presenceAddDevice: 'Add',
+            presenceAddrPlaceholder: 'e.g. AA:BB:CC:DD:EE:FF or 192.168.1.10',
+            presenceDeleteUser: 'Delete tracking user',
+            presenceSave: 'Save',
+            noTrackingDevices: 'No tracking devices',
+
             notifyDesc: 'Send a notification to all configured channels.',
             notifyPlaceholder: 'Message text…',
             sendNotify: 'Send',

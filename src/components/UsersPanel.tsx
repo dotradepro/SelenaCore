@@ -399,6 +399,7 @@ function UserRow({
     const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'error'>('info');
     const [notifySending, setNotifySending] = useState(false);
     const [notifySent, setNotifySent] = useState(false);
+    const [presenceEditing, setPresenceEditing] = useState(false);
 
     const initial = user.username.slice(0, 1).toUpperCase();
     const canEditThis = isOwner || (canManage && user.role !== 'owner');
@@ -678,22 +679,46 @@ function UserRow({
                             )}
 
                             {/* Presence MAC/IP devices */}
-                            {presenceUser && presenceUser.devices.length > 0 && (
+                            {presenceUser && (
                                 <div className="pt-2 border-t border-zinc-800/60">
-                                    <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex items-center gap-1 mb-1.5">
-                                        <Wifi size={9} />
-                                        {t('usersPanel.presenceDevices')}
-                                    </span>
-                                    <div className="space-y-1">
-                                        {presenceUser.devices.map((d, i) => (
-                                            <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
-                                                <Wifi size={11} className="text-violet-500/60 shrink-0" />
-                                                <span className="text-zinc-500 uppercase text-[10px] w-7 shrink-0">{d.type}</span>
-                                                <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
-                                                <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
-                                            </div>
-                                        ))}
+                                    <div className="flex items-center gap-1 mb-1.5">
+                                        <Wifi size={9} className="text-zinc-600" />
+                                        <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex-1">
+                                            {t('usersPanel.presenceDevices')}
+                                        </span>
+                                        {canManage && (
+                                            <button
+                                                onClick={() => setPresenceEditing((e) => !e)}
+                                                className={cn(
+                                                    'p-0.5 transition-colors',
+                                                    presenceEditing ? 'text-violet-400' : 'text-zinc-600 hover:text-zinc-300',
+                                                )}
+                                                title={t('usersPanel.presenceEditTracking')}
+                                            >
+                                                <Edit3 size={10} />
+                                            </button>
+                                        )}
                                     </div>
+                                    {presenceEditing ? (
+                                        <TrackingEditor
+                                            presenceUser={presenceUser}
+                                            onDone={() => { setPresenceEditing(false); onRefresh(); }}
+                                        />
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {presenceUser.devices.map((d, i) => (
+                                                <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+                                                    <Wifi size={11} className="text-violet-500/60 shrink-0" />
+                                                    <span className="text-zinc-500 uppercase text-[10px] w-7 shrink-0">{d.type}</span>
+                                                    <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
+                                                    <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                                                </div>
+                                            ))}
+                                            {presenceUser.devices.length === 0 && (
+                                                <p className="text-[11px] text-zinc-600 italic">{t('usersPanel.noTrackingDevices')}</p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -943,6 +968,130 @@ const SELECT_PERMS: { key: keyof RolePerms; options: string[] }[] = [
     { key: 'voice_commands', options: ['all', 'basic', 'none'] },
 ];
 
+// ─── Tracking device editor ───────────────────────────────────────────────────
+function TrackingEditor({
+    presenceUser, onDone,
+}: {
+    presenceUser: PresenceUser;
+    onDone: () => void;
+}) {
+    const { t } = useTranslation();
+    const [name, setName] = useState(presenceUser.name);
+    const [devices, setDevices] = useState([...presenceUser.devices]);
+    const [newType, setNewType] = useState<'mac' | 'ip'>('mac');
+    const [newAddr, setNewAddr] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    const addDevice = () => {
+        const addr = newAddr.trim();
+        if (!addr) return;
+        setDevices((prev) => [...prev, { type: newType, address: addr }]);
+        setNewAddr('');
+    };
+
+    const removeDevice = (i: number) => setDevices((prev) => prev.filter((_, idx) => idx !== i));
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name.trim() || presenceUser.name, devices }),
+            });
+        } catch { /* ignore */ } finally {
+            setSaving(false);
+        }
+        onDone();
+    };
+
+    const deleteUser = async () => {
+        if (!confirm(`${t('usersPanel.presenceDeleteUser')} "${presenceUser.name}"?`)) return;
+        setDeleting(true);
+        try {
+            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, { method: 'DELETE' });
+        } catch { /* ignore */ } finally {
+            setDeleting(false);
+        }
+        onDone();
+    };
+
+    return (
+        <div className="space-y-2.5 pt-2">
+            {/* Name */}
+            <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-500 uppercase w-10 shrink-0">Name</span>
+                <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+            </div>
+            {/* Device list */}
+            <div className="space-y-1">
+                {devices.map((d, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs bg-zinc-950 rounded-lg px-3 py-2">
+                        <span className="text-[10px] text-violet-400/70 uppercase w-7 shrink-0">{d.type}</span>
+                        <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
+                        <button onClick={() => removeDevice(i)} className="text-zinc-600 hover:text-red-400 transition-colors p-0.5">
+                            <X size={11} />
+                        </button>
+                    </div>
+                ))}
+                {devices.length === 0 && (
+                    <p className="text-[11px] text-zinc-600 italic px-1">{t('usersPanel.noTrackingDevices')}</p>
+                )}
+            </div>
+            {/* Add device row */}
+            <div className="flex items-center gap-1.5">
+                <select
+                    value={newType}
+                    onChange={(e) => setNewType(e.target.value as 'mac' | 'ip')}
+                    className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500 w-16 shrink-0"
+                >
+                    <option value="mac">MAC</option>
+                    <option value="ip">IP</option>
+                </select>
+                <input
+                    value={newAddr}
+                    onChange={(e) => setNewAddr(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addDevice()}
+                    placeholder={t('usersPanel.presenceAddrPlaceholder')}
+                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-violet-500"
+                />
+                <button
+                    onClick={addDevice}
+                    disabled={!newAddr.trim()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-40 transition-colors shrink-0"
+                >
+                    <Plus size={11} />
+                    {t('usersPanel.presenceAddDevice')}
+                </button>
+            </div>
+            {/* Footer actions */}
+            <div className="flex items-center gap-2 pt-0.5">
+                <button
+                    onClick={deleteUser}
+                    disabled={deleting}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors disabled:opacity-50"
+                >
+                    <Trash2 size={10} />
+                    {t('usersPanel.presenceDeleteUser')}
+                </button>
+                <button
+                    onClick={save}
+                    disabled={saving}
+                    className="ml-auto flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 transition-colors"
+                >
+                    <Check size={11} />
+                    {saving ? '…' : t('usersPanel.presenceSave')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // ─── Unlinked presence row ────────────────────────────────────────────────────
 function UnlinkedPresenceRow({
     presenceUser, accounts, canManage, onRefresh,
@@ -955,6 +1104,7 @@ function UnlinkedPresenceRow({
     const { t } = useTranslation();
     const [linking, setLinking] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState('');
+    const [expanded, setExpanded] = useState(false);
 
     const doLink = async () => {
         if (!selectedAccount) return;
@@ -975,41 +1125,63 @@ function UnlinkedPresenceRow({
     const macDevices = presenceUser.devices.filter(d => d.type === 'mac');
 
     return (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-zinc-700/50 flex items-center justify-center text-sm font-bold text-zinc-400 shrink-0">
-                {initial}
-            </div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-zinc-300 truncate">{presenceUser.name}</span>
-                    <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
+            {/* Header row */}
+            <div className="px-4 py-3 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-zinc-700/50 flex items-center justify-center text-sm font-bold text-zinc-400 shrink-0">
+                    {initial}
                 </div>
-                {macDevices.length > 0 && (
-                    <p className="text-[11px] text-zinc-600 mt-0.5 truncate">
-                        {macDevices.map(d => d.address).join(', ')}
-                    </p>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-zinc-300 truncate">{presenceUser.name}</span>
+                        <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                    </div>
+                    {macDevices.length > 0 && (
+                        <p className="text-[11px] text-zinc-600 mt-0.5 truncate">
+                            {macDevices.map(d => d.address).join(', ')}
+                        </p>
+                    )}
+                </div>
+                {canManage && (
+                    <div className="flex items-center gap-2 shrink-0">
+                        <select
+                            value={selectedAccount}
+                            onChange={(e) => setSelectedAccount(e.target.value)}
+                            className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-50 focus:outline-none focus:border-violet-500"
+                        >
+                            <option value="">{t('usersPanel.linkSelect')}</option>
+                            {accounts.map((a) => (
+                                <option key={a.user_id} value={a.user_id}>{a.username}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={doLink}
+                            disabled={!selectedAccount || linking}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <Link size={11} />
+                            {t('usersPanel.linkBtn')}
+                        </button>
+                        <button
+                            onClick={() => setExpanded((e) => !e)}
+                            className={cn(
+                                'p-1.5 rounded-lg transition-colors',
+                                expanded ? 'text-violet-400 bg-violet-500/10' : 'text-zinc-600 hover:text-zinc-300',
+                            )}
+                            title={t('usersPanel.presenceEditTracking')}
+                        >
+                            <Edit3 size={12} />
+                        </button>
+                    </div>
                 )}
             </div>
-            {canManage && (
-                <div className="flex items-center gap-2 shrink-0">
-                    <select
-                        value={selectedAccount}
-                        onChange={(e) => setSelectedAccount(e.target.value)}
-                        className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-50 focus:outline-none focus:border-violet-500"
-                    >
-                        <option value="">{t('usersPanel.linkSelect')}</option>
-                        {accounts.map((a) => (
-                            <option key={a.user_id} value={a.user_id}>{a.username}</option>
-                        ))}
-                    </select>
-                    <button
-                        onClick={doLink}
-                        disabled={!selectedAccount || linking}
-                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <Link size={11} />
-                        {t('usersPanel.linkBtn')}
-                    </button>
+            {/* Editor panel */}
+            {expanded && (
+                <div className="px-4 pb-4 border-t border-zinc-800/60 bg-zinc-950/40">
+                    <TrackingEditor
+                        presenceUser={presenceUser}
+                        onDone={() => { setExpanded(false); onRefresh(); }}
+                    />
                 </div>
             )}
         </div>
