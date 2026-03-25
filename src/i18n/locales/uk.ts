@@ -406,6 +406,7 @@ const uk = {
             noDevices: 'Немає зареєстрованих пристроїв',
             revokeDevice: 'Скасувати доступ пристрою',
             presenceHome: 'вдома',
+            presenceDevices: 'Трекінг присутності',
             presenceAway: 'відсутній',
             presenceLeaving: 'піде через {{min}}хв',
             presenceOnly: 'Трекінг присутності — обліковий запис не прив’язано',

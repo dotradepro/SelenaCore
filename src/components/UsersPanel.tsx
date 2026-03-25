@@ -618,6 +618,25 @@ function UserRow({
                             ))}
                         </div>
                     )}
+                    {/* Presence MAC/IP devices */}
+                    {presenceUser && presenceUser.devices.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-zinc-800/60">
+                            <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex items-center gap-1 mb-1">
+                                <Wifi size={9} />
+                                {t('usersPanel.presenceDevices')}
+                            </span>
+                            <div className="space-y-1">
+                                {presenceUser.devices.map((d, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                        <Wifi size={11} className="text-violet-500/60 shrink-0" />
+                                        <span className="text-zinc-500 uppercase text-[10px] w-7">{d.type}</span>
+                                        <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
+                                        <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -834,6 +853,9 @@ function UnlinkedPresenceRow({
 
 // ─── Roles editor ─────────────────────────────────────────────────────────────
 function RolesEditor() {
+    const { t } = useTranslation();
+    const [roles, setRoles] = useState<string[]>([]);
+    const [selected, setSelected] = useState<string>('');
     const [perms, setPerms] = useState<RolePerms | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);

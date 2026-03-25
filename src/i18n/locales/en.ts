@@ -406,6 +406,7 @@ const en = {
             noDevices: 'No registered devices',
             revokeDevice: 'Revoke device access',
             presenceHome: 'home',
+            presenceDevices: 'Presence tracking',
             presenceAway: 'away',
             presenceLeaving: 'away in {{min}}m',
             presenceOnly: 'Presence tracking — no account linked',
