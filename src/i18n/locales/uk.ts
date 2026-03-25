@@ -457,6 +457,7 @@ const uk = {
             qrOpenLink: 'Підтвердити доступ',
             qrExpired: 'QR-код застарів.',
             qrRefresh: 'Згенерувати новий код',
+            qrTimer: 'Дійсний',
         },
         kiosk: {
             restrictedTitle: 'Закритий розділ',

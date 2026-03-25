@@ -457,6 +457,7 @@ const en = {
             qrOpenLink: 'Approve link',
             qrExpired: 'QR code has expired.',
             qrRefresh: 'Generate new code',
+            qrTimer: 'Valid for',
         },
         kiosk: {
             restrictedTitle: 'Restricted section',

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import socket
 import time
 import uuid
 from dataclasses import asdict
@@ -42,6 +43,17 @@ from system_modules.user_manager.profiles import (
 logger = logging.getLogger(__name__)
 
 DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:////var/lib/selena/selena.db")
+
+
+def _get_lan_ip() -> str:
+    """Return the primary LAN IP of this host (not loopback)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
+            _s.settimeout(0.05)
+            _s.connect(("8.8.8.8", 80))
+            return _s.getsockname()[0]
+    except Exception:
+        return ""
 
 _DEVICE_COOKIE = "selena_device"
 _ELEVATED_HEADER = "X-Elevated-Token"
@@ -339,7 +351,23 @@ class UserManagerModule(SystemModule):
             }
             mod._cleanup_qr_sessions()
 
-            base = str(request.base_url).rstrip("/")
+            # Build a join URL that the *phone* can reach.
+            # If the request came from localhost/127.0.0.1 (kiosk) we swap in the
+            # actual LAN IP + UI port so the QR encodes a reachable address.
+            x_proto = request.headers.get("x-forwarded-proto", "http")
+            host_hdr = (
+                request.headers.get("x-forwarded-host")
+                or request.headers.get("host")
+                or ""
+            )
+            hostname = host_hdr.split(":")[0]
+            if hostname in ("localhost", "127.0.0.1", "::1", ""):
+                lan_ip = _get_lan_ip()
+                ui_port = int(os.environ.get("UI_PORT", "80"))
+                port_sfx = "" if ui_port == 80 else f":{ui_port}"
+                base = f"{x_proto}://{lan_ip}{port_sfx}" if lan_ip else str(request.base_url).rstrip("/")
+            else:
+                base = f"{x_proto}://{host_hdr}"
             join_url = f"{base}/api/ui/modules/user-manager/auth/qr/join/{session_id}"
 
             qr_image: str | None = None
@@ -387,6 +415,25 @@ class UserManagerModule(SystemModule):
                 result["user_id"] = session.get("user_id")
                 mod._qr_sessions.pop(session_id, None)
             return result
+
+        @router.get("/auth/qr/info/{session_id}")
+        async def qr_info(session_id: str) -> dict:
+            """Return session metadata (mode, remaining seconds, status).
+
+            Used by the phone's join page to show the correct UI and countdown.
+            """
+            session = mod._qr_sessions.get(session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="QR session not found or expired")
+            remaining = session["expires_at"] - time.time()
+            if remaining <= 0:
+                mod._qr_sessions.pop(session_id, None)
+                raise HTTPException(status_code=410, detail="QR session expired")
+            return {
+                "mode": session["mode"],
+                "status": session["status"],
+                "expires_in_seconds": int(remaining),
+            }
 
         @router.post("/auth/qr/complete/{session_id}", status_code=201)
         async def qr_complete(

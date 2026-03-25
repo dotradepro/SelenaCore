@@ -135,13 +135,16 @@ function QrPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
     const [error, setError] = useState<string | null>(null);
     const [expired, setExpired] = useState(false);
     const [approved, setApproved] = useState(false);
+    const [countdown, setCountdown] = useState<number>(0); // seconds remaining
 
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const expireRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const stop = () => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         if (expireRef.current) { clearTimeout(expireRef.current); expireRef.current = null; }
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     };
 
     const start = async () => {
@@ -157,7 +160,17 @@ function QrPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
             const data = await res.json();
             setQrImage(data.qr_image ?? null);
             setJoinUrl(data.join_url ?? null);
+            const ttl: number = data.expires_in ?? 300;
+            setCountdown(ttl);
             setLoading(false);
+
+            // Countdown ticker
+            timerRef.current = setInterval(() => {
+                setCountdown(prev => {
+                    if (prev <= 1) { clearInterval(timerRef.current!); timerRef.current = null; return 0; }
+                    return prev - 1;
+                });
+            }, 1000);
 
             pollRef.current = setInterval(async () => {
                 try {
@@ -219,6 +232,16 @@ function QrPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
                 <div className="w-40 h-40 rounded-xl border-2 border-dashed flex items-center justify-center"
                     style={{ borderColor: 'var(--b)' }}>
                     <QrCode size={36} style={{ color: 'var(--tx3)' }} />
+                </div>
+            )}
+            {/* Countdown timer */}
+            {countdown > 0 && (
+                <div className={cn(
+                    'flex items-center gap-1 text-xs font-mono tabular-nums',
+                    countdown < 60 ? 'text-red-400' : '',
+                )} style={countdown >= 60 ? { color: 'var(--tx3)' } : {}}>
+                    {t('auth.qrTimer')}&nbsp;
+                    {String(Math.floor(countdown / 60)).padStart(2, '0')}:{String(countdown % 60).padStart(2, '0')}
                 </div>
             )}
             <p className="text-xs text-center" style={{ color: 'var(--tx2)' }}>{t('kiosk.qrDesc')}</p>

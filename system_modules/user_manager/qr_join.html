@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>SelenaCore</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f0f11;
+            color: #e4e4e7;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem
+        }
+
+        .card {
+            background: #18181b;
+            border: 1px solid #27272a;
+            border-radius: 1rem;
+            padding: 2rem;
+            width: 100%;
+            max-width: 360px;
+            box-shadow: 0 20px 60px #0005
+        }
+
+        .logo {
+            width: 44px;
+            height: 44px;
+            background: #7c3aed;
+            border-radius: .75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem
+        }
+
+        .timer {
+            text-align: center;
+            font-size: .75rem;
+            font-variant-numeric: tabular-nums;
+            color: #a1a1aa;
+            margin-bottom: .75rem;
+            height: 1.1em;
+            transition: color .3s
+        }
+
+        .timer.urgent {
+            color: #ef4444
+        }
+
+        h2 {
+            text-align: center;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: .35rem
+        }
+
+        .sub {
+            text-align: center;
+            font-size: .8rem;
+            color: #a1a1aa;
+            margin-bottom: 1.5rem;
+            line-height: 1.5
+        }
+
+        .notice {
+            background: #3f3f46;
+            border: 1px solid #52525b;
+            border-radius: .5rem;
+            padding: .75rem 1rem;
+            font-size: .8rem;
+            color: #a1a1aa;
+            margin-bottom: 1.25rem;
+            line-height: 1.5
+        }
+
+        .input {
+            width: 100%;
+            padding: .75rem 1rem;
+            background: #0f0f11;
+            border: 1px solid #3f3f46;
+            border-radius: .625rem;
+            color: #e4e4e7;
+            font-size: .9rem;
+            margin-bottom: .75rem;
+            outline: none;
+            transition: border-color .15s
+        }
+
+        .input:focus {
+            border-color: #7c3aed
+        }
+
+        .btn {
+            width: 100%;
+            padding: .875rem;
+            background: #7c3aed;
+            color: #fff;
+            border: none;
+            border-radius: .625rem;
+            font-size: .9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background .15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem
+        }
+
+        .btn:hover:not(:disabled) {
+            background: #6d28d9
+        }
+
+        .btn:disabled {
+            opacity: .5;
+            cursor: not-allowed
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #3f3f46;
+            color: #a1a1aa;
+            margin-top: .75rem
+        }
+
+        .btn-outline:hover:not(:disabled) {
+            background: #27272a
+        }
+
+        .msg {
+            display: none;
+            text-align: center;
+            padding: .75rem 1rem;
+            border-radius: .5rem;
+            font-size: .85rem;
+            margin-top: 1rem;
+            line-height: 1.4
+        }
+
+        .msg.ok {
+            background: #14532d33;
+            border: 1px solid #16a34a55;
+            color: #4ade80
+        }
+
+        .msg.err {
+            background: #7f1d1d33;
+            border: 1px solid #dc262655;
+            color: #f87171
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff5;
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .7s linear infinite;
+            flex-shrink: 0
+        }
+
+        .check-circle {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: #14532d33;
+            border: 1px solid #16a34a55;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="logo">
+            <svg viewBox="0 0 14 14" fill="none" width="22" height="22">
+                <path d="M7 1L2 4v5.5L7 13l5-3.5V4L7 1Z" stroke="#fff" stroke-width="1.3" stroke-linejoin="round" />
+                <circle cx="7" cy="7" r="1.8" fill="#fff" />
+            </svg>
+        </div>
+        <div class="timer" id="timer"></div>
+        <h2 id="title" data-i18n="loading">…</h2>
+        <p class="sub" id="subtitle"></p>
+        <div id="content"></div>
+        <p class="msg" id="msg"></p>
+    </div>
+    <script>
+        // ── i18n ──────────────────────────────────────────────────────────────────────
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: {
+                loading: 'Loading…',
+                expired_title: 'QR Code Expired',
+                expired_sub: 'Please generate a new QR code on the device.',
+                not_reg_title: 'Device not registered',
+                not_reg_sub: 'This phone must be registered in SelenaCore first.',
+                not_reg_note: 'Open SelenaCore on this device and register before using QR approval.',
+                token_exp: 'Your session on this device has expired. Please re-register.',
+                approve_title: 'Approve access?',
+                approve_sub: 'Logged in as ',
+                approve_btn: 'Approve access',
+                cancel: 'Cancel',
+                success_title: 'Access approved!',
+                success_sub: 'The device is now unlocked. You may close this tab.',
+                success_msg: '✓ Authorization confirmed',
+                signin_title: 'Sign in to SelenaCore',
+                signin_sub: 'After signing in, this device will be registered.',
+                username: 'Username',
+                pin: 'PIN',
+                dev_name: 'Device name (optional)',
+                register_btn: 'Register this device',
+                reg_ok_title: 'Registered!',
+                reg_ok_sub: 'This device is now registered. The other browser has been authorized.',
+                reg_ok_msg: '✓ Registration complete',
+                net_err: 'Network error',
+                err_generic: 'An error occurred',
+                timer_lbl: 'Code valid for ',
+                timer_exp: 'Code expired',
+                conn_err: 'Connection error'
+            },
+            uk: {
+                loading: 'Завантаження…',
+                expired_title: 'QR-код прострочений',
+                expired_sub: 'Будь ласка, згенеруйте новий QR-код на пристрої.',
+                not_reg_title: 'Пристрій не зареєстровано',
+                not_reg_sub: 'Цей телефон спочатку повинен бути зареєстрований у SelenaCore.',
+                not_reg_note: 'Відкрийте SelenaCore на цьому пристрої та зареєструйтесь.',
+                token_exp: 'Ваша сесія на цьому пристрої прострочена. Будь ласка, зареєструйтесь знову.',
+                approve_title: 'Підтвердити доступ?',
+                approve_sub: 'Увійшли як ',
+                approve_btn: 'Підтвердити доступ',
+                cancel: 'Скасувати',
+                success_title: 'Доступ підтверджено!',
+                success_sub: 'Пристрій розблоковано. Можете закрити цю вкладку.',
+                success_msg: '✓ Авторизацію підтверджено',
+                signin_title: 'Увійти в SelenaCore',
+                signin_sub: 'Після входу цей пристрій буде зареєстровано.',
+                username: 'Ім\'я користувача',
+                pin: 'PIN',
+                dev_name: 'Назва пристрою (необов\'язково)',
+                register_btn: 'Зареєструвати цей пристрій',
+                reg_ok_title: 'Зареєстровано!',
+                reg_ok_sub: 'Цей пристрій зареєстровано. Інший браузер авторизовано.',
+                reg_ok_msg: '✓ Реєстрацію завершено',
+                net_err: 'Помилка мережі',
+                err_generic: 'Виникла помилка',
+                timer_lbl: 'Код дійсний ',
+                timer_exp: 'Код прострочено',
+                conn_err: 'Помилка з\'єднання'
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+
+        // ── Helpers ───────────────────────────────────────────────────────────────────
+        var SESSION_ID = (window.location.pathname.split('/auth/qr/join/')[1] || '').split('?')[0];
+        var BASE = window.location.pathname.replace(/\/auth\/qr\/join\/[^/]+(\/.*)?$/, '');
+
+        var expiresAt = null;
+        var timerInterval = null;
+
+        function updateTimer() {
+            if (!expiresAt) return;
+            var rem = Math.max(0, Math.floor((expiresAt - Date.now()) / 1000));
+            var m = Math.floor(rem / 60);
+            var s = rem % 60;
+            var el = document.getElementById('timer');
+            if (rem <= 0) {
+                el.textContent = t('timer_exp');
+                el.classList.add('urgent');
+                clearInterval(timerInterval);
+                showExpired();
+            } else {
+                el.textContent = t('timer_lbl') + m + ':' + (s < 10 ? '0' : '') + s;
+                el.classList.toggle('urgent', rem < 60);
+            }
+        }
+
+        function showExpired() {
+            clearInterval(timerInterval);
+            document.getElementById('title').textContent = t('expired_title');
+            document.getElementById('subtitle').textContent = t('expired_sub');
+            document.getElementById('content').innerHTML = '';
+            document.getElementById('msg').style.display = 'none';
+        }
+
+        function showMsg(text, ok) {
+            var el = document.getElementById('msg');
+            el.textContent = text;
+            el.className = 'msg ' + (ok ? 'ok' : 'err');
+            el.style.display = 'block';
+        }
+
+        function getToken() {
+            try {
+                return localStorage.getItem('selena_device') ||
+                    (document.cookie.match(/selena_device=([^;]+)/) || [])[1] || null;
+            } catch (e) { return null; }
+        }
+
+        function done(titleKey, subKey, msgKey) {
+            clearInterval(timerInterval);
+            document.getElementById('timer').style.display = 'none';
+            document.getElementById('content').style.display = 'none';
+            document.getElementById('title').textContent = t(titleKey);
+            document.getElementById('subtitle').textContent = t(subKey);
+            showMsg(t(msgKey), true);
+        }
+
+        // ── Main init ─────────────────────────────────────────────────────────────────
+        async function init() {
+            document.getElementById('title').textContent = t('loading');
+
+            var infoRes = await fetch(BASE + '/auth/qr/info/' + SESSION_ID).catch(function () { return null; });
+            if (!infoRes || infoRes.status === 404 || infoRes.status === 410) {
+                showExpired();
+                return;
+            }
+            var info = await infoRes.json();
+            expiresAt = Date.now() + info.expires_in_seconds * 1000;
+            timerInterval = setInterval(updateTimer, 1000);
+            updateTimer();
+
+            if (info.mode === 'elevate') {
+                await showElevateUI();
+            } else {
+                showAccessUI();
+            }
+        }
+
+        // ── Elevate mode (phone approves kiosk unlock) ────────────────────────────────
+        async function showElevateUI() {
+            var token = getToken();
+            if (!token) {
+                document.getElementById('title').textContent = t('not_reg_title');
+                document.getElementById('subtitle').textContent = t('not_reg_sub');
+                document.getElementById('content').innerHTML =
+                    '<div class="notice">' + t('not_reg_note') + '</div>';
+                return;
+            }
+
+            try {
+                var chk = await fetch(BASE + '/auth/device/verify', {
+                    method: 'POST', headers: { 'X-Device-Token': token }
+                });
+                if (!chk.ok) {
+                    document.getElementById('title').textContent = t('not_reg_title');
+                    document.getElementById('subtitle').textContent = t('token_exp');
+                    document.getElementById('content').innerHTML = '';
+                    return;
+                }
+                var me = await chk.json();
+
+                document.getElementById('title').textContent = t('approve_title');
+                document.getElementById('subtitle').textContent = t('approve_sub') + (me.display_name || me.name || '');
+                document.getElementById('content').innerHTML =
+                    '<button class="btn" id="approveBtn">' + t('approve_btn') + '</button>' +
+                    '<button class="btn btn-outline" id="cancelBtn">' + t('cancel') + '</button>';
+
+                document.getElementById('approveBtn').addEventListener('click', async function () {
+                    var btn = this;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner"></span>';
+                    try {
+                        var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {
+                            method: 'POST', headers: { 'X-Device-Token': token }
+                        });
+                        if (res.ok) {
+                            done('success_title', 'success_sub', 'success_msg');
+                            // Visual checkmark
+                            var card = document.querySelector('.card');
+                            var chkDiv = document.createElement('div');
+                            chkDiv.className = 'check-circle';
+                            chkDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="none" width="26" height="26"><path d="M5 13l4 4L19 7" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                            card.insertBefore(chkDiv, document.getElementById('title'));
+                        } else {
+                            var err = await res.json().catch(function () { return {}; });
+                            btn.disabled = false;
+                            btn.textContent = t('approve_btn');
+                            showMsg(err.detail || t('err_generic'), false);
+                        }
+                    } catch (ex) {
+                        btn.disabled = false;
+                        btn.textContent = t('approve_btn');
+                        showMsg(t('net_err'), false);
+                    }
+                });
+
+                document.getElementById('cancelBtn').addEventListener('click', function () {
+                    window.history.back();
+                });
+
+            } catch (ex) {
+                document.getElementById('title').textContent = t('conn_err');
+                document.getElementById('subtitle').textContent = ex.message;
+            }
+        }
+
+        // ── Access mode (new device registration via QR) ──────────────────────────────
+        function showAccessUI() {
+            document.getElementById('title').textContent = t('signin_title');
+            document.getElementById('subtitle').textContent = t('signin_sub');
+            document.getElementById('content').innerHTML =
+                '<input id="usernameInput" class="input" type="text" placeholder="' + t('username') + '" autocomplete="username" autocorrect="off" autocapitalize="none" />' +
+                '<input id="pinInput" class="input" type="password" inputmode="numeric" placeholder="' + t('pin') + '" autocomplete="current-password" />' +
+                '<input id="deviceInput" class="input" type="text" placeholder="' + t('dev_name') + '" />' +
+                '<button class="btn" id="registerBtn">' + t('register_btn') + '</button>';
+
+            document.getElementById('registerBtn').addEventListener('click', async function () {
+                var username = document.getElementById('usernameInput').value.trim();
+                var pin = document.getElementById('pinInput').value.trim();
+                var deviceName = document.getElementById('deviceInput').value.trim()
+                    || ('Browser ' + navigator.userAgent.slice(0, 30));
+                if (!username || !pin) { showMsg(t('username') + ' & ' + t('pin') + ' required', false); return; }
+
+                var btn = this;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+
+                try {
+                    var res = await fetch(BASE + '/auth/qr/complete/' + SESSION_ID, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username, pin: pin, device_name: deviceName })
+                    });
+                    if (res.ok) {
+                        var data = await res.json();
+                        if (data.device_token) {
+                            try { localStorage.setItem('selena_device', data.device_token); } catch (e) { }
+                        }
+                        done('reg_ok_title', 'reg_ok_sub', 'reg_ok_msg');
+                    } else {
+                        var err = await res.json().catch(function () { return {}; });
+                        btn.disabled = false;
+                        btn.textContent = t('register_btn');
+                        showMsg(err.detail || t('err_generic'), false);
+                    }
+                } catch (ex) {
+                    btn.disabled = false;
+                    btn.textContent = t('register_btn');
+                    showMsg(t('net_err'), false);
+                }
+            });
+        }
+
+        init().catch(function (ex) {
+            document.getElementById('title').textContent = t('conn_err');
+            document.getElementById('subtitle').textContent = ex.message;
+        });
+    </script>
+</body>
+
+</html>
