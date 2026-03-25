@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Users, Plus, Trash2, Edit3, Key, Smartphone, QrCode,
     ChevronDown, ChevronUp, Shield, Check, X, AlertCircle,
-    Eye, EyeOff, RefreshCw, MapPin, Link, LinkOff, Wifi,
+    Eye, EyeOff, RefreshCw, MapPin, Link, LinkOff, Wifi, Bell, Send,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -17,6 +17,7 @@ import PinConfirmModal from './PinConfirmModal';
 
 const UM = '/api/ui/modules/user-manager';
 const PD = '/api/ui/modules/presence-detection';
+const NR = '/api/ui/modules/notification-router';
 
 function getToken() {
     return localStorage.getItem('selena_device') ?? undefined;
@@ -390,6 +391,11 @@ function UserRow({
     const [newPin, setNewPin] = useState('');
     const [showNewPin, setShowNewPin] = useState(false);
     const [pinSaving, setPinSaving] = useState(false);
+    const [activeDetailTab, setActiveDetailTab] = useState<'devices' | 'notify'>('devices');
+    const [notifyMsg, setNotifyMsg] = useState('');
+    const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'error'>('info');
+    const [notifySending, setNotifySending] = useState(false);
+    const [notifySent, setNotifySent] = useState(false);
 
     const initial = user.username.slice(0, 1).toUpperCase();
     const canEditThis = isOwner || (canManage && user.role !== 'owner');
@@ -433,16 +439,38 @@ function UserRow({
         if (newPin.length < 4) return;
         requestElevation(async () => {
             setPinSaving(true);
+            const isSelf = isOwner && user.role === 'owner';
             await fetch(`${UM}/users/${user.user_id}/pin`, {
                 method: 'POST',
                 headers: authHeaders(true),
                 credentials: 'include',
-                body: JSON.stringify({ pin: newPin }),
+                body: JSON.stringify({ current_pin: isSelf ? newPin : '', new_pin: newPin }),
             });
             setPinSaving(false);
             setChangingPin(false);
             setNewPin('');
         });
+    };
+
+    const sendNotify = async () => {
+        if (!notifyMsg.trim()) return;
+        setNotifySending(true);
+        try {
+            await fetch(`${NR}/notify/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: `[${user.username}] ${notifyMsg}`,
+                    level: notifyLevel,
+                    tags: ['manual', `user:${user.user_id}`],
+                }),
+            });
+            setNotifyMsg('');
+            setNotifySent(true);
+            setTimeout(() => setNotifySent(false), 2000);
+        } catch { /* ignore */ } finally {
+            setNotifySending(false);
+        }
     };
 
     const revokeDevice = async (deviceId: string) => {
@@ -584,56 +612,136 @@ function UserRow({
                 </div>
             )}
 
-            {/* Expanded: devices */}
+            {/* Expanded: details */}
             {expanded && (
-                <div className="border-t border-zinc-800 px-4 py-3 bg-zinc-950/40">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wide">
-                            <Smartphone size={10} className="inline mr-1" />
-                            {t('usersPanel.devices')}
-                        </span>
-                        <button onClick={loadDevices} className="text-zinc-600 hover:text-zinc-400">
-                            <RefreshCw size={11} />
-                        </button>
+                <div className="border-t border-zinc-800">
+                    {/* Tab bar */}
+                    <div className="flex border-b border-zinc-800 bg-zinc-950/30">
+                        {(['devices', 'notify'] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveDetailTab(tab)}
+                                className={cn(
+                                    'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+                                    activeDetailTab === tab
+                                        ? 'border-violet-500 text-violet-400'
+                                        : 'border-transparent text-zinc-500 hover:text-zinc-300',
+                                )}
+                            >
+                                {tab === 'devices' ? <Smartphone size={11} /> : <Bell size={11} />}
+                                {t(`usersPanel.tab_detail_${tab}`)}
+                            </button>
+                        ))}
                     </div>
-                    {devLoading ? (
-                        <p className="text-xs text-zinc-600">{t('common.loading')}</p>
-                    ) : !devices || devices.length === 0 ? (
-                        <p className="text-xs text-zinc-600">{t('usersPanel.noDevices')}</p>
-                    ) : (
-                        <div className="space-y-1">
-                            {devices.map((d) => (
-                                <div key={d.device_id} className="flex items-center gap-2 text-xs">
-                                    <Smartphone size={11} className="text-zinc-600 shrink-0" />
-                                    <span className="flex-1 truncate text-zinc-400">{d.device_name}</span>
-                                    <span className="text-zinc-600 shrink-0">{d.ip ?? '—'}</span>
-                                    <button
-                                        onClick={() => revokeDevice(d.device_id)}
-                                        className="text-zinc-600 hover:text-red-400 transition-colors shrink-0"
-                                        title={t('usersPanel.revokeDevice')}
-                                    >
-                                        <X size={11} />
-                                    </button>
+
+                    {/* Devices tab */}
+                    {activeDetailTab === 'devices' && (
+                        <div className="px-4 py-3 bg-zinc-950/40 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-zinc-500 uppercase tracking-wide flex items-center gap-1">
+                                    <Smartphone size={10} />
+                                    {t('usersPanel.registeredSessions')}
+                                </span>
+                                <button onClick={loadDevices} className="text-zinc-600 hover:text-zinc-400">
+                                    <RefreshCw size={11} />
+                                </button>
+                            </div>
+                            {devLoading ? (
+                                <p className="text-xs text-zinc-600">{t('common.loading')}</p>
+                            ) : !devices || devices.length === 0 ? (
+                                <p className="text-xs text-zinc-600">{t('usersPanel.noDevices')}</p>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    {devices.map((d) => (
+                                        <div key={d.device_id} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+                                            <Smartphone size={11} className="text-zinc-500 shrink-0" />
+                                            <div className="flex-1 min-w-0">
+                                                <p className="truncate text-zinc-300 text-[12px]">{d.device_name}</p>
+                                                <p className="text-zinc-600 text-[10px]">{d.ip ?? '—'}</p>
+                                            </div>
+                                            <span className={cn(
+                                                'text-[10px] px-1.5 py-0.5 rounded border shrink-0',
+                                                d.active ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-zinc-600 bg-zinc-800 border-zinc-700',
+                                            )}>
+                                                {d.active ? 'active' : 'revoked'}
+                                            </span>
+                                            {d.active && (
+                                                <button
+                                                    onClick={() => revokeDevice(d.device_id)}
+                                                    className="text-zinc-600 hover:text-red-400 transition-colors shrink-0 p-1"
+                                                    title={t('usersPanel.revokeDevice')}
+                                                >
+                                                    <X size={11} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
+
+                            {/* Presence MAC/IP devices */}
+                            {presenceUser && presenceUser.devices.length > 0 && (
+                                <div className="pt-2 border-t border-zinc-800/60">
+                                    <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                                        <Wifi size={9} />
+                                        {t('usersPanel.presenceDevices')}
+                                    </span>
+                                    <div className="space-y-1">
+                                        {presenceUser.devices.map((d, i) => (
+                                            <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+                                                <Wifi size={11} className="text-violet-500/60 shrink-0" />
+                                                <span className="text-zinc-500 uppercase text-[10px] w-7 shrink-0">{d.type}</span>
+                                                <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
+                                                <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
-                    {/* Presence MAC/IP devices */}
-                    {presenceUser && presenceUser.devices.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-zinc-800/60">
-                            <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex items-center gap-1 mb-1">
-                                <Wifi size={9} />
-                                {t('usersPanel.presenceDevices')}
-                            </span>
-                            <div className="space-y-1">
-                                {presenceUser.devices.map((d, i) => (
-                                    <div key={i} className="flex items-center gap-2 text-xs">
-                                        <Wifi size={11} className="text-violet-500/60 shrink-0" />
-                                        <span className="text-zinc-500 uppercase text-[10px] w-7">{d.type}</span>
-                                        <span className="flex-1 font-mono text-zinc-400 truncate">{d.address}</span>
-                                        <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
-                                    </div>
+
+                    {/* Notify tab */}
+                    {activeDetailTab === 'notify' && (
+                        <div className="px-4 py-3 bg-zinc-950/40 space-y-3">
+                            <p className="text-[11px] text-zinc-500">{t('usersPanel.notifyDesc')}</p>
+                            <textarea
+                                value={notifyMsg}
+                                onChange={(e) => setNotifyMsg(e.target.value)}
+                                placeholder={t('usersPanel.notifyPlaceholder')}
+                                rows={3}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 resize-none focus:outline-none focus:border-violet-500"
+                            />
+                            <div className="flex items-center gap-2">
+                                {(['info', 'warning', 'error'] as const).map((lvl) => (
+                                    <button
+                                        key={lvl}
+                                        onClick={() => setNotifyLevel(lvl)}
+                                        className={cn(
+                                            'px-2.5 py-1 text-[11px] font-medium rounded border transition-colors',
+                                            notifyLevel === lvl
+                                                ? lvl === 'info'
+                                                    ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
+                                                    : lvl === 'warning'
+                                                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                                                        : 'bg-red-500/20 border-red-500/40 text-red-300'
+                                                : 'bg-zinc-800 border-zinc-700 text-zinc-500',
+                                        )}
+                                    >
+                                        {lvl}
+                                    </button>
                                 ))}
+                                <button
+                                    onClick={sendNotify}
+                                    disabled={!notifyMsg.trim() || notifySending}
+                                    className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg disabled:opacity-50 transition-colors"
+                                >
+                                    {notifySent ? (
+                                        <><Check size={11} /> {t('usersPanel.notifySent')}</>
+                                    ) : (
+                                        <><Send size={11} /> {notifySending ? '…' : t('usersPanel.sendNotify')}</>
+                                    )}
+                                </button>
                             </div>
                         </div>
                     )}
@@ -866,7 +974,7 @@ function RolesEditor() {
         fetch(`${UM}/roles`, { headers: authHeaders(), credentials: 'include' })
             .then((r) => r.json())
             .then((d) => {
-                const rs: string[] = (d.roles ?? []).map((r: { role: string }) => r.role).filter((r: string) => r !== 'owner');
+                const rs = Object.keys(d).filter((r) => r !== 'owner');
                 setRoles(rs);
                 if (rs.length > 0) setSelected(rs[0]);
             })
@@ -879,7 +987,7 @@ function RolesEditor() {
         setPerms(null);
         fetch(`${UM}/roles/${selected}/permissions`, { headers: authHeaders(), credentials: 'include' })
             .then((r) => r.json())
-            .then((d) => setPerms(d.permissions ?? null))
+            .then((d) => setPerms(d as RolePerms))
             .catch(() => { })
             .finally(() => setLoading(false));
     }, [selected]);
