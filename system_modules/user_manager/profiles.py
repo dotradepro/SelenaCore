@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 logger = logging.getLogger(__name__)
 
-DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:///var/lib/selena/selena.db")
+DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:////var/lib/selena/selena.db")
 VALID_ROLES = {"owner", "admin", "user", "guest"}
 # backward-compat alias: "resident" stored in old DB rows maps to "user"
 _ROLE_ALIAS = {"resident": "user"}

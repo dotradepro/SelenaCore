@@ -24,7 +24,6 @@ function PinTab({ onSuccess }: { onSuccess: () => void }) {
 
     const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
-    const [deviceName, setDeviceName] = useState('');
     const [showPin, setShowPin] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -37,7 +36,7 @@ function PinTab({ onSuccess }: { onSuccess: () => void }) {
         setLoading(true);
         setError(null);
         try {
-            const name = deviceName.trim() || navigator.userAgent.slice(0, 40);
+            const name = navigator.userAgent.slice(0, 40);
             const res = await fetch(`${UM}/auth/device/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -137,23 +136,6 @@ function PinTab({ onSuccess }: { onSuccess: () => void }) {
                         {showPin ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                 </div>
-            </div>
-
-            {/* Device name (optional) */}
-            <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.deviceName')}
-                    <span className="ml-1 font-normal opacity-60">({t('auth.optional')})</span>
-                </label>
-                <input
-                    type="text"
-                    value={deviceName}
-                    onChange={(e) => setDeviceName(e.target.value)}
-                    disabled={loading}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
-                    style={{ background: 'var(--bg)', border: '1px solid var(--b)', color: 'var(--tx)' }}
-                    placeholder={t('auth.deviceNamePlaceholder')}
-                />
             </div>
 
             {/* Error */}

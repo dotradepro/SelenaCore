@@ -41,7 +41,7 @@ from system_modules.user_manager.profiles import (
 
 logger = logging.getLogger(__name__)
 
-DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:///var/lib/selena/selena.db")
+DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:////var/lib/selena/selena.db")
 
 _DEVICE_COOKIE = "selena_device"
 _ELEVATED_HEADER = "X-Elevated-Token"
@@ -659,7 +659,7 @@ init();
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             return asdict(profile)
 
-        @router.delete("/users/{user_id}", status_code=204)
+        @router.delete("/users/{user_id}", status_code=204, response_model=None)
         async def delete_user(user_id: str, request: Request) -> None:
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
@@ -706,7 +706,7 @@ init();
             devices = await mod._devices.list_by_user(user_id)
             return {"devices": [asdict(d) for d in devices]}
 
-        @router.delete("/devices/{device_id}", status_code=204)
+        @router.delete("/devices/{device_id}", status_code=204, response_model=None)
         async def revoke_specific_device(device_id: str, request: Request) -> None:
             info = await mod._require_device_auth(request)
             device = await mod._devices.get_by_id(device_id)
