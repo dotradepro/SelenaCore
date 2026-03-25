@@ -52,6 +52,13 @@ class PushSubscribeRequest(BaseModel):
     user_agent: str = ""
 
 
+class PushSendRequest(BaseModel):
+    title: str
+    body: str
+    user_id: str | None = None  # None = send to all subscribers
+    data: dict = {}
+
+
 class PresenceDetectionModule(SystemModule):
     name = "presence-detection"
 
@@ -407,6 +414,26 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             new_key = svc._detector.reset_vapid_and_subscriptions()
             return JSONResponse({"status": "reset", "new_public_key": new_key})
+
+        @router.post("/push/send")
+        async def push_send(req: PushSendRequest) -> JSONResponse:
+            """Send a push notification to one user or all subscribers."""
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            if req.user_id:
+                result = await svc._detector.send_push_to_user(
+                    user_id=req.user_id,
+                    title=req.title,
+                    body=req.body,
+                    data=req.data,
+                )
+            else:
+                result = await svc._detector.send_push_to_all(
+                    title=req.title,
+                    body=req.body,
+                    data=req.data,
+                )
+            return JSONResponse(result)
 
         return router
 

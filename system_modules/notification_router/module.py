@@ -52,7 +52,30 @@ class NotificationRouterModule(SystemModule):
 
     async def start(self) -> None:
         self._router_svc = NotificationRouter(publish_event_cb=self.publish)
+        self._ensure_push_defaults()
         await self.publish("module.started", {"name": self.name})
+
+    def _ensure_push_defaults(self) -> None:
+        """Ensure a 'push' channel and a catch-all rule exist after first boot."""
+        rt = self._router_svc
+        if rt is None:
+            return
+        if "push" not in rt._channels:
+            rt.add_channel("push", {
+                "push_url": "http://localhost:7070/api/ui/modules/presence-detection/push/send",
+            })
+            logger.info("Auto-registered default push channel")
+        if not any(r.get("channel") == "push" for r in rt._rules):
+            rt.add_rule({
+                "rule_id": "default-push-all",
+                "channel": "push",
+                "priority": 100,
+                "event_types": [],
+                "level": None,
+                "tags": [],
+                "enabled": True,
+            })
+            logger.info("Auto-registered default push rule (all notifications)")
 
     async def stop(self) -> None:
         self._router_svc = None

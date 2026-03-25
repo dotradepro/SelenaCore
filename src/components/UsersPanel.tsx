@@ -318,7 +318,7 @@ function UserRow({
     const [pinSaving, setPinSaving] = useState(false);
     const [activeDetailTab, setActiveDetailTab] = useState<'devices' | 'notify'>('devices');
     const [notifyMsg, setNotifyMsg] = useState('');
-    const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'error'>('info');
+    const [notifyLevel, setNotifyLevel] = useState<'info' | 'warning' | 'critical'>('info');
     const [notifySending, setNotifySending] = useState(false);
     const [notifySent, setNotifySent] = useState(false);
     const [presenceQr, setPresenceQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
@@ -710,7 +710,7 @@ function UserRow({
                                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 resize-none focus:outline-none focus:border-violet-500"
                             />
                             <div className="flex items-center gap-2">
-                                {(['info', 'warning', 'error'] as const).map((lvl) => (
+                                {(['info', 'warning', 'critical'] as const).map((lvl) => (
                                     <button
                                         key={lvl}
                                         onClick={() => setNotifyLevel(lvl)}

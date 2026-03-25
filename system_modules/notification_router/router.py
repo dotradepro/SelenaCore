@@ -22,9 +22,12 @@ Public API:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -37,6 +40,8 @@ VALID_LEVELS = {"info", "warning", "critical"}
 # Max notifications kept in history
 HISTORY_MAX = 200
 
+_CONFIG_FILE = Path(os.environ.get("NOTIFY_CONFIG_FILE", "/var/lib/selena/notification_router.json"))
+
 
 class NotificationRouter:
     def __init__(self, publish_event_cb: Any) -> None:
@@ -45,6 +50,36 @@ class NotificationRouter:
         self._rules: list[dict] = []           # sorted by priority
         self._history: deque = deque(maxlen=HISTORY_MAX)
         self._stats: dict[str, int] = {}       # channel → sent count
+        self._load_config()
+
+    # ── Persistence ──────────────────────────────────────────────────────────
+
+    def _load_config(self) -> None:
+        if _CONFIG_FILE.exists():
+            try:
+                data = json.loads(_CONFIG_FILE.read_text())
+                for name, config in data.get("channels", {}).items():
+                    if name in VALID_CHANNELS:
+                        self._channels[name] = config
+                        self._stats.setdefault(name, 0)
+                for rule in data.get("rules", []):
+                    self._rules.append(rule)
+                self._rules.sort(key=lambda r: r.get("priority", 100))
+                logger.info("Loaded %d channels, %d rules from %s",
+                            len(self._channels), len(self._rules), _CONFIG_FILE)
+            except Exception as exc:
+                logger.warning("Failed to load notification config: %s", exc)
+
+    def _save_config(self) -> None:
+        try:
+            _CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+            data = {
+                "channels": self._channels,
+                "rules": self._rules,
+            }
+            _CONFIG_FILE.write_text(json.dumps(data, indent=2))
+        except Exception as exc:
+            logger.warning("Failed to save notification config: %s", exc)
 
     # ── Channel management ───────────────────────────────────────────────────
 
@@ -54,10 +89,12 @@ class NotificationRouter:
         self._channels[name] = dict(config)
         if name not in self._stats:
             self._stats[name] = 0
+        self._save_config()
 
     def remove_channel(self, name: str) -> bool:
         if name in self._channels:
             del self._channels[name]
+            self._save_config()
             return True
         return False
 
@@ -83,12 +120,16 @@ class NotificationRouter:
         self._rules = [r for r in self._rules if r["rule_id"] != rule_id]
         self._rules.append(entry)
         self._rules.sort(key=lambda r: r["priority"])
+        self._save_config()
         return rule_id
 
     def remove_rule(self, rule_id: str) -> bool:
         before = len(self._rules)
         self._rules = [r for r in self._rules if r["rule_id"] != rule_id]
-        return len(self._rules) < before
+        removed = len(self._rules) < before
+        if removed:
+            self._save_config()
+        return removed
 
     def get_rules(self) -> list[dict]:
         return list(self._rules)
@@ -189,9 +230,16 @@ class NotificationRouter:
             return resp.status_code == 200
 
     async def _deliver_push(self, config: dict, message: str, level: str) -> bool:
-        push_url = config.get("push_url", "http://localhost/api/push/send")
+        push_url = config.get(
+            "push_url",
+            "http://localhost:7070/api/ui/modules/presence-detection/push/send",
+        )
+        user_id = config.get("user_id")  # None = send to all
+        payload: dict = {"title": f"Selena [{level.upper()}]", "body": message}
+        if user_id:
+            payload["user_id"] = user_id
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(push_url, json={"title": f"[{level.upper()}]", "body": message})
+            resp = await client.post(push_url, json=payload)
             return resp.status_code < 300
 
     async def _deliver_webhook(self, config: dict, message: str, level: str, entry: dict) -> bool:
