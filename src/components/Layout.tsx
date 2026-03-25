@@ -79,6 +79,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fetchStats = useStore((s) => s.fetchStats);
   const fetchModules = useStore((s) => s.fetchModules);
   const voiceStatus = useStore((s) => s.voiceStatus);
+  const user = useStore((s) => s.user);
 
   useEffect(() => {
     fetchStats();
@@ -237,6 +238,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Separator */}
           <div style={{ width: 28, height: 1, background: 'var(--b)', margin: '4px 0', flexShrink: 0 }} />
+
+          {/* User role avatar */}
+          {user && (
+            <button
+              title={`${user.name} · ${user.role}`}
+              onClick={() => navigate('/settings/users')}
+              style={{
+                width: 30, height: 30, borderRadius: '50%',
+                border: `2px solid ${
+                  user.role === 'owner' ? '#7c3aed'
+                  : user.role === 'admin' ? '#3b82f6'
+                  : user.role === 'user' ? '#10b981'
+                  : '#52525b'
+                }`,
+                background: 'var(--sf3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, fontWeight: 700,
+                color: 'var(--tx)',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              {user.name.slice(0, 1).toUpperCase()}
+            </button>
+          )}
 
           {/* Settings */}
           <button

@@ -16,58 +16,58 @@ import { useStore } from '../store/useStore';
  * via the returned helpers.
  */
 export function useElevated() {
-  const elevatedToken = useStore((s) => s.elevatedToken);
-  const setElevatedToken = useStore((s) => s.setElevatedToken);
+    const elevatedToken = useStore((s) => s.elevatedToken);
+    const setElevatedToken = useStore((s) => s.setElevatedToken);
 
-  const [pinOpen, setPinOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+    const [pinOpen, setPinOpen] = useState(false);
+    const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const isElevated = Boolean(elevatedToken);
+    const isElevated = Boolean(elevatedToken);
 
-  /**
-   * Execute `action` immediately if an elevated token already exists,
-   * otherwise open the PIN modal and run `action` after successful PIN entry.
-   */
-  const requestElevation = useCallback(
-    (action: () => void) => {
-      if (elevatedToken) {
-        action();
-      } else {
-        // Store the action and open PIN modal
-        setPendingAction(() => action);
-        setPinOpen(true);
-      }
-    },
-    [elevatedToken],
-  );
+    /**
+     * Execute `action` immediately if an elevated token already exists,
+     * otherwise open the PIN modal and run `action` after successful PIN entry.
+     */
+    const requestElevation = useCallback(
+        (action: () => void) => {
+            if (elevatedToken) {
+                action();
+            } else {
+                // Store the action and open PIN modal
+                setPendingAction(() => action);
+                setPinOpen(true);
+            }
+        },
+        [elevatedToken],
+    );
 
-  /** Called by PinConfirmModal when PIN was accepted */
-  const onElevated = useCallback(
-    (token: string) => {
-      setElevatedToken(token);
-      setPinOpen(false);
-      if (pendingAction) {
-        pendingAction();
+    /** Called by PinConfirmModal when PIN was accepted */
+    const onElevated = useCallback(
+        (token: string) => {
+            setElevatedToken(token);
+            setPinOpen(false);
+            if (pendingAction) {
+                pendingAction();
+                setPendingAction(null);
+            }
+        },
+        [pendingAction, setElevatedToken],
+    );
+
+    const closePin = useCallback(() => {
+        setPinOpen(false);
         setPendingAction(null);
-      }
-    },
-    [pendingAction, setElevatedToken],
-  );
+    }, []);
 
-  const closePin = useCallback(() => {
-    setPinOpen(false);
-    setPendingAction(null);
-  }, []);
-
-  return {
-    isElevated,
-    elevatedToken,
-    requestElevation,
-    /** Pass these directly into <PinConfirmModal /> */
-    pinModalProps: {
-      isOpen: pinOpen,
-      onClose: closePin,
-      onSuccess: onElevated,
-    },
-  };
+    return {
+        isElevated,
+        elevatedToken,
+        requestElevation,
+        /** Pass these directly into <PinConfirmModal /> */
+        pinModalProps: {
+            isOpen: pinOpen,
+            onClose: closePin,
+            onSuccess: onElevated,
+        },
+    };
 }
