@@ -39,6 +39,11 @@ class InviteRequest(BaseModel):
     base_url: str = ""
 
 
+class AccountInviteRequest(BaseModel):
+    name: str
+    base_url: str = ""
+
+
 class PushSubscribeRequest(BaseModel):
     user_id: str
     endpoint: str
@@ -223,6 +228,22 @@ class PresenceDetectionModule(SystemModule):
             if not user:
                 raise HTTPException(404, "User not found")
             invite = svc._detector.create_invite(user["name"], existing_user_id=user_id)
+            if req.base_url:
+                base = req.base_url.rstrip("/")
+            else:
+                host = request.headers.get("x-forwarded-host") or request.headers.get("host", "localhost")
+                base = f"https://{host}"
+            base = base.replace("http://", "https://")
+            join_url = f"{base}/api/ui/modules/presence-detection/join/{invite['token']}"
+            qr_svg = svc._detector.generate_qr_svg(join_url)
+            return JSONResponse({**invite, "join_url": join_url, "qr_svg": qr_svg}, status_code=201)
+
+        @router.post("/accounts/{account_id}/invite", status_code=201)
+        async def invite_for_account(account_id: str, req: AccountInviteRequest, request: Request) -> JSONResponse:
+            """Create a QR invite for a new presence user that auto-links to account_id on join."""
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            invite = svc._detector.create_invite(req.name, link_account_id=account_id)
             if req.base_url:
                 base = req.base_url.rstrip("/")
             else:

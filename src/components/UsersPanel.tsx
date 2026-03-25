@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Users, Plus, Trash2, Edit3, Key, Smartphone, QrCode,
     ChevronDown, ChevronUp, Shield, Check, X, AlertCircle,
-    Eye, EyeOff, RefreshCw, MapPin, Link, Unlink, Wifi, Bell, Send,
+    Eye, EyeOff, RefreshCw, MapPin, Link, Wifi, Bell, Send,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -464,6 +464,7 @@ function UserRow({
     const [notifySending, setNotifySending] = useState(false);
     const [notifySent, setNotifySent] = useState(false);
     const [presenceQr, setPresenceQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
+    const [setupTrackingQr, setSetupTrackingQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
 
     const initial = user.username.slice(0, 1).toUpperCase();
     const canEditThis = isOwner || (canManage && user.role !== 'owner');
@@ -574,10 +575,23 @@ function UserRow({
         }
     };
 
-    const unlinkPresence = async () => {
+    const deletePresence = async () => {
         if (!presenceUser) return;
-        await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}/link`, { method: 'DELETE' });
+        if (!confirm(`${t('usersPanel.presenceDeleteUser')} "${presenceUser.name}"?`)) return;
+        await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}`, { method: 'DELETE' });
         onRefresh();
+    };
+
+    const setupTracking = async () => {
+        const res = await fetch(`${PD}/accounts/${encodeURIComponent(user.user_id)}/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: user.username, base_url: '' }),
+        });
+        if (res.ok) {
+            const d = await res.json();
+            setSetupTrackingQr({ qr_svg: d.qr_svg, join_url: d.join_url });
+        }
     };
 
     return (
@@ -779,11 +793,11 @@ function UserRow({
                                                     <QrCode size={10} />
                                                 </button>
                                                 <button
-                                                    onClick={unlinkPresence}
+                                                    onClick={deletePresence}
                                                     className="p-0.5 text-zinc-600 hover:text-red-400 transition-colors"
-                                                    title={t('usersPanel.presenceUnlink')}
+                                                    title={t('usersPanel.presenceDeleteUser')}
                                                 >
-                                                    <Unlink size={10} />
+                                                    <Trash2 size={10} />
                                                 </button>
                                             </>
                                         )}
@@ -810,6 +824,31 @@ function UserRow({
                                             <p className="text-[11px] text-zinc-600 italic">{t('usersPanel.noTrackingDevices')}</p>
                                         )}
                                     </div>
+                                </div>
+                            )}
+                            {!presenceUser && canManage && (
+                                <div className="pt-2 border-t border-zinc-800/60">
+                                    <div className="flex items-center gap-1 mb-1.5">
+                                        <Wifi size={9} className="text-zinc-600" />
+                                        <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex-1">
+                                            {t('usersPanel.presenceDevices')}
+                                        </span>
+                                        <button
+                                            onClick={setupTracking}
+                                            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 hover:text-violet-400 bg-zinc-800/60 hover:bg-zinc-800 rounded transition-colors"
+                                            title={t('usersPanel.presenceSetupTracking')}
+                                        >
+                                            <QrCode size={9} />
+                                            {t('usersPanel.presenceSetupTracking')}
+                                        </button>
+                                    </div>
+                                    {setupTrackingQr && (
+                                        <PresenceQrPanel
+                                            qrSvg={setupTrackingQr.qr_svg}
+                                            joinUrl={setupTrackingQr.join_url}
+                                            onClose={() => setSetupTrackingQr(null)}
+                                        />
+                                    )}
                                 </div>
                             )}
                         </div>

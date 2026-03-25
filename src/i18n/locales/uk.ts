@@ -414,6 +414,7 @@ const uk = {
             presenceDeviceQr: 'Додати пристрій через QR',
             presenceUnlink: "Від'єднати трекінг",
             presenceDeleteUser: 'Видалити',
+            presenceSetupTracking: 'Налаштувати трекінг',
             presenceAddPerson: 'Додати особу',
             presenceNewPersonName: "Ім'я особи…",
             presenceGetQr: 'Отримати QR',

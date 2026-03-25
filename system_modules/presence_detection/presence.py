@@ -414,18 +414,25 @@ class PresenceDetector:
             pass  # column already exists
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS presence_invites (
-                token            TEXT PRIMARY KEY,
-                name             TEXT NOT NULL,
-                created_at       TEXT NOT NULL,
-                expires_at       TEXT NOT NULL,
-                status           TEXT NOT NULL DEFAULT 'pending',
-                user_id          TEXT,
-                existing_user_id TEXT
+                token             TEXT PRIMARY KEY,
+                name              TEXT NOT NULL,
+                created_at        TEXT NOT NULL,
+                expires_at        TEXT NOT NULL,
+                status            TEXT NOT NULL DEFAULT 'pending',
+                user_id           TEXT,
+                existing_user_id  TEXT,
+                link_account_id   TEXT
             )
         """)
         # Migration: add existing_user_id if not present (safe for existing DBs)
         try:
             self._db.execute("ALTER TABLE presence_invites ADD COLUMN existing_user_id TEXT")
+            self._db.commit()
+        except Exception:
+            pass  # column already exists
+        # Migration: add link_account_id if not present
+        try:
+            self._db.execute("ALTER TABLE presence_invites ADD COLUMN link_account_id TEXT")
             self._db.commit()
         except Exception:
             pass  # column already exists
@@ -694,16 +701,24 @@ class PresenceDetector:
 
     # ── Invite system ─────────────────────────────────────────────────────────
 
-    def create_invite(self, name: str, expires_minutes: int = 15, existing_user_id: str | None = None) -> dict:
-        """Create an invite token. Returns {token, name, expires_at, status, existing_user_id}."""
+    def create_invite(
+        self,
+        name: str,
+        expires_minutes: int = 15,
+        existing_user_id: str | None = None,
+        link_account_id: str | None = None,
+    ) -> dict:
+        """Create an invite token. Returns {token, name, expires_at, status, existing_user_id, link_account_id}."""
         token = secrets.token_urlsafe(24)
         now = datetime.now(tz=timezone.utc)
         expires_at = now + timedelta(minutes=expires_minutes)
         if self._db:
             self._db.execute(
-                "INSERT INTO presence_invites (token, name, created_at, expires_at, status, existing_user_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (token, name, now.isoformat(), expires_at.isoformat(), "pending", existing_user_id),
+                "INSERT INTO presence_invites "
+                "(token, name, created_at, expires_at, status, existing_user_id, link_account_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (token, name, now.isoformat(), expires_at.isoformat(), "pending",
+                 existing_user_id, link_account_id),
             )
             self._db.commit()
         return {
@@ -713,13 +728,14 @@ class PresenceDetector:
             "expires_at": expires_at.isoformat(),
             "status": "pending",
             "existing_user_id": existing_user_id,
+            "link_account_id": link_account_id,
         }
 
     def get_invite(self, token: str) -> dict | None:
         if self._db is None:
             return None
         row = self._db.execute(
-            "SELECT token, name, created_at, expires_at, status, user_id, existing_user_id "
+            "SELECT token, name, created_at, expires_at, status, user_id, existing_user_id, link_account_id "
             "FROM presence_invites WHERE token=?",
             (token,),
         ).fetchone()
@@ -728,7 +744,7 @@ class PresenceDetector:
         invite = {
             "token": row[0], "name": row[1], "created_at": row[2],
             "expires_at": row[3], "status": row[4], "user_id": row[5],
-            "existing_user_id": row[6],
+            "existing_user_id": row[6], "link_account_id": row[7],
         }
         # Check expiry
         if invite["status"] == "pending":
@@ -786,6 +802,10 @@ class PresenceDetector:
                 "name": name,
                 "devices": devices,
             })
+            # Auto-link to account if requested
+            link_acc = invite.get("link_account_id")
+            if link_acc:
+                self.link_account(user_id, link_acc)
 
         # Mark invite completed
         if self._db:

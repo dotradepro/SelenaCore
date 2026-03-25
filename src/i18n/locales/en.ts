@@ -414,6 +414,7 @@ const en = {
             presenceDeviceQr: 'Add device via QR',
             presenceUnlink: 'Unlink tracking',
             presenceDeleteUser: 'Delete',
+            presenceSetupTracking: 'Setup tracking',
             presenceAddPerson: 'Add person',
             presenceNewPersonName: 'Person name…',
             presenceGetQr: 'Get QR',
