@@ -202,6 +202,73 @@ class UserManagerModule(SystemModule):
         router = APIRouter()
         mod = self
 
+        # ── Auth: system status (setup required?) ─────────────────────────────
+
+        @router.get("/auth/status")
+        async def auth_status() -> dict:
+            """Return whether first-time setup is needed.
+
+            Called by AuthWall on mount to decide which UI to show:
+            - setup_required=true  → show "Create first account" form
+            - setup_required=false → show normal login form
+            """
+            count = await mod._users.count_users()
+            return {"setup_required": count == 0}
+
+        # ── Auth: first-time owner setup ─────────────────────────────────────
+
+        @router.post("/auth/setup", status_code=201)
+        async def first_setup(
+            req: RegisterDeviceRequest,
+            response: Response,
+            request: Request,
+        ) -> dict:
+            """Bootstrap the system with the first owner account.
+
+            Only works when no users exist at all (empty database).
+            Creates the owner account and immediately registers the calling
+            device, returning a device_token + cookie.
+
+            The endpoint is automatically locked after the first call —
+            subsequent calls return 409.
+            """
+            count = await mod._users.count_users()
+            if count > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail="System already initialized. Use /auth/device/register instead.",
+                )
+            try:
+                profile = await mod._users.create(
+                    username=req.username,
+                    display_name=req.device_name or req.username,
+                    pin=req.pin,
+                    role="owner",
+                )
+            except UserAlreadyExistsError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except (ValueError, InvalidPinError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+            ip = request.client.host if request.client else ""
+            ua = request.headers.get("user-agent", "")
+            plain_token = await mod._devices.register(
+                user_id=profile.user_id,
+                device_name=ua[:60] or "First device",
+                user_agent=ua,
+                ip=ip,
+            )
+            mod._set_device_cookie(response, plain_token)
+            logger.info(
+                "First owner account created: username=%s ip=%s", req.username, ip
+            )
+            return {
+                "device_token": plain_token,
+                "user_id": profile.user_id,
+                "role": profile.role,
+                "display_name": profile.display_name,
+            }
+
         # ── Auth: device registration ──────────────────────────────────────────
 
         @router.post("/auth/device/register", status_code=201)
