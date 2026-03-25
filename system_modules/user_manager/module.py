@@ -87,6 +87,10 @@ class ChangePinRequest(BaseModel):
     new_pin: str
 
 
+class QrStartRequest(BaseModel):
+    mode: str = "access"  # "access" | "elevate"
+
+
 class PermissionsUpdateRequest(BaseModel):
     devices_view: bool | None = None
     devices_control: bool | None = None
@@ -260,13 +264,66 @@ class UserManagerModule(SystemModule):
 
         # ── Auth: QR registration flow ─────────────────────────────────────────
 
-        @router.post("/auth/qr/start", status_code=201)
-        async def qr_start(request: Request) -> dict:
-            """Generate a one-time QR session for device registration.
+        @router.post("/auth/qr/approve/{session_id}", status_code=200)
+        async def qr_approve(session_id: str, request: Request) -> dict:
+            """Approve a pending QR session using an already-registered device.
 
-            The hub screen shows this QR code.  The user scans it with their
-            phone, opens the URL, enters their username + PIN → their device
-            gets registered.
+            The scanning phone sends this request with its device_token cookie.
+            - mode == "access": issues a new device_token for the waiting browser
+              (registered under the approver's account).
+            - mode == "elevate": issues an elevated_token for the waiting client.
+
+            If the approver is NOT registered this endpoint returns 401 —
+            the caller (phone) sees the error, the polling browser stays pending.
+            """
+            info = await mod._require_device_auth(request)
+
+            session = mod._qr_sessions.get(session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="QR session not found or expired")
+            if time.time() > session["expires_at"]:
+                mod._qr_sessions.pop(session_id, None)
+                raise HTTPException(status_code=410, detail="QR session expired")
+            if session["status"] != "pending":
+                raise HTTPException(status_code=409, detail="QR session already completed")
+
+            mode = session.get("mode", "access")
+            if mode == "elevate":
+                elevated_token = mod._elevated.grant(info["user_id"])
+                session.update({
+                    "status": "complete",
+                    "elevated_token": elevated_token,
+                    "user_id": info["user_id"],
+                    "approved_by": info["name"],
+                })
+            else:
+                ip = request.client.host if request.client else ""
+                ua = request.headers.get("user-agent", "")
+                new_token = await mod._devices.register(
+                    user_id=info["user_id"],
+                    device_name=f"Browser (approved by {info['name']})",
+                    user_agent=ua,
+                    ip=ip,
+                )
+                session.update({
+                    "status": "complete",
+                    "device_token": new_token,
+                    "user_id": info["user_id"],
+                    "approved_by": info["name"],
+                })
+
+            logger.info(
+                "QR session %s approved (mode=%s) by user %s",
+                session_id, mode, info["user_id"],
+            )
+            return {"approved": True, "mode": mode}
+
+        @router.post("/auth/qr/start", status_code=201)
+        async def qr_start(req: QrStartRequest, request: Request) -> dict:
+            """Generate a one-time QR session.
+
+            mode="access"  — phone scans, approves, waiting browser gets device_token.
+            mode="elevate" — kiosk shows QR, phone approves, kiosk gets elevated_token.
 
             Poll ``GET /auth/qr/status/{session_id}`` to detect completion.
             """
@@ -274,8 +331,10 @@ class UserManagerModule(SystemModule):
             expires_at = time.time() + _QR_TTL
             mod._qr_sessions[session_id] = {
                 "status": "pending",
+                "mode": req.mode,
                 "expires_at": expires_at,
                 "device_token": None,
+                "elevated_token": None,
                 "user_id": None,
             }
             mod._cleanup_qr_sessions()
@@ -308,9 +367,9 @@ class UserManagerModule(SystemModule):
         async def qr_status(session_id: str) -> dict:
             """Poll QR session status.
 
-            Returns ``{status: "complete", device_token: "...", user_id: "..."}``
-            when the phone has successfully registered.  The session is then
-            deleted from the server.
+            On completion returns one of:
+            - ``{status: "complete", device_token: "...", user_id: "..."}`` (access mode)
+            - ``{status: "complete", elevated_token: "...", user_id: "..."}`` (elevate mode)
             """
             session = mod._qr_sessions.get(session_id)
             if not session:
@@ -320,9 +379,12 @@ class UserManagerModule(SystemModule):
                 raise HTTPException(status_code=410, detail="QR session expired")
 
             result: dict[str, Any] = {"status": session["status"]}
-            if session["status"] == "complete" and session.get("device_token"):
-                result["device_token"] = session["device_token"]
-                result["user_id"] = session["user_id"]
+            if session["status"] == "complete":
+                if session.get("device_token"):
+                    result["device_token"] = session["device_token"]
+                if session.get("elevated_token"):
+                    result["elevated_token"] = session["elevated_token"]
+                result["user_id"] = session.get("user_id")
                 mod._qr_sessions.pop(session_id, None)
             return result
 
@@ -384,61 +446,139 @@ class UserManagerModule(SystemModule):
             else:
                 content = f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Register device — SelenaCore</title>
-<style>body{{font-family:sans-serif;max-width:400px;margin:2rem auto;padding:1rem}}
-input{{width:100%;padding:.5rem;margin:.5rem 0;box-sizing:border-box}}
-button{{width:100%;padding:.75rem;background:#7c3aed;color:#fff;border:none;border-radius:.375rem;cursor:pointer}}
-</style></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SelenaCore — Approve access</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:#0f0f11;color:#e4e4e7;min-height:100vh;
+  display:flex;align-items:center;justify-content:center;padding:1.5rem}}
+.card{{background:#18181b;border:1px solid #27272a;border-radius:1rem;
+  padding:2rem;width:100%;max-width:360px;box-shadow:0 20px 60px #0005}}
+.logo{{width:44px;height:44px;background:#7c3aed;border-radius:.75rem;
+  display:flex;align-items:center;justify-content:center;margin:0 auto 1rem}}
+h2{{text-align:center;font-size:1.1rem;font-weight:700;margin-bottom:.5rem}}
+.sub{{text-align:center;font-size:.8rem;color:#a1a1aa;margin-bottom:1.5rem}}
+.notice{{background:#3f3f46;border:1px solid #52525b;border-radius:.5rem;
+  padding:.75rem 1rem;font-size:.8rem;color:#a1a1aa;margin-bottom:1.5rem;line-height:1.5}}
+.btn{{width:100%;padding:.875rem;background:#7c3aed;color:#fff;border:none;
+  border-radius:.625rem;font-size:.9rem;font-weight:600;cursor:pointer;
+  transition:background .15s}}
+.btn:hover{{background:#6d28d9}}
+.btn:disabled{{opacity:.5;cursor:not-allowed}}
+.btn-outline{{background:transparent;border:1px solid #3f3f46;color:#a1a1aa;
+  margin-top:.75rem}}
+.btn-outline:hover{{background:#27272a}}
+.msg{{display:none;text-align:center;padding:.75rem;border-radius:.5rem;
+  font-size:.85rem;margin-top:1rem}}
+.msg.ok{{background:#14532d33;border:1px solid #16a34a55;color:#4ade80}}
+.msg.err{{background:#7f1d1d33;border:1px solid #dc262655;color:#f87171}}
+.spinner{{display:inline-block;width:16px;height:16px;border:2px solid #fff3;
+  border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}}
+@keyframes spin{{to{{transform:rotate(360deg)}}}}
+</style>
+</head>
 <body>
-<h2>Register your device</h2>
-<p>Enter your credentials to link this phone to your SelenaCore account.</p>
-<form id="form">
-  <input type="text" id="username" placeholder="Username" required>
-  <input type="password" id="pin" placeholder="PIN" inputmode="numeric" maxlength="8" required>
-  <input type="text" id="device_name" placeholder="Device name (e.g. My Phone)" value="My Phone">
-  <button type="submit">Register</button>
-</form>
-<p id="msg" style="color:green;display:none"></p>
-<p id="err" style="color:red;display:none"></p>
+<div class="card">
+  <div class="logo">
+    <svg viewBox="0 0 14 14" fill="none" width="20" height="20">
+      <path d="M7 1L2 4v5.5L7 13l5-3.5V4L7 1Z" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>
+      <circle cx="7" cy="7" r="1.8" fill="#fff"/>
+    </svg>
+  </div>
+  <h2 id="title">Checking your device…</h2>
+  <p class="sub" id="subtitle"></p>
+  <div id="body-content"></div>
+  <p class="msg" id="msg"></p>
+</div>
 <script>
 var SESSION_ID = "{session_id}";
-document.getElementById("form").addEventListener("submit", async function(e) {{
-  e.preventDefault();
-  var btn = e.target.querySelector("button");
-  btn.disabled = true;
-  btn.textContent = "Registering…";
+var BASE = window.location.pathname.replace(/\\/auth\\/qr\\/join\\/[^/]+$/, '');
+
+function getToken() {{
   try {{
-    var BASE = window.location.pathname.replace(/\\/auth\\/qr\\/join\\/[^/]+/, '');
-    var res = await fetch(BASE + "/auth/qr/complete/" + SESSION_ID, {{
-      method: "POST",
-      headers: {{"Content-Type": "application/json"}},
-      body: JSON.stringify({{
-        username: document.getElementById("username").value,
-        pin: document.getElementById("pin").value,
-        device_name: document.getElementById("device_name").value || "My Phone"
-      }})
-    }});
-    if (res.ok) {{
-      var data = await res.json();
-      localStorage.setItem("selena_device", data.device_token);
-      document.getElementById("form").style.display = "none";
-      document.getElementById("msg").style.display = "block";
-      document.getElementById("msg").textContent = "Device registered! Welcome, " + data.display_name + ". You can close this page.";
-    }} else {{
-      var err = await res.json();
-      document.getElementById("err").style.display = "block";
-      document.getElementById("err").textContent = err.detail || "Registration failed";
-      btn.disabled = false;
-      btn.textContent = "Register";
-    }}
-  }} catch(ex) {{
-    document.getElementById("err").style.display = "block";
-    document.getElementById("err").textContent = "Network error: " + ex.message;
-    btn.disabled = false;
-    btn.textContent = "Register";
+    return localStorage.getItem('selena_device') ||
+      (document.cookie.match(/selena_device=([^;]+)/) || [])[1] || null;
+  }} catch(e) {{ return null; }}
+}}
+
+function showMsg(text, isOk) {{
+  var el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + (isOk ? 'ok' : 'err');
+  el.style.display = 'block';
+}}
+
+async function init() {{
+  var token = getToken();
+  var title = document.getElementById('title');
+  var subtitle = document.getElementById('subtitle');
+  var body = document.getElementById('body-content');
+
+  if (!token) {{
+    title.textContent = 'Not a registered device';
+    subtitle.textContent = 'This device is not registered in SelenaCore.';
+    body.innerHTML = '<div class="notice">Ask a registered user to approve your access,\nor open SelenaCore on this device and register first.</div>';
+    return;
   }}
-}});
+
+  // Verify the token is still valid
+  try {{
+    var chk = await fetch(BASE + '/auth/device/verify', {{
+      method: 'POST',
+      headers: {{'X-Device-Token': token}}
+    }});
+    if (!chk.ok) {{
+      title.textContent = 'Device token expired';
+      subtitle.textContent = 'Your registration has been revoked or expired.';
+      body.innerHTML = '<div class="notice">Re-register this device on SelenaCore first.</div>';
+      return;
+    }}
+    var me = await chk.json();
+    title.textContent = 'Approve access?';
+    subtitle.textContent = 'Logged in as ' + (me.display_name || me.name || 'you');
+    body.innerHTML = '<button class="btn" id="approveBtn">Approve access</button>'
+      + '<button class="btn btn-outline" id="cancelBtn">Cancel</button>';
+
+    document.getElementById('approveBtn').addEventListener('click', async function() {{
+      var btn = this;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+      try {{
+        var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {{
+          method: 'POST',
+          headers: {{'X-Device-Token': token}}
+        }});
+        if (res.ok) {{
+          document.getElementById('body-content').style.display = 'none';
+          showMsg('✓ Access approved! The other device can now proceed.', true);
+          title.textContent = 'Done';
+          subtitle.textContent = '';
+        }} else {{
+          var err = await res.json().catch(function(){{ return {{}}; }});
+          btn.disabled = false;
+          btn.textContent = 'Approve access';
+          showMsg(err.detail || 'Approval failed', false);
+        }}
+      }} catch(ex) {{
+        btn.disabled = false;
+        btn.textContent = 'Approve access';
+        showMsg('Network error: ' + ex.message, false);
+      }}
+    }});
+
+    document.getElementById('cancelBtn').addEventListener('click', function() {{
+      window.history.back();
+    }});
+  }} catch(ex) {{
+    title.textContent = 'Connection error';
+    subtitle.textContent = ex.message;
+  }}
+}}
+
+init();
 </script>
 </body></html>"""
             return HTMLResponse(content)

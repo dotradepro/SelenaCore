@@ -12,9 +12,13 @@ import SystemPage from './components/SystemPage';
 import IntegrityPage from './components/IntegrityPage';
 import Settings from './components/Settings';
 import AuthWall from './components/AuthWall';
+import KioskElevationGate from './components/KioskElevationGate';
 
-// Hide cursor when running on kiosk device (?kiosk=1)
-const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
+// Kiosk mode: explicit param OR localhost (device screen)
+const isKiosk =
+  new URLSearchParams(window.location.search).has('kiosk') ||
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1';
 if (isKiosk) {
   const style = document.createElement('style');
   style.textContent = 'html, html * { cursor: none !important; }';
@@ -86,12 +90,25 @@ export default function App() {
       <AuthGate authLoading={authLoading} user={user}>
         <Layout>
           <Routes>
+            {/* Dashboard — always accessible (even in kiosk without auth) */}
             <Route path="/" element={<Dashboard />} />
-            <Route path="/modules" element={<Modules />} />
-            <Route path="/modules/:name" element={<ModuleDetail />} />
-            <Route path="/system" element={<SystemPage />} />
-            <Route path="/integrity" element={<IntegrityPage />} />
-            <Route path="/settings/*" element={<Settings />} />
+
+            {/* Restricted routes — require elevation in kiosk mode */}
+            <Route path="/modules" element={
+              isKiosk ? <KioskElevationGate><Modules /></KioskElevationGate> : <Modules />
+            } />
+            <Route path="/modules/:name" element={
+              isKiosk ? <KioskElevationGate><ModuleDetail /></KioskElevationGate> : <ModuleDetail />
+            } />
+            <Route path="/system" element={
+              isKiosk ? <KioskElevationGate><SystemPage /></KioskElevationGate> : <SystemPage />
+            } />
+            <Route path="/integrity" element={
+              isKiosk ? <KioskElevationGate><IntegrityPage /></KioskElevationGate> : <IntegrityPage />
+            } />
+            <Route path="/settings/*" element={
+              isKiosk ? <KioskElevationGate><Settings /></KioskElevationGate> : <Settings />
+            } />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Layout>
@@ -112,9 +129,12 @@ function AuthGate({
   user: AuthUser | null;
   children: ReactNode;
 }) {
-  // Kiosk device (?kiosk=1) is always trusted — token comes from wizard
+  // Kiosk: explicit param OR accessing from localhost (device screen)
   const isAuthenticated = !authLoading && user?.authenticated === true;
-  const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
+  const isKiosk =
+    new URLSearchParams(window.location.search).has('kiosk') ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
 
   if (authLoading) {
     return (
