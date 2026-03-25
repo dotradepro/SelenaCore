@@ -212,6 +212,18 @@ class DeviceManager:
         r = dict(row._mapping)
         return RegisteredDevice(**{**r, "active": bool(r["active"])})
 
+    async def rename(self, device_id: str, new_name: str) -> bool:
+        """Rename a registered device. Returns True if a row was updated."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                text("UPDATE registered_devices SET device_name = :name WHERE device_id = :id AND active = 1"),
+                {"name": new_name[:120], "id": device_id},
+            )
+        updated = result.rowcount > 0
+        if updated:
+            logger.info("Device renamed: %s → %s", device_id, new_name)
+        return updated
+
     async def purge_inactive(self) -> int:
         """Hard-delete rows that have been soft-deleted. Returns count removed."""
         async with self._engine.begin() as conn:

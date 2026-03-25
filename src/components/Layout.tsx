@@ -1,6 +1,95 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../store/useStore';
+
+/* ── Notification Bell ── */
+interface NotifyEntry { message: string; level: string; ts: string; channels: string[]; }
+const LEVEL_COLOR: Record<string, string> = { info: '#60a5fa', warning: '#fbbf24', critical: '#f87171', error: '#f87171' };
+
+function NotificationBell() {
+  const [items, setItems] = useState<NotifyEntry[]>([]);
+  const [open, setOpen] = useState(false);
+  const [lastSeen, setLastSeen] = useState(0);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const r = await fetch('/api/ui/modules/notification-router/notify/history?limit=30');
+        if (r.ok) setItems(await r.json());
+      } catch { /* ignore */ }
+    };
+    poll();
+    const id = setInterval(poll, 8000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const unread = items.filter((_, i) => i >= lastSeen).length;
+
+  const handleOpen = () => {
+    setOpen(o => !o);
+    setLastSeen(items.length);
+  };
+
+  return (
+    <div ref={panelRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        onClick={handleOpen}
+        style={{
+          width: 32, height: 32, borderRadius: 8, border: 'none',
+          background: open ? 'var(--sf3)' : 'transparent',
+          color: unread > 0 ? 'var(--ac)' : 'var(--tx3)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          position: 'relative', transition: 'all .15s',
+        }}
+      >
+        <svg viewBox="0 0 16 16" fill="none" width="15" height="15">
+          <path d="M8 1.5a5 5 0 0 0-5 5v2.5L1.5 11h13L13 9V6.5a5 5 0 0 0-5-5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M6.5 13a1.5 1.5 0 0 0 3 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+        {unread > 0 && (
+          <div style={{
+            position: 'absolute', top: 3, right: 3,
+            width: 8, height: 8, borderRadius: '50%',
+            background: 'var(--ac)', border: '1.5px solid var(--sf)',
+          }} />
+        )}
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 4,
+          width: 300, maxHeight: 340, overflowY: 'auto',
+          background: 'var(--sf)', border: '1px solid var(--b2)',
+          borderRadius: 12, boxShadow: '0 8px 32px #0008', zIndex: 999,
+        }}>
+          <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--b)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notifications</span>
+            <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{items.length} total</span>
+          </div>
+          {items.length === 0 ? (
+            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 12, color: 'var(--tx3)' }}>No notifications</div>
+          ) : [...items].reverse().map((n, i) => (
+            <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--b)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: LEVEL_COLOR[n.level] || '#60a5fa', flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: 'var(--tx)', flex: 1 }}>{n.message}</span>
+              </div>
+              <span style={{ fontSize: 10, color: 'var(--tx3)', marginLeft: 12 }}>{new Date(n.ts).toLocaleTimeString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Clock hook ── */
 function useClock() {
@@ -182,6 +271,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Separator */}
           <div style={{ width: 1, height: 18, background: 'var(--b2)', margin: '0 2px', flexShrink: 0 }} />
 
+          {/* Notification Bell */}
+          <NotificationBell />
+
           {/* Clock */}
           <div style={{ textAlign: 'center', flexShrink: 0 }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 500, color: 'var(--tx)', lineHeight: 1 }}>
@@ -247,9 +339,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               style={{
                 width: 30, height: 30, borderRadius: '50%',
                 border: `2px solid ${user.role === 'owner' ? '#7c3aed'
-                    : user.role === 'admin' ? '#3b82f6'
-                      : user.role === 'user' ? '#10b981'
-                        : '#52525b'
+                  : user.role === 'admin' ? '#3b82f6'
+                    : user.role === 'user' ? '#10b981'
+                      : '#52525b'
                   }`,
                 background: 'var(--sf3)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',

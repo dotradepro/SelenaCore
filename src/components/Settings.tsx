@@ -690,7 +690,7 @@ function SystemModulesSettings() {
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
 
-  const systemMods = modules.filter(m => m.type === 'SYSTEM');
+  const systemMods = modules.filter(m => m.type === 'SYSTEM' && m.name !== 'presence-detection');
   const selected = systemMods.find(m => m.name === selectedMod);
 
   return (

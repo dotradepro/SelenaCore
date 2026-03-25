@@ -201,7 +201,10 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
             ]);
             if (!accRes.ok) throw new Error();
             const accData = await accRes.json();
-            setUsers(accData.users ?? []);
+            const userList: UserProfile[] = accData.users ?? [];
+            setUsers(userList);
+            // auto-expand first user on first load
+            setExpandedId((prev) => prev ?? (userList[0]?.user_id ?? null));
             if (presRes.ok) {
                 const presData = await presRes.json();
                 setPresenceUsers(presData.users ?? []);
@@ -482,6 +485,17 @@ function UserRow({
         loadDevices();
     };
 
+    const renameDevice = async (deviceId: string, newName: string) => {
+        if (!newName.trim()) return;
+        await fetch(`${UM}/devices/${deviceId}`, {
+            method: 'PATCH',
+            headers: authHeaders(true),
+            credentials: 'include',
+            body: JSON.stringify({ device_name: newName.trim() }),
+        });
+        loadDevices();
+    };
+
     return (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
             {/* Row header */}
@@ -653,28 +667,12 @@ function UserRow({
                             ) : (
                                 <div className="space-y-1.5">
                                     {devices.map((d) => (
-                                        <div key={d.device_id} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
-                                            <Smartphone size={11} className="text-zinc-500 shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="truncate text-zinc-300 text-[12px]">{d.device_name}</p>
-                                                <p className="text-zinc-600 text-[10px]">{d.ip ?? '—'}</p>
-                                            </div>
-                                            <span className={cn(
-                                                'text-[10px] px-1.5 py-0.5 rounded border shrink-0',
-                                                d.active ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-zinc-600 bg-zinc-800 border-zinc-700',
-                                            )}>
-                                                {d.active ? 'active' : 'revoked'}
-                                            </span>
-                                            {d.active && (
-                                                <button
-                                                    onClick={() => revokeDevice(d.device_id)}
-                                                    className="text-zinc-600 hover:text-red-400 transition-colors shrink-0 p-1"
-                                                    title={t('usersPanel.revokeDevice')}
-                                                >
-                                                    <X size={11} />
-                                                </button>
-                                            )}
-                                        </div>
+                                        <DeviceRow
+                                            key={d.device_id}
+                                            device={d}
+                                            onRevoke={() => revokeDevice(d.device_id)}
+                                            onRename={(name) => renameDevice(d.device_id, name)}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -746,6 +744,65 @@ function UserRow({
                         </div>
                     )}
                 </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Device row with inline rename ───────────────────────────────────────────
+function DeviceRow({
+    device, onRevoke, onRename,
+}: {
+    device: RegisteredDevice;
+    onRevoke: () => void;
+    onRename: (name: string) => void;
+}) {
+    const { t } = useTranslation();
+    const [editing, setEditing] = useState(false);
+    const [val, setVal] = useState(device.device_name);
+
+    const save = () => {
+        onRename(val);
+        setEditing(false);
+    };
+
+    return (
+        <div className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
+            <Smartphone size={11} className="text-zinc-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+                {editing ? (
+                    <input
+                        value={val}
+                        onChange={(e) => setVal(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(device.device_name); setEditing(false); } }}
+                        autoFocus
+                        className="w-full bg-zinc-800 border border-violet-500/50 rounded px-1.5 py-0.5 text-xs text-zinc-100 focus:outline-none"
+                    />
+                ) : (
+                    <>
+                        <p className="truncate text-zinc-300 text-[12px]">{device.device_name}</p>
+                        <p className="text-zinc-600 text-[10px]">{device.ip ?? '—'}</p>
+                    </>
+                )}
+            </div>
+            <span className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded border shrink-0',
+                device.active ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : 'text-zinc-600 bg-zinc-800 border-zinc-700',
+            )}>
+                {device.active ? 'active' : 'revoked'}
+            </span>
+            {device.active && (
+                <>
+                    {editing ? (
+                        <>
+                            <button onClick={save} className="text-emerald-400 hover:text-emerald-300 shrink-0 p-1"><Check size={11} /></button>
+                            <button onClick={() => { setVal(device.device_name); setEditing(false); }} className="text-zinc-600 hover:text-zinc-400 shrink-0 p-1"><X size={11} /></button>
+                        </>
+                    ) : (
+                        <button onClick={() => setEditing(true)} className="text-zinc-600 hover:text-zinc-300 transition-colors shrink-0 p-1" title={t('usersPanel.editDevice')}><Edit3 size={11} /></button>
+                    )}
+                    <button onClick={onRevoke} className="text-zinc-600 hover:text-red-400 transition-colors shrink-0 p-1" title={t('usersPanel.revokeDevice')}><X size={11} /></button>
+                </>
             )}
         </div>
     );

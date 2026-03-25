@@ -830,6 +830,22 @@ init();
                 mod._require_role(info, "admin")
             await mod._devices.revoke(device_id)
 
+        @router.patch("/devices/{device_id}")
+        async def rename_device(device_id: str, req: dict, request: Request) -> dict:
+            info = await mod._require_device_auth(request)
+            device = await mod._devices.get_by_id(device_id)
+            if not device:
+                raise HTTPException(status_code=404, detail="Device not found")
+            if device.user_id != info["user_id"]:
+                mod._require_role(info, "admin")
+            new_name = str(req.get("device_name", "")).strip()
+            if not new_name:
+                raise HTTPException(status_code=422, detail="device_name required")
+            updated = await mod._devices.rename(device_id, new_name)
+            if not updated:
+                raise HTTPException(status_code=404, detail="Device not found or already revoked")
+            return {"device_id": device_id, "device_name": new_name}
+
         # ── Role permissions ───────────────────────────────────────────────────
 
         @router.get("/roles")

@@ -410,6 +410,7 @@ const en = {
             tab_detail_devices: 'Devices',
             tab_detail_notify: 'Notify',
             registeredSessions: 'Registered sessions',
+            editDevice: 'Rename',
             notifyDesc: 'Send a notification to all configured channels.',
             notifyPlaceholder: 'Message text…',
             sendNotify: 'Send',

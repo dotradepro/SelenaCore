@@ -410,6 +410,7 @@ const uk = {
             tab_detail_devices: 'Пристрої',
             tab_detail_notify: 'Сповіщення',
             registeredSessions: 'Зареєстровані сесії',
+            editDevice: 'Перейменувати',
             notifyDesc: 'Надіслати сповіщення в усі налаштовані канали.',
             notifyPlaceholder: 'Текст повідомлення…',
             sendNotify: 'Надіслати',
