@@ -428,7 +428,7 @@ const en = {
             notifySent: 'Sent!',
             presenceAway: 'away',
             presenceLeaving: 'away in {{min}}m',
-            presenceOnly: 'Presence tracking — no account linked',
+            presenceOnly: 'Add tracking user',
             linkSelect: 'Select account…',
             linkBtn: 'Link',
             confirmDelete: 'Delete user “{{name}}” and all their devices?',

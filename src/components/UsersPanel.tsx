@@ -399,13 +399,7 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                             </div>
                         )}
                         {/* QR result */}
-                        {addTrackingQr && (
-                            <PresenceQrPanel
-                                qrSvg={addTrackingQr.qr_svg}
-                                joinUrl={addTrackingQr.join_url}
-                                onClose={() => setAddTrackingQr(null)}
-                            />
-                        )}
+                        {addTrackingQr && <PresenceQrModal qrSvg={addTrackingQr.qr_svg} onClose={() => setAddTrackingQr(null)} />}
                         {unlinked.map((pu) => (
                             <UnlinkedPresenceRow
                                 key={pu.user_id}
@@ -802,15 +796,7 @@ function UserRow({
                                             </>
                                         )}
                                     </div>
-                                    {presenceQr && (
-                                        <div className="mb-2">
-                                            <PresenceQrPanel
-                                                qrSvg={presenceQr.qr_svg}
-                                                joinUrl={presenceQr.join_url}
-                                                onClose={() => setPresenceQr(null)}
-                                            />
-                                        </div>
-                                    )}
+                                    {presenceQr && <PresenceQrModal qrSvg={presenceQr.qr_svg} onClose={() => setPresenceQr(null)} />}
                                     <div className="space-y-1">
                                         {presenceUser.devices.map((d, i) => (
                                             <div key={i} className="flex items-center gap-2 text-xs bg-zinc-900 rounded-lg px-3 py-2">
@@ -842,13 +828,7 @@ function UserRow({
                                             {t('usersPanel.presenceSetupTracking')}
                                         </button>
                                     </div>
-                                    {setupTrackingQr && (
-                                        <PresenceQrPanel
-                                            qrSvg={setupTrackingQr.qr_svg}
-                                            joinUrl={setupTrackingQr.join_url}
-                                            onClose={() => setSetupTrackingQr(null)}
-                                        />
-                                    )}
+                                    {setupTrackingQr && <PresenceQrModal qrSvg={setupTrackingQr.qr_svg} onClose={() => setSetupTrackingQr(null)} />}
                                 </div>
                             )}
                         </div>
@@ -1098,31 +1078,29 @@ const SELECT_PERMS: { key: keyof RolePerms; options: string[] }[] = [
     { key: 'voice_commands', options: ['all', 'basic', 'none'] },
 ];
 
-// ─── Reusable inline QR panel for presence invites ───────────────────────────
-function PresenceQrPanel({ qrSvg, joinUrl, onClose }: { qrSvg: string; joinUrl: string; onClose: () => void }) {
+// ─── QR modal for presence invites ──────────────────────────────────────────
+function PresenceQrModal({ qrSvg, onClose }: { qrSvg: string; onClose: () => void }) {
     const { t } = useTranslation();
     return (
-        <div className="p-3 bg-zinc-900 border border-violet-500/30 rounded-xl">
-            <div className="flex items-start gap-3">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={onClose}
+        >
+            <div
+                className="relative bg-zinc-900 border border-violet-500/40 rounded-2xl p-7 flex flex-col items-center gap-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <button
+                    onClick={onClose}
+                    className="absolute top-3 right-3 text-zinc-500 hover:text-zinc-200 transition-colors"
+                >
+                    <X size={16} />
+                </button>
+                <p className="text-sm font-semibold text-zinc-100">{t('usersPanel.presenceQrTitle')}</p>
                 <div
-                    className="w-28 h-28 shrink-0 bg-white rounded-lg p-1 overflow-hidden"
+                    className="w-60 h-60 bg-white rounded-xl p-2 overflow-hidden"
                     dangerouslySetInnerHTML={{ __html: qrSvg }}
                 />
-                <div className="flex-1 min-w-0 space-y-1.5">
-                    <p className="text-xs font-medium text-zinc-200">{t('usersPanel.presenceQrTitle')}</p>
-                    <p className="text-[11px] text-zinc-500">{t('usersPanel.presenceQrDesc')}</p>
-                    <a
-                        href={joinUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-violet-400 hover:underline break-all block"
-                    >
-                        {joinUrl}
-                    </a>
-                </div>
-                <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 shrink-0 mt-0.5">
-                    <X size={13} />
-                </button>
             </div>
         </div>
     );
@@ -1240,16 +1218,8 @@ function UnlinkedPresenceRow({
                     </div>
                 )}
             </div>
-            {/* QR panel */}
-            {qr && (
-                <div className="px-4 pb-4 border-t border-zinc-800/60 bg-zinc-950/40 pt-3">
-                    <PresenceQrPanel
-                        qrSvg={qr.qr_svg}
-                        joinUrl={qr.join_url}
-                        onClose={() => setQr(null)}
-                    />
-                </div>
-            )}
+            {/* QR modal */}
+            {qr && <PresenceQrModal qrSvg={qr.qr_svg} onClose={() => setQr(null)} />}
         </div>
     );
 }

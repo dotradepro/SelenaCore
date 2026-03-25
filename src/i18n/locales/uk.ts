@@ -428,7 +428,7 @@ const uk = {
             notifySent: 'Надіслано!',
             presenceAway: 'відсутній',
             presenceLeaving: 'піде через {{min}}хв',
-            presenceOnly: "Трекінг присутності — обліковий запис не прив'язано",
+            presenceOnly: 'Додати користувача трекінгу',
             linkSelect: 'Виберіть обліковий запис…',
             linkBtn: "Прив'язати",
             confirmDelete: 'Видалити користувача «{{name}}» та всі їхні пристрої?',
