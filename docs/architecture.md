@@ -270,3 +270,15 @@ System modules run inside the core process and have NO network ports.
 /secure/master.hash           SHA256 of the manifest itself
 /secure/core_backup/v0.3.0/   Core files backup copy
 ```
+
+---
+
+## Further Reading
+
+| Topic | Document |
+|-------|----------|
+| User authentication & QR flow | [docs/user-manager-auth.md](user-manager-auth.md) |
+| Module protocol (tokens, HMAC, webhooks) | [docs/module-core-protocol.md](module-core-protocol.md) |
+| Module development (SDK, manifest) | [docs/module-development.md](module-development.md) |
+| Widget development (widget.html, i18n) | [docs/widget-development.md](widget-development.md) |
+| Deployment & systemd | [docs/deployment.md](deployment.md) |

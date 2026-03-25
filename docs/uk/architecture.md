@@ -50,6 +50,18 @@ SelenaCore використовує **дворівневу модель вико
 
 ---
 
+## Додаткова документація
+
+| Тема | Документ |
+|------|----------|
+| Автентифікація користувачів та QR-флоу | [docs/uk/user-manager-auth.md](user-manager-auth.md) |
+| Протокол модулів (токени, HMAC, вебхуки) | [docs/uk/module-core-protocol.md](module-core-protocol.md) |
+| Розробка модулів (SDK, manifest) | [docs/uk/module-development.md](module-development.md) |
+| Розробка віджетів (widget.html, i18n) | [docs/uk/widget-development.md](widget-development.md) |
+| Деплой та systemd | [docs/uk/deployment.md](deployment.md) |
+
+---
+
 ### 1. Core API (`core/api/`)
 
 REST-сервер на FastAPI, порт `7070`. Точка входу для всіх модулів.
