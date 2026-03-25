@@ -113,6 +113,14 @@ function broadcastThemeToIframes() {
   });
 }
 
+export interface AuthUser {
+  name: string;
+  role: string;
+  user_id: string | null;
+  device_id: string | null;
+  authenticated: boolean;
+}
+
 interface AppState {
   isConfigured: boolean;
   wizardLoading: boolean;
@@ -122,7 +130,8 @@ interface AppState {
   setTheme: (mode: ThemeMode) => void;
   initThemeListener: () => () => void;
   wizardRequirements: WizardRequirements | null;
-  user: { name: string; role: string } | null;
+  user: AuthUser | null;
+  elevatedToken: string | null;
   health: Health | null;
   stats: SystemStats | null;
   devices: Device[];
@@ -130,7 +139,9 @@ interface AppState {
   devicesLoading: boolean;
   modulesLoading: boolean;
   setConfigured: (status: boolean) => void;
-  setUser: (user: { name: string; role: string }) => void;
+  setUser: (user: AuthUser) => void;
+  setElevatedToken: (token: string | null) => void;
+  initAuth: () => Promise<void>;
   setSetupStage: (stage: 'landing' | 'wizard') => void;
   setSelectedLanguage: (lang: string) => void;
   fetchWizardStatus: () => Promise<void>;
@@ -215,6 +226,7 @@ export const useStore = create<AppState>((set, get) => ({
   theme: loadTheme(),
   wizardRequirements: null,
   user: null,
+  elevatedToken: null,
   health: null,
   stats: null,
   devices: [],
@@ -225,6 +237,54 @@ export const useStore = create<AppState>((set, get) => ({
 
   setConfigured: (status) => set({ isConfigured: status }),
   setUser: (user) => set({ user }),
+  setElevatedToken: (token) => {
+    set({ elevatedToken: token });
+    try {
+      if (token) sessionStorage.setItem('selena_elevated', token);
+      else sessionStorage.removeItem('selena_elevated');
+    } catch { /* ignore */ }
+  },
+  initAuth: async () => {
+    // Restore elevated token from sessionStorage (survives page refresh)
+    try {
+      const saved = sessionStorage.getItem('selena_elevated');
+      if (saved) set({ elevatedToken: saved });
+    } catch { /* ignore */ }
+
+    // Find device token: cookie first, then localStorage
+    let token: string | null = null;
+    try {
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)selena_device=([^;]+)/);
+      token = cookieMatch?.[1] ?? localStorage.getItem('selena_device');
+    } catch { /* ignore */ }
+
+    if (!token) {
+      set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false } });
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/ui/modules/user-manager/me', {
+        headers: { 'X-Device-Token': token },
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        set({
+          user: {
+            name: data.display_name || 'User',
+            role: data.role ?? 'guest',
+            user_id: data.user_id ?? null,
+            device_id: data.device_id ?? null,
+            authenticated: data.authenticated ?? true,
+          },
+        });
+        return;
+      }
+    } catch { /* network error — fall through to guest */ }
+
+    set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false } });
+  },
   setSetupStage: (stage) => set({ setupStage: stage }),
   setVoiceStatus: (voiceStatus: 'idle' | 'listening' | 'speaking') => set({ voiceStatus }),
   setSelectedLanguage: (lang) => {

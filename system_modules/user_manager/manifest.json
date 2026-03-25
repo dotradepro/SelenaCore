@@ -1,0 +1,23 @@
+{
+    "name": "user-manager",
+    "version": "1.0.0",
+    "description": "User profiles, device-token authentication, and role-based access control",
+    "type": "SYSTEM",
+    "ui_profile": "SETTINGS_ONLY",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "permissions": ["events.publish"],
+    "ui": {
+        "icon": null,
+        "widget": null,
+        "settings": "settings.html"
+    },
+    "oauth": null,
+    "resources": {
+        "memory_mb": 32,
+        "cpu": 0.05
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}

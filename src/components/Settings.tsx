@@ -1205,6 +1205,7 @@ function SystemModulesSettings() {
               style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
               title={`${selected.name} settings`}
               sandbox="allow-scripts allow-same-origin allow-forms"
+              allow="geolocation"
             />
           ) : selected ? (
             <div style={{

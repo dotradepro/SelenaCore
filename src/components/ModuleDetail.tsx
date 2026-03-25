@@ -105,6 +105,7 @@ export default function ModuleDetail() {
                             display: 'block', background: '#0a0a0a',
                         }}
                         title={`${mod.name} settings`}
+                        allow="geolocation"
                     />
                 ) : (
                     <div style={{

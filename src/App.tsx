@@ -10,6 +10,7 @@ import ModuleDetail from './components/ModuleDetail';
 import SystemPage from './components/SystemPage';
 import IntegrityPage from './components/IntegrityPage';
 import Settings from './components/Settings';
+import DeviceAuthBanner from './components/DeviceAuthBanner';
 
 // Hide cursor when running on kiosk device (?kiosk=1)
 const isKiosk = new URLSearchParams(window.location.search).has('kiosk');
@@ -29,11 +30,17 @@ export default function App() {
   const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
   const connectSyncStream = useStore((state) => state.connectSyncStream);
   const initThemeListener = useStore((state) => state.initThemeListener);
+  const initAuth = useStore((state) => state.initAuth);
 
   useEffect(() => {
     fetchWizardStatus();
     fetchWizardRequirements();
   }, [fetchWizardStatus, fetchWizardRequirements]);
+
+  // Initialise device-token auth (fire-and-forget — non-blocking)
+  useEffect(() => {
+    initAuth();
+  }, [initAuth]);
 
   // Apply theme and listen for system preference changes
   useEffect(() => {
@@ -73,6 +80,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <DeviceAuthBanner />
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />

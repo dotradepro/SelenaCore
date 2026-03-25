@@ -238,6 +238,7 @@ const en = {
             stepStt: 'STT Model',
             stepTts: 'TTS Voice',
             stepUser: 'User',
+            stepDevices: 'Devices',
             stepPlatform: 'Platform',
             stepImport: 'Import',
 
@@ -309,11 +310,21 @@ const en = {
             ttsPlaying: 'Playing…',
 
             // Step 7 - User
-            userTitle: 'First user (Admin)',
-            userDesc: 'Create an administrator profile. PIN is required for settings access.',
+            userTitle: 'First user (Owner)',
+            userDesc: 'Create the owner profile. PIN is required for settings and sensitive actions.',
             userName: 'Name',
             userPin: 'PIN code (4-8 digits)',
             userPinPlaceholder: '••••',
+
+            // Step 8 - Home devices
+            homeDevicesTitle: 'Register devices',
+            homeDevicesDesc: 'Name this screen and register it as the main hub display. Mobile devices can be registered later via Settings.',
+            homeDevicesScreen: 'This screen (kiosk display)',
+            homeDevicesScreenDesc: 'The physical hub display — always trusted, no PIN required for daily use.',
+            homeDevicesScreenPlaceholder: 'e.g. Living Room Screen',
+            homeDevicesMobile: 'Mobile devices',
+            homeDevicesMobileDesc: 'After setup, go to Settings → Users to register your phone or tablet via QR code + PIN.',
+            kioskDefaultName: 'Home Screen',
 
             // Step 8 - Platform
             platformTitle: 'Platform registration',
@@ -374,6 +385,27 @@ const en = {
             home: 'Home',
             alice: 'Alice (mock)',
             computer: 'Computer',
+        },
+
+        // ── Auth / device registration ──
+        auth: {
+            bannerText: 'This device is not registered.',
+            bannerAction: 'Register',
+            registerTitle: 'Register this device',
+            registerDesc: 'Link this browser to your account.',
+            username: 'Username',
+            usernamePlaceholder: 'Your name',
+            pin: 'PIN code',
+            deviceName: 'Device name',
+            deviceNamePlaceholder: 'e.g. iPhone 15, Work laptop…',
+            register: 'Register',
+            registerFailed: 'Registration failed. Check your username or PIN.',
+            registerSuccess: 'Device registered!',
+            confirmTitle: 'Confirm with PIN',
+            confirmAs: 'Confirming as {{name}}',
+            confirm: 'Confirm',
+            pinIncorrect: 'Incorrect PIN',
+            elevatedExpired: 'Session expired — please confirm PIN again.',
         },
     },
 } as const;

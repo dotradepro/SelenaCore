@@ -16,3 +16,6 @@ token git
 # Local docs snapshot
 _docs/
 config/core.yaml
+
+# Private planning — never commit to GitHub
+_private/

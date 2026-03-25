@@ -127,6 +127,55 @@
             color: var(--gr);
             min-height: 20px;
         }
+
+        .btn-detect {
+            padding: 6px 14px;
+            background: var(--sf2);
+            color: var(--ac);
+            border: 1px solid var(--ac);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+            transition: background .2s;
+        }
+
+        .btn-detect:hover {
+            background: var(--ac);
+            color: #fff;
+        }
+
+        .btn-detect:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .detect-msg {
+            font-size: 0.82rem;
+            color: var(--tx2);
+            min-height: 18px;
+            margin-bottom: 6px;
+        }
+
+        .detect-msg.error {
+            color: var(--rd);
+        }
+
+        .loc-info {
+            font-size: 0.85rem;
+            color: var(--tx2);
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            background: var(--sf);
+            border: 1px solid var(--b);
+            border-radius: 6px;
+            min-height: 20px;
+        }
+
+        .loc-info .coords {
+            color: var(--tx3);
+            font-size: 0.78rem;
+        }
     </style>
 </head>
 
@@ -134,14 +183,11 @@
     <h1 data-i18n="title"></h1>
 
     <h2 data-i18n="h_loc_tz"></h2>
-    <div class="form-group">
-        <label data-i18n="lbl_lat"></label>
-        <input type="number" id="lat" step="0.0001" min="-90" max="90" />
-    </div>
-    <div class="form-group">
-        <label data-i18n="lbl_lon"></label>
-        <input type="number" id="lon" step="0.0001" min="-180" max="180" />
-    </div>
+    <input type="hidden" id="lat" />
+    <input type="hidden" id="lon" />
+    <div id="loc-info" class="loc-info"></div>
+    <button class="btn-detect" onclick="detectLocation()" id="btn-detect" data-i18n="detect"></button>
+    <div id="detect-msg" class="detect-msg"></div>
     <div class="form-group">
         <label data-i18n="lbl_tz"></label>
         <input type="text" id="tz" placeholder="Europe/Kyiv" />
@@ -168,14 +214,30 @@
         var L = {
             en: {
                 title: '⏱ Scheduler', h_loc_tz: 'Location & Timezone',
-                lbl_lat: 'Latitude (° -90..90)', lbl_lon: 'Longitude (° -180..180)', lbl_tz: 'Timezone',
+                detect: '📍 Detect my location', detecting: 'Detecting…',
+                detect_ok: 'Location detected', detect_tz: 'Timezone detected',
+                detect_err_denied: 'Location access denied. Allow it in browser settings.',
+                detect_err_unavail: 'Location unavailable. Try again later.',
+                detect_err_timeout: 'Location request timed out. Try again.',
+                detect_err_nosupport: 'Geolocation is not supported by this browser.',
+                detect_err_unknown: 'Failed to detect location.',
+                loc_not_set: 'Location not set — press the button above to detect',
+                loc_set: 'Location', lbl_tz: 'Timezone',
                 save: 'Save', saved: '✓ Saved',
                 h_jobs: 'Active Jobs', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Owner', col_next: 'Next Run',
                 remove_confirm: 'Remove job '
             },
             uk: {
                 title: '⏱ Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
-                lbl_lat: 'Широта (° -90..90)', lbl_lon: 'Довгота (° -180..180)', lbl_tz: 'Часовий пояс',
+                detect: '📍 Визначити моє місце', detecting: 'Визначаємо…',
+                detect_ok: 'Місцезнаходження визначено', detect_tz: 'Часовий пояс визначено',
+                detect_err_denied: 'Доступ до геолокації заборонено. Дозвольте у налаштуваннях браузера.',
+                detect_err_unavail: 'Місцезнаходження недоступне. Спробуйте пізніше.',
+                detect_err_timeout: 'Час очікування вичерпано. Спробуйте ще раз.',
+                detect_err_nosupport: 'Геолокація не підтримується цим браузером.',
+                detect_err_unknown: 'Не вдалося визначити місцезнаходження.',
+                loc_not_set: 'Місцезнаходження не встановлено — натисніть кнопку вище',
+                loc_set: 'Місцезнаходження', lbl_tz: 'Часовий пояс',
                 save: 'Зберегти', saved: '✓ Збережено',
                 h_jobs: 'Активні завдання', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Власник', col_next: 'Наступний запуск',
                 remove_confirm: 'Видалити завдання '
@@ -187,12 +249,24 @@
 
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
+        function updateLocInfo() {
+            var el = document.getElementById('loc-info');
+            var lat = document.getElementById('lat').value;
+            var lon = document.getElementById('lon').value;
+            if (lat && lon && lat !== '' && lon !== '') {
+                el.innerHTML = '✅ ' + t('loc_set') + ': <span class="coords">' + lat + ', ' + lon + '</span>';
+            } else {
+                el.textContent = t('loc_not_set');
+            }
+        }
+
         async function loadConfig() {
             const r = await fetch(BASE + '/config');
             const d = await r.json();
             document.getElementById('lat').value = d.latitude ?? '';
             document.getElementById('lon').value = d.longitude ?? '';
             document.getElementById('tz').value = d.timezone ?? 'UTC';
+            updateLocInfo();
         }
 
         async function saveConfig() {
@@ -223,6 +297,59 @@
             if (!confirm(t('remove_confirm') + jobId + '?')) return;
             await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
             loadJobs();
+        }
+
+        function detectLocation() {
+            var msgEl = document.getElementById('detect-msg');
+            var btn = document.getElementById('btn-detect');
+            msgEl.className = 'detect-msg';
+
+            if (!navigator.geolocation) {
+                msgEl.className = 'detect-msg error';
+                msgEl.textContent = t('detect_err_nosupport');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = t('detecting');
+            msgEl.textContent = '';
+
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    var lat = Math.round(pos.coords.latitude * 10000) / 10000;
+                    var lon = Math.round(pos.coords.longitude * 10000) / 10000;
+                    document.getElementById('lat').value = lat;
+                    document.getElementById('lon').value = lon;
+
+                    // Detect browser timezone via Intl API
+                    try {
+                        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        if (tz) {
+                            document.getElementById('tz').value = tz;
+                        }
+                    } catch (e) { /* keep existing tz value */ }
+
+                    updateLocInfo();
+                    msgEl.className = 'detect-msg';
+                    msgEl.style.color = 'var(--gr)';
+                    msgEl.textContent = t('detect_ok');
+
+                    btn.disabled = false;
+                    btn.textContent = t('detect');
+                },
+                function (err) {
+                    msgEl.className = 'detect-msg error';
+                    switch (err.code) {
+                        case 1: msgEl.textContent = t('detect_err_denied'); break;
+                        case 2: msgEl.textContent = t('detect_err_unavail'); break;
+                        case 3: msgEl.textContent = t('detect_err_timeout'); break;
+                        default: msgEl.textContent = t('detect_err_unknown'); break;
+                    }
+                    btn.disabled = false;
+                    btn.textContent = t('detect');
+                },
+                { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+            );
         }
 
         applyLang();

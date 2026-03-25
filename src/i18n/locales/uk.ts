@@ -238,6 +238,7 @@ const uk = {
             stepStt: 'STT Модель',
             stepTts: 'TTS Голос',
             stepUser: 'Користувач',
+            stepDevices: 'Пристрої',
             stepPlatform: 'Платформа',
             stepImport: 'Імпорт',
 
@@ -309,11 +310,21 @@ const uk = {
             ttsPlaying: 'Відтворення…',
 
             // Step 7 - User
-            userTitle: 'Перший користувач (Admin)',
-            userDesc: 'Створіть профіль адміністратора. PIN-код потрібен для доступу до налаштувань.',
+            userTitle: 'Перший користувач (Власник)',
+            userDesc: 'Створіть профіль власника. PIN-код потрібен для налаштувань та важливих дій.',
             userName: 'Ім\'я',
             userPin: 'PIN-код (4-8 цифр)',
             userPinPlaceholder: '••••',
+
+            // Step 8 - Home devices
+            homeDevicesTitle: 'Реєстрація пристроїв',
+            homeDevicesDesc: 'Назвіть цей екран і зареєструйте його як основний дисплей хаба. Мобільні пристрої можна додати пізніше в Налаштуваннях.',
+            homeDevicesScreen: 'Цей екран (kiosk-дисплей)',
+            homeDevicesScreenDesc: 'Фізичний дисплей хаба — завжди довірений, PIN для щоденного використання не потрібен.',
+            homeDevicesScreenPlaceholder: 'напр. Екран вітальні',
+            homeDevicesMobile: 'Мобільні пристрої',
+            homeDevicesMobileDesc: 'Після налаштування перейдіть до Налаштування → Користувачі, щоб зареєструвати телефон або планшет через QR-код + PIN.',
+            kioskDefaultName: 'Головний екран',
 
             // Step 8 - Platform
             platformTitle: 'Реєстрація на платформі',
@@ -374,6 +385,27 @@ const uk = {
             home: 'Дім',
             alice: 'Аліса (mock)',
             computer: 'Комп\'ютер',
+        },
+
+        // ── Auth / device registration ──
+        auth: {
+            bannerText: 'Цей пристрій не зареєстровано.',
+            bannerAction: 'Зареєструвати',
+            registerTitle: 'Зареєструвати цей пристрій',
+            registerDesc: 'Прив\'яжіть цей браузер до свого облікового запису.',
+            username: 'Ім\'я користувача',
+            usernamePlaceholder: 'Ваше ім\'я',
+            pin: 'PIN-код',
+            deviceName: 'Назва пристрою',
+            deviceNamePlaceholder: 'напр. iPhone 15, Ноутбук роботи…',
+            register: 'Зареєструвати',
+            registerFailed: 'Помилка реєстрації. Перевірте ім\'я або PIN.',
+            registerSuccess: 'Пристрій зареєстровано!',
+            confirmTitle: 'Підтвердіть PIN',
+            confirmAs: 'Підтвердження як {{name}}',
+            confirm: 'Підтвердити',
+            pinIncorrect: 'Невірний PIN',
+            elevatedExpired: 'Сесія завершилась — підтвердіть PIN знову.',
         },
     },
 } as const;

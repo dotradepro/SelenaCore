@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff, Smartphone } from 'lucide-react';
 import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
 
-const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Cloud, Download];
+const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Smartphone, Cloud, Download];
 
 // Map frontend step number to backend step name + data builder
 const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Record<string, string> }> = {
@@ -17,8 +17,9 @@ const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Recor
   5: { name: 'stt_model', buildData: (f) => ({ model: f.stt }) },
   6: { name: 'tts_voice', buildData: (f) => ({ voice: f.tts }) },
   7: { name: 'admin_user', buildData: (f) => ({ username: f.username, pin: f.pin }) },
-  8: { name: 'platform', buildData: (f) => ({ device_hash: f.platformHash }) },
-  9: { name: 'import', buildData: (f) => ({ source: f.importSource }) },
+  8: { name: 'home_devices', buildData: (f) => ({ device_name: f.kiosk_name }) },
+  9: { name: 'platform', buildData: (f) => ({ device_hash: f.platformHash }) },
+  10: { name: 'import', buildData: (f) => ({ source: f.importSource }) },
 };
 
 interface FormData {
@@ -31,6 +32,7 @@ interface FormData {
   tts: string;
   username: string;
   pin: string;
+  kiosk_name: string;
   platformHash: string;
   importSource: string;
 }
@@ -143,6 +145,7 @@ export default function Wizard() {
     tts: 'uk_UA-ukrainian_tts-medium',
     username: 'admin',
     pin: '',
+    kiosk_name: t('wizard.kioskDefaultName'),
     platformHash: '',
     importSource: '',
   });
@@ -493,8 +496,16 @@ export default function Wizard() {
         const body = await resp.json().catch(() => ({}));
         throw new Error(body?.detail ?? `${t('common.error')} ${resp.status}`);
       }
-      if (step === 9) {
-        setUser({ name: formData.username, role: 'admin' });
+      const body = await resp.json().catch(() => ({}));
+      // Step 8: store kiosk device_token from wizard response
+      if (step === 8 && body?.device_token) {
+        try {
+          localStorage.setItem('selena_device', body.device_token);
+          document.cookie = `selena_device=${body.device_token}; max-age=${60 * 60 * 24 * 30}; path=/; samesite=strict`;
+        } catch { /* ignore storage errors */ }
+      }
+      if (step === 10) {
+        setUser({ name: formData.username, role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
         setStep(s => s + 1);
@@ -518,16 +529,16 @@ export default function Wizard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step: mapping.name, data: {} }),
       });
-      if (step === 9) {
-        setUser({ name: formData.username || 'Admin', role: 'admin' });
+      if (step === 10) {
+        setUser({ name: formData.username || 'Admin', role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
         setStep(s => s + 1);
       }
     } catch {
       // skip anyway
-      if (step === 9) {
-        setUser({ name: formData.username || 'Admin', role: 'admin' });
+      if (step === 10) {
+        setUser({ name: formData.username || 'Admin', role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
         setStep(s => s + 1);
@@ -1121,6 +1132,38 @@ export default function Wizard() {
                   )}
 
                   {step === 8 && (
+                    <div className="space-y-4">
+                      <h2 className="text-base font-medium">{t('wizard.homeDevicesTitle')}</h2>
+                      <p className="text-zinc-400 text-xs">{t('wizard.homeDevicesDesc')}</p>
+
+                      {/* Kiosk screen name */}
+                      <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Smartphone size={14} className="text-violet-400" />
+                          <span className="text-xs font-medium text-zinc-300">{t('wizard.homeDevicesScreen')}</span>
+                        </div>
+                        <p className="text-xs text-zinc-500 mb-2">{t('wizard.homeDevicesScreenDesc')}</p>
+                        <input
+                          type="text"
+                          value={formData.kiosk_name}
+                          onChange={(e) => setFormData({ ...formData, kiosk_name: e.target.value })}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-50 focus:outline-none focus:border-violet-500 transition-all"
+                          placeholder={t('wizard.homeDevicesScreenPlaceholder')}
+                        />
+                      </div>
+
+                      {/* Info about phone registration */}
+                      <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Smartphone size={14} className="text-violet-400" />
+                          <span className="text-xs font-medium text-violet-300">{t('wizard.homeDevicesMobile')}</span>
+                        </div>
+                        <p className="text-xs text-zinc-400">{t('wizard.homeDevicesMobileDesc')}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === 9 && (
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.platformTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.platformDesc')}</p>
@@ -1138,7 +1181,7 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {step === 9 && (
+                  {step === 10 && (
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.importTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.importDesc')}</p>
@@ -1187,7 +1230,7 @@ export default function Wizard() {
                     {t('common.back')}
                   </button>
                   <div className="flex items-center gap-2">
-                    {(step === 8 || step === 9) && (
+                    {(step === 8 || step === 9 || step === 10) && (
                       <button
                         onClick={skipStep}
                         disabled={submitting}
@@ -1218,8 +1261,8 @@ export default function Wizard() {
                         <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          {step === 9 ? t('common.finish') : t('common.next')}
-                          {step !== 9 && <ChevronRight size={16} />}
+                          {step === 10 ? t('common.finish') : t('common.next')}
+                          {step !== 10 && <ChevronRight size={16} />}
                         </>
                       )}
                     </button>

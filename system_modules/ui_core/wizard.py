@@ -29,6 +29,7 @@ STEPS = [
     "stt_model",
     "tts_voice",
     "admin_user",
+    "home_devices",
     "platform",
     "import",
 ]
@@ -85,10 +86,14 @@ async def wizard_step(req: WizardStepRequest) -> dict:
     if state.get("completed"):
         raise HTTPException(status_code=409, detail="Wizard already completed")
 
-    result = await _process_step(req.step, req.data)
+    result = await _process_step(req.step, req.data, state)
 
     # Persist step data
     state.setdefault("data", {})[req.step] = req.data
+
+    # Allow step handlers to write to root-level state
+    if "_state_updates" in result:
+        state.update(result.pop("_state_updates"))
     next_step = NEXT_STEP[req.step]
     if next_step is None:
         state["completed"] = True
@@ -181,7 +186,7 @@ async def wizard_requirements() -> dict:
 # Step processors                                                       #
 # ------------------------------------------------------------------ #
 
-async def _process_step(step: str, data: dict) -> dict:
+async def _process_step(step: str, data: dict, state: dict) -> dict:
     handlers = {
         "wifi": _step_wifi,
         "language": _step_language,
@@ -190,16 +195,17 @@ async def _process_step(step: str, data: dict) -> dict:
         "stt_model": _step_stt_model,
         "tts_voice": _step_tts_voice,
         "admin_user": _step_admin_user,
+        "home_devices": _step_home_devices,
         "platform": _step_platform,
         "import": _step_import,
     }
     handler = handlers.get(step)
     if handler:
-        return await handler(data)
+        return await handler(data, state)
     return {}
 
 
-async def _step_wifi(data: dict) -> dict:
+async def _step_wifi(data: dict, state: dict) -> dict:
     ssid = data.get("ssid", "")
     if not ssid:
         raise HTTPException(status_code=422, detail="'ssid' is required")
@@ -213,13 +219,13 @@ async def _step_wifi(data: dict) -> dict:
     return {"message": f"Connected to {ssid}. IP: {local_ip}"}
 
 
-async def _step_language(data: dict) -> dict:
+async def _step_language(data: dict, state: dict) -> dict:
     lang = data.get("language", "ru")
     logger.info("Wizard language: %s", lang)
     return {"message": f"Language set to {lang}"}
 
 
-async def _step_device_name(data: dict) -> dict:
+async def _step_device_name(data: dict, state: dict) -> dict:
     name = data.get("name", "")
     if not name:
         raise HTTPException(status_code=422, detail="'name' is required")
@@ -227,35 +233,103 @@ async def _step_device_name(data: dict) -> dict:
     return {"message": f"Device name set to '{name}'"}
 
 
-async def _step_timezone(data: dict) -> dict:
+async def _step_timezone(data: dict, state: dict) -> dict:
     tz = data.get("timezone", "Europe/Moscow")
     logger.info("Wizard timezone: %s", tz)
     return {"message": f"Timezone set to {tz}"}
 
 
-async def _step_stt_model(data: dict) -> dict:
+async def _step_stt_model(data: dict, state: dict) -> dict:
     model = data.get("model", "base")
     logger.info("Wizard stt_model: %s", model)
     return {"message": f"STT model set to {model}"}
 
 
-async def _step_tts_voice(data: dict) -> dict:
+async def _step_tts_voice(data: dict, state: dict) -> dict:
     voice = data.get("voice", "ru_RU-irina-medium")
     logger.info("Wizard tts_voice: %s", voice)
     return {"message": f"TTS voice set to {voice}"}
 
 
-async def _step_admin_user(data: dict) -> dict:
+async def _step_admin_user(data: dict, state: dict) -> dict:
     username = data.get("username", "")
     if not username:
         raise HTTPException(status_code=422, detail="'username' is required")
-    if not data.get("pin"):
+    pin = data.get("pin", "")
+    if not pin:
         raise HTTPException(status_code=422, detail="'pin' is required")
-    logger.info("Wizard admin_user: %s", username)
-    return {"message": f"Admin user '{username}' created"}
+
+    # Create (or look up) the first user — automatically becomes owner
+    try:
+        from system_modules.user_manager.profiles import UserManager, UserAlreadyExistsError
+        um = UserManager()
+        existing = await um.get_by_username(username)
+        if existing:
+            user_id = existing.user_id
+            logger.info("Wizard admin_user: user already exists, using existing id=%s", user_id)
+        else:
+            display_name = data.get("display_name") or username.capitalize()
+            profile = await um.create(
+                username=username,
+                display_name=display_name,
+                pin=pin,
+                role="owner",  # first user is always owner
+            )
+            user_id = profile.user_id
+            logger.info("Wizard admin_user: created owner user=%s id=%s", username, user_id)
+    except Exception as exc:
+        logger.exception("Wizard admin_user: failed to create user: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {exc}") from exc
+
+    return {
+        "message": f"Owner account '{username}' created",
+        "_state_updates": {"owner_user_id": user_id},
+    }
 
 
-async def _step_platform(data: dict) -> dict:
+async def _step_home_devices(data: dict, state: dict) -> dict:
+    """Register the kiosk screen as the owner's trusted device.
+
+    Returns a ``device_token`` the frontend stores in localStorage so the
+    physical screen is automatically recognised on every subsequent load.
+    Also returns QR registration info for mobile devices.
+    """
+    owner_user_id = state.get("owner_user_id")
+    if not owner_user_id:
+        # Wizard skipped admin_user — skip silently
+        logger.warning("Wizard home_devices: owner_user_id not set — skipping auto-registration")
+        return {"message": "Skipped device registration (no owner user)"}
+
+    device_name = data.get("device_name", "Kiosk Screen")
+
+    try:
+        import os as _os
+        from sqlalchemy.ext.asyncio import create_async_engine as _cae
+        from system_modules.user_manager.devices import DeviceManager
+
+        _db_url = _os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:///var/lib/selena/selena.db")
+        _engine = _cae(_db_url, echo=False)
+        dm = DeviceManager(_engine)
+        await dm.ensure_tables()
+        plain_token = await dm.register(
+            user_id=owner_user_id,
+            device_name=device_name,
+            user_agent="SelenaCore Kiosk",
+        )
+        logger.info("Wizard home_devices: kiosk registered for owner id=%s", owner_user_id)
+    except Exception as exc:
+        logger.exception("Wizard home_devices: device registration failed: %s", exc)
+        # Non-fatal — wizard can continue
+        return {"message": "Device registration skipped due to error"}
+
+    return {
+        "message": f"Device '{device_name}' registered",
+        "device_token": plain_token,
+        "owner_user_id": owner_user_id,
+    }
+
+
+async def _step_platform(data: dict, state: dict) -> dict:
     device_hash = data.get("device_hash", "")
     platform_url = data.get("platform_url", "")
     if device_hash:
@@ -274,7 +348,7 @@ async def _step_platform(data: dict) -> dict:
     return {"message": "Platform credentials saved"}
 
 
-async def _step_import(data: dict) -> dict:
+async def _step_import(data: dict, state: dict) -> dict:
     source = data.get("source", "manual")
     logger.info("Wizard import: source=%s", source)
     return {"message": f"Import from {source} queued"}
