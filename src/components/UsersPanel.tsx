@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import {
     Users, Plus, Trash2, Edit3, Key, Smartphone, QrCode,
     ChevronDown, ChevronUp, Shield, Check, X, AlertCircle,
-    Eye, EyeOff, RefreshCw,
+    Eye, EyeOff, RefreshCw, MapPin, Link, LinkOff, Wifi,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -16,6 +16,7 @@ import { useElevated } from '../hooks/useElevated';
 import PinConfirmModal from './PinConfirmModal';
 
 const UM = '/api/ui/modules/user-manager';
+const PD = '/api/ui/modules/presence-detection';
 
 function getToken() {
     return localStorage.getItem('selena_device') ?? undefined;
@@ -54,6 +55,36 @@ function RoleBadge({ role }: { role: string }) {
     );
 }
 
+function PresenceBadge({ state, awaySec }: { state: string; awaySec: number | null }) {
+    const { t } = useTranslation();
+    if (state === 'home') {
+        return (
+            <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                {t('usersPanel.presenceHome')}
+            </span>
+        );
+    }
+    if (state === 'away') {
+        return (
+            <span className="flex items-center gap-1 text-[10px] font-medium text-zinc-500 bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded">
+                <MapPin size={9} />
+                {t('usersPanel.presenceAway')}
+            </span>
+        );
+    }
+    if (awaySec !== null && awaySec > 0) {
+        const min = Math.ceil(awaySec / 60);
+        return (
+            <span className="flex items-center gap-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                {t('usersPanel.presenceLeaving', { min })}
+            </span>
+        );
+    }
+    return null;
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 interface UserProfile {
     user_id: string;
@@ -83,6 +114,18 @@ interface RolePerms {
     system_update: boolean;
     integrity_logs_view: boolean;
     voice_commands: string;
+}
+
+interface PresenceUser {
+    user_id: string;
+    name: string;
+    devices: { type: string; address: string }[];
+    linked_account_id: string | null;
+    state: 'home' | 'away' | 'unknown';
+    last_seen: string | null;
+    away_in_sec: number | null;
+    confidence: number;
+    detected: boolean;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -138,6 +181,7 @@ export default function UsersPanel() {
 function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolean }) {
     const { t } = useTranslation();
     const [users, setUsers] = useState<UserProfile[]>([]);
+    const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreate, setShowCreate] = useState(false);
@@ -150,10 +194,17 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`${UM}/users`, { headers: authHeaders(), credentials: 'include' });
-            if (!res.ok) throw new Error();
-            const d = await res.json();
-            setUsers(d.users ?? []);
+            const [accRes, presRes] = await Promise.all([
+                fetch(`${UM}/users`, { headers: authHeaders(), credentials: 'include' }),
+                fetch(`${PD}/users`),
+            ]);
+            if (!accRes.ok) throw new Error();
+            const accData = await accRes.json();
+            setUsers(accData.users ?? []);
+            if (presRes.ok) {
+                const presData = await presRes.json();
+                setPresenceUsers(presData.users ?? []);
+            }
         } catch {
             setError(t('common.error'));
         } finally {
@@ -255,21 +306,50 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                 <p className="text-sm text-zinc-500 py-4">{t('usersPanel.noUsers')}</p>
             ) : (
                 <div className="space-y-2">
-                    {users.map((u) => (
-                        <UserRow
-                            key={u.user_id}
-                            user={u}
-                            isOwner={isOwner}
-                            canManage={canManage}
-                            expanded={expandedId === u.user_id}
-                            onToggle={() => setExpandedId((id) => id === u.user_id ? null : u.user_id)}
-                            onDelete={() => deleteUser(u)}
-                            onRefresh={load}
-                            requestElevation={requestElevation}
-                        />
-                    ))}
+                    {users.map((u) => {
+                        const linked = presenceUsers.find(p => p.linked_account_id === u.user_id) ?? null;
+                        return (
+                            <UserRow
+                                key={u.user_id}
+                                user={u}
+                                presenceUser={linked}
+                                isOwner={isOwner}
+                                canManage={canManage}
+                                expanded={expandedId === u.user_id}
+                                onToggle={() => setExpandedId((id) => id === u.user_id ? null : u.user_id)}
+                                onDelete={() => deleteUser(u)}
+                                onRefresh={load}
+                                requestElevation={requestElevation}
+                            />
+                        );
+                    })}
                 </div>
             )}
+
+            {/* Unlinked presence users */}
+            {(() => {
+                const unlinked = presenceUsers.filter(p => !p.linked_account_id);
+                if (unlinked.length === 0) return null;
+                return (
+                    <div className="mt-6 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <Wifi size={13} className="text-violet-400" />
+                            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                                {t('usersPanel.presenceOnly')}
+                            </span>
+                        </div>
+                        {unlinked.map((pu) => (
+                            <UnlinkedPresenceRow
+                                key={pu.user_id}
+                                presenceUser={pu}
+                                accounts={users}
+                                canManage={canManage}
+                                onRefresh={load}
+                            />
+                        ))}
+                    </div>
+                );
+            })()}
 
             {showCreate && (
                 <CreateUserModal
@@ -287,9 +367,10 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
 
 // ─── Single user row ──────────────────────────────────────────────────────────
 function UserRow({
-    user, isOwner, canManage, expanded, onToggle, onDelete, onRefresh, requestElevation,
+    user, presenceUser, isOwner, canManage, expanded, onToggle, onDelete, onRefresh, requestElevation,
 }: {
     user: UserProfile;
+    presenceUser: PresenceUser | null;
     isOwner: boolean;
     canManage: boolean;
     expanded: boolean;
@@ -404,9 +485,12 @@ function UserRow({
                     </div>
                 ) : (
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium truncate">{user.username}</span>
                             <RoleBadge role={user.role} />
+                            {presenceUser && (
+                                <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                            )}
                         </div>
                     </div>
                 )}
@@ -675,10 +759,81 @@ const SELECT_PERMS: { key: keyof RolePerms; options: string[] }[] = [
     { key: 'voice_commands', options: ['all', 'basic', 'none'] },
 ];
 
-function RolesEditor() {
+// ─── Unlinked presence row ────────────────────────────────────────────────────
+function UnlinkedPresenceRow({
+    presenceUser, accounts, canManage, onRefresh,
+}: {
+    presenceUser: PresenceUser;
+    accounts: UserProfile[];
+    canManage: boolean;
+    onRefresh: () => void;
+}) {
     const { t } = useTranslation();
-    const [roles, setRoles] = useState<string[]>([]);
-    const [selected, setSelected] = useState('admin');
+    const [linking, setLinking] = useState(false);
+    const [selectedAccount, setSelectedAccount] = useState('');
+
+    const doLink = async () => {
+        if (!selectedAccount) return;
+        setLinking(true);
+        try {
+            await fetch(`${PD}/users/${encodeURIComponent(presenceUser.user_id)}/link`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ account_id: selectedAccount }),
+            });
+            onRefresh();
+        } catch { /* ignore */ } finally {
+            setLinking(false);
+        }
+    };
+
+    const initial = presenceUser.name.slice(0, 1).toUpperCase();
+    const macDevices = presenceUser.devices.filter(d => d.type === 'mac');
+
+    return (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-zinc-700/50 flex items-center justify-center text-sm font-bold text-zinc-400 shrink-0">
+                {initial}
+            </div>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-zinc-300 truncate">{presenceUser.name}</span>
+                    <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
+                </div>
+                {macDevices.length > 0 && (
+                    <p className="text-[11px] text-zinc-600 mt-0.5 truncate">
+                        {macDevices.map(d => d.address).join(', ')}
+                    </p>
+                )}
+            </div>
+            {canManage && (
+                <div className="flex items-center gap-2 shrink-0">
+                    <select
+                        value={selectedAccount}
+                        onChange={(e) => setSelectedAccount(e.target.value)}
+                        className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-50 focus:outline-none focus:border-violet-500"
+                    >
+                        <option value="">{t('usersPanel.linkSelect')}</option>
+                        {accounts.map((a) => (
+                            <option key={a.user_id} value={a.user_id}>{a.username}</option>
+                        ))}
+                    </select>
+                    <button
+                        onClick={doLink}
+                        disabled={!selectedAccount || linking}
+                        className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <Link size={11} />
+                        {t('usersPanel.linkBtn')}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Roles editor ─────────────────────────────────────────────────────────────
+function RolesEditor() {
     const [perms, setPerms] = useState<RolePerms | null>(null);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);

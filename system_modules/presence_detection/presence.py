@@ -400,11 +400,18 @@ class PresenceDetector:
         self._db = sqlite3.connect(self._db_path, check_same_thread=False)
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS presence_users (
-                user_id  TEXT PRIMARY KEY,
-                name     TEXT NOT NULL,
-                devices  TEXT NOT NULL DEFAULT '[]'
+                user_id           TEXT PRIMARY KEY,
+                name              TEXT NOT NULL,
+                devices           TEXT NOT NULL DEFAULT '[]',
+                linked_account_id TEXT
             )
         """)
+        # Migration: add linked_account_id if it doesn't exist yet (safe for existing DBs)
+        try:
+            self._db.execute("ALTER TABLE presence_users ADD COLUMN linked_account_id TEXT")
+            self._db.commit()
+        except Exception:
+            pass  # column already exists
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS presence_invites (
                 token       TEXT PRIMARY KEY,
@@ -453,13 +460,16 @@ class PresenceDetector:
     def _load_users_from_db(self) -> None:
         if self._db is None:
             return
-        rows = self._db.execute("SELECT user_id, name, devices FROM presence_users").fetchall()
-        for user_id, name, devices_json in rows:
+        rows = self._db.execute(
+            "SELECT user_id, name, devices, linked_account_id FROM presence_users"
+        ).fetchall()
+        for user_id, name, devices_json, linked_account_id in rows:
             devices = json.loads(devices_json)
             self._users[user_id] = {
                 "user_id": user_id,
                 "name": name,
                 "devices": devices,
+                "linked_account_id": linked_account_id,
                 "state": "unknown",
                 "last_seen": None,
                 "confidence": 0.0,
@@ -474,8 +484,8 @@ class PresenceDetector:
         if not user:
             return
         self._db.execute(
-            "INSERT OR REPLACE INTO presence_users (user_id, name, devices) VALUES (?, ?, ?)",
-            (user_id, user["name"], json.dumps(user["devices"])),
+            "INSERT OR REPLACE INTO presence_users (user_id, name, devices, linked_account_id) VALUES (?, ?, ?, ?)",
+            (user_id, user["name"], json.dumps(user["devices"]), user.get("linked_account_id")),
         )
         self._db.commit()
 
@@ -823,6 +833,7 @@ class PresenceDetector:
         if user_id not in self._users:
             self._users[user_id] = {
                 **definition,
+                "linked_account_id": definition.get("linked_account_id"),
                 "state": "unknown",
                 "last_seen": None,
                 "confidence": 0.0,
@@ -830,13 +841,22 @@ class PresenceDetector:
                 "away_in_sec": None,  # seconds until away transition (null when home)
             }
         else:
-            # Update devices list
+            # Update mutable fields
             self._users[user_id].update({
                 k: v for k, v in definition.items()
                 if k in ("name", "devices")
             })
         self._save_user_to_db(user_id)
         return self._users[user_id]
+
+    def link_account(self, user_id: str, account_id: str | None) -> bool:
+        """Link (or unlink if account_id is None) a presence user to an account."""
+        user = self._users.get(user_id)
+        if user is None:
+            return False
+        user["linked_account_id"] = account_id
+        self._save_user_to_db(user_id)
+        return True
 
     def remove_user(self, user_id: str) -> bool:
         if user_id in self._users:

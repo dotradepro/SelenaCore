@@ -30,6 +30,10 @@ class UserUpdateRequest(BaseModel):
     devices: list[dict] | None = None
 
 
+class LinkAccountRequest(BaseModel):
+    account_id: str
+
+
 class InviteRequest(BaseModel):
     name: str
     base_url: str = ""
@@ -139,6 +143,26 @@ class PresenceDetectionModule(SystemModule):
                 update["user_id"] = user_id
                 svc._detector.add_user(update)
             return svc._detector.get_user(user_id) or {}
+
+        @router.post("/users/{user_id}/link", status_code=200)
+        async def link_account(user_id: str, req: LinkAccountRequest) -> dict:
+            """Link a presence user to a user-manager account."""
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            if not svc._detector.get_user(user_id):
+                raise HTTPException(404, "Presence user not found")
+            svc._detector.link_account(user_id, req.account_id)
+            return {"user_id": user_id, "linked_account_id": req.account_id}
+
+        @router.delete("/users/{user_id}/link", status_code=200)
+        async def unlink_account(user_id: str) -> dict:
+            """Remove the link between a presence user and an account."""
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            if not svc._detector.get_user(user_id):
+                raise HTTPException(404, "Presence user not found")
+            svc._detector.link_account(user_id, None)
+            return {"user_id": user_id, "linked_account_id": None}
 
         @router.post("/scan")
         async def trigger_scan() -> dict:
