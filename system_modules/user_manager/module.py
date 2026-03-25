@@ -100,7 +100,9 @@ class ChangePinRequest(BaseModel):
 
 
 class QrStartRequest(BaseModel):
-    mode: str = "access"  # "access" | "elevate"
+    mode: str = "access"  # "access" | "elevate" | "invite"
+    role: str = "user"    # for mode="invite"
+    display_name: str = ""  # pre-fill hint for invite
 
 
 class PermissionsUpdateRequest(BaseModel):
@@ -411,6 +413,8 @@ class UserManagerModule(SystemModule):
             mod._qr_sessions[session_id] = {
                 "status": "pending",
                 "mode": req.mode,
+                "role": req.role,
+                "display_name": req.display_name,
                 "expires_at": expires_at,
                 "device_token": None,
                 "elevated_token": None,
@@ -498,6 +502,8 @@ class UserManagerModule(SystemModule):
                 raise HTTPException(status_code=410, detail="QR session expired")
             return {
                 "mode": session["mode"],
+                "role": session.get("role", "user"),
+                "display_name": session.get("display_name", ""),
                 "status": session["status"],
                 "expires_in_seconds": int(remaining),
             }
@@ -523,14 +529,30 @@ class UserManagerModule(SystemModule):
             if session["status"] != "pending":
                 raise HTTPException(status_code=409, detail="QR session already completed")
 
-            profile = await mod._users.get_by_username(req.username)
-            if not profile or not profile.active:
-                raise HTTPException(status_code=401, detail="Invalid credentials")
-            if profile.pin_hash != _hash_pin(req.pin):
-                raise HTTPException(status_code=401, detail="Invalid credentials")
-
             ip = request.client.host if request.client else ""
             ua = request.headers.get("user-agent", "")
+
+            if session["mode"] == "invite":
+                # Create new account + register device in one step
+                role = session.get("role", "user")
+                try:
+                    profile = await mod._users.create(
+                        username=req.username,
+                        display_name=req.device_name or req.username,
+                        pin=req.pin,
+                        role=role,
+                    )
+                except UserAlreadyExistsError:
+                    raise HTTPException(status_code=409, detail="Username already taken")
+                except (InvalidPinError, ValueError) as exc:
+                    raise HTTPException(status_code=422, detail=str(exc))
+            else:
+                profile = await mod._users.get_by_username(req.username)
+                if not profile or not profile.active:
+                    raise HTTPException(status_code=401, detail="Invalid credentials")
+                if profile.pin_hash != _hash_pin(req.pin):
+                    raise HTTPException(status_code=401, detail="Invalid credentials")
+
             plain_token = await mod._devices.register(
                 user_id=profile.user_id,
                 device_name=req.device_name,

@@ -187,12 +187,6 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
     const [error, setError] = useState<string | null>(null);
     const [showCreate, setShowCreate] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [qrData, setQrData] = useState<{ image: string; join_url: string; expires_in: number } | null>(null);
-    const [qrLoading, setQrLoading] = useState(false);
-    const [addTrackingOpen, setAddTrackingOpen] = useState(false);
-    const [addTrackingName, setAddTrackingName] = useState('');
-    const [addTrackingLoading, setAddTrackingLoading] = useState(false);
-    const [addTrackingQr, setAddTrackingQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
     const { requestElevation, pinModalProps } = useElevated();
 
     const load = useCallback(async () => {
@@ -235,39 +229,7 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
     };
 
     const generateQr = async () => {
-        setQrLoading(true);
-        try {
-            const res = await fetch(`${UM}/auth/qr/start`, {
-                method: 'POST',
-                headers: authHeaders(false),
-                credentials: 'include',
-            });
-            if (!res.ok) throw new Error();
-            const d = await res.json();
-            setQrData({ image: d.qr_image, join_url: d.join_url, expires_in: d.expires_in });
-        } catch { /* ignore */ } finally {
-            setQrLoading(false);
-        }
-    };
-
-    const createTrackingInvite = async () => {
-        if (!addTrackingName.trim()) return;
-        setAddTrackingLoading(true);
-        try {
-            const res = await fetch(`${PD}/invite`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: addTrackingName.trim(), base_url: '' }),
-            });
-            if (res.ok) {
-                const d = await res.json();
-                setAddTrackingQr({ qr_svg: d.qr_svg, join_url: d.join_url });
-                setAddTrackingName('');
-                setAddTrackingOpen(false);
-            }
-        } catch { /* ignore */ } finally {
-            setAddTrackingLoading(false);
-        }
+        // kept for QR device login (not used in create flow anymore)
     };
 
     if (loading) return <Spinner />;
@@ -281,53 +243,15 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                     {t('usersPanel.userCount', { count: users.length })}
                 </span>
                 {canManage && (
-                    <div className="flex gap-2">
-                        <button
-                            onClick={generateQr}
-                            disabled={qrLoading}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
-                        >
-                            <QrCode size={13} />
-                            {t('usersPanel.qrInvite')}
-                        </button>
-                        <button
-                            onClick={() => setShowCreate(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors"
-                        >
-                            <Plus size={13} />
-                            {t('usersPanel.addUser')}
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => setShowCreate(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors"
+                    >
+                        <Plus size={13} />
+                        {t('usersPanel.addUser')}
+                    </button>
                 )}
             </div>
-
-            {/* QR panel */}
-            {qrData && (
-                <div className="p-4 bg-zinc-900 border border-zinc-700 rounded-xl flex items-start gap-4">
-                    <div
-                        className="w-32 h-32 shrink-0 bg-white rounded-lg p-1"
-                        dangerouslySetInnerHTML={{ __html: qrData.image }}
-                    />
-                    <div className="space-y-1">
-                        <p className="text-sm font-medium">{t('usersPanel.qrTitle')}</p>
-                        <p className="text-xs text-zinc-500">{t('usersPanel.qrDesc')}</p>
-                        <a
-                            href={qrData.join_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-violet-400 hover:underline break-all"
-                        >
-                            {qrData.join_url}
-                        </a>
-                        <p className="text-[11px] text-zinc-600">
-                            {t('usersPanel.qrExpires', { sec: qrData.expires_in })}
-                        </p>
-                    </div>
-                    <button onClick={() => setQrData(null)} className="ml-auto text-zinc-600 hover:text-zinc-300">
-                        <X size={14} />
-                    </button>
-                </div>
-            )}
 
             {/* User rows */}
             {users.length === 0 ? (
@@ -354,71 +278,11 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                 </div>
             )}
 
-            {/* Presence tracking section — always visible */}
-            {(() => {
-                const unlinked = presenceUsers.filter(p => !p.linked_account_id);
-                return (
-                    <div className="mt-6 space-y-3">
-                        <div className="flex items-center gap-2">
-                            <Wifi size={13} className="text-violet-400" />
-                            <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 flex-1">
-                                {t('usersPanel.presenceOnly')}
-                            </span>
-                            {canManage && (
-                                <button
-                                    onClick={() => { setAddTrackingOpen((o) => !o); setAddTrackingQr(null); }}
-                                    className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
-                                >
-                                    <Plus size={11} />
-                                    {t('usersPanel.presenceAddPerson')}
-                                </button>
-                            )}
-                        </div>
-                        {/* Add person form */}
-                        {addTrackingOpen && (
-                            <div className="flex items-center gap-2 p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-                                <input
-                                    value={addTrackingName}
-                                    onChange={(e) => setAddTrackingName(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && createTrackingInvite()}
-                                    placeholder={t('usersPanel.presenceNewPersonName')}
-                                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-violet-500"
-                                    autoFocus
-                                />
-                                <button
-                                    onClick={createTrackingInvite}
-                                    disabled={!addTrackingName.trim() || addTrackingLoading}
-                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg disabled:opacity-50 transition-colors shrink-0"
-                                >
-                                    <QrCode size={12} />
-                                    {addTrackingLoading ? '…' : t('usersPanel.presenceGetQr')}
-                                </button>
-                                <button onClick={() => setAddTrackingOpen(false)} className="text-zinc-600 hover:text-zinc-300">
-                                    <X size={13} />
-                                </button>
-                            </div>
-                        )}
-                        {/* QR result */}
-                        {addTrackingQr && <PresenceQrModal qrSvg={addTrackingQr.qr_svg} onClose={() => setAddTrackingQr(null)} />}
-                        {unlinked.map((pu) => (
-                            <UnlinkedPresenceRow
-                                key={pu.user_id}
-                                presenceUser={pu}
-                                accounts={users}
-                                canManage={canManage}
-                                onRefresh={load}
-                            />
-                        ))}
-                    </div>
-                );
-            })()}
-
             {showCreate && (
                 <CreateUserModal
                     isOwner={isOwner}
                     onClose={() => setShowCreate(false)}
                     onCreated={() => { setShowCreate(false); load(); }}
-                    requestElevation={requestElevation}
                 />
             )}
 
@@ -945,45 +809,59 @@ function DeviceRow({
 
 // ─── Create user modal ────────────────────────────────────────────────────────
 function CreateUserModal({
-    isOwner, onClose, onCreated, requestElevation,
+    isOwner, onClose, onCreated,
 }: {
     isOwner: boolean;
     onClose: () => void;
     onCreated: () => void;
-    requestElevation: (fn: () => void) => void;
 }) {
     const { t } = useTranslation();
-    const [name, setName] = useState('');
     const [role, setRole] = useState('user');
-    const [pin, setPin] = useState('');
-    const [showPin, setShowPin] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [qrData, setQrData] = useState<{ session_id: string; qr_image: string | null } | null>(null);
+    const [status, setStatus] = useState<'idle' | 'waiting' | 'done' | 'expired'>('idle');
 
-    const submit = () => {
-        if (!name || pin.length < 4) return;
-        requestElevation(async () => {
-            setSaving(true);
-            setError(null);
+    // Poll for completion
+    useEffect(() => {
+        if (!qrData || status !== 'waiting') return;
+        const iv = setInterval(async () => {
             try {
-                const res = await fetch(`${UM}/users`, {
-                    method: 'POST',
-                    headers: authHeaders(true),
-                    credentials: 'include',
-                    body: JSON.stringify({ username: name, role, pin }),
+                const res = await fetch(`${UM}/auth/qr/status/${qrData.session_id}`, {
+                    headers: { 'Content-Type': 'application/json' },
                 });
-                if (!res.ok) {
-                    const d = await res.json().catch(() => ({}));
-                    setError(d.detail ?? t('common.error'));
-                    setSaving(false);
+                if (res.status === 404 || res.status === 410) {
+                    setStatus('expired');
+                    clearInterval(iv);
                     return;
                 }
-                onCreated();
-            } catch {
-                setError(t('common.error'));
-                setSaving(false);
+                const d = await res.json();
+                if (d.status === 'complete') {
+                    setStatus('done');
+                    clearInterval(iv);
+                    setTimeout(onCreated, 1200);
+                }
+            } catch { /* ignore */ }
+        }, 2000);
+        return () => clearInterval(iv);
+    }, [qrData, status, onCreated]);
+
+    const generate = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch(`${UM}/auth/qr/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                credentials: 'include',
+                body: JSON.stringify({ mode: 'invite', role }),
+            });
+            if (res.ok) {
+                const d = await res.json();
+                setQrData({ session_id: d.session_id, qr_image: d.qr_image });
+                setStatus('waiting');
             }
-        });
+        } catch { /* ignore */ } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -996,70 +874,79 @@ function CreateUserModal({
                     <button onClick={onClose} className="ml-auto text-zinc-600 hover:text-zinc-300"><X size={14} /></button>
                 </div>
 
-                <div className="space-y-3">
-                    <Field label={t('auth.username')}>
-                        <input
-                            value={name}
-                            onChange={(e) => { setName(e.target.value); setError(null); }}
-                            className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
-                            placeholder={t('auth.usernamePlaceholder')}
-                        />
-                    </Field>
+                {status === 'idle' && (
+                    <>
+                        {isOwner && (
+                            <Field label={t('usersPanel.role')}>
+                                <select
+                                    value={role}
+                                    onChange={(e) => setRole(e.target.value)}
+                                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+                                >
+                                    {['admin', 'user', 'guest'].map((r) => (
+                                        <option key={r} value={r}>{r}</option>
+                                    ))}
+                                </select>
+                            </Field>
+                        )}
+                        <p className="text-[12px] text-zinc-500">
+                            {t('usersPanel.createQrWaiting').replace('…', '').trim() + ' — '}
+                            {t('usersPanel.role')}: <span className="text-zinc-300 font-medium">{role}</span>
+                        </p>
+                        <button
+                            onClick={generate}
+                            disabled={loading}
+                            className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <QrCode size={15} />
+                            {loading ? '…' : t('usersPanel.createBtn')}
+                        </button>
+                    </>
+                )}
 
-                    {isOwner && (
-                        <Field label={t('usersPanel.role')}>
-                            <select
-                                value={role}
-                                onChange={(e) => setRole(e.target.value)}
-                                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
-                            >
-                                {['admin', 'user', 'guest'].map((r) => (
-                                    <option key={r} value={r}>{r}</option>
-                                ))}
-                            </select>
-                        </Field>
-                    )}
-
-                    <Field label={t('auth.pin')}>
-                        <div className="relative">
-                            <input
-                                type={showPin ? 'text' : 'password'}
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                maxLength={8}
-                                value={pin}
-                                onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
-                                className={cn(
-                                    'w-full bg-zinc-950 border rounded-lg px-3 py-2 pr-9 text-sm font-mono tracking-widest focus:outline-none transition-all',
-                                    error ? 'border-red-500' : 'border-zinc-700 focus:border-violet-500',
-                                )}
-                                placeholder="••••"
+                {(status === 'waiting' || status === 'done') && qrData && (
+                    <div className="flex flex-col items-center gap-4">
+                        {qrData.qr_image ? (
+                            <img
+                                src={qrData.qr_image}
+                                alt="QR"
+                                className="w-56 h-56 rounded-xl bg-white p-2"
                             />
-                            <button
-                                type="button"
-                                onClick={() => setShowPin((p) => !p)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400"
-                            >
-                                {showPin ? <EyeOff size={13} /> : <Eye size={13} />}
-                            </button>
-                        </div>
-                    </Field>
-                </div>
-
-                {error && (
-                    <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                        <AlertCircle size={12} className="shrink-0" />
-                        <span>{error}</span>
+                        ) : (
+                            <div className="w-56 h-56 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-500 text-xs">
+                                QR unavailable
+                            </div>
+                        )}
+                        {status === 'waiting' && (
+                            <p className="text-[12px] text-zinc-400 text-center animate-pulse">
+                                {t('usersPanel.createQrWaiting')}
+                            </p>
+                        )}
+                        {status === 'done' && (
+                            <p className="text-[12px] text-green-400 text-center font-medium">
+                                ✓ {t('usersPanel.createQrDone')}
+                            </p>
+                        )}
+                        <button
+                            onClick={() => { setQrData(null); setStatus('idle'); }}
+                            className="text-xs text-zinc-600 hover:text-zinc-400 underline"
+                        >
+                            {t('common.cancel')}
+                        </button>
                     </div>
                 )}
 
-                <button
-                    onClick={submit}
-                    disabled={saving || !name || pin.length < 4}
-                    className="w-full py-2.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-50"
-                >
-                    {saving ? '…' : t('usersPanel.createBtn')}
-                </button>
+                {status === 'expired' && (
+                    <div className="text-center space-y-3">
+                        <p className="text-sm text-red-400">{t('usersPanel.createQrExpired')}</p>
+                        <button
+                            onClick={() => { setQrData(null); setStatus('idle'); }}
+                            className="text-xs text-zinc-500 hover:text-zinc-300 underline"
+                        >
+                            {t('common.cancel')}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

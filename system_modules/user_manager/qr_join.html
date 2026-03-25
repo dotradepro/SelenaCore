@@ -227,7 +227,7 @@
                 signin_title: 'Sign in to SelenaCore',
                 signin_sub: 'After signing in, this device will be registered.',
                 username: 'Username',
-                pin: 'PIN',
+                pin: 'PIN (min 4 digits)',
                 dev_name: 'Device name (optional)',
                 register_btn: 'Register this device',
                 reg_ok_title: 'Registered!',
@@ -237,7 +237,15 @@
                 err_generic: 'An error occurred',
                 timer_lbl: 'Code valid for ',
                 timer_exp: 'Code expired',
-                conn_err: 'Connection error'
+                conn_err: 'Connection error',
+                invite_title: 'Create your account',
+                invite_sub: 'Choose a username and PIN. Your device will be added automatically.',
+                invite_role: 'Role: ',
+                invite_btn: 'Create account',
+                invite_ok_title: 'Account created!',
+                invite_ok_sub: 'You can now log in to SelenaCore. You may close this tab.',
+                invite_ok_msg: '✓ Account created successfully',
+                invite_username_taken: 'Username already taken, please choose another.'
             },
             uk: {
                 loading: 'Завантаження…',
@@ -257,7 +265,7 @@
                 signin_title: 'Увійти в SelenaCore',
                 signin_sub: 'Після входу цей пристрій буде зареєстровано.',
                 username: 'Ім\'я користувача',
-                pin: 'PIN',
+                pin: 'PIN (мін. 4 цифри)',
                 dev_name: 'Назва пристрою (необов\'язково)',
                 register_btn: 'Зареєструвати цей пристрій',
                 reg_ok_title: 'Зареєстровано!',
@@ -267,7 +275,15 @@
                 err_generic: 'Виникла помилка',
                 timer_lbl: 'Код дійсний ',
                 timer_exp: 'Код прострочено',
-                conn_err: 'Помилка з\'єднання'
+                conn_err: 'Помилка з\'єднання',
+                invite_title: 'Створіть свій акаунт',
+                invite_sub: 'Оберіть ім\'я та PIN. Ваш пристрій буде додано автоматично.',
+                invite_role: 'Роль: ',
+                invite_btn: 'Створити акаунт',
+                invite_ok_title: 'Акаунт створено!',
+                invite_ok_sub: 'Тепер ви можете увійти в SelenaCore. Можете закрити цю вкладку.',
+                invite_ok_msg: '✓ Акаунт успішно створено',
+                invite_username_taken: 'Це ім\'я вже зайнято, оберіть інше.'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -343,6 +359,8 @@
 
             if (info.mode === 'elevate') {
                 await showElevateUI();
+            } else if (info.mode === 'invite') {
+                showInviteUI(info);
             } else {
                 showAccessUI();
             }
@@ -414,6 +432,58 @@
                 document.getElementById('title').textContent = t('conn_err');
                 document.getElementById('subtitle').textContent = ex.message;
             }
+        }
+
+        // ── Invite mode (new user self-registration via QR) ───────────────────────
+        function showInviteUI(info) {
+            var roleHint = info.role || 'user';
+            document.getElementById('title').textContent = t('invite_title');
+            document.getElementById('subtitle').textContent = t('invite_sub');
+            document.getElementById('content').innerHTML =
+                '<div class="notice">' + t('invite_role') + '<strong>' + roleHint + '</strong></div>' +
+                '<input id="usernameInput" class="input" type="text" placeholder="' + t('username') + '" autocomplete="username" autocorrect="off" autocapitalize="none" />' +
+                '<input id="pinInput" class="input" type="password" inputmode="numeric" placeholder="' + t('pin') + '" autocomplete="new-password" />' +
+                '<input id="deviceInput" class="input" type="text" placeholder="' + t('dev_name') + '" />' +
+                '<button class="btn" id="registerBtn">' + t('invite_btn') + '</button>';
+
+            document.getElementById('registerBtn').addEventListener('click', async function () {
+                var username = document.getElementById('usernameInput').value.trim();
+                var pin = document.getElementById('pinInput').value.trim();
+                var deviceName = document.getElementById('deviceInput').value.trim()
+                    || ('Phone ' + navigator.userAgent.slice(0, 20));
+                if (!username || pin.length < 4) {
+                    showMsg((username ? '' : (t('username') + ' required. ')) + (pin.length < 4 ? 'PIN: min 4 digits.' : ''), false);
+                    return;
+                }
+                var btn = this;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+                try {
+                    var res = await fetch(BASE + '/auth/qr/complete/' + SESSION_ID, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username, pin: pin, device_name: deviceName })
+                    });
+                    if (res.ok) {
+                        var data = await res.json();
+                        if (data.device_token) {
+                            try { localStorage.setItem('selena_device', data.device_token); } catch (e) { }
+                        }
+                        done('invite_ok_title', 'invite_ok_sub', 'invite_ok_msg');
+                    } else {
+                        var err = await res.json().catch(function () { return {}; });
+                        btn.disabled = false;
+                        btn.textContent = t('invite_btn');
+                        var msg = err.detail || t('err_generic');
+                        if (res.status === 409) msg = t('invite_username_taken');
+                        showMsg(msg, false);
+                    }
+                } catch (ex) {
+                    btn.disabled = false;
+                    btn.textContent = t('invite_btn');
+                    showMsg(t('net_err'), false);
+                }
+            });
         }
 
         // ── Access mode (new device registration via QR) ──────────────────────────────
