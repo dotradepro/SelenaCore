@@ -318,12 +318,16 @@ const en = {
 
             // Step 8 - Home devices
             homeDevicesTitle: 'Register devices',
-            homeDevicesDesc: 'Name this screen and register it as the main hub display. Mobile devices can be registered later via Settings.',
+            homeDevicesDesc: 'Name this screen and register your phone for notifications and presence detection.',
             homeDevicesScreen: 'This screen (kiosk display)',
             homeDevicesScreenDesc: 'The physical hub display — always trusted, no PIN required for daily use.',
             homeDevicesScreenPlaceholder: 'e.g. Living Room Screen',
-            homeDevicesMobile: 'Mobile devices',
-            homeDevicesMobileDesc: 'After setup, go to Settings → Users to register your phone or tablet via QR code + PIN.',
+            homeDevicesMobile: 'Register phone',
+            homeDevicesMobileDesc: 'Scan this QR code with your phone to register it. Your phone will be used for notifications and home/away detection.',
+            phoneRegistered: 'Phone registered!',
+            phoneQrHint: 'Open camera on your phone and scan this code',
+            qrExpired: 'QR code expired',
+            qrRefresh: 'New QR code',
             kioskDefaultName: 'Home Screen',
 
             // Step 8 - Platform

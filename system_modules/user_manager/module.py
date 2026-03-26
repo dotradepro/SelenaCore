@@ -13,6 +13,7 @@ All API routes are mounted at /api/ui/modules/user-manager/
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import socket
@@ -39,10 +40,70 @@ from system_modules.user_manager.profiles import (
     VALID_ROLES,
     _hash_pin,
 )
+from system_modules.user_manager.sessions import BrowserSessionManager
 
 logger = logging.getLogger(__name__)
 
 DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:////var/lib/selena/selena.db")
+PRESENCE_DB = os.environ.get("SELENA_PRESENCE_DB", "/var/lib/selena/presence.db")
+
+
+def _lookup_presence_by_ip(client_ip: str) -> dict[str, Any] | None:
+    """Resolve client IP → MAC (ARP) → presence user → linked account.
+
+    Returns dict with user_id, role, display_name if found, else None.
+    Runs synchronously (reads /proc/net/arp + SQLite), so wrap in executor
+    for async contexts.
+    """
+    from system_modules.presence_detection.presence import _read_arp_table
+
+    # Step 1: IP → MAC via ARP table
+    arp = _read_arp_table()  # {ip: mac}
+    mac = arp.get(client_ip)
+    if not mac:
+        return None
+
+    mac = mac.lower()
+
+    # Step 2: MAC → presence user → linked_account_id
+    if not os.path.exists(PRESENCE_DB):
+        return None
+
+    import sqlite3 as _sqlite3
+    try:
+        db = _sqlite3.connect(PRESENCE_DB)
+        db.row_factory = _sqlite3.Row
+        rows = db.execute(
+            "SELECT user_id, name, devices, linked_account_id FROM presence_users"
+        ).fetchall()
+        db.close()
+    except Exception:
+        return None
+
+    for row in rows:
+        linked_account_id = row["linked_account_id"]
+        if not linked_account_id:
+            continue
+        try:
+            devices = json.loads(row["devices"]) if row["devices"] else []
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for dev in devices:
+            if dev.get("type") == "mac" and dev.get("address", "").lower() == mac:
+                return {
+                    "presence_user_id": row["user_id"],
+                    "presence_name": row["name"],
+                    "linked_account_id": linked_account_id,
+                }
+
+    return None
+
+
+async def _async_lookup_presence(client_ip: str) -> dict[str, Any] | None:
+    """Non-blocking wrapper around _lookup_presence_by_ip."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _lookup_presence_by_ip, client_ip)
 
 
 def _get_lan_ip() -> str:
@@ -100,9 +161,15 @@ class ChangePinRequest(BaseModel):
 
 
 class QrStartRequest(BaseModel):
-    mode: str = "access"  # "access" | "elevate" | "invite"
+    mode: str = "access"  # "access" | "elevate" | "invite" | "wizard_setup"
     role: str = "user"    # for mode="invite"
     display_name: str = ""  # pre-fill hint for invite
+    wizard_username: str = ""  # only for wizard_setup: admin username from step 7
+    wizard_pin: str = ""       # only for wizard_setup: admin PIN from step 7
+
+
+class WizardPhoneLinkRequest(BaseModel):
+    device_name: str = "My Phone"
 
 
 class PermissionsUpdateRequest(BaseModel):
@@ -132,6 +199,7 @@ class UserManagerModule(SystemModule):
         self._devices = DeviceManager(engine)
         self._permissions = PermissionsManager(engine)
         self._elevated = ElevatedManager()
+        self._sessions = BrowserSessionManager(db_path="/var/lib/selena/selena.db")
         # QR pending sessions: session_id → {expires_at, status, device_token?, user_id?}
         self._qr_sessions: dict[str, dict[str, Any]] = {}
 
@@ -142,11 +210,13 @@ class UserManagerModule(SystemModule):
         await self._devices.ensure_tables()
         await self._permissions.ensure_tables()
         self._elevated.start_cleanup()
+        self._sessions.start_cleanup()
         await self.publish("module.started", {"name": self.name})
         logger.info("UserManager module started")
 
     async def stop(self) -> None:
         await self._elevated.stop_cleanup()
+        await self._sessions.stop_cleanup()
         self._cleanup_subscriptions()
         await self.publish("module.stopped", {"name": self.name})
         logger.info("UserManager module stopped")
@@ -164,14 +234,22 @@ class UserManagerModule(SystemModule):
         )
 
     def _get_raw_token(self, request: Request) -> str | None:
-        """Extract device token from cookie or X-Device-Token header."""
-        return request.cookies.get(_DEVICE_COOKIE) or request.headers.get("X-Device-Token")
+        """Extract device token from X-Device-Token header (priority) or cookie."""
+        return request.headers.get("X-Device-Token") or request.cookies.get(_DEVICE_COOKIE)
 
     async def _require_device_auth(self, request: Request) -> dict[str, Any]:
-        """Return verified user info dict or raise 401."""
+        """Return verified user info dict or raise 401.
+
+        Checks browser session tokens first, then persistent device tokens.
+        """
         raw = self._get_raw_token(request)
         if not raw:
             raise HTTPException(status_code=401, detail="Device not registered")
+        # Try browser session first (QR-issued temporary tokens)
+        session_info = self._sessions.verify(raw)
+        if session_info:
+            return session_info
+        # Fall back to persistent device token
         info = await self._devices.verify(raw)
         if not info:
             raise HTTPException(status_code=401, detail="Invalid or revoked device token")
@@ -375,27 +453,138 @@ class UserManagerModule(SystemModule):
                     "status": "complete",
                     "elevated_token": elevated_token,
                     "user_id": info["user_id"],
-                    "approved_by": info["name"],
+                    "approved_by": info.get("display_name", info.get("name", "")),
                 })
             else:
-                ip = request.client.host if request.client else ""
-                ua = request.headers.get("user-agent", "")
-                new_token = await mod._devices.register(
+                # Issue a temporary browser session — no new device registered
+                session_token = mod._sessions.grant(
                     user_id=info["user_id"],
-                    device_name=f"Browser (approved by {info['name']})",
-                    user_agent=ua,
-                    ip=ip,
+                    role=info["role"],
+                    display_name=info.get("display_name", info.get("name", "")),
+                    device_name=f"Browser (approved by {info.get('display_name', '')})",
                 )
                 session.update({
                     "status": "complete",
-                    "device_token": new_token,
+                    "device_token": session_token,
+                    "session_token": True,
                     "user_id": info["user_id"],
-                    "approved_by": info["name"],
+                    "approved_by": info.get("display_name", info.get("name", "")),
                 })
 
             logger.info(
                 "QR session %s approved (mode=%s) by user %s",
                 session_id, mode, info["user_id"],
+            )
+            return {"approved": True, "mode": mode}
+
+        # ── Auth: Presence-based phone identification ──────────────────────────
+
+        @router.post("/auth/phone/identify")
+        async def phone_identify(request: Request) -> dict:
+            """Identify the calling phone by IP → MAC → presence user → account.
+
+            Returns the linked account info if the phone is a tracked presence
+            device.  Used by qr_join.html to decide whether to show the
+            one-tap "Approve" button or the username/PIN form.
+            """
+            client_ip = (
+                request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                or request.headers.get("x-real-ip", "")
+                or (request.client.host if request.client else "")
+            )
+            if not client_ip:
+                raise HTTPException(status_code=400, detail="Cannot determine client IP")
+
+            presence_info = await _async_lookup_presence(client_ip)
+            if not presence_info:
+                return {"identified": False}
+
+            # Resolve the linked account to get role + display_name
+            account_id = presence_info["linked_account_id"]
+            profile = await mod._users.get(account_id)
+            if not profile or not profile.active:
+                return {"identified": False}
+
+            return {
+                "identified": True,
+                "user_id": profile.user_id,
+                "display_name": profile.display_name or profile.username,
+                "role": profile.role,
+                "presence_name": presence_info["presence_name"],
+            }
+
+        @router.post("/auth/qr/approve-by-presence/{session_id}", status_code=200)
+        async def qr_approve_by_presence(session_id: str, request: Request) -> dict:
+            """Approve a QR session using presence-based phone identity.
+
+            No device_token required — the phone is identified by its
+            IP → MAC → presence tracking → linked account.
+            Only works if the linked account has role >= user.
+            """
+            client_ip = (
+                request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                or request.headers.get("x-real-ip", "")
+                or (request.client.host if request.client else "")
+            )
+            if not client_ip:
+                raise HTTPException(status_code=400, detail="Cannot determine client IP")
+
+            presence_info = await _async_lookup_presence(client_ip)
+            if not presence_info:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Phone not recognized as a tracked presence device",
+                )
+
+            account_id = presence_info["linked_account_id"]
+            profile = await mod._users.get(account_id)
+            if not profile or not profile.active:
+                raise HTTPException(status_code=401, detail="Linked account not found or inactive")
+
+            # Build info dict matching _require_device_auth() output format
+            info = {
+                "user_id": profile.user_id,
+                "role": profile.role,
+                "display_name": profile.display_name or profile.username,
+                "name": profile.username,
+            }
+
+            session = mod._qr_sessions.get(session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="QR session not found or expired")
+            if time.time() > session["expires_at"]:
+                mod._qr_sessions.pop(session_id, None)
+                raise HTTPException(status_code=410, detail="QR session expired")
+            if session["status"] != "pending":
+                raise HTTPException(status_code=409, detail="QR session already completed")
+
+            mode = session.get("mode", "access")
+            if mode == "elevate":
+                elevated_token = mod._elevated.grant(info["user_id"])
+                session.update({
+                    "status": "complete",
+                    "elevated_token": elevated_token,
+                    "user_id": info["user_id"],
+                    "approved_by": info.get("display_name", ""),
+                })
+            else:
+                session_token = mod._sessions.grant(
+                    user_id=info["user_id"],
+                    role=info["role"],
+                    display_name=info.get("display_name", ""),
+                    device_name=f"Browser (approved by {info.get('display_name', '')})",
+                )
+                session.update({
+                    "status": "complete",
+                    "device_token": session_token,
+                    "session_token": True,
+                    "user_id": info["user_id"],
+                    "approved_by": info.get("display_name", ""),
+                })
+
+            logger.info(
+                "QR session %s approved via presence (mode=%s) by account %s (ip=%s)",
+                session_id, mode, info["user_id"], client_ip,
             )
             return {"approved": True, "mode": mode}
 
@@ -410,7 +599,7 @@ class UserManagerModule(SystemModule):
             """
             session_id = str(uuid.uuid4())
             expires_at = time.time() + _QR_TTL
-            mod._qr_sessions[session_id] = {
+            session_data: dict[str, Any] = {
                 "status": "pending",
                 "mode": req.mode,
                 "role": req.role,
@@ -420,6 +609,12 @@ class UserManagerModule(SystemModule):
                 "elevated_token": None,
                 "user_id": None,
             }
+            if req.mode == "wizard_setup" and req.wizard_username and req.wizard_pin:
+                session_data["wizard_username"] = req.wizard_username
+                session_data["wizard_pin_hash"] = _hash_pin(req.wizard_pin)
+                session_data["role"] = "owner"
+                session_data["display_name"] = req.wizard_username
+            mod._qr_sessions[session_id] = session_data
             mod._cleanup_qr_sessions()
 
             # Build a join URL that the *phone* can reach.
@@ -434,9 +629,16 @@ class UserManagerModule(SystemModule):
             hostname = host_hdr.split(":")[0]
             if hostname in ("localhost", "127.0.0.1", "::1", ""):
                 lan_ip = _get_lan_ip()
-                ui_port = int(os.environ.get("UI_PORT", "80"))
-                port_sfx = "" if ui_port == 80 else f":{ui_port}"
-                base = f"{x_proto}://{lan_ip}{port_sfx}" if lan_ip else str(request.base_url).rstrip("/")
+                # Prefer HTTPS on :443 if self-signed TLS cert is present
+                _tls_cert = Path("/secure/tls/selena.crt")
+                if _tls_cert.exists():
+                    scheme = "https"
+                    port_sfx = ""  # 443 is implicit for https
+                else:
+                    scheme = x_proto
+                    ui_port = int(os.environ.get("UI_PORT", "80"))
+                    port_sfx = "" if ui_port == 80 else f":{ui_port}"
+                base = f"{scheme}://{lan_ip}{port_sfx}" if lan_ip else str(request.base_url).rstrip("/")
             else:
                 base = f"{x_proto}://{host_hdr}"
             join_url = f"{base}/api/ui/modules/user-manager/auth/qr/join/{session_id}"
@@ -481,10 +683,13 @@ class UserManagerModule(SystemModule):
             if session["status"] == "complete":
                 if session.get("device_token"):
                     result["device_token"] = session["device_token"]
+                    result["session_token"] = bool(session.get("session_token"))
                 if session.get("elevated_token"):
                     result["elevated_token"] = session["elevated_token"]
                 result["user_id"] = session.get("user_id")
                 mod._qr_sessions.pop(session_id, None)
+                logger.info("QR poll → complete (session_id=%s, token_prefix=%.8s, session_token=%s)",
+                           session_id, result.get("device_token", ""), result.get("session_token"))
             return result
 
         @router.get("/auth/qr/info/{session_id}")
@@ -553,20 +758,147 @@ class UserManagerModule(SystemModule):
                 if profile.pin_hash != _hash_pin(req.pin):
                     raise HTTPException(status_code=401, detail="Invalid credentials")
 
+            # Register the phone as a device (so next time it can use Approve)
             plain_token = await mod._devices.register(
                 user_id=profile.user_id,
                 device_name=req.device_name,
                 user_agent=ua,
                 ip=ip,
             )
-            session["status"] = "complete"
-            session["device_token"] = plain_token
-            session["user_id"] = profile.user_id
-
             mod._set_device_cookie(response, plain_token)
+
+            # For access mode: issue a temporary session for the BROWSER
+            # (the phone keeps its permanent device_token)
+            if session["mode"] == "access":
+                browser_session = mod._sessions.grant(
+                    user_id=profile.user_id,
+                    role=profile.role,
+                    display_name=profile.display_name or profile.username,
+                    device_name=f"Browser (via {req.device_name or 'QR'})",
+                )
+                session["status"] = "complete"
+                session["device_token"] = browser_session
+                session["session_token"] = True
+                session["user_id"] = profile.user_id
+            else:
+                session["status"] = "complete"
+                session["device_token"] = plain_token
+                session["user_id"] = profile.user_id
+
             return {
                 "device_token": plain_token,
                 "user_id": profile.user_id,
+                "role": profile.role,
+                "display_name": profile.display_name,
+            }
+
+        # ── Wizard phone link (phone only sends device_name) ──────────────────
+
+        @router.post("/auth/qr/wizard-link/{session_id}", status_code=201)
+        async def qr_wizard_link(
+            session_id: str,
+            req: WizardPhoneLinkRequest,
+            response: Response,
+            request: Request,
+        ) -> dict:
+            """Link phone to admin account during wizard setup.
+
+            The admin username + PIN were stored in the QR session when
+            the kiosk started it (wizard step 8). The phone only provides
+            a device_name.
+            """
+            session = mod._qr_sessions.get(session_id)
+            if not session:
+                raise HTTPException(status_code=404, detail="QR session not found")
+            if time.time() > session["expires_at"]:
+                mod._qr_sessions.pop(session_id, None)
+                raise HTTPException(status_code=410, detail="QR session expired")
+            if session["status"] != "pending":
+                raise HTTPException(status_code=409, detail="QR session already completed")
+            if session["mode"] != "wizard_setup":
+                raise HTTPException(status_code=400, detail="Not a wizard setup session")
+
+            wizard_username = session.get("wizard_username", "")
+            wizard_pin_hash = session.get("wizard_pin_hash", "")
+            if not wizard_username or not wizard_pin_hash:
+                raise HTTPException(status_code=400, detail="Wizard session missing credentials")
+
+            ip = request.client.host if request.client else ""
+            ua = request.headers.get("user-agent", "")
+
+            # Create admin/owner user if not exists
+            profile = await mod._users.get_by_username(wizard_username)
+            if not profile:
+                try:
+                    profile = await mod._users.create(
+                        username=wizard_username,
+                        display_name=wizard_username,
+                        pin="0000",  # dummy — we'll overwrite hash directly
+                        role="owner",
+                    )
+                    # Overwrite with the correct hash from wizard
+                    await mod._users._execute(
+                        "UPDATE users SET pin_hash = :pin_hash WHERE user_id = :user_id",
+                        {"pin_hash": wizard_pin_hash, "user_id": profile.user_id},
+                    )
+                    logger.info("Wizard: created owner account '%s'", wizard_username)
+                except UserAlreadyExistsError:
+                    profile = await mod._users.get_by_username(wizard_username)
+
+            # Register the phone as a device
+            plain_token = await mod._devices.register(
+                user_id=profile.user_id,
+                device_name=req.device_name,
+                user_agent=ua,
+                ip=ip,
+            )
+            mod._set_device_cookie(response, plain_token)
+
+            # Mark QR session complete — the kiosk poll will detect this
+            session["status"] = "complete"
+            session["device_token"] = plain_token
+            session["user_id"] = profile.user_id
+            session["display_name"] = profile.display_name or profile.username
+
+            logger.info(
+                "Wizard: phone linked for owner '%s', device='%s' ip=%s",
+                wizard_username, req.device_name, ip,
+            )
+
+            # Auto-add phone to presence tracking (IP → MAC → presence user)
+            phone_mac = ""
+            presence_user_id = profile.username.lower().replace(" ", "-")
+            try:
+                from system_modules.presence_detection.presence import _read_arp_table
+                arp = await asyncio.get_event_loop().run_in_executor(None, _read_arp_table)
+                phone_mac = arp.get(ip, "").lower()
+                if phone_mac:
+                    from core.module_loader.sandbox import get_sandbox
+                    pd = get_sandbox().get_in_process_module("presence-detection")
+                    if pd and pd._detector:
+                        presence_user_id = profile.username.lower().replace(" ", "-")
+                        pd._detector.add_user({
+                            "user_id": presence_user_id,
+                            "name": profile.display_name or profile.username,
+                            "devices": [
+                                {"type": "mac", "address": phone_mac},
+                                {"type": "ip", "address": ip},
+                            ],
+                            "linked_account_id": profile.user_id,
+                        })
+                        logger.info(
+                            "Wizard: auto-added presence user '%s' mac=%s linked to %s",
+                            presence_user_id, phone_mac, profile.user_id,
+                        )
+                else:
+                    logger.debug("Wizard: could not resolve MAC for phone ip=%s", ip)
+            except Exception as exc:
+                logger.warning("Wizard: failed to auto-add presence tracking: %s", exc)
+
+            return {
+                "device_token": plain_token,
+                "user_id": profile.user_id,
+                "presence_user_id": presence_user_id,
                 "role": profile.role,
                 "display_name": profile.display_name,
             }
@@ -575,164 +907,66 @@ class UserManagerModule(SystemModule):
 
         @router.get("/auth/qr/join/{session_id}", response_class=HTMLResponse)
         async def qr_join_page(session_id: str) -> HTMLResponse:
-            """Minimal HTML page opened by the phone after scanning the QR code."""
-            html_path = Path(__file__).parent / "qr_join.html"
-            if html_path.exists():
-                content = html_path.read_text()
-            else:
-                content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SelenaCore — Approve access</title>
-<style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  background:#0f0f11;color:#e4e4e7;min-height:100vh;
-  display:flex;align-items:center;justify-content:center;padding:1.5rem}}
-.card{{background:#18181b;border:1px solid #27272a;border-radius:1rem;
-  padding:2rem;width:100%;max-width:360px;box-shadow:0 20px 60px #0005}}
-.logo{{width:44px;height:44px;background:#7c3aed;border-radius:.75rem;
-  display:flex;align-items:center;justify-content:center;margin:0 auto 1rem}}
-h2{{text-align:center;font-size:1.1rem;font-weight:700;margin-bottom:.5rem}}
-.sub{{text-align:center;font-size:.8rem;color:#a1a1aa;margin-bottom:1.5rem}}
-.notice{{background:#3f3f46;border:1px solid #52525b;border-radius:.5rem;
-  padding:.75rem 1rem;font-size:.8rem;color:#a1a1aa;margin-bottom:1.5rem;line-height:1.5}}
-.btn{{width:100%;padding:.875rem;background:#7c3aed;color:#fff;border:none;
-  border-radius:.625rem;font-size:.9rem;font-weight:600;cursor:pointer;
-  transition:background .15s}}
-.btn:hover{{background:#6d28d9}}
-.btn:disabled{{opacity:.5;cursor:not-allowed}}
-.btn-outline{{background:transparent;border:1px solid #3f3f46;color:#a1a1aa;
-  margin-top:.75rem}}
-.btn-outline:hover{{background:#27272a}}
-.msg{{display:none;text-align:center;padding:.75rem;border-radius:.5rem;
-  font-size:.85rem;margin-top:1rem}}
-.msg.ok{{background:#14532d33;border:1px solid #16a34a55;color:#4ade80}}
-.msg.err{{background:#7f1d1d33;border:1px solid #dc262655;color:#f87171}}
-.spinner{{display:inline-block;width:16px;height:16px;border:2px solid #fff3;
-  border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}}
-@keyframes spin{{to{{transform:rotate(360deg)}}}}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="logo">
-    <svg viewBox="0 0 14 14" fill="none" width="20" height="20">
-      <path d="M7 1L2 4v5.5L7 13l5-3.5V4L7 1Z" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>
-      <circle cx="7" cy="7" r="1.8" fill="#fff"/>
-    </svg>
-  </div>
-  <h2 id="title">Checking your device…</h2>
-  <p class="sub" id="subtitle"></p>
-  <div id="body-content"></div>
-  <p class="msg" id="msg"></p>
-</div>
-<script>
-var SESSION_ID = "{session_id}";
-var BASE = window.location.pathname.replace(/\\/auth\\/qr\\/join\\/[^/]+$/, '');
-
-function getToken() {{
-  try {{
-    return localStorage.getItem('selena_device') ||
-      (document.cookie.match(/selena_device=([^;]+)/) || [])[1] || null;
-  }} catch(e) {{ return null; }}
-}}
-
-function showMsg(text, isOk) {{
-  var el = document.getElementById('msg');
-  el.textContent = text;
-  el.className = 'msg ' + (isOk ? 'ok' : 'err');
-  el.style.display = 'block';
-}}
-
-async function init() {{
-  var token = getToken();
-  var title = document.getElementById('title');
-  var subtitle = document.getElementById('subtitle');
-  var body = document.getElementById('body-content');
-
-  if (!token) {{
-    title.textContent = 'Not a registered device';
-    subtitle.textContent = 'This device is not registered in SelenaCore.';
-    body.innerHTML = '<div class="notice">Ask a registered user to approve your access,\nor open SelenaCore on this device and register first.</div>';
-    return;
-  }}
-
-  // Verify the token is still valid
-  try {{
-    var chk = await fetch(BASE + '/auth/device/verify', {{
-      method: 'POST',
-      headers: {{'X-Device-Token': token}}
-    }});
-    if (!chk.ok) {{
-      title.textContent = 'Device token expired';
-      subtitle.textContent = 'Your registration has been revoked or expired.';
-      body.innerHTML = '<div class="notice">Re-register this device on SelenaCore first.</div>';
-      return;
-    }}
-    var me = await chk.json();
-    title.textContent = 'Approve access?';
-    subtitle.textContent = 'Logged in as ' + (me.display_name || me.name || 'you');
-    body.innerHTML = '<button class="btn" id="approveBtn">Approve access</button>'
-      + '<button class="btn btn-outline" id="cancelBtn">Cancel</button>';
-
-    document.getElementById('approveBtn').addEventListener('click', async function() {{
-      var btn = this;
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>';
-      try {{
-        var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {{
-          method: 'POST',
-          headers: {{'X-Device-Token': token}}
-        }});
-        if (res.ok) {{
-          document.getElementById('body-content').style.display = 'none';
-          showMsg('✓ Access approved! The other device can now proceed.', true);
-          title.textContent = 'Done';
-          subtitle.textContent = '';
-        }} else {{
-          var err = await res.json().catch(function(){{ return {{}}; }});
-          btn.disabled = false;
-          btn.textContent = 'Approve access';
-          showMsg(err.detail || 'Approval failed', false);
-        }}
-      }} catch(ex) {{
-        btn.disabled = false;
-        btn.textContent = 'Approve access';
-        showMsg('Network error: ' + ex.message, false);
-      }}
-    }});
-
-    document.getElementById('cancelBtn').addEventListener('click', function() {{
-      window.history.back();
-    }});
-  }} catch(ex) {{
-    title.textContent = 'Connection error';
-    subtitle.textContent = ex.message;
-  }}
-}}
-
-init();
-</script>
-</body></html>"""
-            return HTMLResponse(content)
+            p = Path(__file__).parent / "qr_join.html"
+            content = p.read_text().replace("{session_id}", session_id) if p.exists() else "<p>Not found</p>"
+            return HTMLResponse(
+                content,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
 
         # ── Current user (quick session check) ────────────────────────────────
 
         @router.get("/me")
         async def get_me(request: Request) -> dict:
             """Return current user info, or guest context if not authenticated."""
-            info = await mod._devices.verify(mod._get_raw_token(request) or "")
+            raw = mod._get_raw_token(request) or ""
+            token_src = "header" if request.headers.get("X-Device-Token") else ("cookie" if request.cookies.get(_DEVICE_COOKIE) else "none")
+            token_from_header = request.headers.get("X-Device-Token") or ""
+            token_from_cookie = request.cookies.get(_DEVICE_COOKIE) or ""
+            logger.info("/me tokens: header=%.8s… cookie=%.8s… using=%.8s…",
+                        token_from_header, token_from_cookie, raw)
+            # Check browser session first
+            session_info = mod._sessions.verify(raw)
+            if session_info:
+                logger.info("/me → session OK (user=%s, src=%s)", session_info.get("user_id"), token_src)
+                return {"authenticated": True, "session": True, **session_info}
+            # Check persistent device token
+            info = await mod._devices.verify(raw)
             if info:
-                return {"authenticated": True, **info}
+                logger.info("/me → device OK (user=%s, src=%s)", info.get("user_id"), token_src)
+                return {"authenticated": True, "session": False, **info}
+            # Log token prefix for debugging mismatch
+            session_tokens = list(mod._sessions._sessions.keys())
+            logger.info("/me → guest (token=%.8s…, src=%s, active_sessions=%d, session_keys=[%s])",
+                        raw, token_src, len(session_tokens),
+                        ", ".join(t[:8] for t in session_tokens))
             return {
                 "authenticated": False,
                 "role": "guest",
                 "display_name": "Guest",
                 "user_id": None,
             }
+
+        # ── Browser session heartbeat & logout ─────────────────────────────────
+
+        @router.post("/auth/session/heartbeat")
+        async def session_heartbeat(request: Request) -> dict:
+            """Reset the idle timer for a temporary browser session.
+
+            Returns remaining seconds.  If session is expired → 401.
+            """
+            raw = mod._get_raw_token(request) or ""
+            result = mod._sessions.heartbeat(raw)
+            if result is None:
+                raise HTTPException(status_code=401, detail="Session expired or invalid")
+            return result
+
+        @router.post("/auth/session/logout")
+        async def session_logout(request: Request) -> dict:
+            """End a temporary browser session immediately."""
+            raw = mod._get_raw_token(request) or ""
+            mod._sessions.revoke(raw)
+            return {"status": "ok"}
 
         # ── Users CRUD ─────────────────────────────────────────────────────────
 
@@ -799,13 +1033,16 @@ init();
         async def delete_user(user_id: str, request: Request) -> None:
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
-            mod._require_role(info, "owner")
+            mod._require_role(info, "admin")
             if info["user_id"] == user_id:
                 raise HTTPException(status_code=400, detail="Cannot deactivate own account")
             try:
-                await mod._users.update(user_id, active=False)
+                target = await mod._users.get(user_id)
             except UserNotFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
+            if target.role == "owner" and info.get("role") != "owner":
+                raise HTTPException(status_code=403, detail="Only owner can deactivate another owner")
+            await mod._users.update(user_id, active=False)
 
         @router.post("/users/{user_id}/pin")
         async def change_pin(user_id: str, req: ChangePinRequest, request: Request) -> dict:

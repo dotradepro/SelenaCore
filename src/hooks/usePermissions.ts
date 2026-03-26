@@ -60,7 +60,7 @@ export function usePermissions(): { perms: RolePermissions | null; loading: bool
             return;
         }
         setLoading(true);
-        const token = localStorage.getItem('selena_device') ?? undefined;
+        const token = sessionStorage.getItem('selena_session') ?? localStorage.getItem('selena_device') ?? undefined;
         fetch(`${UM_BASE}/roles/${encodeURIComponent(role)}/permissions`, {
             headers: token ? { 'X-Device-Token': token } : {},
             credentials: 'include',

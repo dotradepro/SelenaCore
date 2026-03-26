@@ -78,7 +78,11 @@ class CoreApiProxyMiddleware:
         return ""
 
     async def _proxy_stream(self, scope, receive, send) -> None:
-        """Zero-copy SSE proxy — writes chunks straight to ASGI send."""
+        """Zero-copy SSE proxy — writes chunks straight to ASGI send.
+
+        Retries connection up to 3 times with 2s delay to handle transient
+        failures during container startup.
+        """
         path = scope["path"]
         query = scope.get("query_string", b"").decode("latin-1")
         url = f"{CORE_API_BASE}{path}" + (f"?{query}" if query else "")
@@ -99,43 +103,52 @@ class CoreApiProxyMiddleware:
         fwd_headers["x-forwarded-proto"] = "https" if scope.get("scheme") == "https" else "http"
 
         sent_start = False
-        async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
             try:
-                async with client.stream("GET", url, headers=fwd_headers) as resp:
-                    await send({
-                        "type": "http.response.start",
-                        "status": resp.status_code,
-                        "headers": [
-                            (b"content-type", b"text/event-stream; charset=utf-8"),
-                            (b"cache-control", b"no-cache"),
-                            (b"x-accel-buffering", b"no"),
-                            (b"connection", b"keep-alive"),
-                        ],
-                    })
-                    sent_start = True
-                    async for chunk in resp.aiter_raw():
-                        await send({
-                            "type": "http.response.body",
-                            "body": chunk,
-                            "more_body": True,
-                        })
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                logger.error("SSE proxy error: %s", exc)
-            finally:
-                if not sent_start:
-                    try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(None)) as client:
+                    async with client.stream("GET", url, headers=fwd_headers) as resp:
                         await send({
                             "type": "http.response.start",
-                            "status": 502,
-                            "headers": [(b"content-type", b"application/json")],
+                            "status": resp.status_code,
+                            "headers": [
+                                (b"content-type", b"text/event-stream; charset=utf-8"),
+                                (b"cache-control", b"no-cache"),
+                                (b"x-accel-buffering", b"no"),
+                                (b"connection", b"keep-alive"),
+                            ],
                         })
-                    except Exception:
-                        pass
-                try:
-                    await send({"type": "http.response.body", "body": b"", "more_body": False})
-                except Exception:
+                        sent_start = True
+                        async for chunk in resp.aiter_raw():
+                            await send({
+                                "type": "http.response.body",
+                                "body": chunk,
+                                "more_body": True,
+                            })
+                break  # stream ended normally
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                if attempt < max_retries and not sent_start:
+                    logger.debug("SSE proxy attempt %d/%d failed: %s, retrying...", attempt, max_retries, exc)
+                    await asyncio.sleep(2)
+                else:
+                    logger.error("SSE proxy error: %s", exc)
+                    break
+
+        # Send final response if nothing was sent during retries
+        if not sent_start:
+            try:
+                await send({
+                    "type": "http.response.start",
+                    "status": 502,
+                    "headers": [(b"content-type", b"application/json")],
+                })
+            except Exception:
+                pass
+        try:
+            await send({"type": "http.response.body", "body": b"", "more_body": False})
+        except Exception:
                     pass
 
     async def _proxy(self, scope, receive, send) -> None:

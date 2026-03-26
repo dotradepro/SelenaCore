@@ -21,7 +21,7 @@ const PD = '/api/ui/modules/presence-detection';
 const NR = '/api/ui/modules/notification-router';
 
 function getToken() {
-    return localStorage.getItem('selena_device') ?? undefined;
+    return sessionStorage.getItem('selena_session') ?? localStorage.getItem('selena_device') ?? undefined;
 }
 function getElev() {
     return sessionStorage.getItem('selena_elevated') ?? undefined;

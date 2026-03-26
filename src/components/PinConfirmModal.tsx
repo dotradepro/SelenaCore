@@ -36,7 +36,7 @@ export default function PinConfirmModal({ isOpen, onClose, onSuccess }: Props) {
     const getDeviceToken = () => {
         try {
             const cookieMatch = document.cookie.match(/(?:^|;\s*)selena_device=([^;]+)/);
-            return cookieMatch?.[1] ?? localStorage.getItem('selena_device') ?? '';
+            return sessionStorage.getItem('selena_session') ?? cookieMatch?.[1] ?? localStorage.getItem('selena_device') ?? '';
         } catch {
             return '';
         }

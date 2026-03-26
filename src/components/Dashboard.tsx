@@ -111,7 +111,6 @@ function WidgetShell({
         <iframe
           ref={iframeRef}
           src={`/api/ui/modules/${mod.name}/widget`}
-          sandbox="allow-scripts allow-same-origin"
           scrolling="no"
           title={mod.name}
           onLoad={injectScale}
@@ -177,7 +176,6 @@ function WidgetPreview({ mod }: { mod: Module }) {
         {/* scale trick: 30% of original widget */}
         <iframe
           src={`/api/ui/modules/${mod.name}/widget`}
-          sandbox="allow-scripts allow-same-origin"
           scrolling="no"
           title={`${mod.name} preview`}
           style={{
@@ -800,7 +798,6 @@ export default function Dashboard() {
           }}>
             <iframe
               src={`/api/ui/modules/${modalMod}/widget?modal=1`}
-              sandbox="allow-scripts allow-same-origin"
               scrolling="no"
               title="Widget source picker"
               style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}

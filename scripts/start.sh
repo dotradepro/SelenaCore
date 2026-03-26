@@ -3,6 +3,15 @@
 
 set -e
 
+# Auto-generate self-signed TLS certificate if not present
+TLS_CERT="/secure/tls/selena.crt"
+TLS_KEY="/secure/tls/selena.key"
+if [ ! -f "$TLS_CERT" ] || [ ! -f "$TLS_KEY" ]; then
+  echo "[start.sh] Generating self-signed TLS certificate..."
+  python3 generate_https_cert.py && echo "[start.sh] TLS cert generated OK" \
+    || echo "[start.sh] WARNING: cert generation failed, HTTPS will be disabled"
+fi
+
 echo "[start.sh] Starting Core API on :7070..."
 python -m uvicorn core.main:app --host 0.0.0.0 --port 7070 --no-access-log &
 CORE_PID=$!

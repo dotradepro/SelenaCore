@@ -226,8 +226,12 @@ function QrTab({ onSuccess }: { onSuccess: () => void }) {
                     if (s.status === 'complete' && s.device_token) {
                         stopPolling();
                         try {
+                            if (s.session_token) {
+                                // Temporary session — store in sessionStorage (cleared on tab close)
+                                sessionStorage.setItem('selena_session', s.device_token);
+                            }
                             localStorage.setItem('selena_device', s.device_token);
-                            document.cookie = `selena_device=${s.device_token}; max-age=${60 * 60 * 24 * 30}; path=/; samesite=strict`;
+                            document.cookie = `selena_device=${s.device_token}; max-age=${s.session_token ? 600 : 60 * 60 * 24 * 30}; path=/; samesite=strict`;
                         } catch { /* ignore */ }
                         setApproved(true);
                         setTimeout(onSuccess, 800);

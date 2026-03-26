@@ -43,28 +43,50 @@ def generate_cert(hostname: str | None = None) -> tuple[Path, Path]:
     # Generate RSA key
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    # Determine hostname and IP
+    # Determine hostname and IPs
     device_hostname = hostname or socket.gethostname()
+
+    # Primary LAN IP via UDP probe (same method as _get_lan_ip in user_manager)
     try:
-        local_ip = socket.gethostbyname(device_hostname)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
+            _s.settimeout(0.1)
+            _s.connect(("8.8.8.8", 80))
+            lan_ip = _s.getsockname()[0]
     except Exception:
-        local_ip = "127.0.0.1"
+        lan_ip = ""
+
+    # Fallback: gethostbyname
+    if not lan_ip or lan_ip.startswith("127."):
+        try:
+            lan_ip = socket.gethostbyname(device_hostname)
+        except Exception:
+            lan_ip = "127.0.0.1"
+
+    # Build SAN IP list — always include 127.0.0.1 and the actual LAN IP
+    san_ips = {ipaddress.ip_address("127.0.0.1")}
+    try:
+        san_ips.add(ipaddress.ip_address(lan_ip))
+    except Exception:
+        pass
+
+    print(f"  LAN IP: {lan_ip}")
 
     # Build certificate
     subject = issuer = x509.Name([
         x509.NameAttribute(NameOID.COMMON_NAME, device_hostname),
         x509.NameAttribute(NameOID.ORGANIZATION_NAME, "SelenaCore"),
-        x509.NameAttribute(NameOID.COUNTRY_NAME, "RU"),
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "UA"),
     ])
 
     now = datetime.datetime.utcnow()
-    san = x509.SubjectAlternativeName([
-        x509.DNSName(device_hostname),
-        x509.DNSName("localhost"),
-        x509.DNSName("selena.local"),
-        x509.IPAddress(ipaddress.ip_address(local_ip)),
-        x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
-    ])
+    san = x509.SubjectAlternativeName(
+        [
+            x509.DNSName(device_hostname),
+            x509.DNSName("localhost"),
+            x509.DNSName("selena.local"),
+        ]
+        + [x509.IPAddress(ip) for ip in sorted(san_ips, key=str)]
+    )
 
     cert = (
         x509.CertificateBuilder()

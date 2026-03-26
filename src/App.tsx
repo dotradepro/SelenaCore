@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './store/useStore';
 import type { AuthUser } from './store/useStore';
 import Wizard from './components/Wizard';
@@ -13,6 +13,7 @@ import IntegrityPage from './components/IntegrityPage';
 import Settings from './components/Settings';
 import AuthWall from './components/AuthWall';
 import KioskElevationGate from './components/KioskElevationGate';
+import { useSessionKeepAlive } from './hooks/useSessionKeepAlive';
 
 // Kiosk mode: explicit param OR localhost (device screen)
 const isKiosk =
@@ -48,6 +49,9 @@ export default function App() {
   useEffect(() => {
     initAuth();
   }, [initAuth]);
+
+  // Keep temporary browser sessions alive (heartbeat + idle check)
+  useSessionKeepAlive();
 
   // Apply theme and listen for system preference changes
   useEffect(() => {
@@ -118,8 +122,8 @@ export default function App() {
 }
 
 // ─── AuthGate ──────────────────────────────────────────────────────────────────
-// Wraps the entire app. Shows a spinner while auth is resolving,
-// then shows AuthWall for unregistered browsers (unless running as kiosk).
+// Dashboard (/) is always accessible in guest mode.
+// Restricted routes show AuthWall when not authenticated.
 function AuthGate({
   authLoading,
   user,
@@ -129,12 +133,9 @@ function AuthGate({
   user: AuthUser | null;
   children: ReactNode;
 }) {
-  // Kiosk: explicit param OR accessing from localhost (device screen)
+  const location = useLocation();
   const isAuthenticated = !authLoading && user?.authenticated === true;
-  const isKiosk =
-    new URLSearchParams(window.location.search).has('kiosk') ||
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1';
+  const isDashboard = location.pathname === '/';
 
   if (authLoading) {
     return (
@@ -144,7 +145,9 @@ function AuthGate({
     );
   }
 
-  if (!isKiosk && !isAuthenticated) {
+  // Dashboard is always accessible — even without auth (guest mode)
+  // Restricted pages: show AuthWall so user can scan QR / enter PIN
+  if (!isAuthenticated && !isDashboard) {
     return <AuthWall />;
   }
 

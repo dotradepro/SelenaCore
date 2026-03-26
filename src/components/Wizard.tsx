@@ -2,9 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
-import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff, Smartphone } from 'lucide-react';
+import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff, Smartphone, QrCode } from 'lucide-react';
 import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
+
+function HomeIcon(props: any) {
+  return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
+}
 
 const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Smartphone, Cloud, Download];
 
@@ -70,10 +74,6 @@ interface TimezoneData {
   timezones: string[];
   common: string[];
   current: string;
-}
-
-function HomeIcon(props: any) {
-  return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
 }
 
 function SignalBars({ signal }: { signal: number }) {
@@ -149,6 +149,80 @@ export default function Wizard() {
     platformHash: '',
     importSource: '',
   });
+
+  // Step 8: QR phone registration state
+  const [phoneQrImage, setPhoneQrImage] = useState<string | null>(null);
+  const [phoneQrSessionId, setPhoneQrSessionId] = useState<string | null>(null);
+  const [phoneQrLoading, setPhoneQrLoading] = useState(false);
+  const [phoneQrExpired, setPhoneQrExpired] = useState(false);
+  const [phoneRegistered, setPhoneRegistered] = useState(false);
+  const [phoneRegisteredName, setPhoneRegisteredName] = useState<string | null>(null);
+  const phoneQrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const phoneQrExpireRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopPhoneQrPolling = useCallback(() => {
+    if (phoneQrPollRef.current) { clearInterval(phoneQrPollRef.current); phoneQrPollRef.current = null; }
+    if (phoneQrExpireRef.current) { clearTimeout(phoneQrExpireRef.current); phoneQrExpireRef.current = null; }
+  }, []);
+
+  const startPhoneQrSession = useCallback(async () => {
+    stopPhoneQrPolling();
+    setPhoneQrLoading(true);
+    setPhoneQrExpired(false);
+    setPhoneRegistered(false);
+    setPhoneRegisteredName(null);
+    setPhoneQrImage(null);
+    setPhoneQrSessionId(null);
+    try {
+      const res = await fetch('/api/ui/modules/user-manager/auth/qr/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'wizard_setup',
+          wizard_username: formData.username,
+          wizard_pin: formData.pin,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create QR session');
+      const data = await res.json();
+      setPhoneQrImage(data.qr_image ?? null);
+      setPhoneQrSessionId(data.session_id);
+      setPhoneQrLoading(false);
+
+      phoneQrPollRef.current = setInterval(async () => {
+        try {
+          const status = await fetch(`/api/ui/modules/user-manager/auth/qr/status/${data.session_id}`);
+          if (status.status === 410) {
+            stopPhoneQrPolling();
+            setPhoneQrExpired(true);
+            return;
+          }
+          if (!status.ok) return;
+          const s = await status.json();
+          if (s.status === 'complete') {
+            stopPhoneQrPolling();
+            setPhoneRegistered(true);
+            setPhoneRegisteredName(s.display_name || null);
+          }
+        } catch { /* network hiccup */ }
+      }, 2000);
+
+      phoneQrExpireRef.current = setTimeout(() => {
+        stopPhoneQrPolling();
+        setPhoneQrExpired(true);
+      }, 300_000);
+    } catch {
+      setPhoneQrLoading(false);
+    }
+  }, [stopPhoneQrPolling, formData.username, formData.pin]);
+
+  // Start QR session when entering step 8
+  useEffect(() => {
+    if (step === 8 && !phoneRegistered) {
+      startPhoneQrSession();
+    }
+    return () => { if (step !== 8) stopPhoneQrPolling(); };
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Virtual keyboard state
   type KbTarget = 'wifiPassword' | 'name' | 'tzSearch' | 'username' | 'pin' | null;
@@ -497,11 +571,11 @@ export default function Wizard() {
         throw new Error(body?.detail ?? `${t('common.error')} ${resp.status}`);
       }
       const body = await resp.json().catch(() => ({}));
-      // Step 8: store kiosk device_token from wizard response
-      if (step === 8 && body?.device_token) {
+      // Step 8: store session_token for wizard browser (temporary session, not persistent device)
+      if (step === 8 && body?.session_token) {
         try {
-          localStorage.setItem('selena_device', body.device_token);
-          document.cookie = `selena_device=${body.device_token}; max-age=${60 * 60 * 24 * 30}; path=/; samesite=strict`;
+          sessionStorage.setItem('selena_session', body.session_token);
+          document.cookie = `selena_device=${body.session_token}; max-age=600; path=/; samesite=strict`;
         } catch { /* ignore storage errors */ }
       }
       if (step === 10) {
@@ -1152,13 +1226,47 @@ export default function Wizard() {
                         />
                       </div>
 
-                      {/* Info about phone registration */}
-                      <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Smartphone size={14} className="text-violet-400" />
-                          <span className="text-xs font-medium text-violet-300">{t('wizard.homeDevicesMobile')}</span>
+                      {/* QR code for phone registration */}
+                      <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <QrCode size={14} className="text-emerald-400" />
+                          <span className="text-xs font-medium text-zinc-300">{t('wizard.homeDevicesMobile')}</span>
                         </div>
-                        <p className="text-xs text-zinc-400">{t('wizard.homeDevicesMobileDesc')}</p>
+                        <p className="text-xs text-zinc-500 mb-3">{t('wizard.homeDevicesMobileDesc')}</p>
+
+                        {phoneRegistered ? (
+                          <div className="flex flex-col items-center gap-2 py-4">
+                            <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                              <Check size={24} className="text-emerald-400" />
+                            </div>
+                            <span className="text-sm font-medium text-emerald-400">{t('wizard.phoneRegistered')}</span>
+                            {phoneRegisteredName && (
+                              <span className="text-xs text-zinc-400">{phoneRegisteredName}</span>
+                            )}
+                          </div>
+                        ) : phoneQrExpired ? (
+                          <div className="flex flex-col items-center gap-3 py-4">
+                            <span className="text-xs text-zinc-500">{t('wizard.qrExpired')}</span>
+                            <button
+                              onClick={startPhoneQrSession}
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white transition-colors flex items-center gap-1.5"
+                            >
+                              <RefreshCw size={12} />
+                              {t('wizard.qrRefresh')}
+                            </button>
+                          </div>
+                        ) : phoneQrLoading ? (
+                          <div className="flex justify-center py-6">
+                            <RefreshCw size={20} className="text-zinc-500 animate-spin" />
+                          </div>
+                        ) : phoneQrImage ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="bg-white rounded-lg p-2">
+                              <img src={phoneQrImage} alt="QR" className="w-40 h-40" />
+                            </div>
+                            <span className="text-[10px] text-zinc-500 text-center">{t('wizard.phoneQrHint')}</span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )}

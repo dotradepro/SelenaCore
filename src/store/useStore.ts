@@ -254,11 +254,15 @@ export const useStore = create<AppState>((set, get) => ({
       if (saved) set({ elevatedToken: saved });
     } catch { /* ignore */ }
 
-    // Find device token: cookie first, then localStorage
+    // Find device token: session token first, then cookie/localStorage
     let token: string | null = null;
     try {
-      const cookieMatch = document.cookie.match(/(?:^|;\s*)selena_device=([^;]+)/);
-      token = cookieMatch?.[1] ?? localStorage.getItem('selena_device');
+      // Temporary QR session token (highest priority)
+      token = sessionStorage.getItem('selena_session');
+      if (!token) {
+        const cookieMatch = document.cookie.match(/(?:^|;\s*)selena_device=([^;]+)/);
+        token = cookieMatch?.[1] ?? localStorage.getItem('selena_device');
+      }
     } catch { /* ignore */ }
 
     if (!token) {
@@ -284,6 +288,14 @@ export const useStore = create<AppState>((set, get) => ({
           authLoading: false,
         });
         return;
+      }
+      // If 401 and we had a session token, it expired — clear it
+      if (res.status === 401) {
+        try {
+          sessionStorage.removeItem('selena_session');
+          localStorage.removeItem('selena_device');
+          document.cookie = 'selena_device=; max-age=0; path=/';
+        } catch { /* ignore */ }
       }
     } catch { /* network error — fall through to guest */ }
 

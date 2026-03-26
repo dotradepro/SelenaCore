@@ -37,7 +37,7 @@ function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
         setError(null);
         try {
             const token = (() => {
-                try { return localStorage.getItem('selena_device') || ''; } catch { return ''; }
+                try { return sessionStorage.getItem('selena_session') || localStorage.getItem('selena_device') || ''; } catch { return ''; }
             })();
             const res = await fetch(`${UM}/auth/pin/confirm`, {
                 method: 'POST',

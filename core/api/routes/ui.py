@@ -470,6 +470,7 @@ WIZARD_STEPS = {
     "stt_model": {"required": False, "label": "STT Model"},
     "tts_voice": {"required": False, "label": "TTS Voice"},
     "admin_user": {"required": True, "label": "Admin User"},
+    "home_devices": {"required": False, "label": "Home Devices"},
     "platform": {"required": False, "label": "Platform"},
     "import": {"required": False, "label": "Import"},
 }
@@ -524,7 +525,7 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     logger.info("Wizard step completed: %s", step_name)
 
     # --- Persist step data to core.yaml ---
-    await _apply_wizard_step(step_name, body.data)
+    extra = await _apply_wizard_step(step_name, body.data)
 
     # Determine next step
     step_names = list(WIZARD_STEPS.keys())
@@ -543,11 +544,14 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
         # Persist to core.yaml
         _persist_wizard_completed()
 
-    return {
+    result = {
         "step": step_name,
         "status": "ok",
         "next_step": next_step,
     }
+    if extra:
+        result.update(extra)
+    return result
 
 
 def _persist_wizard_completed() -> None:
@@ -580,8 +584,8 @@ async def ui_wizard_reset() -> dict[str, Any]:
     return {"status": "ok", "message": "Wizard reset. Reload the page to start setup."}
 
 
-async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:
-    """Apply wizard step data to real system config."""
+async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    """Apply wizard step data to real system config. Returns extra response fields."""
     try:
         if step == "language" and data.get("language"):
             update_config("system", "language", data["language"])
@@ -618,6 +622,25 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:
                 # PIN is not stored in plaintext in yaml; just mark admin created
                 "created": True,
             })
+            # Create admin/owner account in the DB
+            if data.get("pin"):
+                try:
+                    from core.module_loader.sandbox import get_sandbox
+                    um = get_sandbox().get_in_process_module("user-manager")
+                    if um:
+                        existing = await um._users.get_by_username(data["username"])
+                        if not existing:
+                            await um._users.create(
+                                username=data["username"],
+                                display_name=data["username"],
+                                pin=data["pin"],
+                                role="owner",
+                            )
+                            logger.info("Wizard: created owner account '%s' in DB", data["username"])
+                        else:
+                            logger.info("Wizard: owner '%s' already exists in DB", data["username"])
+                except Exception as exc:
+                    logger.warning("Wizard: failed to create owner in DB: %s", exc)
 
         elif step == "wifi" and data.get("ssid"):
             update_config("system", "wifi_ssid", data["ssid"])
@@ -636,11 +659,36 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> None:
             except Exception as exc:
                 logger.debug("WiFi connect via nmcli skipped: %s", exc)
 
+        elif step == "home_devices":
+            if data.get("device_name"):
+                update_config("system", "kiosk_name", data["device_name"])
+            # Issue a temporary session token for the wizard browser
+            # (the browser is NOT registered as a persistent device)
+            try:
+                from core.module_loader.sandbox import get_sandbox
+                um = get_sandbox().get_in_process_module("user-manager")
+                if um:
+                    # Find admin/owner user
+                    users = await um._users.list_all()
+                    owner = next((u for u in users if u.role == "owner" and u.active), None)
+                    if owner:
+                        session_token = um._sessions.grant(
+                            user_id=owner.user_id,
+                            role=owner.role,
+                            display_name=owner.display_name or owner.username,
+                            device_name="Wizard Browser",
+                        )
+                        logger.info("Wizard: issued session token for browser (owner='%s')", owner.username)
+                        return {"session_token": session_token}
+            except Exception as exc:
+                logger.warning("Wizard: failed to issue session token: %s", exc)
+
         elif step == "platform" and data.get("device_hash"):
             update_config("platform", "device_hash", data["device_hash"])
 
     except Exception as exc:
         logger.warning("Failed to apply wizard step '%s': %s", step, exc)
+    return None
 
 
 # ---------- Setup QR ----------

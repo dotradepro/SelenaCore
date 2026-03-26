@@ -4,7 +4,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>SelenaCore</title>
+    <title>Selena Home Assistant</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Selena Home Assistant" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <style>
         * {
             box-sizing: border-box;
@@ -188,6 +191,89 @@
                 transform: rotate(360deg)
             }
         }
+
+        .steps-row {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: 1.25rem
+        }
+
+        .step-item {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: .3rem;
+            opacity: .38
+        }
+
+        .step-item.active {
+            opacity: 1
+        }
+
+        .step-num {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #3f3f46;
+            border: 1px solid #52525b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .75rem;
+            font-weight: 700;
+            color: #71717a
+        }
+
+        .step-item.active .step-num {
+            background: #7c3aed22;
+            border-color: #7c3aed;
+            color: #a78bfa
+        }
+
+        .step-item span {
+            font-size: .6rem;
+            color: #71717a;
+            text-align: center;
+            line-height: 1.3
+        }
+
+        .step-item.active span {
+            color: #a1a1aa
+        }
+
+        .safari-notice {
+            background: #f4f4f5;
+            border: 1px solid #d4d4d8;
+            border-radius: .75rem;
+            padding: 1rem 1.25rem;
+            color: #18181b;
+            font-size: .82rem;
+            line-height: 1.6;
+            margin-bottom: 1rem
+        }
+
+        .steps-indicator {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .steps-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #3f3f46;
+        }
+
+        .steps-indicator .dot.active {
+            background: #7c3aed;
+        }
+
+        .steps-indicator .dot.done {
+            background: #2ec98a;
+        }
     </style>
 </head>
 
@@ -245,7 +331,37 @@
                 invite_ok_title: 'Account created!',
                 invite_ok_sub: 'You can now log in to SelenaCore. You may close this tab.',
                 invite_ok_msg: '✓ Account created successfully',
-                invite_username_taken: 'Username already taken, please choose another.'
+                invite_username_taken: 'Username already taken, please choose another.',
+                wizard_title: 'Link this phone',
+                wizard_sub: 'This phone will be registered for notifications and presence detection.',
+                wizard_admin: 'Account: ',
+                wizard_dev_name: 'Phone name',
+                wizard_btn: 'Link phone',
+                wizard_ok_title: 'Phone linked!',
+                wizard_ok_sub: 'Your phone is now registered. You may close this tab.',
+                wizard_ok_msg: '✓ Phone linked to your account',
+                setup_done_title: 'All set!',
+                add_to_hs_title: 'Add Selena to your Home Screen',
+                add_to_hs_step1: 'Tap the Share button (Safari toolbar)',
+                add_to_hs_step2: 'Scroll and tap \'Add to Home Screen\'',
+                add_to_hs_step3: 'Tap \'Add\' — done!',
+                go_dashboard: 'Open Selena',
+                push_title: 'Enable notifications',
+                push_sub: 'Selena will send alerts when someone arrives home or a device needs attention.',
+                push_allow_btn: 'Allow notifications',
+                push_skip_btn: 'Skip',
+                push_denied: 'Notifications blocked. You can enable them in Settings → Safari later.',
+                safari_title: 'Open in Safari',
+                safari_sub: 'Push notifications and the app icon require Safari on iPhone.',
+                safari_copy_btn: 'Copy link',
+                safari_copied: 'Copied!',
+                safari_continue: 'Already in Safari — continue →',
+                safari_step1: 'Open in Safari',
+                safari_step2: 'Add to screen',
+                safari_step3: 'Enable push',
+                next_btn: 'Next →',
+                done_continue: 'Done, continue →',
+                add_to_hs_android: 'Tap ⋮ menu → "Add to Home screen" → Add'
             },
             uk: {
                 loading: 'Завантаження…',
@@ -283,7 +399,37 @@
                 invite_ok_title: 'Акаунт створено!',
                 invite_ok_sub: 'Тепер ви можете увійти в SelenaCore. Можете закрити цю вкладку.',
                 invite_ok_msg: '✓ Акаунт успішно створено',
-                invite_username_taken: 'Це ім\'я вже зайнято, оберіть інше.'
+                invite_username_taken: 'Це ім\'я вже зайнято, оберіть інше.',
+                wizard_title: 'Прив\'язати телефон',
+                wizard_sub: 'Цей телефон буде зареєстровано для сповіщень та визначення присутності.',
+                wizard_admin: 'Акаунт: ',
+                wizard_dev_name: 'Назва телефону',
+                wizard_btn: 'Прив\'язати телефон',
+                wizard_ok_title: 'Телефон прив\'язано!',
+                wizard_ok_sub: 'Ваш телефон зареєстровано. Можете закрити цю вкладку.',
+                wizard_ok_msg: '✓ Телефон прив\'язано до акаунту',
+                setup_done_title: 'Усе готово!',
+                add_to_hs_title: 'Додати Selena на екран',
+                add_to_hs_step1: 'Натисніть кнопку «Поширити» (панель Safari)',
+                add_to_hs_step2: 'Прокрутіть і натисніть «На екран Домівки»',
+                add_to_hs_step3: 'Натисніть «Додати» — готово!',
+                go_dashboard: 'Відкрити Selena',
+                push_title: 'Увімкнути сповіщення',
+                push_sub: 'Selena надсилатиме сповіщення, коли хтось повернеться додому або пристрій потребує уваги.',
+                push_allow_btn: 'Дозволити сповіщення',
+                push_skip_btn: 'Пропустити',
+                push_denied: 'Сповіщення заблоковані. Можна увімкнути в Налаштування → Safari пізніше.',
+                safari_title: 'Відкрити в Safari',
+                safari_sub: 'Push-сповіщення та іконка застосунку потребують Safari на iPhone.',
+                safari_copy_btn: 'Скопіювати посилання',
+                safari_copied: 'Скопійовано!',
+                safari_continue: 'Вже в Safari — продовжити →',
+                safari_step1: 'Відкрити в Safari',
+                safari_step2: 'Додати на екран',
+                safari_step3: 'Увімкнути push',
+                next_btn: 'Далі →',
+                done_continue: 'Готово, продовжити →',
+                add_to_hs_android: 'Натисніть ⋮ → «На екран Домівки» → Додати'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -345,6 +491,17 @@
 
         // ── Main init ─────────────────────────────────────────────────────────────────
         async function init() {
+            // ?wl=1 means wizard-link already completed — skip QR session check,
+            // go straight to push step (handles HTTPS redirect after wizard-link)
+            var _params = new URLSearchParams(window.location.search);
+            if (_params.get('wl') === '1') {
+                var _uid = _params.get('uid') || '';
+                var _dn = _params.get('dn') || '';
+                document.getElementById('timer').style.display = 'none';
+                showPostLinkFlow(_dn, _uid, 3);
+                return;
+            }
+
             document.getElementById('title').textContent = t('loading');
 
             var infoRes = await fetch(BASE + '/auth/qr/info/' + SESSION_ID).catch(function () { return null; });
@@ -359,79 +516,116 @@
 
             if (info.mode === 'elevate') {
                 await showElevateUI();
+            } else if (info.mode === 'wizard_setup') {
+                showWizardSetupUI(info);
             } else if (info.mode === 'invite') {
                 showInviteUI(info);
             } else {
-                showAccessUI();
+                await showAccessUI();
             }
         }
 
-        // ── Elevate mode (phone approves kiosk unlock) ────────────────────────────────
-        async function showElevateUI() {
-            var token = getToken();
-            if (!token) {
-                document.getElementById('title').textContent = t('not_reg_title');
-                document.getElementById('subtitle').textContent = t('not_reg_sub');
-                document.getElementById('content').innerHTML =
-                    '<div class="notice">' + t('not_reg_note') + '</div>';
-                return;
-            }
+        // ── Shared: render one-tap approve UI ───────────────────────────────────
+        function renderApproveUI(displayName, approveCallback) {
+            document.getElementById('title').textContent = t('approve_title');
+            document.getElementById('subtitle').textContent = t('approve_sub') + displayName;
+            document.getElementById('content').innerHTML =
+                '<button class="btn" id="approveBtn">' + t('approve_btn') + '</button>' +
+                '<button class="btn btn-outline" id="cancelBtn">' + t('cancel') + '</button>';
 
+            document.getElementById('approveBtn').addEventListener('click', async function () {
+                var btn = this;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+                try {
+                    var ok = await approveCallback();
+                    if (ok) {
+                        done('success_title', 'success_sub', 'success_msg');
+                        var card = document.querySelector('.card');
+                        var chkDiv = document.createElement('div');
+                        chkDiv.className = 'check-circle';
+                        chkDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="none" width="26" height="26"><path d="M5 13l4 4L19 7" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+                        card.insertBefore(chkDiv, document.getElementById('title'));
+                    } else {
+                        btn.disabled = false;
+                        btn.textContent = t('approve_btn');
+                    }
+                } catch (ex) {
+                    btn.disabled = false;
+                    btn.textContent = t('approve_btn');
+                    showMsg(t('net_err'), false);
+                }
+            });
+
+            document.getElementById('cancelBtn').addEventListener('click', function () {
+                window.history.back();
+            });
+        }
+
+        // ── Try presence identification (IP → MAC → user) ────────────────────
+        async function tryPresenceIdentify() {
+            try {
+                var res = await fetch(BASE + '/auth/phone/identify', { method: 'POST' });
+                if (res.ok) {
+                    var data = await res.json();
+                    if (data.identified) return data;
+                }
+            } catch (ex) { /* ignore */ }
+            return null;
+        }
+
+        // ── Try device token verification ─────────────────────────────────────
+        async function tryDeviceToken() {
+            var token = getToken();
+            if (!token) return null;
             try {
                 var chk = await fetch(BASE + '/auth/device/verify', {
                     method: 'POST', headers: { 'X-Device-Token': token }
                 });
-                if (!chk.ok) {
-                    document.getElementById('title').textContent = t('not_reg_title');
-                    document.getElementById('subtitle').textContent = t('token_exp');
-                    document.getElementById('content').innerHTML = '';
-                    return;
+                if (chk.ok) {
+                    var me = await chk.json();
+                    me._token = token;
+                    return me;
                 }
-                var me = await chk.json();
+            } catch (ex) { /* ignore */ }
+            return null;
+        }
 
-                document.getElementById('title').textContent = t('approve_title');
-                document.getElementById('subtitle').textContent = t('approve_sub') + (me.display_name || me.name || '');
-                document.getElementById('content').innerHTML =
-                    '<button class="btn" id="approveBtn">' + t('approve_btn') + '</button>' +
-                    '<button class="btn btn-outline" id="cancelBtn">' + t('cancel') + '</button>';
-
-                document.getElementById('approveBtn').addEventListener('click', async function () {
-                    var btn = this;
-                    btn.disabled = true;
-                    btn.innerHTML = '<span class="spinner"></span>';
-                    try {
-                        var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {
-                            method: 'POST', headers: { 'X-Device-Token': token }
-                        });
-                        if (res.ok) {
-                            done('success_title', 'success_sub', 'success_msg');
-                            // Visual checkmark
-                            var card = document.querySelector('.card');
-                            var chkDiv = document.createElement('div');
-                            chkDiv.className = 'check-circle';
-                            chkDiv.innerHTML = '<svg viewBox="0 0 24 24" fill="none" width="26" height="26"><path d="M5 13l4 4L19 7" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-                            card.insertBefore(chkDiv, document.getElementById('title'));
-                        } else {
-                            var err = await res.json().catch(function () { return {}; });
-                            btn.disabled = false;
-                            btn.textContent = t('approve_btn');
-                            showMsg(err.detail || t('err_generic'), false);
-                        }
-                    } catch (ex) {
-                        btn.disabled = false;
-                        btn.textContent = t('approve_btn');
-                        showMsg(t('net_err'), false);
-                    }
+        // ── Elevate mode (phone approves kiosk unlock) ────────────────────────────────
+        async function showElevateUI() {
+            // Priority 1: Presence identity (phone tracked by MAC → linked account)
+            var presence = await tryPresenceIdentify();
+            if (presence) {
+                renderApproveUI(presence.display_name || presence.presence_name, async function () {
+                    var res = await fetch(BASE + '/auth/qr/approve-by-presence/' + SESSION_ID, { method: 'POST' });
+                    if (res.ok) return true;
+                    var err = await res.json().catch(function () { return {}; });
+                    showMsg(err.detail || t('err_generic'), false);
+                    return false;
                 });
-
-                document.getElementById('cancelBtn').addEventListener('click', function () {
-                    window.history.back();
-                });
-
-            } catch (ex) {
-                document.getElementById('title').textContent = t('conn_err');
-                document.getElementById('subtitle').textContent = ex.message;
+                return;
             }
+
+            // Priority 2: Device token (localStorage/cookie)
+            var me = await tryDeviceToken();
+            if (me) {
+                renderApproveUI(me.display_name || me.name || '', async function () {
+                    var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {
+                        method: 'POST', headers: { 'X-Device-Token': me._token }
+                    });
+                    if (res.ok) return true;
+                    var err = await res.json().catch(function () { return {}; });
+                    showMsg(err.detail || t('err_generic'), false);
+                    return false;
+                });
+                return;
+            }
+
+            // No identity — phone cannot approve elevate
+            document.getElementById('title').textContent = t('not_reg_title');
+            document.getElementById('subtitle').textContent = t('not_reg_sub');
+            document.getElementById('content').innerHTML =
+                '<div class="notice">' + t('not_reg_note') + '</div>';
         }
 
         // ── Invite mode (new user self-registration via QR) ───────────────────────
@@ -486,8 +680,362 @@
             });
         }
 
-        // ── Access mode (new device registration via QR) ──────────────────────────────
-        function showAccessUI() {
+        // ── Post-link 4-step flow: ✅ linked → 📱 Home Screen → 🔔 Push → 🎉 Done ───
+        // startStep: 1 (default) | 3 (jump straight to push, used after HTTPS redirect)
+        function showPostLinkFlow(displayName, presenceUserId, startStep) {
+            startStep = startStep || 1;
+            var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            var isSafariUA = isIOS && /Safari/.test(navigator.userAgent) && !(/CriOS|FxiOS|OPiOS|EdgiOS/.test(navigator.userAgent));
+            var isIOSNonSafari = isIOS && !isSafariUA;
+
+            document.getElementById('timer').style.display = 'none';
+            document.getElementById('title').textContent = '';
+            document.getElementById('subtitle').textContent = '';
+            document.getElementById('msg').style.display = 'none';
+
+            var a2hsGuide = isIOS
+                ? '1. ' + t('add_to_hs_step1') + '<br>2. ' + t('add_to_hs_step2') + '<br>3. ' + t('add_to_hs_step3')
+                : t('add_to_hs_android');
+
+            document.getElementById('content').innerHTML =
+                '<div class="steps-indicator">' +
+                '<div class="dot active" id="sd1"></div>' +
+                '<div class="dot" id="sd2"></div>' +
+                '<div class="dot" id="sd3"></div>' +
+                '</div>' +
+
+                // Step 1: Registered
+                '<div class="post-step" id="ps1" style="text-align:center">' +
+                '<div style="font-size:2.5rem;margin-bottom:.5rem">✅</div>' +
+                '<h2>' + t('wizard_ok_title') + '</h2>' +
+                '<p class="sub">' + displayName + '</p>' +
+                (isIOSNonSafari
+                    ? '<div class="notice" style="margin-top:.75rem">⚠️ <strong>Chrome / Firefox on iOS</strong> — push requires Safari.<br>' +
+                    'Copy this link &amp; open in <b>Safari</b>:<br>' +
+                    '<code style="word-break:break-all;font-size:.78rem">' + window.location.href + '</code></div>' +
+                    '<button class="btn" id="psCopyBtn" style="margin-bottom:.5rem">' + t('safari_copy_btn') + '</button>'
+                    : '') +
+                '<button class="btn" id="psNext1" style="margin-top:.5rem">' + t('next_btn') + '</button>' +
+                '</div>' +
+
+                // Step 2: Add to Home Screen
+                '<div class="post-step" id="ps2" style="display:none;text-align:center">' +
+                '<div style="font-size:2.5rem;margin-bottom:.5rem">📱</div>' +
+                '<h2>' + t('add_to_hs_title') + '</h2>' +
+                '<div class="notice" style="text-align:left;line-height:1.7;margin-top:.5rem">' + a2hsGuide + '</div>' +
+                '<button class="btn" id="psNext2" style="margin-top:.75rem">' + t('done_continue') + '</button>' +
+                '<button class="btn btn-outline" id="psSkip2" style="margin-top:.5rem">' + t('push_skip_btn') + '</button>' +
+                '</div>' +
+
+                // Step 3: Push
+                '<div class="post-step" id="ps3" style="display:none;text-align:center">' +
+                '<div style="font-size:2.5rem;margin-bottom:.5rem">🔔</div>' +
+                '<h2>' + t('push_title') + '</h2>' +
+                '<p class="sub" style="margin-bottom:.5rem">' + t('push_sub') + '</p>' +
+                '<button class="btn" id="psPushBtn">' + t('push_allow_btn') + '</button>' +
+                '<div class="msg" id="psPushMsg" style="display:none"></div>' +
+                '<button class="btn btn-outline" id="psSkip3" style="margin-top:.75rem">' + t('push_skip_btn') + '</button>' +
+                '</div>' +
+
+                // Step 4: Done
+                '<div class="post-step" id="ps4" style="display:none;text-align:center">' +
+                '<div style="font-size:2.5rem;margin-bottom:.5rem">🎉</div>' +
+                '<h2>' + t('setup_done_title') + '</h2>' +
+                '<p class="sub" style="margin-top:.5rem">' + t('wizard_ok_sub') + '</p>' +
+                '<button class="btn" id="psGoBtn" style="margin-top:1rem">' + t('go_dashboard') + '</button>' +
+                '</div>';
+            document.getElementById('content').style.display = 'block';
+
+            function goPS(n) {
+                for (var i = 1; i <= 4; i++) {
+                    var el = document.getElementById('ps' + i);
+                    if (el) el.style.display = (i === n) ? '' : 'none';
+                }
+                for (var i = 1; i <= 3; i++) {
+                    var d = document.getElementById('sd' + i);
+                    if (d) d.className = 'dot' + (i < n ? ' done' : '') + (i === n ? ' active' : '');
+                }
+            }
+            goPS(startStep);
+
+            // Step 1: copy link (iOS non-Safari only)
+            var copyBtn = document.getElementById('psCopyBtn');
+            if (copyBtn) {
+                copyBtn.addEventListener('click', function () {
+                    var url = window.location.href;
+                    var btn = this;
+                    var onDone = function () { btn.textContent = '✓ ' + t('safari_copied'); };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(url).then(onDone).catch(function () { fallbackCopyPost(btn, url); });
+                    } else { fallbackCopyPost(btn, url); }
+                });
+            }
+            document.getElementById('psNext1').addEventListener('click', function () { goPS(2); });
+
+            // Step 2: Add to Home Screen
+            document.getElementById('psNext2').addEventListener('click', function () { goPS(3); });
+            document.getElementById('psSkip2').addEventListener('click', function () { goPS(3); });
+
+            // Step 3: Push
+            document.getElementById('psPushBtn').addEventListener('click', async function () {
+                var btn = this;
+                var msgEl = document.getElementById('psPushMsg');
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+                msgEl.style.display = 'none';
+
+                // Require HTTPS (push API only works in secure context)
+                if (!window.isSecureContext) {
+                    var _base = window.location.href.replace('http://', 'https://').split('?')[0];
+                    var httpsUrl = _base + '?wl=1&uid=' + encodeURIComponent(presenceUserId) + '&dn=' + encodeURIComponent(displayName);
+                    msgEl.innerHTML = '🔒 HTTPS required.<br><a href="' + httpsUrl + '" style="color:#7c3aed">Open via HTTPS →</a>';
+                    msgEl.className = 'msg err';
+                    msgEl.style.display = 'block';
+                    btn.disabled = false; btn.textContent = t('push_allow_btn');
+                    return;
+                }
+
+                // iOS: must be in standalone (home screen) mode
+                var iosNow = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                var standNow = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+                if (iosNow && !standNow) {
+                    msgEl.innerHTML = '📱 On iOS, push only works from the Home Screen app.<br>' +
+                        t('add_to_hs_step1') + ' → ' + t('add_to_hs_step2');
+                    msgEl.className = 'msg err';
+                    msgEl.style.display = 'block';
+                    btn.disabled = false; btn.textContent = t('push_allow_btn');
+                    return;
+                }
+
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                    msgEl.textContent = t('push_denied');
+                    msgEl.className = 'msg err';
+                    msgEl.style.display = 'block';
+                    btn.disabled = false; btn.textContent = t('push_allow_btn');
+                    setTimeout(function () { goPS(4); }, 3000);
+                    return;
+                }
+
+                try {
+                    var perm = await Notification.requestPermission();
+                    if (perm !== 'granted') {
+                        msgEl.textContent = t('push_denied');
+                        msgEl.className = 'msg err';
+                        msgEl.style.display = 'block';
+                        btn.disabled = false; btn.textContent = t('push_allow_btn');
+                        setTimeout(function () { goPS(4); }, 3000);
+                        return;
+                    }
+
+                    var keyRes = await fetch('/api/ui/modules/presence-detection/push/vapid-public-key');
+                    if (!keyRes.ok) { goPS(4); return; }
+                    var keyData = await keyRes.json();
+                    if (!keyData.public_key) { goPS(4); return; }
+
+                    var vk = keyData.public_key;
+                    var pad = vk.length % 4 ? 4 - vk.length % 4 : 0;
+                    var b64 = (vk + '='.repeat(pad)).replace(/-/g, '+').replace(/_/g, '/');
+                    var raw = atob(b64);
+                    var arr = new Uint8Array(raw.length);
+                    for (var i = 0; i < raw.length; ++i) arr[i] = raw.charCodeAt(i);
+
+                    var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                    await navigator.serviceWorker.ready;
+
+                    // Unsubscribe old subscription (VAPID key may have changed)
+                    try {
+                        var old = await reg.pushManager.getSubscription();
+                        if (old) await old.unsubscribe();
+                    } catch (ue) { /* ignore */ }
+
+                    var sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: arr });
+                    var sj = sub.toJSON();
+                    var saveRes = await fetch('/api/ui/modules/presence-detection/push-subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user_id: presenceUserId,
+                            endpoint: sj.endpoint,
+                            p256dh: sj.keys.p256dh,
+                            auth: sj.keys.auth,
+                            user_agent: navigator.userAgent
+                        })
+                    });
+                    if (saveRes.ok) {
+                        goPS(4);
+                    } else {
+                        msgEl.textContent = 'Failed to save subscription (HTTP ' + saveRes.status + ')';
+                        msgEl.className = 'msg err';
+                        msgEl.style.display = 'block';
+                        btn.disabled = false; btn.textContent = t('push_allow_btn');
+                    }
+                } catch (e) {
+                    msgEl.textContent = 'Error: ' + (e.message || e);
+                    msgEl.className = 'msg err';
+                    msgEl.style.display = 'block';
+                    btn.disabled = false; btn.textContent = t('push_allow_btn');
+                }
+            });
+
+            document.getElementById('psSkip3').addEventListener('click', function () { goPS(4); });
+
+            // Step 4: Done — auto-redirect after 30s
+            document.getElementById('psGoBtn').addEventListener('click', function () {
+                window.location.href = window.location.origin + '/';
+            });
+            setTimeout(function () { window.location.href = window.location.origin + '/'; }, 30000);
+        }
+
+        function fallbackCopyPost(btn, text) {
+            var ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+            document.body.appendChild(ta); ta.select();
+            try { document.execCommand('copy'); btn.textContent = '✓ ' + t('safari_copied'); } catch (e) { }
+            document.body.removeChild(ta);
+        }
+
+        // ── Wizard setup mode — entry point ────────────────────────────────────────────
+        function showWizardSetupUI(info) {
+            var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+            var isSafari = isIOS && /Safari/.test(navigator.userAgent) && !(/CriOS|FxiOS|OPiOS|EdgiOS/.test(navigator.userAgent));
+            if (isIOS && !isSafari) {
+                showSafariGuide(info);
+            } else {
+                showDeviceLinkForm(info);
+            }
+        }
+
+        // ── Step 1 for iOS: open in Safari guide ──────────────────────────────────────
+        function showSafariGuide(info) {
+            var currentUrl = window.location.href;
+            document.getElementById('timer').style.display = 'none';
+            document.getElementById('title').textContent = t('safari_title');
+            document.getElementById('subtitle').textContent = t('safari_sub');
+            document.getElementById('content').innerHTML =
+                '<div class="steps-row">' +
+                '<div class="step-item active"><div class="step-num">1</div><span>' + t('safari_step1') + '</span></div>' +
+                '<div class="step-item"><div class="step-num">2</div><span>' + t('safari_step2') + '</span></div>' +
+                '<div class="step-item"><div class="step-num">3</div><span>' + t('safari_step3') + '</span></div>' +
+                '</div>' +
+                '<div class="safari-notice">📋 ' + currentUrl + '</div>' +
+                '<button class="btn" id="copyLinkBtn">' + t('safari_copy_btn') + '</button>' +
+                '<button class="btn btn-outline" id="continueBtn" style="margin-top:.75rem">' + t('safari_continue') + '</button>';
+            document.getElementById('content').style.display = 'block';
+
+            document.getElementById('copyLinkBtn').addEventListener('click', function () {
+                var btn = this;
+                var onCopied = function () {
+                    btn.textContent = '✓ ' + t('safari_copied');
+                    setTimeout(function () { btn.textContent = t('safari_copy_btn'); }, 2500);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(currentUrl).then(onCopied).catch(function () {
+                        var ta = document.createElement('textarea');
+                        ta.value = currentUrl; document.body.appendChild(ta); ta.select();
+                        try { document.execCommand('copy'); } catch (e) { }
+                        document.body.removeChild(ta); onCopied();
+                    });
+                } else {
+                    var ta = document.createElement('textarea');
+                    ta.value = currentUrl; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); } catch (e) { }
+                    document.body.removeChild(ta); onCopied();
+                }
+            });
+
+            document.getElementById('continueBtn').addEventListener('click', function () {
+                showDeviceLinkForm(info);
+            });
+        }
+
+        // ── Step 2+3: device name form → link → push ──────────────────────────────────
+        function showDeviceLinkForm(info) {
+            var adminName = info.display_name || 'Admin';
+            var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+            document.getElementById('timer').style.display = '';
+            document.getElementById('title').textContent = t('wizard_title');
+            document.getElementById('subtitle').textContent = t('wizard_sub');
+
+            var stepsHtml = isIOS
+                ? '<div class="steps-row">' +
+                '<div class="step-item"><div class="step-num">1</div><span>' + t('safari_step1') + '</span></div>' +
+                '<div class="step-item active"><div class="step-num">2</div><span>' + t('safari_step2') + '</span></div>' +
+                '<div class="step-item"><div class="step-num">3</div><span>' + t('safari_step3') + '</span></div>' +
+                '</div>'
+                : '';
+
+            document.getElementById('content').innerHTML =
+                stepsHtml +
+                '<div class="notice">' + t('wizard_admin') + '<strong>' + adminName + '</strong></div>' +
+                '<input id="deviceInput" class="input" type="text" placeholder="' + t('wizard_dev_name') + '" value="' + (navigator.userAgent.match(/iPhone|iPad|Pixel|Samsung|Xiaomi|Huawei|OPPO|Realme|OnePlus/i) || ['My Phone'])[0] + '" />' +
+                '<button class="btn" id="linkBtn">' + t('wizard_btn') + '</button>';
+            document.getElementById('content').style.display = 'block';
+
+            document.getElementById('linkBtn').addEventListener('click', async function () {
+                var deviceName = document.getElementById('deviceInput').value.trim()
+                    || ('Phone ' + navigator.userAgent.slice(0, 20));
+                var btn = this;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner"></span>';
+                try {
+                    var res = await fetch(BASE + '/auth/qr/wizard-link/' + SESSION_ID, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ device_name: deviceName })
+                    });
+                    if (res.ok) {
+                        var data = await res.json();
+                        if (data.device_token) {
+                            try { localStorage.setItem('selena_device', data.device_token); } catch (e) { }
+                        }
+                        var presenceUserId = data.presence_user_id || data.user_id || '';
+                        var displayName = data.display_name || deviceName;
+                        showPostLinkFlow(displayName, presenceUserId);
+                    } else {
+                        var err = await res.json().catch(function () { return {}; });
+                        btn.disabled = false;
+                        btn.textContent = t('wizard_btn');
+                        showMsg(err.detail || t('err_generic'), false);
+                    }
+                } catch (ex) {
+                    btn.disabled = false;
+                    btn.textContent = t('wizard_btn');
+                    showMsg(t('net_err'), false);
+                }
+            });
+        }
+
+        // ── Access mode (phone approves browser session OR new device registration) ──
+        async function showAccessUI() {
+            // Priority 1: Presence identity (phone tracked by MAC → linked account)
+            var presence = await tryPresenceIdentify();
+            if (presence) {
+                renderApproveUI(presence.display_name || presence.presence_name, async function () {
+                    var res = await fetch(BASE + '/auth/qr/approve-by-presence/' + SESSION_ID, { method: 'POST' });
+                    if (res.ok) return true;
+                    var err = await res.json().catch(function () { return {}; });
+                    showMsg(err.detail || t('err_generic'), false);
+                    return false;
+                });
+                return;
+            }
+
+            // Priority 2: Device token (localStorage/cookie)
+            var me = await tryDeviceToken();
+            if (me) {
+                renderApproveUI(me.display_name || me.name || '', async function () {
+                    var res = await fetch(BASE + '/auth/qr/approve/' + SESSION_ID, {
+                        method: 'POST', headers: { 'X-Device-Token': me._token }
+                    });
+                    if (res.ok) return true;
+                    var err = await res.json().catch(function () { return {}; });
+                    showMsg(err.detail || t('err_generic'), false);
+                    return false;
+                });
+                return;
+            }
+
+            // Priority 3: No identity — show sign-in / registration form
             document.getElementById('title').textContent = t('signin_title');
             document.getElementById('subtitle').textContent = t('signin_sub');
             document.getElementById('content').innerHTML =
