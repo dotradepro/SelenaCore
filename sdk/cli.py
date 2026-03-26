@@ -27,10 +27,11 @@ MODULE_MANIFEST_TEMPLATE = """\
   "name": "{name}",
   "version": "0.1.0",
   "description": "A SelenaCore module",
-  "type": "COMMUNITY",
+  "type": "UI",
+  "api_version": "1.0",
+  "runtime_mode": "always_on",
   "port": 8100,
-  "permissions": ["devices:read"],
-  "min_core_version": "1.0.0"
+  "permissions": ["device.read", "events.subscribe", "events.publish"]
 }}
 """
 

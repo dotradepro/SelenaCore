@@ -128,7 +128,7 @@ class MyModule(SmartHomeModule):
 
     async def on_start(self):
         """Викликається при запуску модуля."""
-        self.logger.info("Module started")
+        self._log.info("Module started")
 
     async def on_stop(self):
         """Викликається при зупинці модуля."""
@@ -141,19 +141,24 @@ class MyModule(SmartHomeModule):
         """Викликається при кожній зміні стану пристрою."""
         device_id = payload["device_id"]
         new_state = payload["new_state"]
-        self.logger.debug(f"Device {device_id} → {new_state}")
+        self._log.debug(f"Device {device_id} → {new_state}")
 
     @on_event("device.offline")
     async def handle_offline(self, payload: dict):
-        self.logger.warning(f"Device offline: {payload['device_id']}")
+        self._log.warning(f"Device offline: {payload['device_id']}")
 
     # === Scheduled tasks ===
 
     @scheduled("every:5m")
     async def periodic_sync(self):
         """Запускається кожні 5 хвилин."""
-        devices = await self.list_devices()
-        for device in devices:
+        import httpx, os
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{os.environ['SELENA_CORE_URL']}/devices",
+                headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"}
+            )
+        for device in resp.json().get("devices", []):
             await self._sync_device(device)
 
     @scheduled("cron:0 * * * *")
@@ -164,13 +169,13 @@ class MyModule(SmartHomeModule):
     # === Core API helpers ===
 
     async def _sync_device(self, device: dict):
-        # Оновити стан в Registry
-        await self.update_device_state(
-            device["device_id"],
-            {"temperature": 22.5}
-        )
-
-        # Опублікувати подію
+        import httpx, os
+        async with httpx.AsyncClient() as client:
+            await client.patch(
+                f"{os.environ['SELENA_CORE_URL']}/devices/{device['device_id']}/state",
+                headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"},
+                json={"state": {"temperature": 22.5}}
+            )
         await self.publish_event("climate.updated", {
             "device_id": device["device_id"],
             "temperature": 22.5
@@ -180,23 +185,32 @@ class MyModule(SmartHomeModule):
 ### Доступні методи SmartHomeModule
 
 ```python
-# Пристрої
-await self.list_devices()                         # всі пристрої
-await self.get_device(device_id)                  # конкретний пристрій
-await self.register_device(name, type, protocol,  # створити пристрій
-                           capabilities, meta)
-await self.update_device_state(device_id, state)  # оновити стан
-await self.delete_device(device_id)               # видалити
+# Події (вбудовані)
+await self.publish_event(event_type, payload)  # опублікувати подію
 
-# Події
-await self.publish_event(event_type, payload)     # опублікувати подію
-await self.subscribe_events(event_types,          # підписатися (webhook)
-                            webhook_url)
+# Lifecycle
+await self.on_start()   # перевизначте для пуску коду при старті модуля
+await self.on_stop()    # перевизначте для пуску коду при зупинці модуля
 
-# Властивості
-self.logger          # logging.Logger з іменем модуля
-self.token           # module_token для заголовка Authorization
-self.core_url        # http://localhost:7070/api/v1
+# Core API — звертайтесь безпосередньо через httpx, використовуючи env-змінні:
+import httpx, os
+
+async with httpx.AsyncClient() as client:
+    # Пристрої
+    resp = await client.get(f"{os.environ['SELENA_CORE_URL']}/devices",
+        headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"})
+    devices = resp.json()["devices"]
+
+    # Реєстрація пристрою
+    resp = await client.post(f"{os.environ['SELENA_CORE_URL']}/devices",
+        headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"},
+        json={"name": "My Sensor", "type": "sensor",
+              "protocol": "mqtt", "capabilities": []})
+
+# Властивості self:
+self._log          # logging.Logger з іменем модуля
+self._core_token   # module_token для заголовка Authorization (= SELENA_MODULE_TOKEN)
+# CORE_API_BASE    # http://localhost:7070/api/v1 (константа на рівні модуля)
 ```
 
 ---
@@ -215,9 +229,12 @@ smarthome new-module my-climate-module
 
 ```bash
 smarthome dev
-# Запускає mock API на http://localhost:7070
-# Усі endpoints працюють з in-memory сховищем
-# Токен розробки: DEV_MODULE_TOKEN з .env (за замовчуванням "test-module-token-xyz")
+# Запускає модуль на http://localhost:8100 з uvicorn hot-reload
+# Задайте env-змінні вручну для dev-режиму:
+export SELENA_MODULE_TOKEN=test-module-token-xyz
+export SELENA_CORE_URL=http://localhost:7070/api/v1
+export SELENA_MODULE_NAME=my-climate-module
+export SELENA_MODULE_PORT=8100
 ```
 
 ### Крок 3 — Розробити модуль

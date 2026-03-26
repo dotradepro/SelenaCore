@@ -56,13 +56,13 @@ pytest tests/ --cov=core --cov-report=term-missing
 Перед кожним push:
 
 ```bash
-pytest tests/ -x -q           # всі тести зелені
-python -m mypy core/           # типізація
+pytest tests/ -x -q                          # всі тести зелені
+python -m mypy core/ --ignore-missing         # типізація
 ```
 
 ## Безпека
 
-Якщо знайшли вразливість — **не створюйте публічний Issue**. Напишіть на security@selenehome.tech або через [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
+Якщо знайшли вразливість — **не створюйте публічний Issue**. Напишіть через [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
 
 ## Заборонено
 

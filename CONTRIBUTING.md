@@ -56,13 +56,13 @@ pytest tests/ --cov=core --cov-report=term-missing
 Before each push:
 
 ```bash
-pytest tests/ -x -q           # all tests green
-python -m mypy core/           # type checking
+pytest tests/ -x -q                          # all tests green
+python -m mypy core/ --ignore-missing         # type checking
 ```
 
 ## Security
 
-If you find a vulnerability — **do not create a public Issue**. Write to security@selenehome.tech or use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
+If you find a vulnerability — **do not create a public Issue**. Use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories).
 
 ## Forbidden
 

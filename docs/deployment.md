@@ -77,7 +77,7 @@ CORE_LOG_LEVEL=INFO
 DEBUG=false
 
 # For platform connection (optional):
-PLATFORM_API_URL=https://selenehome.tech/api/v1
+PLATFORM_API_URL=https://smarthome-lk.com/api/v1
 PLATFORM_DEVICE_HASH=           # filled during platform registration
 ```
 
@@ -196,12 +196,7 @@ arecord -l
 ### Bluetooth Speaker
 
 ```bash
-# Via API (recommended)
-curl -X POST http://localhost:7070/api/v1/system/bluetooth/pair \
-  -H "Authorization: Bearer <token>" \
-  -d '{"mac": "AA:BB:CC:DD:EE:FF"}'
-
-# Or manually
+# Via bluetoothctl (API endpoint for Bluetooth pairing not yet implemented)
 bluetoothctl
   power on
   scan on
@@ -242,7 +237,7 @@ python3 agent/manifest.py --update
 
 ```bash
 # Apply rules from script
-sudo bash scripts/setup_iptables.sh
+sudo bash scripts/setup_firewall.sh
 
 # Manually — basic rules
 sudo iptables -A INPUT -i lo -j ACCEPT
@@ -261,20 +256,17 @@ sudo netfilter-persistent save
 
 ### Local Backup to USB
 
+> **Note:** Backup REST endpoints are not yet implemented. Use the backup module UI or trigger via the cli:
+
 ```bash
-curl -X POST http://localhost:7070/api/v1/backup/local \
-  -H "Authorization: Bearer <token>" \
-  -d '{"destination": "/media/usb0"}'
+python3 -m system_modules.backup_manager.local_backup --destination /media/usb0
 ```
 
 ### Cloud Backup
 
 Data is encrypted E2E (PBKDF2 + AES-256-GCM) before being sent to the platform:
 
-```bash
-curl -X POST http://localhost:7070/api/v1/backup/cloud \
-  -H "Authorization: Bearer <token>"
-```
+> **Note:** Cloud backup REST endpoint is not yet implemented. Configure cloud backup through the Settings page in the UI.
 
 ---
 
@@ -287,8 +279,8 @@ curl http://localhost:7070/api/v1/system/info | python3 -m json.tool
 # Integrity Agent
 curl http://localhost:7070/api/v1/integrity/status | python3 -m json.tool
 
-# Hardware monitoring
-curl http://localhost:7070/api/v1/system/hardware | python3 -m json.tool
+# Hardware stats — available via UI API (not v1 public API):
+curl http://localhost:80/api/ui/modules/hw-monitor/stats | python3 -m json.tool
 ```
 
 ---

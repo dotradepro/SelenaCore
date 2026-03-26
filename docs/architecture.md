@@ -55,12 +55,12 @@ FastAPI REST server, port `7070`. Entry point for all modules.
 **Middleware:**
 - `X-Request-Id` generated for each request, propagated via `contextvars`
 - CORS — only `localhost` allowed
-- Rate limiting — 100 req/sec per token
+- Rate limiting — 120 req/min per token (external), 600 req/min (LAN/localhost); SSE and static files are exempt
 
 **Authorization (`core/api/auth.py`):**
 - `Authorization: Bearer <module_token>` required for all endpoints except `/health`
-- Token issued upon module installation, stored in SQLite
-- Token type verified: SYSTEM modules have access to more endpoints
+- Token stored as a plaintext file in `/secure/module_tokens/<name>.token`; also supports `DEV_MODULE_TOKEN` env var in dev mode
+- No per-endpoint permission granularity in v1 — any valid token grants access
 
 ---
 
@@ -182,7 +182,7 @@ Long-poll:
 | Component | File | Technology |
 |-----------|------|------------|
 | Wake-word | `wake_word.py` | openWakeWord |
-| STT | `stt.py` | Whisper.cpp (pywhispercpp) |
+| STT | `stt.py` | Vosk |
 | TTS | `tts.py` | Piper TTS |
 | Speaker ID | `speaker_id.py` | resemblyzer |
 | Audio I/O | `audio_manager.py` | ALSA + PipeWire |
@@ -250,8 +250,8 @@ localhost
   :8200  User Module 100
 ```
 
-Docker network: `selena-net` (driver: bridge, internal).
-User modules CANNOT communicate with each other directly.
+Docker network: `selena_modules` (Compose-managed bridge network).
+User modules run inside the `smarthome-modules` container and reach the core via `extra_hosts: selena-core:host-gateway`.
 System modules run inside the core process and have NO network ports.
 
 ---

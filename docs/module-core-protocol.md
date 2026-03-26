@@ -43,46 +43,29 @@ ModuleLoader.install():
      → docker run --rm smarthome-sandbox ...
      → timeout 60s
      → при провале: 400 + sandbox_output
-  4. Сгенерировать module_token:
-       token = secrets.token_urlsafe(48)     # 64 символа base64url
-       token_hash = sha256(token)            # хранить только хеш
-       webhook_secret = secrets.token_hex(32) # 64 символа hex
-  5. Записать в SQLite (таблица modules):
-       INSERT INTO modules (name, version, port, token_hash,
-                            webhook_secret, permissions, type,
-                            status, installed_at)
-  6. Сформировать env-файл для контейнера:
+  4. Сгенерировать module_token и сохранить:
+       token_file = /secure/module_tokens/<name>.token
+       Path(token_file).write_text(token)  # plaintext, chmod 600
+       webhook_secret = secrets.token_hex(32) # хранится в памяти модуля через env
+  5. Сформировать env-файл для контейнера:
        /var/lib/selena/modules/<name>/.env.module
        (содержимое — см. раздел 1.3)
-  7. Запустить контейнер через DockerSandbox (см. раздел 1.4)
-  8. Дождаться GET /health → 200 (timeout 30s)
-  9. SDK внутри модуля автоматически подписывается на события
+  6. Запустить контейнер через DockerSandbox (см. раздел 1.4)
+  7. Дождаться GET /health → 200 (timeout 30s)
+  8. SDK внутри модуля автоматически подписывается на события
      из manifest.json при on_start (см. раздел 3.3)
- 10. Вернуть ответ:
+  9. Вернуть ответ:
        201 { "name": "...", "status": "RUNNING", "port": 8100 }
      ⚠️ token НЕ возвращается в ответе — он уже внутри контейнера
 ```
 
-### 1.2 Таблица `modules` в SQLite
+### 1.2 Хранение токена
 
-```sql
-CREATE TABLE modules (
-    id            TEXT PRIMARY KEY,        -- UUID
-    name          TEXT UNIQUE NOT NULL,    -- из manifest.json
-    version       TEXT NOT NULL,
-    port          INTEGER UNIQUE NOT NULL, -- 8100–8200
-    token_hash    TEXT NOT NULL,           -- sha256(raw_token), hex
-    webhook_secret TEXT NOT NULL,          -- plaintext (только в БД)
-    permissions   TEXT NOT NULL,           -- JSON array
-    type          TEXT NOT NULL,           -- UI|INTEGRATION|DRIVER|AUTOMATION|SYSTEM
-    runtime_mode  TEXT NOT NULL,           -- always_on|on_demand|scheduled
-    status        TEXT NOT NULL DEFAULT 'STOPPED',
-    install_path  TEXT NOT NULL,           -- /var/lib/selena/modules/<name>/
-    installed_at  DATETIME NOT NULL,
-    started_at    DATETIME,
-    error_msg     TEXT
-);
-```
+Токен хранится как plaintext файл `/secure/module_tokens/<name>.token` (chmod 600).
+При проверке запроса ядро считывает все файлы `*.token` из этой директории и сравнивает с предъявленным токеном напрямую.
+`DEV_MODULE_TOKEN` из `.env` принимается как дополнительный валидный токен в dev-режиме (`DEBUG=true`).
+
+> **Примечание по безопасности:** В production хранилище токенов `/secure/` должно быть смонтировано с правами `700` и доступно только пользователю ядра.
 
 ### 1.3 Файл `.env.module` — передача секретов в контейнер
 
@@ -103,7 +86,7 @@ SELENA_MODULE_PORT=<port>
 
 **Реализация удаления:**
 ```python
-# core/module_loader/docker_runner.py
+# core/module_loader/sandbox.py
 import os, subprocess, tempfile
 
 env_path = f"{install_path}/.env.module"
@@ -119,13 +102,13 @@ finally:
 ### 1.4 Docker run — параметры запуска
 
 ```python
-# core/module_loader/docker_runner.py
+# core/module_loader/sandbox.py
 
 subprocess.run([
     "docker", "run",
     "--detach",
     "--name",        f"selena-module-{module.name}",
-    "--network",     "selena-net",          # изолированная сеть
+    "--network",     "selena_selena_internal",  # Docker Compose сеть selena_modules
     "--hostname",    module.name,
     "--publish",     f"127.0.0.1:{module.port}:{module.port}",  # только localhost
     "--env-file",    env_path,              # SELENA_* переменные
@@ -189,39 +172,44 @@ Authorization: Bearer <module_token>
 ```python
 # core/api/auth.py
 
-import hashlib, hmac
+import os
+from pathlib import Path
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from core.db import get_db
 
-bearer = HTTPBearer()
+bearer = HTTPBearer(auto_error=False)
+
+
+def _load_valid_tokens() -> set[str]:
+    """Load valid tokens from /secure/module_tokens/ directory."""
+    tokens: set[str] = set()
+    tokens_dir = Path(os.environ.get("CORE_SECURE_DIR", "/secure")) / "module_tokens"
+    if tokens_dir.exists():
+        for token_file in tokens_dir.glob("*.token"):
+            token = token_file.read_text().strip()
+            if token:
+                tokens.add(token)
+    dev_token = os.environ.get("DEV_MODULE_TOKEN", "")
+    if dev_token:
+        tokens.add(dev_token)
+    return tokens
+
 
 async def verify_module_token(
-    credentials: HTTPAuthorizationCredentials = Security(bearer),
-    db = Depends(get_db)
-) -> ModuleRecord:
-    raw_token = credentials.credentials
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-
-    module = await db.fetchone(
-        "SELECT * FROM modules WHERE token_hash = ? AND status != 'REMOVED'",
-        (token_hash,)
-    )
-    if not module:
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer),
+) -> str:
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+    token = credentials.credentials
+    valid_tokens = _load_valid_tokens()
+    if token not in valid_tokens:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    return module   # прикрепляется к request.state.module
-
-
-def require_permission(permission: str):
-    """Декоратор проверки permission."""
-    def dependency(module: ModuleRecord = Depends(verify_module_token)):
-        if permission not in json.loads(module.permissions):
-            raise HTTPException(status_code=403,
-                detail=f"Permission '{permission}' not granted in manifest.json")
-        return module
-    return dependency
+    return token
 ```
+
+> **Примечание:** В текущей реализации разрешения из manifest.json не проверяются
+> на уровне отдельных эндпоинтов — любой валидный токен имеет полный доступ к API.
+> Гранулярная проверка разрешений запланирована для v1.1.
 
 **Использование в роутерах:**
 
@@ -230,50 +218,54 @@ def require_permission(permission: str):
 
 @router.get("/devices")
 async def list_devices(
-    module = Depends(require_permission("device.read"))
+    token: str = Depends(verify_module_token)
 ):
     ...
 
 @router.post("/devices")
 async def register_device(
     body: DeviceCreate,
-    module = Depends(require_permission("device.write"))
+    token: str = Depends(verify_module_token)
 ):
     ...
 ```
 
 ### 2.2 Таблица: эндпоинты по типу модуля
 
-| Эндпоинт | USER | INTEGRATION | DRIVER | AUTOMATION | SYSTEM |
-|---|:---:|:---:|:---:|:---:|:---:|
-| `GET /health` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `GET /devices` | — | `device.read` | `device.read` | `device.read` | ✅ |
-| `POST /devices` | — | `device.write` | `device.write` | — | ✅ |
-| `PATCH /devices/{id}/state` | — | `device.write` | `device.write` | — | ✅ |
-| `DELETE /devices/{id}` | — | — | `device.write` | — | ✅ |
-| `POST /events/publish` | — | `events.publish` | `events.publish` | `events.publish` | ✅ |
-| `POST /events/subscribe` | — | `events.subscribe` | `events.subscribe` | `events.subscribe` | ✅ |
-| `POST /secrets/oauth/start` | — | `secrets.oauth` | — | — | ✅ |
-| `POST /secrets/proxy` | — | `secrets.proxy` | — | — | ✅ |
-| `GET /modules` | — | — | — | — | ✅ |
-| `POST /modules/install` | — | — | — | — | ✅ |
-| `POST /modules/{name}/stop` | — | — | — | — | ✅ (не SYSTEM) |
-| `GET /system/info` | — | — | — | — | ✅ |
-| `GET /integrity/status` | — | — | — | — | ✅ |
+> **Примечание:** В текущей реализации (v1.0) тип модуля не проверяется на уровне эндпоинтов.
+> Любой валидный токен имеет доступ ко всем эндпоинтам Public API.
+> Приведённая таблица отражает **плановую** архитектуру для v1.1.
 
-`USER` — зарезервирован, не используется модулями в текущей версии.
+| Эндпоинт | INTEGRATION | DRIVER | AUTOMATION | SYSTEM |
+|---|:---:|:---:|:---:|:---:|
+| `GET /health` | ✅ | ✅ | ✅ | ✅ |
+| `GET /devices` | ✅ | ✅ | ✅ | ✅ |
+| `POST /devices` | ✅ | ✅ | — | ✅ |
+| `PATCH /devices/{id}/state` | ✅ | ✅ | — | ✅ |
+| `DELETE /devices/{id}` | — | ✅ | — | ✅ |
+| `POST /events/publish` | ✅ | ✅ | ✅ | ✅ |
+| `POST /events/subscribe` | ✅ | ✅ | ✅ | ✅ |
+| `POST /secrets/oauth/start` | ✅ | — | — | ✅ |
+| `POST /secrets/proxy` | ✅ | — | — | ✅ |
+| `GET /modules` | — | — | — | ✅ |
+| `POST /modules/install` | — | — | — | ✅ |
+| `POST /modules/{name}/stop` | — | — | — | ✅ (не SYSTEM) |
+| `GET /system/info` | — | — | — | ✅ |
+| `GET /integrity/status` | — | — | — | ✅ |
 
 ### 2.3 Rate limiting
 
 ```python
 # core/api/middleware.py
-# Реализовать через sliding window в памяти (dict token_hash → deque timestamps)
+# Sliding window per-IP
 
-RATE_LIMIT = 100   # запросов
-RATE_WINDOW = 1.0  # в секунду
+LIMIT_LOCAL    = 600   # req/min для localhost и LAN (192.168.x, 10.x, 127.x)
+LIMIT_EXTERNAL = 120   # req/min для внешних IP
+WINDOW_SEC     = 60
 
+# SSE-стрим и статические файлы — не учитываются
 # При превышении: 429 Too Many Requests
-# Header: Retry-After: 1
+# Header: Retry-After: <window_sec>
 ```
 
 ### 2.4 Ротация токена (деинсталляция)
@@ -796,7 +788,7 @@ def validate_proxy_url(url: str) -> None:
 ```
 Каждые 60 секунд:
 
-POST https://selenehome.tech/api/v1/device/heartbeat
+POST https://smarthome-lk.com/api/v1/device/heartbeat
 Headers:
   X-Device-Hash:  <PLATFORM_DEVICE_HASH из .env>
   X-Signature:    sha256=<hmac>
@@ -831,7 +823,7 @@ HMAC вычисляется:
 ### 6.2 Long-poll команд
 
 ```
-GET https://selenehome.tech/api/v1/device/commands
+GET https://smarthome-lk.com/api/v1/device/commands
     ?device_hash=<hash>
     &wait=30
 Headers:
@@ -847,7 +839,7 @@ Headers:
 }
 
 После выполнения команды:
-POST https://selenehome.tech/api/v1/device/commands/{command_id}/ack
+POST https://smarthome-lk.com/api/v1/device/commands/{command_id}/ack
 {
     "success":   true,
     "error_msg": null
@@ -1094,7 +1086,7 @@ CORE_LOG_LEVEL=INFO
 DEBUG=false
 
 # Платформа
-PLATFORM_API_URL=https://selenehome.tech/api/v1
+PLATFORM_API_URL=https://smarthome-lk.com/api/v1
 PLATFORM_DEVICE_HASH=                    # заполняется при регистрации
 MOCK_PLATFORM=false                      # true = не подключаться к платформе
 
@@ -1134,7 +1126,7 @@ SELENA_INSTALL_PATH=/var/lib/selena/modules/<name>
 
 ## 11. Критерии готовности реализации
 
-- [ ] `module_token` генерируется при установке, хранится как `sha256` хеш, plaintext только в `.env.module`
+- [ ] `module_token` генерируется при установке, хранится как plaintext файл `/secure/module_tokens/<name>.token` (chmod 600)
 - [ ] `.env.module` удаляется с диска сразу после `docker run`
 - [ ] `webhook_secret` хранится в SQLite в plaintext, никогда не возвращается через API
 - [ ] HMAC-SHA256 проверяется на каждый входящий webhook в SDK

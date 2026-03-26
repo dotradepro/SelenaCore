@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](../../LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-teal.svg)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-teal.svg)](https://fastapi.tiangolo.com)
 
 🇬🇧 [English version](../../README.md)
 
@@ -89,7 +89,7 @@ selena-core/
     api/routes/              # REST API endpoints
     cloud_sync/              # Синхронізація з платформою (HMAC)
   system_modules/
-    voice_core/              # STT (Whisper), TTS (Piper), wake-word
+    voice_core/              # STT (Vosk), TTS (Piper), wake-word
     llm_engine/              # Ollama, Fast Matcher, Intent Router
     network_scanner/         # ARP, mDNS, SSDP, OUI lookup
     user_manager/            # Профілі, PIN, Face ID, аудит-лог
@@ -136,9 +136,10 @@ Auth: `Authorization: Bearer <module_token>`
 | POST | `/modules/{name}/stop` | Зупинка модуля |
 | GET | `/integrity/status` | Статус Integrity Agent |
 | GET | `/system/info` | Інформація про пристрій |
-| POST | `/wizard/step` | Крок onboarding wizard |
 
-Повна документація: `http://localhost:7070/docs` (Swagger UI, автогенерація FastAPI).
+> Onboarding wizard обробляється через `POST /api/ui/setup/{step}` (UI-рівень, не потребує авторизації при першому старті).
+
+Swagger UI: `http://localhost:7070/docs` — доступний лише при `DEBUG=true`.
 
 ---
 
@@ -165,7 +166,7 @@ Wake-word (openWakeWord)
 
 ```bash
 smarthome new-module my-module    # створити структуру модуля
-smarthome dev                     # mock Core API на :7070
+smarthome dev                     # запускити модуль на :8100 з hot-reload
 smarthome test                    # запустити тести
 smarthome publish                 # упакувати та завантажити в SelenaCore
 ```
@@ -180,12 +181,11 @@ class ClimateModule(SmartHomeModule):
     version = "1.0.0"
 
     async def on_start(self):
-        self.logger.info("Climate module started")
+        self._log.info("Climate module started")
 
     @on_event("device.state_changed")
     async def handle_state(self, payload):
-        device = await self.get_device(payload["device_id"])
-        if device and device.get("state", {}).get("temperature", 0) > 25:
+        if payload.get("new_state", {}).get("temperature", 0) > 25:
             await self.publish_event("climate.overheat", {"device_id": payload["device_id"]})
 
     @scheduled("every:5m")
@@ -205,7 +205,7 @@ CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
 UI_PORT=80
-PLATFORM_API_URL=https://selenehome.tech/api/v1
+PLATFORM_API_URL=https://smarthome-lk.com/api/v1
 PLATFORM_DEVICE_HASH=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
@@ -234,7 +234,7 @@ pytest tests/ --cov=core --cov-report=term-missing
 - **API proxy** — модулі ніколи не отримують токени напряму
 - **Біометрія** — зберігається лише локально, синхронізація в хмару заблокована
 - **Core API** — недоступний зовні localhost (iptables)
-- **Rate limiting** — 100 req/sec на токен; PIN: 5 спроб → блокування 10 хвилин
+- **Rate limiting** — 120 зап/хв (зовнішні), 600 зап/хв (LAN); PIN: 5 спроб → блокування 10 хвилин
 
 ---
 

@@ -126,7 +126,7 @@ class MyModule(SmartHomeModule):
 
     async def on_start(self):
         """Called when the module starts."""
-        self.logger.info("Module started")
+        self._log.info("Module started")
 
     async def on_stop(self):
         """Called when the module stops."""
@@ -139,19 +139,25 @@ class MyModule(SmartHomeModule):
         """Called on each device state change."""
         device_id = payload["device_id"]
         new_state = payload["new_state"]
-        self.logger.debug(f"Device {device_id} → {new_state}")
+        self._log.debug(f"Device {device_id} → {new_state}")
 
     @on_event("device.offline")
     async def handle_offline(self, payload: dict):
-        self.logger.warning(f"Device offline: {payload['device_id']}")
+        self._log.warning(f"Device offline: {payload['device_id']}")
 
     # === Scheduled tasks ===
 
     @scheduled("every:5m")
     async def periodic_sync(self):
         """Runs every 5 minutes."""
-        devices = await self.list_devices()
-        for device in devices:
+        # Call Core API directly via httpx
+        import httpx, os
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{os.environ['SELENA_CORE_URL']}/devices",
+                headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"}
+            )
+        for device in resp.json().get("devices", []):
             await self._sync_device(device)
 
     @scheduled("cron:0 * * * *")
@@ -162,12 +168,14 @@ class MyModule(SmartHomeModule):
     # === Core API helpers ===
 
     async def _sync_device(self, device: dict):
-        # Update state in Registry
-        await self.update_device_state(
-            device["device_id"],
-            {"temperature": 22.5}
-        )
-
+        import httpx, os
+        # Update state in Registry via Core API
+        async with httpx.AsyncClient() as client:
+            await client.patch(
+                f"{os.environ['SELENA_CORE_URL']}/devices/{device['device_id']}/state",
+                headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"},
+                json={"state": {"temperature": 22.5}}
+            )
         # Publish event
         await self.publish_event("climate.updated", {
             "device_id": device["device_id"],
@@ -178,23 +186,39 @@ class MyModule(SmartHomeModule):
 ### Available SmartHomeModule Methods
 
 ```python
-# Devices
-await self.list_devices()                         # all devices
-await self.get_device(device_id)                  # specific device
-await self.register_device(name, type, protocol,  # create device
-                           capabilities, meta)
-await self.update_device_state(device_id, state)  # update state
-await self.delete_device(device_id)               # delete
+# Events (built-in)
+await self.publish_event(event_type, payload)  # publish event to Core API
 
-# Events
-await self.publish_event(event_type, payload)     # publish event
-await self.subscribe_events(event_types,          # subscribe (webhook)
-                            webhook_url)
+# Lifecycle
+await self.on_start()   # override to run code on module start
+await self.on_stop()    # override to run code on module stop
 
-# Properties
-self.logger          # logging.Logger with module name
-self.token           # module_token for Authorization header
-self.core_url        # http://localhost:7070/api/v1
+# Core API — call directly via httpx using env vars:
+# SELENA_CORE_URL, SELENA_MODULE_TOKEN (set automatically by the loader)
+import httpx, os
+
+async with httpx.AsyncClient() as client:
+    # Devices
+    resp = await client.get(f"{os.environ['SELENA_CORE_URL']}/devices",
+        headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"})
+    devices = resp.json()["devices"]
+
+    # Register device
+    resp = await client.post(f"{os.environ['SELENA_CORE_URL']}/devices",
+        headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"},
+        json={"name": "My Sensor", "type": "sensor",
+              "protocol": "mqtt", "capabilities": []})
+
+    # Update state
+    await client.patch(
+        f"{os.environ['SELENA_CORE_URL']}/devices/{device_id}/state",
+        headers={"Authorization": f"Bearer {os.environ['SELENA_MODULE_TOKEN']}"},
+        json={"state": {"temperature": 22.5}})
+
+# Properties available on self:
+self._log          # logging.Logger with module name
+self._core_token   # module_token for Authorization header (= SELENA_MODULE_TOKEN)
+# CORE_API_BASE    # http://localhost:7070/api/v1 (module-level constant)
 ```
 
 ---
@@ -213,9 +237,13 @@ smarthome new-module my-climate-module
 
 ```bash
 smarthome dev
-# Starts mock API on http://localhost:7070
-# All endpoints work with in-memory storage
-# Dev token: DEV_MODULE_TOKEN from .env (default "test-module-token-xyz")
+# Starts module on http://localhost:8100 with uvicorn hot-reload
+# (uses the module's own main.py)
+# Set environment variables manually for dev:
+export SELENA_MODULE_TOKEN=test-module-token-xyz
+export SELENA_CORE_URL=http://localhost:7070/api/v1
+export SELENA_MODULE_NAME=my-climate-module
+export SELENA_MODULE_PORT=8100
 ```
 
 ### Step 3 — Develop Module

@@ -79,7 +79,7 @@ CORE_LOG_LEVEL=INFO
 DEBUG=false
 
 # Для підключення до платформи (опціонально):
-PLATFORM_API_URL=https://selenehome.tech/api/v1
+PLATFORM_API_URL=https://smarthome-lk.com/api/v1
 PLATFORM_DEVICE_HASH=           # заповнюється при реєстрації на платформі
 ```
 
@@ -198,12 +198,7 @@ arecord -l
 ### Bluetooth колонка
 
 ```bash
-# Через API (рекомендовано)
-curl -X POST http://localhost:7070/api/v1/system/bluetooth/pair \
-  -H "Authorization: Bearer <token>" \
-  -d '{"mac": "AA:BB:CC:DD:EE:FF"}'
-
-# Або вручну
+# Через bluetoothctl (API-endpoint для парування Bluetooth ще не реалізовано)
 bluetoothctl
   power on
   scan on
@@ -244,7 +239,7 @@ python3 agent/manifest.py --update
 
 ```bash
 # Застосувати правила зі скрипту
-sudo bash scripts/setup_iptables.sh
+sudo bash scripts/setup_firewall.sh
 
 # Вручну — основні правила
 sudo iptables -A INPUT -i lo -j ACCEPT
@@ -263,20 +258,17 @@ sudo netfilter-persistent save
 
 ### Локальний бекап на USB
 
+> **Примітка:** REST-endpoints для бекапу ще не реалізовані. Користуйтесь UI або CLI:
+
 ```bash
-curl -X POST http://localhost:7070/api/v1/backup/local \
-  -H "Authorization: Bearer <token>" \
-  -d '{"destination": "/media/usb0"}'
+python3 -m system_modules.backup_manager.local_backup --destination /media/usb0
 ```
 
 ### Хмарний бекап
 
 Дані шифруються E2E (PBKDF2 + AES-256-GCM) перед відправкою на платформу:
 
-```bash
-curl -X POST http://localhost:7070/api/v1/backup/cloud \
-  -H "Authorization: Bearer <token>"
-```
+> **Примітка:** REST-endpoint хмарного бекапу ще не реалізовано. Налаштуйте хмарний бекап через сторінку налаштувань в UI.
 
 ---
 
@@ -289,8 +281,8 @@ curl http://localhost:7070/api/v1/system/info | python3 -m json.tool
 # Integrity Agent
 curl http://localhost:7070/api/v1/integrity/status | python3 -m json.tool
 
-# Апаратний моніторинг
-curl http://localhost:7070/api/v1/system/hardware | python3 -m json.tool
+# Апаратний моніторинг — через UI API:
+curl http://localhost:80/api/ui/modules/hw-monitor/stats | python3 -m json.tool
 ```
 
 ---

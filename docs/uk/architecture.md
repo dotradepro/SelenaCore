@@ -69,12 +69,12 @@ REST-сервер на FastAPI, порт `7070`. Точка входу для в
 **Middleware:**
 - `X-Request-Id` генерується для кожного запиту, пробрасується через `contextvars`
 - CORS — дозволено лише `localhost`
-- Rate limiting — 100 req/sec на токен
+- Rate limiting — 120 зап/хв (зовнішні), 600 зап/хв (LAN/localhost); SSE та статика — виняток
 
 **Авторизація (`core/api/auth.py`):**
 - `Authorization: Bearer <module_token>` обов'язковий для всіх endpoints крім `/health`
-- Токен видається при встановленні модуля, зберігається в SQLite
-- Тип токена перевіряється: SYSTEM-модулі бачать більше endpoints
+- Токен зберігається як plaintext файл `/secure/module_tokens/<name>.token`; в dev-режимі підтримується `DEV_MODULE_TOKEN`
+- Гранулярна перевірка дозволів не реалізована в v1 — будь-який валідний токен отримує повний доступ до API
 
 ---
 
@@ -196,7 +196,7 @@ Long-poll:
 | Компонент | Файл | Технологія |
 |-----------|------|------------|
 | Wake-word | `wake_word.py` | openWakeWord |
-| STT | `stt.py` | Whisper.cpp (pywhispercpp) |
+| STT | `stt.py` | Vosk |
 | TTS | `tts.py` | Piper TTS |
 | Speaker ID | `speaker_id.py` | resemblyzer |
 | Аудіо I/O | `audio_manager.py` | ALSA + PipeWire |

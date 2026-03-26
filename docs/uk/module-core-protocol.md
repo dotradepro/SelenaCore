@@ -267,13 +267,15 @@ async def register_device(
 
 ```python
 # core/api/middleware.py
-# Реалізувати через sliding window в пам'яті (dict token_hash → deque timestamps)
+# Sliding window per-IP
 
-RATE_LIMIT = 100   # запитів
-RATE_WINDOW = 1.0  # за секунду
+LIMIT_LOCAL    = 600   # зап/хв для localhost і LAN (192.168.x, 10.x, 127.x)
+LIMIT_EXTERNAL = 120   # зап/хв для зовнішніх IP
+WINDOW_SEC     = 60
 
+# SSE-стрім і статика — не враховуються
 # При перевищенні: 429 Too Many Requests
-# Header: Retry-After: 1
+# Header: Retry-After: <window_sec>
 ```
 
 ### 2.4 Ротація токена (деінсталяція)
@@ -796,7 +798,7 @@ def validate_proxy_url(url: str) -> None:
 ```
 Кожні 60 секунд:
 
-POST https://selenehome.tech/api/v1/device/heartbeat
+POST https://smarthome-lk.com/api/v1/device/heartbeat
 Headers:
   X-Device-Hash:  <PLATFORM_DEVICE_HASH з .env>
   X-Signature:    sha256=<hmac>
@@ -831,7 +833,7 @@ HMAC обчислюється:
 ### 6.2 Long-poll команд
 
 ```
-GET https://selenehome.tech/api/v1/device/commands
+GET https://smarthome-lk.com/api/v1/device/commands
     ?device_hash=<hash>
     &wait=30
 Headers:
@@ -847,7 +849,7 @@ Headers:
 }
 
 Після виконання команди:
-POST https://selenehome.tech/api/v1/device/commands/{command_id}/ack
+POST https://smarthome-lk.com/api/v1/device/commands/{command_id}/ack
 {
     "success":   true,
     "error_msg": null
@@ -1094,7 +1096,7 @@ CORE_LOG_LEVEL=INFO
 DEBUG=false
 
 # Платформа
-PLATFORM_API_URL=https://selenehome.tech/api/v1
+PLATFORM_API_URL=https://smarthome-lk.com/api/v1
 PLATFORM_DEVICE_HASH=                    # заповнюється при реєстрації
 MOCK_PLATFORM=false                      # true = не підключатися до платформи
 
