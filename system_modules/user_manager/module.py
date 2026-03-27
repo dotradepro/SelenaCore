@@ -140,6 +140,15 @@ class RegisterDeviceRequest(BaseModel):
 
 class PinConfirmRequest(BaseModel):
     pin: str
+    username: str = ""  # required for kiosk path (no device token)
+
+
+class ElevatedRevokeRequest(BaseModel):
+    elevated_token: str
+
+
+class ElevatedRefreshRequest(BaseModel):
+    elevated_token: str
 
 
 class CreateUserRequest(BaseModel):
@@ -330,7 +339,7 @@ class UserManagerModule(SystemModule):
             except (ValueError, InvalidPinError) as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-            ip = request.client.host if request.client else ""
+            ip = (request.client.host if request.client else "") or ""
             ua = request.headers.get("user-agent", "")
             plain_token = await mod._devices.register(
                 user_id=profile.user_id,
@@ -369,7 +378,7 @@ class UserManagerModule(SystemModule):
             if profile.pin_hash != _hash_pin(req.pin):
                 raise HTTPException(status_code=401, detail="Invalid credentials")
 
-            ip = request.client.host if request.client else ""
+            ip = (request.client.host if request.client else "") or ""
             ua = request.headers.get("user-agent", "")
             plain_token = await mod._devices.register(
                 user_id=profile.user_id,
@@ -405,21 +414,61 @@ class UserManagerModule(SystemModule):
 
         @router.post("/auth/pin/confirm")
         async def confirm_pin(req: PinConfirmRequest, request: Request) -> dict:
-            """Validate PIN and issue a 10-minute elevated session token.
+            """Validate PIN and issue a 5-minute elevated session token.
 
-            The returned ``elevated_token`` must be sent in the
-            ``X-Elevated-Token`` header for operations requiring elevation.
+            No-token path: any browser without a device token sends username + PIN.
+            Device-token path: registered device sends device token + PIN.
             """
+            raw_token = mod._get_raw_token(request)
+
+            if not raw_token:
+                # No device token — authenticate by username + PIN (any IP, any browser)
+                if not req.username:
+                    raise HTTPException(status_code=400, detail="Username required for PIN auth")
+                profile = await mod._users.get_by_username(req.username)
+                if not profile:
+                    raise HTTPException(status_code=401, detail="User not found")
+                ok, msg = await get_pin_auth().authenticate(profile.user_id, req.pin, profile.pin_hash)
+                if not ok:
+                    raise HTTPException(status_code=401, detail=msg)
+                elevated_token = mod._elevated.grant(profile.user_id)
+                return {
+                    "elevated_token": elevated_token,
+                    "expires_in": 300,
+                    "user_id": profile.user_id,
+                    "role": profile.role,
+                }
+
             info = await mod._require_device_auth(request)
             if not await mod._users.verify_pin(info["user_id"], req.pin):
                 raise HTTPException(status_code=401, detail="Incorrect PIN")
             elevated_token = mod._elevated.grant(info["user_id"])
             return {
                 "elevated_token": elevated_token,
-                "expires_in": 600,
+                "expires_in": 300,
                 "user_id": info["user_id"],
                 "role": info["role"],
             }
+
+        # ── Auth: Elevated session revoke / refresh ────────────────────────────
+
+        @router.post("/auth/elevated/revoke", status_code=200)
+        async def revoke_elevated(req: ElevatedRevokeRequest) -> dict:
+            """Immediately invalidate an elevated session token."""
+            mod._elevated.revoke(req.elevated_token)
+            return {"ok": True}
+
+        @router.post("/auth/elevated/refresh", status_code=200)
+        async def refresh_elevated(req: ElevatedRefreshRequest) -> dict:
+            """Reset the TTL of an elevated session (sliding-window keep-alive).
+
+            Called by the frontend every ~10 s while the user is active.
+            Returns 401 if the token has already expired — frontend clears the session.
+            """
+            ok = mod._elevated.refresh(req.elevated_token)
+            if not ok:
+                raise HTTPException(status_code=401, detail="Elevated session expired")
+            return {"ok": True, "expires_in": 300}
 
         # ── Auth: QR registration flow ─────────────────────────────────────────
 
@@ -490,7 +539,7 @@ class UserManagerModule(SystemModule):
             client_ip = (
                 request.headers.get("x-forwarded-for", "").split(",")[0].strip()
                 or request.headers.get("x-real-ip", "")
-                or (request.client.host if request.client else "")
+                or ((request.client.host if request.client else "") or "")
             )
             if not client_ip:
                 raise HTTPException(status_code=400, detail="Cannot determine client IP")
@@ -524,7 +573,7 @@ class UserManagerModule(SystemModule):
             client_ip = (
                 request.headers.get("x-forwarded-for", "").split(",")[0].strip()
                 or request.headers.get("x-real-ip", "")
-                or (request.client.host if request.client else "")
+                or ((request.client.host if request.client else "") or "")
             )
             if not client_ip:
                 raise HTTPException(status_code=400, detail="Cannot determine client IP")
@@ -734,7 +783,7 @@ class UserManagerModule(SystemModule):
             if session["status"] != "pending":
                 raise HTTPException(status_code=409, detail="QR session already completed")
 
-            ip = request.client.host if request.client else ""
+            ip = (request.client.host if request.client else "") or ""
             ua = request.headers.get("user-agent", "")
 
             if session["mode"] == "invite":
@@ -823,7 +872,7 @@ class UserManagerModule(SystemModule):
             if not wizard_username or not wizard_pin_hash:
                 raise HTTPException(status_code=400, detail="Wizard session missing credentials")
 
-            ip = request.client.host if request.client else ""
+            ip = (request.client.host if request.client else "") or ""
             ua = request.headers.get("user-agent", "")
 
             # Create admin/owner user if not exists

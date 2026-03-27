@@ -14,17 +14,10 @@ import Settings from './components/Settings';
 import AuthWall from './components/AuthWall';
 import KioskElevationGate from './components/KioskElevationGate';
 import { useSessionKeepAlive } from './hooks/useSessionKeepAlive';
-
-// Kiosk mode: explicit param OR localhost (device screen)
-const isKiosk =
-  new URLSearchParams(window.location.search).has('kiosk') ||
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === '127.0.0.1';
-if (isKiosk) {
-  const style = document.createElement('style');
-  style.textContent = 'html, html * { cursor: none !important; }';
-  document.head.appendChild(style);
-}
+import { useKioskInactivity } from './hooks/useKioskInactivity';
+// All browser sessions require elevation for restricted routes —
+// there are no "trusted" browsers, only registered devices (for push/auth).
+const isKiosk = true;
 
 export default function App() {
   const isConfigured = useStore((state) => state.isConfigured);
@@ -136,6 +129,9 @@ function AuthGate({
   const location = useLocation();
   const isAuthenticated = !authLoading && user?.authenticated === true;
   const isDashboard = location.pathname === '/';
+
+  // Kiosk: lock elevated session after 5 min of inactivity
+  useKioskInactivity();
 
   if (authLoading) {
     return (

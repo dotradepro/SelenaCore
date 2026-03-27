@@ -14,10 +14,38 @@
  */
 import { useState, useEffect, useRef, type ReactNode, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, QrCode, KeyRound, AlertCircle, Check, RefreshCw, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
+
+const GATE_INACTIVITY_MS = 5 * 60 * 1000;
+const GATE_EVENTS = ['click', 'keypress', 'mousemove', 'scroll'] as const;
+
+function useGateInactivity(active: boolean) {
+    const navigate = useNavigate();
+    const navigateRef = useRef(navigate);
+    navigateRef.current = navigate;
+
+    useEffect(() => {
+        if (!active) return;
+
+        let timer = setTimeout(() => navigateRef.current('/', { replace: true }), GATE_INACTIVITY_MS);
+
+        const reset = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => navigateRef.current('/', { replace: true }), GATE_INACTIVITY_MS);
+        };
+
+        for (const ev of GATE_EVENTS) window.addEventListener(ev, reset, { passive: true });
+
+        return () => {
+            clearTimeout(timer);
+            for (const ev of GATE_EVENTS) window.removeEventListener(ev, reset);
+        };
+    }, [active]);
+}
 
 const UM = '/api/ui/modules/user-manager';
 const QR_POLL_MS = 2000;
@@ -26,6 +54,7 @@ const QR_EXPIRE_MS = 300_000;
 // ─── PIN unlock pane ──────────────────────────────────────────────────────────
 function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
     const { t } = useTranslation();
+    const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
     const [show, setShow] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -43,10 +72,10 @@ function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Device-Token': token,
+                    ...(token ? { 'X-Device-Token': token } : {}),
                 },
                 credentials: 'include',
-                body: JSON.stringify({ pin }),
+                body: JSON.stringify({ pin, username }),
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -66,6 +95,22 @@ function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
 
     return (
         <div className="space-y-4">
+            <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
+                    {t('auth.username')}
+                </label>
+                <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => { setUsername(e.target.value); setError(null); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+                    disabled={loading}
+                    autoComplete="username"
+                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
+                    style={{ background: 'var(--bg)', border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`, color: 'var(--tx)' }}
+                    placeholder={t('auth.usernamePlaceholder')}
+                />
+            </div>
             <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
                     {t('auth.pin')}
@@ -110,7 +155,7 @@ function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
 
             <button
                 onClick={submit}
-                disabled={pin.length < 4 || loading}
+                disabled={pin.length < 4 || username.trim().length === 0 || loading}
                 className={cn(
                     'w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all',
                     'bg-violet-600 hover:bg-violet-500 active:scale-[0.98]',
@@ -269,21 +314,18 @@ export default function KioskElevationGate({ children }: { children: ReactNode }
     const elevatedToken = useStore(s => s.elevatedToken);
     const setElevatedToken = useStore(s => s.setElevatedToken);
     const [tab, setTab] = useState<Tab>('pin');
-    const [unlocked, setUnlocked] = useState(false);
 
-    // Re-lock when elevated token disappears (expired or cleared)
-    useEffect(() => {
-        if (!elevatedToken) setUnlocked(false);
-    }, [elevatedToken]);
+    // Inactivity timer — only while the lock screen is visible (no elevated session)
+    // When elevated, useKioskInactivity (in AuthGate) handles the timeout instead
+    useGateInactivity(!elevatedToken);
 
-    if (unlocked && elevatedToken) {
+    if (elevatedToken) {
         return <>{children}</>;
     }
 
     const handleSuccess = (tok: string) => {
         setElevatedToken(tok);
         try { sessionStorage.setItem('selena_elevated', tok); } catch { /* ignore */ }
-        setUnlocked(true);
     };
 
     return (

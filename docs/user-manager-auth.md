@@ -303,22 +303,31 @@ Returns `404` if session not found, `410` if expired.
 
 ## KioskElevationGate
 
-React component (`src/components/KioskElevationGate.tsx`) that wraps restricted UI sections on the kiosk screen.
+React component (`src/components/KioskElevationGate.tsx`) that wraps restricted UI sections.
 
-**Kiosk detection rules:**
-- Hostname is `localhost` or `127.0.0.1`
-- URL contains `?kiosk=1`
+**Applies to all browser sessions** — there are no "trusted" browsers. Registered devices are only used for push notifications and QR auth, not to bypass elevation.
 
-**Restricted routes**: `/modules`, `/system`, `/integrity`, `/settings`  
+**Restricted routes**: `/modules`, `/system`, `/integrity`, `/settings`
 **Always accessible**: `/` (dashboard)
 
 **Behaviour:**
 1. User navigates to a restricted section
 2. Gate overlay covers the full screen
-3. User unlocks via PIN tab or QR tab
+3. User unlocks via PIN tab (username + PIN) or QR tab
 4. Elevated token stored in `sessionStorage` + Zustand store
 5. On success: overlay slides away, restricted section renders
-6. Token expiry (10 min, from server): gate re-appears automatically
+6. Inactivity 5 min → session auto-revoked → gate re-appears
+
+**PIN auth paths:**
+- **With device token** (`X-Device-Token` header): token identifies user, only PIN required
+- **Without device token** (any browser): username + PIN required — works from any IP
+
+**Inactivity lock (5 min):**
+- Frontend: `setTimeout` debounce — resets on `click`, `keypress`, `mousemove`, `scroll`
+- Frontend: pings `POST /auth/elevated/refresh` every 1 min if there was activity
+- Backend: rolling window — `verify()` extends TTL on every valid elevated API call
+- On timeout: `POST /auth/elevated/revoke` + reset to guest + redirect to `/`
+- Global 401 intercept: any elevated API call returning 401 clears the session immediately
 
 **QR tab extras:** countdown timer (MM:SS) shown below the QR image; turns red at 60 s remaining; expired state shows "Generate new code" button.
 

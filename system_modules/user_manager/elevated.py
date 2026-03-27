@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_TTL_SEC = 600   # 10 minutes
+_DEFAULT_TTL_SEC = 300   # 5 minutes
 
 
 @dataclass
@@ -81,8 +81,11 @@ class ElevatedManager:
         logger.debug("Elevated session granted for user=%s ttl=%ds", user_id, ttl)
         return token
 
-    def verify(self, token: str, user_id: str) -> bool:
-        """Return True if *token* is valid, belongs to *user_id*, and not expired."""
+    def verify(self, token: str, user_id: str, ttl: int = _DEFAULT_TTL_SEC) -> bool:
+        """Return True if *token* is valid, belongs to *user_id*, and not expired.
+
+        On each successful verification the session TTL is extended (rolling window).
+        """
         session = self._sessions.get(token)
         if session is None:
             return False
@@ -91,6 +94,22 @@ class ElevatedManager:
         if time.time() > session.expires_at:
             self._sessions.pop(token, None)
             return False
+        # Rolling window — extend on every valid use
+        session.expires_at = time.time() + ttl
+        return True
+
+    def refresh(self, token: str, ttl: int = _DEFAULT_TTL_SEC) -> bool:
+        """Extend the TTL of an existing elevated session.
+
+        Returns True if the token was valid and refreshed, False if not found/expired.
+        """
+        session = self._sessions.get(token)
+        if session is None:
+            return False
+        if time.time() > session.expires_at:
+            self._sessions.pop(token, None)
+            return False
+        session.expires_at = time.time() + ttl
         return True
 
     def revoke(self, token: str) -> None:
