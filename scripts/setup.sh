@@ -71,8 +71,9 @@ fi
 section "2. Системные зависимости"
 
 PKGS_NEEDED=()
-command -v curl  &>/dev/null || PKGS_NEEDED+=(curl)
-command -v cage  &>/dev/null || { $INSTALL_KIOSK && PKGS_NEEDED+=(cage); }
+command -v curl      &>/dev/null || PKGS_NEEDED+=(curl)
+command -v unclutter &>/dev/null || { $INSTALL_KIOSK && PKGS_NEEDED+=(unclutter); }
+command -v cage      &>/dev/null || { $INSTALL_KIOSK && PKGS_NEEDED+=(cage); }
 
 # chromium: snap-обёртка или нативный
 if $INSTALL_KIOSK && ! (command -v chromium &>/dev/null || command -v chromium-browser &>/dev/null); then

@@ -49,6 +49,16 @@ find_chromium() {
         || { log "ERROR: chromium not found"; return 1; }
 }
 
+# ── Detect connected mouse/pointer device ────────────────────────────────
+has_mouse() {
+    # /dev/input/mouse* — standard mouse nodes (USB, PS/2, Bluetooth)
+    ls /dev/input/mouse* >/dev/null 2>&1 && return 0
+    # by-id links containing "mouse", "Mouse", "pointer", "trackball"
+    ls /dev/input/by-id/ 2>/dev/null \
+        | grep -qiE "mouse|pointer|trackball|trackpad" && return 0
+    return 1
+}
+
 # ── Display mode detection ───────────────────────────────────────────────
 detect_mode() {
     # 1. Existing DE session (X11 or Wayland) — use it directly
@@ -109,6 +119,16 @@ main() {
 
             # Cleanup stale X11 sockets from previous runs
             rm -f /tmp/.X11-unix/X1 /tmp/.X11-unix/X2 2>/dev/null || true
+
+            # Hide cursor if no mouse connected
+            if has_mouse; then
+                log "Mouse detected — cursor visible"
+            else
+                log "No mouse detected — hiding cursor"
+                if command -v unclutter >/dev/null 2>&1; then
+                    unclutter -idle 0.1 -root &
+                fi
+            fi
 
             local -a CHROMIUM_FLAGS=(
                 --kiosk
@@ -189,9 +209,18 @@ main() {
             export WLR_NO_HARDWARE_CURSORS="${WLR_NO_HARDWARE_CURSORS:-1}"
             local SCRIPT_DIR
             SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-            export XCURSOR_THEME=transparent
             export XCURSOR_PATH="${SCRIPT_DIR}/cursors:/usr/share/icons"
-            export XCURSOR_SIZE=24
+
+            # Show or hide cursor based on mouse presence
+            if has_mouse; then
+                log "Mouse detected — cursor visible"
+                export XCURSOR_THEME=default
+                export XCURSOR_SIZE=24
+            else
+                log "No mouse detected — hiding cursor"
+                export XCURSOR_THEME=transparent
+                export XCURSOR_SIZE=1
+            fi
 
             exec cage -s -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1"
             ;;
