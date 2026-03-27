@@ -106,6 +106,16 @@ main() {
     mode="$(detect_mode)"
     log "Detected display mode: $mode"
 
+    # Build URL with mouse param for cursor visibility in UI
+    local KIOSK_URL="${UI_URL}?kiosk=1"
+    if has_mouse; then
+        log "Mouse detected — cursor visible"
+        KIOSK_URL="${UI_URL}?kiosk=1&mouse=1"
+    else
+        log "No mouse detected — cursor hidden"
+        KIOSK_URL="${UI_URL}?kiosk=1&mouse=0"
+    fi
+
     case "$mode" in
         desktop)
             wait_for_ui
@@ -119,16 +129,6 @@ main() {
 
             # Cleanup stale X11 sockets from previous runs
             rm -f /tmp/.X11-unix/X1 /tmp/.X11-unix/X2 2>/dev/null || true
-
-            # Hide cursor if no mouse connected
-            if has_mouse; then
-                log "Mouse detected — cursor visible"
-            else
-                log "No mouse detected — hiding cursor"
-                if command -v unclutter >/dev/null 2>&1; then
-                    unclutter -idle 0.1 -root &
-                fi
-            fi
 
             local -a CHROMIUM_FLAGS=(
                 --kiosk
@@ -160,7 +160,7 @@ main() {
             # Restart loop — keep kiosk alive if Chromium crashes
             while true; do
                 log "Starting Chromium kiosk..."
-                "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1" || true
+                "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$KIOSK_URL" || true
                 log "Chromium exited, restarting in 3s..."
                 sleep 3
             done
@@ -222,7 +222,7 @@ main() {
                 export XCURSOR_SIZE=1
             fi
 
-            exec cage -s -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1"
+            exec cage -s -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$KIOSK_URL"
             ;;
 
         tty|*)

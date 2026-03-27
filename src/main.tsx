@@ -4,9 +4,9 @@ import './i18n/i18n';
 import App from './App.tsx';
 import './index.css';
 
-// Kiosk mode: add class to <html> when ?kiosk=1 is in URL
-if (new URLSearchParams(window.location.search).get('kiosk') === '1') {
-  document.documentElement.classList.add('kiosk');
+// Kiosk cursor: hide completely when ?mouse=0 (no mouse connected)
+if (new URLSearchParams(window.location.search).get('mouse') === '0') {
+  document.documentElement.classList.add('kiosk-nomouse');
 }
 
 createRoot(document.getElementById('root')!).render(

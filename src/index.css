@@ -983,39 +983,10 @@ html.light .bg-zinc-800 .text-zinc-400 {
 
 /* =====================================================
    KIOSK MODE — Cursor visibility
-   Hide cursor globally; show only on interactive elements.
-   Activated when <html class="kiosk"> (set via ?kiosk=1).
+   Activated when <html class="kiosk-nomouse"> (set via ?mouse=0).
+   Hides cursor completely — no mouse connected.
    ===================================================== */
-html.kiosk,
-html.kiosk * {
+html.kiosk-nomouse,
+html.kiosk-nomouse * {
   cursor: none !important;
-}
-
-html.kiosk a:hover,
-html.kiosk button:hover,
-html.kiosk label:hover,
-html.kiosk summary:hover,
-html.kiosk select:hover,
-html.kiosk input[type="range"]:hover,
-html.kiosk input[type="checkbox"]:hover,
-html.kiosk input[type="radio"]:hover,
-html.kiosk [role="button"]:hover,
-html.kiosk [role="tab"]:hover,
-html.kiosk [role="menuitem"]:hover,
-html.kiosk [role="option"]:hover,
-html.kiosk [role="checkbox"]:hover,
-html.kiosk [role="switch"]:hover,
-html.kiosk [role="slider"]:hover,
-html.kiosk [role="link"]:hover,
-html.kiosk [tabindex]:not([tabindex="-1"]):hover {
-  cursor: pointer !important;
-}
-
-html.kiosk input[type="text"]:hover,
-html.kiosk input[type="number"]:hover,
-html.kiosk input[type="email"]:hover,
-html.kiosk input[type="search"]:hover,
-html.kiosk input[type="password"]:hover,
-html.kiosk textarea:hover {
-  cursor: text !important;
 }
