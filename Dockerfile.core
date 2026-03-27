@@ -22,16 +22,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     arp-scan \
     arping \
     curl \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Pre-install Piper TTS binary
-RUN pip install --no-cache-dir piper-tts
-
-# Pre-install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
 
 # Create model directories
 RUN mkdir -p /var/lib/selena/models/vosk \

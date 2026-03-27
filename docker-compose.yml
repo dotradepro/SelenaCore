@@ -40,26 +40,16 @@ services:
     command: ["python", "-m", "agent.integrity_agent"]
     volumes:
       - selena_data:/var/lib/selena
-      - selena_secure:/secure:ro
-      - /opt/selena-core:/opt/selena-core:ro
+      - selena_secure:/secure
+      - ./agent:/opt/selena-core/agent:ro
       - /var/log/selena:/var/log/selena
     env_file:
       - .env
     depends_on:
       - core
 
-  modules:
-    image: smarthome-modules:latest
-    container_name: selena-modules
-    restart: unless-stopped
-    ports:
-      - "8100-8200:8100-8200"
-    extra_hosts:
-      - "selena-core:host-gateway"
-    volumes:
-      - selena_data:/var/lib/selena:ro
-    networks:
-      - selena_modules
+  # modules: запускаются отдельно для каждого модуля (см. modules/*/Dockerfile)
+  # smarthome-modules:latest — базовый образ, не запускается напрямую
 
 networks:
   selena_modules:
