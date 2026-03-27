@@ -49,16 +49,6 @@ find_chromium() {
         || { log "ERROR: chromium not found"; return 1; }
 }
 
-# ── Detect connected mouse/pointer device ────────────────────────────────
-has_mouse() {
-    # /dev/input/mouse* — standard mouse nodes (USB, PS/2, Bluetooth)
-    ls /dev/input/mouse* >/dev/null 2>&1 && return 0
-    # by-id links containing "mouse", "Mouse", "pointer", "trackball"
-    ls /dev/input/by-id/ 2>/dev/null \
-        | grep -qiE "mouse|pointer|trackball|trackpad" && return 0
-    return 1
-}
-
 # ── Display mode detection ───────────────────────────────────────────────
 detect_mode() {
     # 1. Existing DE session (X11 or Wayland) — use it directly
@@ -106,15 +96,7 @@ main() {
     mode="$(detect_mode)"
     log "Detected display mode: $mode"
 
-    # Build URL with mouse param for cursor visibility in UI
     local KIOSK_URL="${UI_URL}?kiosk=1"
-    if has_mouse; then
-        log "Mouse detected — cursor visible"
-        KIOSK_URL="${UI_URL}?kiosk=1&mouse=1"
-    else
-        log "No mouse detected — cursor hidden"
-        KIOSK_URL="${UI_URL}?kiosk=1&mouse=0"
-    fi
 
     case "$mode" in
         desktop)
@@ -129,6 +111,12 @@ main() {
 
             # Cleanup stale X11 sockets from previous runs
             rm -f /tmp/.X11-unix/X1 /tmp/.X11-unix/X2 2>/dev/null || true
+
+            # Hide cursor after 3s of inactivity (moves it off-screen)
+            if command -v unclutter >/dev/null 2>&1; then
+                unclutter -idle 3 -root &
+                log "unclutter started (cursor hides after 3s idle)"
+            fi
 
             local -a CHROMIUM_FLAGS=(
                 --kiosk
@@ -210,17 +198,8 @@ main() {
             local SCRIPT_DIR
             SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
             export XCURSOR_PATH="${SCRIPT_DIR}/cursors:/usr/share/icons"
-
-            # Show or hide cursor based on mouse presence
-            if has_mouse; then
-                log "Mouse detected — cursor visible"
-                export XCURSOR_THEME=default
-                export XCURSOR_SIZE=24
-            else
-                log "No mouse detected — hiding cursor"
-                export XCURSOR_THEME=transparent
-                export XCURSOR_SIZE=1
-            fi
+            export XCURSOR_THEME=default
+            export XCURSOR_SIZE=24
 
             exec cage -s -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "$KIOSK_URL"
             ;;

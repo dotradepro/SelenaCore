@@ -981,12 +981,3 @@ html.light .bg-zinc-800 .text-zinc-400 {
   color: var(--tx2) !important;
 }
 
-/* =====================================================
-   KIOSK MODE — Cursor visibility
-   Activated when <html class="kiosk-nomouse"> (set via ?mouse=0).
-   Hides cursor completely — no mouse connected.
-   ===================================================== */
-html.kiosk-nomouse,
-html.kiosk-nomouse * {
-  cursor: none !important;
-}
