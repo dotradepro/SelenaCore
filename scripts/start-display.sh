@@ -104,30 +104,46 @@ main() {
             CHROMIUM_BIN="$(find_chromium)"
             log "Launching kiosk via desktop session ($CHROMIUM_BIN) → $UI_URL"
 
-            exec "$CHROMIUM_BIN" \
-                --kiosk \
-                --no-sandbox \
-                --noerrdialogs \
-                --disable-infobars \
-                --disable-session-crashed-bubble \
-                --disable-translate \
-                --no-first-run \
-                --disable-features=Translate,TranslateUI,ChromeTranslatePopup \
-                --check-for-update-interval=31536000 \
-                --autoplay-policy=no-user-gesture-required \
-                --disable-pinch \
-                --overscroll-history-navigation=0 \
-                --no-default-browser-check \
-                --disable-component-update \
-                --disable-background-networking \
-                --disable-sync \
-                --start-fullscreen \
-                --user-data-dir=/tmp/chromium-kiosk \
-                --lang=ru \
-                --disable-popup-blocking \
-                --disable-prompt-on-repost \
-                --disable-hang-monitor \
-                "${UI_URL}?kiosk=1"
+            # Give the DE session time to fully initialize
+            sleep 5
+
+            # Cleanup stale X11 sockets from previous runs
+            rm -f /tmp/.X11-unix/X1 /tmp/.X11-unix/X2 2>/dev/null || true
+
+            local -a CHROMIUM_FLAGS=(
+                --kiosk
+                --no-sandbox
+                --noerrdialogs
+                --disable-infobars
+                --disable-session-crashed-bubble
+                --disable-translate
+                --no-first-run
+                --disable-features=Translate,TranslateUI,ChromeTranslatePopup
+                --check-for-update-interval=31536000
+                --autoplay-policy=no-user-gesture-required
+                --disable-pinch
+                --overscroll-history-navigation=0
+                --no-default-browser-check
+                --disable-component-update
+                --disable-background-networking
+                --disable-sync
+                --start-fullscreen
+                --user-data-dir=/tmp/chromium-kiosk
+                --lang=ru
+                --disable-popup-blocking
+                --disable-prompt-on-repost
+                --disable-hang-monitor
+                --disable-gpu
+                --use-gl=egl
+            )
+
+            # Restart loop — keep kiosk alive if Chromium crashes
+            while true; do
+                log "Starting Chromium kiosk..."
+                "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "${UI_URL}?kiosk=1" || true
+                log "Chromium exited, restarting in 3s..."
+                sleep 3
+            done
             ;;
 
         kiosk)
