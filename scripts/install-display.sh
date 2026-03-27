@@ -1,40 +1,82 @@
 #!/bin/bash
-# scripts/install-display.sh — Install & start the SelenaCore TTY1 display service
+# scripts/install-display.sh — Установка сервиса дисплея SelenaCore
 #
-# Run ONCE on the Raspberry Pi host (as root or with sudo):
-#   sudo bash /home/selena/SelenaCore/scripts/install-display.sh
+# Запуск (с sudo):
+#   sudo bash scripts/install-display.sh [--user USERNAME]
 #
-# What it does:
-#   1. Disables getty@tty1 so our display owns TTY1
-#   2. Installs smarthome-display.service
-#   3. Enables and starts it
+# Устанавливает selena-display.service в systemd и запускает его.
+# Для полной первоначальной настройки используйте setup.sh.
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_SRC="$REPO_DIR/smarthome-display.service"
-SERVICE_DST="/etc/systemd/system/smarthome-display.service"
+TARGET_USER="${SUDO_USER:-${USER}}"
 
-log() { echo "[install-display] $*"; }
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user) TARGET_USER="$2"; shift 2 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
 
 if [[ $EUID -ne 0 ]]; then
-    echo "ERROR: run as root: sudo bash scripts/install-display.sh"
+    echo "ERROR: запустите с sudo: sudo bash scripts/install-display.sh"
     exit 1
 fi
 
-log "Stopping and masking getty@tty1 (TTY1 will be used by SelenaCore)..."
-systemctl stop getty@tty1.service 2>/dev/null || true
-systemctl disable getty@tty1.service 2>/dev/null || true
-systemctl mask getty@tty1.service 2>/dev/null || true
+if [[ -z "$TARGET_USER" || "$TARGET_USER" == "root" ]]; then
+    echo "ERROR: укажите пользователя: sudo bash scripts/install-display.sh --user USERNAME"
+    exit 1
+fi
 
-log "Installing $SERVICE_DST ..."
-cp "$SERVICE_SRC" "$SERVICE_DST"
+echo "[install-display] Пользователь: $TARGET_USER"
+echo "[install-display] Проект: $REPO_DIR"
 
-log "Enabling and starting smarthome-display.service..."
+SERVICE_DST="/etc/systemd/system/selena-display.service"
+
+cat > "$SERVICE_DST" <<EOF
+[Unit]
+Description=SelenaCore Kiosk Display
+After=network.target docker.service seatd.service
+Requires=docker.service
+Wants=seatd.service
+
+[Service]
+Type=simple
+User=$TARGET_USER
+ExecStart=$REPO_DIR/scripts/start-display.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+
+Environment=COMPOSE_FILE=$REPO_DIR/docker-compose.yml
+Environment=SELENA_UI_URL=http://localhost
+Environment=SELENA_LOG_DIR=/var/log/selena
+Environment=WLR_BACKENDS=drm,libinput
+Environment=WLR_NO_HARDWARE_CURSORS=1
+Environment=LIBSEAT_BACKEND=seatd
+Environment=XDG_RUNTIME_DIR=/run/user/$(id -u "$TARGET_USER")
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=selena-display
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+chmod +x "$REPO_DIR/scripts/start-display.sh"
+
+# Убедиться, что /var/log/selena существует и доступен пользователю
+mkdir -p /var/log/selena
+chown "$TARGET_USER:$TARGET_USER" /var/log/selena
+
 systemctl daemon-reload
-systemctl enable smarthome-display.service
-systemctl restart smarthome-display.service
+systemctl enable selena-display.service
+
+echo "[install-display] Сервис установлен. Запуск..."
+systemctl restart selena-display.service
 
 sleep 3
-log "Done. Service status:"
-systemctl status smarthome-display.service --no-pager -l || true
+echo "[install-display] Статус:"
+systemctl status selena-display.service --no-pager -l || true

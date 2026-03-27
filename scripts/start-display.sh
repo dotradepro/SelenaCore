@@ -169,7 +169,7 @@ main() {
 
             # DRM for display output, libinput for touch/keyboard/mouse
             export WLR_BACKENDS="${WLR_BACKENDS:-drm,libinput}"
-            export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-builtin}"
+            export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
             export WLR_NO_HARDWARE_CURSORS="${WLR_NO_HARDWARE_CURSORS:-1}"
             local SCRIPT_DIR
             SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

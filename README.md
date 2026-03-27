@@ -30,24 +30,51 @@ Three principles:
 
 ### Requirements
 
-- Raspberry Pi 4/5 (4–8 GB RAM) or any Linux SBC
-- Docker + Docker Compose
-- Python 3.11+
+- Raspberry Pi 4/5 (4–8 GB RAM), Jetson Orin, or any Linux SBC (ARM64/x86_64)
+- Ubuntu 22.04+ (or Raspberry Pi OS)
+- Docker + Docker Compose (auto-installed by setup script)
 
-### Launch
+### Launch (automatic — recommended)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
 
 cp .env.example .env
-# Edit .env as needed
+# Set GEMINI_API_KEY and other values in .env
 
+sudo bash scripts/setup.sh
+```
+
+The setup script installs all dependencies, builds Docker images, configures the kiosk display service, and starts everything automatically.
+
+> After setup completes, **log out and log back in** once so group changes take effect. The kiosk will then launch automatically on every boot.
+
+### Launch (manual)
+
+```bash
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+
+cp .env.example .env
+docker compose build
 docker compose up -d
 ```
 
 **Core API:** `http://localhost:7070`
 **UI (PWA):** `http://localhost:80` or `http://smarthome.local:80`
+
+### Kiosk / Physical Display
+
+SelenaCore auto-detects the display environment and launches the UI accordingly:
+
+| Environment | Mode | Description |
+|-------------|------|-------------|
+| Desktop (GNOME/KDE) | `desktop` | Chromium kiosk via existing DE session |
+| Headless + screen | `kiosk` | cage + Chromium (Wayland, no DE needed) |
+| No display | `tty` | Python TUI with QR code on TTY1 |
+
+Full setup guide: [docs/kiosk-setup.md](docs/kiosk-setup.md)
 
 ### First Launch — Onboarding Wizard
 
