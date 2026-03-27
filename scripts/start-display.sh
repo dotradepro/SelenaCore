@@ -141,8 +141,9 @@ main() {
                 --disable-popup-blocking
                 --disable-prompt-on-repost
                 --disable-hang-monitor
-                --disable-gpu
-                --use-gl=egl
+                --disable-gpu-sandbox
+                --ignore-gpu-blocklist
+                --enable-gpu-rasterization
             )
 
             # Restart loop — keep kiosk alive if Chromium crashes
