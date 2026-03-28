@@ -25,3 +25,4 @@ h11>=0.16.0
 anyio>=4.4.0
 starlette>=0.40.0,<0.41.0
 zipp>=3.19.1
+aiohttp>=3.13.3 # not directly required, pinned by Snyk to avoid a vulnerability
