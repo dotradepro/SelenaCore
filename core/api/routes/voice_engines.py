@@ -721,7 +721,20 @@ async def ollama_stop() -> dict[str, Any]:
             )
             if result.returncode == 0:
                 return "stopped via systemd"
-        subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True, timeout=5)
+        # Find and kill ollama process (pkill may not exist in slim containers)
+        import signal
+        try:
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    cmdline = (entry / "cmdline").read_bytes().decode(errors="ignore")
+                    if "ollama" in cmdline and "serve" in cmdline:
+                        os.kill(int(entry.name), signal.SIGTERM)
+                except (PermissionError, FileNotFoundError, ProcessLookupError):
+                    continue
+        except Exception:
+            pass
         return "killed process"
 
     try:
