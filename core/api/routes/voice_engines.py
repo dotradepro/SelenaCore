@@ -576,22 +576,33 @@ async def ollama_uninstall() -> dict[str, Any]:
 @router.post("/ollama/start")
 async def ollama_start() -> dict[str, Any]:
     """Start Ollama server."""
+    ollama_bin = shutil.which("ollama")
+    if not ollama_bin:
+        raise HTTPException(status_code=503, detail="Ollama not installed")
+
     loop = asyncio.get_event_loop()
 
     def _start():
-        # Try systemctl first
-        result = subprocess.run(
-            ["systemctl", "start", "ollama"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            return "started via systemd"
-        # Fallback: start in background
+        # Try systemctl first (host systems with systemd)
+        if shutil.which("systemctl"):
+            result = subprocess.run(
+                ["systemctl", "start", "ollama"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return "started via systemd"
+
+        # Fallback: start in background (Docker / non-systemd)
+        env = os.environ.copy()
+        env["OLLAMA_HOST"] = "0.0.0.0:11434"
         subprocess.Popen(
-            ["ollama", "serve"],
+            [ollama_bin, "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=env,
         )
+        import time
+        time.sleep(2)  # give it a moment to bind
         return "started as background process"
 
     try:
@@ -607,12 +618,13 @@ async def ollama_stop() -> dict[str, Any]:
     loop = asyncio.get_event_loop()
 
     def _stop():
-        result = subprocess.run(
-            ["systemctl", "stop", "ollama"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if result.returncode == 0:
-            return "stopped via systemd"
+        if shutil.which("systemctl"):
+            result = subprocess.run(
+                ["systemctl", "stop", "ollama"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return "stopped via systemd"
         subprocess.run(["pkill", "-f", "ollama serve"], capture_output=True, timeout=5)
         return "killed process"
 
