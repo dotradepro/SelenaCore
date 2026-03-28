@@ -593,24 +593,12 @@ async def audio_test_input(body: dict[str, str]) -> dict[str, Any]:
 #  STT Models (Vosk)                                                   #
 # ================================================================== #
 
-STT_MODELS = [
-    {"id": "vosk-model-small-uk-v3-nano", "name": "Ukrainian (nano)", "lang": "uk", "ram_mb": 80, "size_mb": 73, "quality": "ok"},
-    {"id": "vosk-model-small-uk-v3-small", "name": "Ukrainian (small)", "lang": "uk", "ram_mb": 150, "size_mb": 133, "quality": "good"},
-    {"id": "vosk-model-small-ru", "name": "Russian (small)", "lang": "ru", "ram_mb": 150, "size_mb": 45, "quality": "good"},
-    {"id": "vosk-model-small-en-us", "name": "English (small)", "lang": "en", "ram_mb": 150, "size_mb": 40, "quality": "good"},
-    {"id": "vosk-model-uk-v3-lgraph", "name": "Ukrainian (large)", "lang": "uk", "ram_mb": 500, "size_mb": 325, "quality": "high"},
-    {"id": "vosk-model-ru", "name": "Russian (large)", "lang": "ru", "ram_mb": 600, "size_mb": 1800, "quality": "high"},
-    {"id": "vosk-model-en-us", "name": "English (graph)", "lang": "en", "ram_mb": 350, "size_mb": 128, "quality": "good"},
-]
-
-
 @router.get("/stt/models")
 async def stt_models() -> dict[str, Any]:
-    """List available Vosk STT models with installed status."""
+    """List installed Vosk STT models by scanning disk."""
     models_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
     active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk-v3-small"))
 
-    # Check system RAM
     ram_total_mb = 0
     ram_available_mb = 0
     try:
@@ -622,14 +610,18 @@ async def stt_models() -> dict[str, Any]:
         pass
 
     result = []
-    for m in STT_MODELS:
-        model_path = models_dir / m["id"]
-        result.append({
-            **m,
-            "installed": model_path.is_dir(),
-            "active": m["id"] == active_model,
-            "fits_ram": ram_available_mb >= m["ram_mb"] if ram_available_mb else True,
-        })
+    if models_dir.is_dir():
+        for d in sorted(models_dir.iterdir()):
+            if d.is_dir() and d.name.startswith("vosk-model"):
+                size_mb = sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) // (1024 * 1024)
+                result.append({
+                    "id": d.name,
+                    "name": d.name,
+                    "installed": True,
+                    "active": d.name == active_model,
+                    "size_mb": size_mb,
+                    "fits_ram": True,
+                })
 
     return {
         "models": result,
@@ -642,10 +634,6 @@ async def stt_models() -> dict[str, Any]:
 @router.post("/stt/select")
 async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
     """Select and persist Vosk STT model choice."""
-    valid_ids = {m["id"] for m in STT_MODELS}
-    if req.model not in valid_ids:
-        raise HTTPException(status_code=422, detail=f"Invalid model. Valid: {valid_ids}")
-
     update_config("voice", "stt_model", req.model)
     os.environ["VOSK_MODEL"] = req.model
     logger.info("STT model set to %s", req.model)
@@ -656,30 +644,28 @@ async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
 #  TTS Voices (Piper)                                                  #
 # ================================================================== #
 
-TTS_VOICES = [
-    {"id": "uk_UA-ukrainian_tts-medium", "name": "Tetiana", "language": "uk", "gender": "female", "size_mb": 55},
-    {"id": "uk_UA-lada-x_low", "name": "Lada", "language": "uk", "gender": "female", "size_mb": 21},
-    {"id": "ru_RU-irina-medium", "name": "Irina", "language": "ru", "gender": "female", "size_mb": 50},
-    {"id": "ru_RU-ruslan-medium", "name": "Ruslan", "language": "ru", "gender": "male", "size_mb": 50},
-    {"id": "en_US-amy-medium", "name": "Amy", "language": "en", "gender": "female", "size_mb": 50},
-    {"id": "en_US-ryan-high", "name": "Ryan", "language": "en", "gender": "male", "size_mb": 60},
-]
-
-
 @router.get("/tts/voices")
 async def tts_voices() -> dict[str, Any]:
-    """List available Piper TTS voices with installed status."""
+    """List installed Piper TTS voices by scanning disk."""
     models_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
     active_voice = get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "ru_RU-irina-medium"))
 
     result = []
-    for v in TTS_VOICES:
-        model_file = models_dir / f"{v['id']}.onnx"
-        result.append({
-            **v,
-            "installed": model_file.exists(),
-            "active": v["id"] == active_voice,
-        })
+    if models_dir.is_dir():
+        for f in sorted(models_dir.iterdir()):
+            if f.is_file() and f.suffix == ".onnx":
+                voice_id = f.stem  # e.g. "uk_UA-ukrainian_tts-medium"
+                parts = voice_id.split("-", 1)
+                lang = parts[0].split("_")[0] if parts else ""
+                size_mb = f.stat().st_size // (1024 * 1024)
+                result.append({
+                    "id": voice_id,
+                    "name": voice_id,
+                    "language": lang,
+                    "installed": True,
+                    "active": voice_id == active_voice,
+                    "size_mb": size_mb,
+                })
 
     return {"voices": result, "active": active_voice}
 
@@ -687,10 +673,6 @@ async def tts_voices() -> dict[str, Any]:
 @router.post("/tts/select")
 async def tts_select(req: SelectVoiceRequest) -> dict[str, Any]:
     """Select and persist TTS voice."""
-    valid_ids = {v["id"] for v in TTS_VOICES}
-    if req.voice not in valid_ids:
-        raise HTTPException(status_code=422, detail=f"Invalid voice. Valid: {valid_ids}")
-
     update_config("voice", "tts_voice", req.voice)
     os.environ["PIPER_VOICE"] = req.voice
     logger.info("TTS voice set to %s", req.voice)
@@ -708,6 +690,12 @@ async def tts_preview(req: PreviewVoiceRequest) -> Any:
         text = req.text[:200]  # limit preview length
         wav_bytes = await engine.synthesize(text)
         if not wav_bytes:
+            # Check why synthesis failed
+            if not shutil.which("piper"):
+                raise HTTPException(status_code=503, detail="Piper TTS binary not found — install Piper first")
+            voice_file = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")) / f"{req.voice}.onnx"
+            if not voice_file.exists():
+                raise HTTPException(status_code=503, detail=f"Voice model not found: {req.voice}")
             raise HTTPException(status_code=500, detail="TTS synthesis failed")
         return Response(content=wav_bytes, media_type="audio/wav")
     except ImportError:
@@ -725,14 +713,13 @@ async def tts_preview(req: PreviewVoiceRequest) -> Any:
 
 @router.get("/llm/models")
 async def llm_models() -> dict[str, Any]:
-    """List recommended LLM models with download & active status."""
+    """List installed LLM models from Ollama."""
     try:
         from system_modules.llm_engine.model_manager import get_model_manager
         manager = get_model_manager()
-        models = await manager.list_recommended()
+        models = await manager.list_models()
         active = manager.get_active()
 
-        # RAM info
         ram_available_gb = 0.0
         try:
             import psutil
@@ -765,7 +752,15 @@ async def llm_select(req: SelectModelRequest) -> dict[str, Any]:
         manager = get_model_manager()
         ok = await manager.switch_model(req.model)
         if ok:
-            update_config("llm", "default_model", req.model)
+            update_config("voice", "llm_model", req.model)
+            # Also save in provider config
+            config = read_config()
+            voice_cfg = config.setdefault("voice", {})
+            provider = voice_cfg.get("llm_provider", "ollama")
+            providers = voice_cfg.setdefault("providers", {})
+            providers.setdefault(provider, {})["model"] = req.model
+            from core.config_writer import write_config
+            write_config(config)
             return {"status": "ok", "model": req.model}
         raise HTTPException(status_code=400, detail="Model not installed or switch failed")
     except HTTPException:
@@ -779,21 +774,8 @@ async def llm_select(req: SelectModelRequest) -> dict[str, Any]:
 async def llm_download(req: SelectModelRequest) -> dict[str, Any]:
     """Trigger model download via Ollama pull. Returns immediately (async)."""
     try:
-        from system_modules.llm_engine.model_manager import get_model_manager
-        manager = get_model_manager()
-
-        # Check RAM
-        if not manager.check_ram_sufficient(req.model):
-            raise HTTPException(
-                status_code=400,
-                detail="Insufficient RAM for this model",
-            )
-
-        # Start download in background
         asyncio.create_task(_download_model_bg(req.model))
         return {"status": "downloading", "model": req.model}
-    except HTTPException:
-        raise
     except Exception as exc:
         logger.error("LLM download start failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -927,44 +909,36 @@ async def update_config_endpoint(req: ConfigUpdateRequest) -> dict[str, Any]:
 #  Provision — download models & apply configuration                   #
 # ================================================================== #
 
-VOSK_DOWNLOAD_URLS: dict[str, str] = {
-    "vosk-model-small-uk-v3-nano": "https://alphacephei.com/vosk/models/vosk-model-small-uk-v3-nano.zip",
-    "vosk-model-small-uk-v3-small": "https://alphacephei.com/vosk/models/vosk-model-small-uk-v3-small.zip",
-    "vosk-model-small-ru": "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
-    "vosk-model-small-en-us": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
-    "vosk-model-uk-v3-lgraph": "https://alphacephei.com/vosk/models/vosk-model-uk-v3-lgraph.zip",
-    "vosk-model-ru": "https://alphacephei.com/vosk/models/vosk-model-ru-0.42.zip",
-    "vosk-model-en-us": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip",
-}
+def _build_vosk_download_url(model_id: str) -> str:
+    """Construct Vosk model download URL from catalog cache or default."""
+    cache_file = Path(os.environ.get("SELENA_CACHE_DIR", "/var/lib/selena/cache")) / "vosk_catalog.json"
+    if cache_file.exists():
+        try:
+            import json as _json
+            catalog = _json.loads(cache_file.read_text())
+            for m in catalog.get("models", []):
+                if m["id"] == model_id:
+                    return m.get("url", "")
+        except Exception:
+            pass
+    return f"https://alphacephei.com/vosk/models/{model_id}.zip"
 
-PIPER_DOWNLOAD_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
-PIPER_VOICE_URLS: dict[str, list[str]] = {
-    "uk_UA-ukrainian_tts-medium": [
-        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/ukrainian_tts/medium/uk_UA-ukrainian_tts-medium.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/ukrainian_tts/medium/uk_UA-ukrainian_tts-medium.onnx.json",
-    ],
-    "uk_UA-lada-x_low": [
-        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/lada/x_low/uk_UA-lada-x_low.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/uk/uk_UA/lada/x_low/uk_UA-lada-x_low.onnx.json",
-    ],
-    "ru_RU-irina-medium": [
-        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/irina/medium/ru_RU-irina-medium.onnx.json",
-    ],
-    "ru_RU-ruslan-medium": [
-        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium.onnx.json",
-    ],
-    "en_US-amy-medium": [
-        f"{PIPER_DOWNLOAD_BASE}/en/en_US/amy/medium/en_US-amy-medium.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
-    ],
-    "en_US-ryan-high": [
-        f"{PIPER_DOWNLOAD_BASE}/en/en_US/ryan/high/en_US-ryan-high.onnx",
-        f"{PIPER_DOWNLOAD_BASE}/en/en_US/ryan/high/en_US-ryan-high.onnx.json",
-    ],
-}
+def _build_piper_download_urls(voice_id: str) -> list[str]:
+    """Construct Piper voice download URLs from voice ID."""
+    parts = voice_id.split("-", 1)
+    if len(parts) < 2:
+        return []
+    locale = parts[0]
+    lang = locale.split("_")[0]
+    rest_parts = parts[1].rsplit("-", 1)
+    name = rest_parts[0] if len(rest_parts) == 2 else parts[1]
+    quality = rest_parts[1] if len(rest_parts) == 2 else "medium"
+    base = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+    return [
+        f"{base}/{lang}/{locale}/{name}/{quality}/{voice_id}.onnx",
+        f"{base}/{lang}/{locale}/{name}/{quality}/{voice_id}.onnx.json",
+    ]
 
 
 @router.post("/provision")
@@ -1076,7 +1050,7 @@ async def _provision_download_stt(model_id: str) -> None:
     import httpx
     import zipfile
 
-    url = VOSK_DOWNLOAD_URLS.get(model_id)
+    url = _build_vosk_download_url(model_id)
     if not url:
         logger.warning("No download URL for STT model %s, skipping", model_id)
         return
@@ -1121,7 +1095,7 @@ async def _provision_download_tts(voice_id: str) -> None:
     """Download Piper TTS voice model (.onnx + .onnx.json)."""
     import httpx
 
-    urls = PIPER_VOICE_URLS.get(voice_id)
+    urls = _build_piper_download_urls(voice_id)
     if not urls:
         logger.warning("No download URL for TTS voice %s, skipping", voice_id)
         return

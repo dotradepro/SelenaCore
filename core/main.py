@@ -154,8 +154,10 @@ def create_app() -> FastAPI:
     app.include_router(intents.router, prefix=api_prefix)
 
     # UI routes (no auth — localhost only, protected by iptables)
+    from core.api.routes import voice_engines
     app.include_router(ui.router, prefix="/api/ui")
     app.include_router(setup.router, prefix="/api/ui")
+    app.include_router(voice_engines.router, prefix="/api/ui")
 
     return app
 

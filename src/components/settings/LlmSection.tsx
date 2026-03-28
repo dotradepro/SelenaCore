@@ -1,0 +1,441 @@
+import { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, Download, Trash2, Check, Eye, EyeOff, Loader2, Play, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/utils';
+
+interface Provider {
+  id: string;
+  name: string;
+  needs_key: boolean;
+  configured: boolean;
+  active: boolean;
+  model: string;
+}
+
+interface LlmModel {
+  id: string;
+  name: string;
+  size_gb?: number;
+  installed?: boolean;
+}
+
+export default function LlmSection() {
+  const { t } = useTranslation();
+
+  // Provider state
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [activeProvider, setActiveProvider] = useState('ollama');
+
+  // Ollama state
+  const [ollamaStatus, setOllamaStatus] = useState<{ installed: boolean; version: string | null; running: boolean }>({ installed: false, version: null, running: false });
+  const [ollamaInstalling, setOllamaInstalling] = useState(false);
+  const [ollamaAction, setOllamaAction] = useState('');
+  const [ollamaModels, setOllamaModels] = useState<LlmModel[]>([]);
+  const [pullModel, setPullModel] = useState('');
+  const [pulling, setPulling] = useState(false);
+  const [activeModel, setActiveModel] = useState('');
+
+  // Cloud state
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [keyValid, setKeyValid] = useState<boolean | null>(null);
+  const [keyError, setKeyError] = useState('');
+  const [cloudModels, setCloudModels] = useState<LlmModel[]>([]);
+  const [selectedCloudModel, setSelectedCloudModel] = useState('');
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  const fetchProviders = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/llm/providers').then(r => r.json());
+      setProviders(res.providers || []);
+      setActiveProvider(res.active || 'ollama');
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchOllamaStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/ollama/status').then(r => r.json());
+      setOllamaStatus(res);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchOllamaModels = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/ollama/models').then(r => r.json());
+      setOllamaModels(res.models || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchActiveModel = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/llm/models').then(r => r.json());
+      setActiveModel(res.active || '');
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    fetchProviders();
+    fetchOllamaStatus();
+    fetchOllamaModels();
+    fetchActiveModel();
+  }, [fetchProviders, fetchOllamaStatus, fetchOllamaModels, fetchActiveModel]);
+
+  // When switching provider tab, load cloud models if configured
+  useEffect(() => {
+    if (activeProvider !== 'ollama') {
+      const prov = providers.find(p => p.id === activeProvider);
+      if (prov?.configured) {
+        fetchCloudModels(activeProvider);
+      }
+      setSelectedCloudModel(prov?.model || '');
+    }
+  }, [activeProvider, providers]);
+
+  const selectProvider = async (providerId: string) => {
+    setActiveProvider(providerId);
+    try {
+      await fetch('/api/ui/setup/llm/provider/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: providerId }),
+      });
+      fetchProviders();
+    } catch { /* ignore */ }
+  };
+
+  // Ollama actions
+  const handleOllamaInstall = async () => {
+    setOllamaInstalling(true);
+    setOllamaAction('install');
+    try {
+      await fetch('/api/ui/setup/ollama/install', { method: 'POST' });
+      const poll = setInterval(async () => {
+        const res = await fetch('/api/ui/setup/ollama/install-progress').then(r => r.json());
+        if (!res.running) {
+          clearInterval(poll);
+          setOllamaInstalling(false);
+          fetchOllamaStatus();
+        }
+      }, 3000);
+    } catch { setOllamaInstalling(false); }
+  };
+
+  const handleOllamaUninstall = async () => {
+    setOllamaInstalling(true);
+    setOllamaAction('uninstall');
+    try {
+      await fetch('/api/ui/setup/ollama/uninstall', { method: 'POST' });
+      const poll = setInterval(async () => {
+        const res = await fetch('/api/ui/setup/ollama/install-progress').then(r => r.json());
+        if (!res.running) {
+          clearInterval(poll);
+          setOllamaInstalling(false);
+          fetchOllamaStatus();
+        }
+      }, 2000);
+    } catch { setOllamaInstalling(false); }
+  };
+
+  const handleOllamaStart = async () => {
+    try {
+      await fetch('/api/ui/setup/ollama/start', { method: 'POST' });
+      setTimeout(fetchOllamaStatus, 2000);
+    } catch { /* ignore */ }
+  };
+
+  const handleOllamaStop = async () => {
+    try {
+      await fetch('/api/ui/setup/ollama/stop', { method: 'POST' });
+      setTimeout(fetchOllamaStatus, 1000);
+    } catch { /* ignore */ }
+  };
+
+  const handlePullModel = async () => {
+    if (!pullModel.trim()) return;
+    setPulling(true);
+    try {
+      await fetch('/api/ui/setup/ollama/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: pullModel.trim() }),
+      });
+      setPullModel('');
+      fetchOllamaModels();
+    } catch { /* ignore */ }
+    setPulling(false);
+  };
+
+  const deleteOllamaModel = async (modelId: string) => {
+    try {
+      await fetch('/api/ui/setup/ollama/delete-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelId }),
+      });
+      fetchOllamaModels();
+    } catch { /* ignore */ }
+  };
+
+  const selectOllamaModel = async (modelId: string) => {
+    try {
+      await fetch('/api/ui/setup/llm/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelId }),
+      });
+      setActiveModel(modelId);
+    } catch { /* ignore */ }
+  };
+
+  // Cloud provider actions
+  const validateKey = async () => {
+    setValidating(true);
+    setKeyValid(null);
+    setKeyError('');
+    try {
+      const res = await fetch('/api/ui/setup/llm/provider/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: activeProvider, api_key: apiKey }),
+      }).then(r => r.json());
+
+      setKeyValid(res.valid);
+      if (res.valid) {
+        setCloudModels(res.models || []);
+        // Save the key
+        await fetch('/api/ui/setup/llm/provider/apikey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: activeProvider, api_key: apiKey }),
+        });
+      } else {
+        setKeyError(res.error || t('settings.keyInvalid'));
+      }
+    } catch {
+      setKeyValid(false);
+      setKeyError('Connection error');
+    }
+    setValidating(false);
+  };
+
+  const fetchCloudModels = async (provider: string) => {
+    try {
+      const res = await fetch(`/api/ui/setup/llm/provider/models?provider=${provider}`).then(r => r.json());
+      setCloudModels(res.models || []);
+    } catch { /* ignore */ }
+  };
+
+  const saveCloudModel = async () => {
+    if (!selectedCloudModel) return;
+    setSavingProvider(true);
+    try {
+      await fetch('/api/ui/setup/llm/provider/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: activeProvider, model: selectedCloudModel }),
+      });
+      fetchProviders();
+    } catch { /* ignore */ }
+    setSavingProvider(false);
+  };
+
+  return (
+    <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 16 }}>
+        <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.llmRouter')}</h4>
+        <p style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 2 }}>{t('settings.llmProviderDesc')}</p>
+      </div>
+
+      {/* Provider tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 4 }}>
+        {providers.map(p => (
+          <button key={p.id} onClick={() => selectProvider(p.id)}
+            className={cn("text-xs px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors",
+              p.id === activeProvider
+                ? "bg-blue-600 text-white"
+                : "bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+            )}>
+            {p.name}
+            {p.configured && p.id !== 'ollama' && <Check size={10} className="inline ml-1" />}
+          </button>
+        ))}
+      </div>
+
+      {/* Ollama panel */}
+      {activeProvider === 'ollama' && (
+        <div>
+          {/* Ollama binary status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span className={cn("text-xs px-2 py-1 rounded-md font-medium",
+              ollamaStatus.installed ? "text-emerald-500 bg-emerald-500/10" : "text-red-400 bg-red-500/10")}>
+              {ollamaStatus.installed ? `Ollama v${ollamaStatus.version}` : t('settings.notInstalled')}
+            </span>
+            {ollamaStatus.installed && (
+              <span className={cn("text-xs px-2 py-1 rounded-md font-medium",
+                ollamaStatus.running ? "text-emerald-500 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10")}>
+                {ollamaStatus.running ? t('settings.serverRunning') : t('settings.serverStopped')}
+              </span>
+            )}
+          </div>
+
+          {/* Ollama actions */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+            {!ollamaStatus.installed ? (
+              <button onClick={handleOllamaInstall} disabled={ollamaInstalling}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1">
+                {ollamaInstalling && ollamaAction === 'install' ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                {ollamaInstalling && ollamaAction === 'install' ? t('settings.installing') : t('settings.installEngine')}
+              </button>
+            ) : (
+              <>
+                {!ollamaStatus.running ? (
+                  <button onClick={handleOllamaStart}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 flex items-center gap-1">
+                    <Play size={12} /> {t('settings.startServer')}
+                  </button>
+                ) : (
+                  <button onClick={handleOllamaStop}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 flex items-center gap-1">
+                    <Square size={12} /> {t('settings.stopServer')}
+                  </button>
+                )}
+                <button onClick={handleOllamaUninstall} disabled={ollamaInstalling}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-600/20 text-red-400 hover:bg-red-600/30 disabled:opacity-50 flex items-center gap-1">
+                  <Trash2 size={12} /> {t('settings.uninstallEngine')}
+                </button>
+              </>
+            )}
+            <button onClick={() => { fetchOllamaStatus(); fetchOllamaModels(); }}
+              className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
+              <RefreshCw size={12} /> {t('common.refresh')}
+            </button>
+          </div>
+
+          {/* Ollama models */}
+          {ollamaModels.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--tx2)', marginBottom: 8 }}>{t('settings.installedModels')}</div>
+              <div className="space-y-2">
+                {ollamaModels.map(m => (
+                  <div key={m.id} className={cn("p-3 rounded-lg border flex items-center justify-between transition-all",
+                    m.id === activeModel ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-950")}>
+                    <div>
+                      <div className="text-sm font-medium">{m.name}</div>
+                      {m.size_gb !== undefined && <div className="text-xs text-zinc-500">{m.size_gb} GB</div>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => selectOllamaModel(m.id)} disabled={m.id === activeModel}
+                        className={cn("text-xs px-3 py-1.5 rounded-lg transition-colors",
+                          m.id === activeModel ? "bg-emerald-500/20 text-emerald-500" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700")}>
+                        {m.id === activeModel ? <Check size={12} /> : t('settings.activate')}
+                      </button>
+                      <button onClick={() => deleteOllamaModel(m.id)} disabled={m.id === activeModel}
+                        className="text-xs px-2 py-1.5 rounded-lg text-red-400 hover:bg-red-500/10 disabled:opacity-30">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pull new model */}
+          {ollamaStatus.running && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text" value={pullModel} onChange={e => setPullModel(e.target.value)}
+                placeholder={t('settings.modelNamePlaceholder')}
+                onKeyDown={e => e.key === 'Enter' && handlePullModel()}
+                style={{
+                  flex: 1, padding: '6px 10px', fontSize: 12,
+                  background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 8, color: 'var(--tx)',
+                }}
+              />
+              <button onClick={handlePullModel} disabled={pulling || !pullModel.trim()}
+                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1">
+                {pulling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                Pull
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Cloud provider panel */}
+      {activeProvider !== 'ollama' && (
+        <div>
+          {/* API key input */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--tx2)', marginBottom: 6 }}>
+              {t('settings.apiKey')}
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={e => { setApiKey(e.target.value); setKeyValid(null); }}
+                  placeholder={t('settings.apiKeyPlaceholder')}
+                  style={{
+                    width: '100%', padding: '8px 36px 8px 10px', fontSize: 12,
+                    background: 'var(--sf2)', border: `1px solid ${keyValid === true ? 'var(--gr)' : keyValid === false ? 'var(--rd)' : 'var(--b2)'}`,
+                    borderRadius: 8, color: 'var(--tx)',
+                  }}
+                />
+                <button onClick={() => setShowKey(!showKey)}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx3)' }}>
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <button onClick={validateKey} disabled={validating || !apiKey.trim()}
+                className={cn("text-xs px-4 py-2 rounded-lg font-medium disabled:opacity-50 flex items-center gap-1",
+                  keyValid === true ? "bg-emerald-600 text-white" : "bg-blue-600 text-white hover:bg-blue-500")}>
+                {validating ? <Loader2 size={12} className="animate-spin" /> :
+                  keyValid === true ? <Check size={12} /> : null}
+                {validating ? t('settings.validatingKey') :
+                  keyValid === true ? t('settings.keyValid') : t('settings.validateKey')}
+              </button>
+            </div>
+            {keyError && <div style={{ fontSize: 11, color: 'var(--rd)', marginTop: 4 }}>{keyError}</div>}
+          </div>
+
+          {/* Model selector */}
+          {cloudModels.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--tx2)', marginBottom: 6 }}>
+                {t('settings.selectModel')}
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select value={selectedCloudModel} onChange={e => setSelectedCloudModel(e.target.value)}
+                  style={{
+                    flex: 1, padding: '8px 10px', fontSize: 12,
+                    background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 8, color: 'var(--tx)',
+                  }}>
+                  <option value="">-- {t('settings.selectModel')} --</option>
+                  {cloudModels.map(m => (
+                    <option key={m.id} value={m.id}>{m.name || m.id}</option>
+                  ))}
+                </select>
+                <button onClick={saveCloudModel} disabled={!selectedCloudModel || savingProvider}
+                  className="text-xs px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1">
+                  {savingProvider ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  {t('common.save')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Loading models indicator */}
+          {keyValid === true && cloudModels.length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+              <Loader2 size={14} className="animate-spin" /> {t('settings.cloudModelsLoading')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

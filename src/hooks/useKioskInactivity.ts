@@ -46,7 +46,7 @@ export function useKioskInactivity() {
             const tok = tokenRef.current;
             if (!tok) return;
             try {
-                await fetch('/api/auth/elevated/revoke', {
+                await fetch('/api/ui/modules/user-manager/auth/elevated/revoke', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ elevated_token: tok }),
@@ -77,7 +77,7 @@ export function useKioskInactivity() {
             if (!tok) return;
 
             try {
-                const res = await fetch('/api/auth/elevated/refresh', {
+                const res = await fetch('/api/ui/modules/user-manager/auth/elevated/refresh', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ elevated_token: tok }),
