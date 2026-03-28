@@ -110,6 +110,10 @@ def sanitize_for_tts(text: str) -> str:
                 cleaned.append(sent)
     s = '\n'.join(cleaned) if cleaned else s
 
+    # Piper bug: uppercase letters cause phoneme confusion and garbled audio
+    # Convert everything to lowercase for cleaner synthesis
+    s = s.lower()
+
     return s.strip()
 
 
