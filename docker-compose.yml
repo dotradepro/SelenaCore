@@ -11,6 +11,7 @@ services:
     volumes:
       - selena_data:/var/lib/selena
       - selena_secure:/secure
+      - ollama_data:/root/.ollama
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log/selena:/var/log/selena
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
@@ -64,3 +65,4 @@ networks:
 volumes:
   selena_data:
   selena_secure:
+  ollama_data:

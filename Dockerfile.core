@@ -30,10 +30,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Piper TTS and dependencies
+RUN pip install --no-cache-dir piper-tts pathvalidate
+
+# Install Ollama
+RUN curl -fsSL https://ollama.com/install.sh | sh || true
+
 # Create model directories
 RUN mkdir -p /var/lib/selena/models/vosk \
              /var/lib/selena/models/piper \
-             /var/lib/selena/db
+             /var/lib/selena/db \
+             /var/lib/selena/cache
 
 COPY core/ ./core/
 COPY system_modules/ ./system_modules/
