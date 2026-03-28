@@ -172,6 +172,12 @@ const uk = {
             noModelsFound: 'Моделі не знайдено за вашими фільтрами.',
             noVoicesFound: 'Голоси не знайдено за вашими фільтрами.',
 
+            // Hardware / GPU
+            gpuDetected: 'GPU виявлено',
+            cpuOnly: 'Тільки CPU (без GPU)',
+            forceCpu: 'Примусово CPU',
+            enableGpu: 'Увімкнути GPU',
+
             // TTS Settings
             ttsSettings: 'Налаштування синтезу мовлення',
             ttsSpeed: 'Швидкість мовлення (length_scale)',

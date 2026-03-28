@@ -186,6 +186,14 @@ class TTSEngine:
                 "--volume", str(s.volume),
                 "--speaker", str(s.speaker),
             ]
+
+            # GPU acceleration: add --cuda if available
+            try:
+                from core.hardware import should_use_gpu, onnxruntime_has_gpu
+                if should_use_gpu() and onnxruntime_has_gpu():
+                    cmd.append("--cuda")
+            except Exception:
+                pass
             result = subprocess.run(
                 cmd,
                 input=text.encode("utf-8"),

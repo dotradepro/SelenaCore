@@ -88,6 +88,10 @@ class SystemPromptRequest(BaseModel):
     prompt: str
 
 
+class GpuOverrideRequest(BaseModel):
+    force_cpu: bool
+
+
 class SttTestRequest(BaseModel):
     device: str = "default"
     duration: int = 4
@@ -418,6 +422,27 @@ async def tts_settings_save(req: TtsSettingsRequest) -> dict[str, Any]:
 
 
 # ================================================================== #
+#  Hardware / GPU Status                                               #
+# ================================================================== #
+
+@router.get("/hardware/status")
+async def hardware_status() -> dict[str, Any]:
+    """Return hardware info including GPU detection."""
+    from core.hardware import get_hardware_info
+    return get_hardware_info()
+
+
+@router.post("/hardware/gpu-override")
+async def gpu_override(req: GpuOverrideRequest) -> dict[str, Any]:
+    """Force CPU mode even on GPU hardware. Requires engine restart."""
+    update_config("hardware", "force_cpu", req.force_cpu)
+    # Clear cached detection so next call picks up override
+    import core.hardware as hw
+    hw._gpu_cache = None
+    return {"status": "ok", "force_cpu": req.force_cpu, "restart_required": True}
+
+
+# ================================================================== #
 #  Install state tracking                                              #
 # ================================================================== #
 
@@ -659,6 +684,13 @@ async def ollama_start() -> dict[str, Any]:
         # Fallback: start in background (Docker / non-systemd)
         env = os.environ.copy()
         env["OLLAMA_HOST"] = "0.0.0.0:11434"
+
+        # GPU acceleration
+        from core.hardware import should_use_gpu
+        if should_use_gpu():
+            env["OLLAMA_NUM_GPU"] = "999"  # offload all layers to GPU
+        else:
+            env["OLLAMA_NUM_GPU"] = "0"  # CPU only
         subprocess.Popen(
             [ollama_bin, "serve"],
             stdout=subprocess.DEVNULL,

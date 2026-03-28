@@ -172,6 +172,12 @@ const en = {
             noModelsFound: 'No models match your filters.',
             noVoicesFound: 'No voices match your filters.',
 
+            // Hardware / GPU
+            gpuDetected: 'GPU detected',
+            cpuOnly: 'CPU only (no GPU)',
+            forceCpu: 'Force CPU',
+            enableGpu: 'Enable GPU',
+
             // TTS Settings
             ttsSettings: 'Voice synthesis settings',
             ttsSpeed: 'Speech speed (length_scale)',
