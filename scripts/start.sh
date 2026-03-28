@@ -1,8 +1,6 @@
 #!/bin/bash
 # Start Core API (:7070) and UI Core (:80 HTTP + :443 HTTPS) in parallel
 
-set -e
-
 # Auto-generate self-signed TLS certificate if not present
 TLS_CERT="/secure/tls/selena.crt"
 TLS_KEY="/secure/tls/selena.key"
@@ -13,21 +11,32 @@ if [ ! -f "$TLS_CERT" ] || [ ! -f "$TLS_KEY" ]; then
 fi
 
 # --- GPU/CUDA Detection ---
-if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null; then
-  export SELENA_GPU_AVAILABLE=1
-  if [ -f /etc/nv_tegra_release ]; then
-    export SELENA_GPU_TYPE=jetson
-  else
-    export SELENA_GPU_TYPE=discrete
+GPU_FOUND=0
+GPU_TYPE=none
+
+# Method 1: nvidia-smi works fully
+if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
+  GPU_FOUND=1
+  [ -f /etc/nv_tegra_release ] && GPU_TYPE=jetson || GPU_TYPE=discrete
+fi
+
+# Method 2: Jetson — check /dev/nvidia0 + libcuda.so (nvidia-smi may not work in container)
+if [ "$GPU_FOUND" = "0" ] && [ -e /dev/nvidia0 ]; then
+  if ldconfig -p 2>/dev/null | grep -q libcuda || [ -f /usr/lib/aarch64-linux-gnu/tegra/libcuda.so ]; then
+    GPU_FOUND=1
+    GPU_TYPE=jetson
   fi
-  echo "[start.sh] GPU detected: $SELENA_GPU_TYPE"
-  # Upgrade onnxruntime to GPU variant for Piper TTS
+fi
+
+export SELENA_GPU_AVAILABLE=$GPU_FOUND
+export SELENA_GPU_TYPE=$GPU_TYPE
+
+if [ "$GPU_FOUND" = "1" ]; then
+  echo "[start.sh] GPU detected: $GPU_TYPE"
   pip install --no-cache-dir onnxruntime-gpu 2>/dev/null \
     && echo "[start.sh] onnxruntime-gpu installed" \
     || echo "[start.sh] onnxruntime-gpu install failed, using CPU for Piper"
 else
-  export SELENA_GPU_AVAILABLE=0
-  export SELENA_GPU_TYPE=none
   echo "[start.sh] No GPU detected, CPU-only mode"
 fi
 # Persist GPU info to core.yaml

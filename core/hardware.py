@@ -44,20 +44,32 @@ def _detect() -> dict:
     # Runtime detection (slowest path, only if nothing else works)
     gpu = False
     gpu_type = "none"
+
+    # Method 1: nvidia-smi
     try:
         if shutil.which("nvidia-smi"):
-            result = subprocess.run(
-                ["nvidia-smi"], capture_output=True, timeout=5
-            )
+            result = subprocess.run(["nvidia-smi"], capture_output=True, timeout=5)
             if result.returncode == 0:
                 gpu = True
-                # Jetson has /etc/nv_tegra_release
-                if os.path.exists("/etc/nv_tegra_release"):
-                    gpu_type = "jetson"
-                else:
-                    gpu_type = "discrete"
+                gpu_type = "jetson" if os.path.exists("/etc/nv_tegra_release") else "discrete"
     except Exception:
         pass
+
+    # Method 2: Jetson device + libcuda (nvidia-smi may fail in container)
+    if not gpu and os.path.exists("/dev/nvidia0"):
+        if os.path.exists("/usr/lib/aarch64-linux-gnu/tegra/libcuda.so"):
+            gpu = True
+            gpu_type = "jetson"
+        else:
+            try:
+                result = subprocess.run(
+                    ["ldconfig", "-p"], capture_output=True, text=True, timeout=5
+                )
+                if "libcuda" in result.stdout:
+                    gpu = True
+                    gpu_type = "jetson" if os.path.exists("/etc/nv_tegra_release") else "discrete"
+            except Exception:
+                pass
 
     _gpu_cache = {"gpu": gpu, "type": gpu_type}
     return _gpu_cache
