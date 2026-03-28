@@ -161,6 +161,12 @@ const uk = {
             speaker: 'Динамік',
             noDevicesFound: 'Пристрої не знайдено',
             testMic: 'Тест мікрофона',
+            testingMic: 'Запис… ',
+            testSpeaker: 'Тест динаміка',
+            testingSpeaker: 'Відтворення…',
+            playingBack: 'Відтворення запису…',
+            recording: 'REC',
+            sec: 'с',
 
             // Network
             networkTitle: 'Мережа',

@@ -161,6 +161,12 @@ const en = {
             speaker: 'Speaker',
             noDevicesFound: 'No devices found',
             testMic: 'Test microphone',
+            testingMic: 'Recording… ',
+            testSpeaker: 'Test speaker',
+            testingSpeaker: 'Playing…',
+            playingBack: 'Playing back…',
+            recording: 'REC',
+            sec: 's',
 
             // Network
             networkTitle: 'Network',

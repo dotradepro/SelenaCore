@@ -396,6 +396,11 @@ function AudioSettings() {
   const [outputs, setOutputs] = useState<any[]>([]);
   const [selectedInput, setSelectedInput] = useState('');
   const [selectedOutput, setSelectedOutput] = useState('');
+  const [testingOutput, setTestingOutput] = useState(false);
+  const [testingInput, setTestingInput] = useState(false);
+  const [micLevel, setMicLevel] = useState<number | null>(null);
+  const [countdown, setCountdown] = useState(0);
+  const [playingBack, setPlayingBack] = useState(false);
 
   useEffect(() => {
     fetch('/api/ui/setup/audio/devices').then(r => r.json()).then(data => {
@@ -415,6 +420,49 @@ function AudioSettings() {
     });
   };
 
+  const testOutput = async () => {
+    setTestingOutput(true);
+    try {
+      await fetch('/api/ui/setup/audio/test/output', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: selectedOutput }),
+      });
+    } catch { /* ignore */ }
+    setTestingOutput(false);
+  };
+
+  const testInput = async () => {
+    setTestingInput(true);
+    setMicLevel(null);
+    setPlayingBack(false);
+
+    // Start countdown timer (3 seconds recording)
+    setCountdown(3);
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) { clearInterval(timer); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+
+    try {
+      const res = await fetch('/api/ui/setup/audio/test/input', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: selectedInput, output_device: selectedOutput }),
+      });
+      clearInterval(timer);
+      setCountdown(0);
+      setPlayingBack(true);
+      const data = await res.json();
+      if (data.peak_level !== undefined) setMicLevel(data.peak_level);
+      setPlayingBack(false);
+    } catch {
+      clearInterval(timer);
+      setCountdown(0);
+    }
+    setTestingInput(false);
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -430,6 +478,34 @@ function AudioSettings() {
             <option key={d.id} value={d.id}>{d.name} ({d.type})</option>
           )) : <option>{t('settings.noDevicesFound')}</option>}
         </select>
+        <div className="mt-3 flex items-center gap-3">
+          <button onClick={testInput} disabled={testingInput || playingBack || !inputs.length}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            {testingInput
+              ? `${t('settings.testingMic')} ${countdown > 0 ? countdown + t('settings.sec') : ''}`
+              : playingBack
+                ? t('settings.playingBack')
+                : t('settings.testMic')}
+          </button>
+          {testingInput && countdown > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+              </span>
+              <span className="text-xs text-red-400">{t('settings.recording')}</span>
+            </div>
+          )}
+          {micLevel !== null && !testingInput && (
+            <div className="flex items-center gap-2 flex-1">
+              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(micLevel * 100, 100)}%`, backgroundColor: micLevel > 0.01 ? '#10b981' : '#ef4444' }} />
+              </div>
+              <span className="text-xs text-zinc-400">{(micLevel * 100).toFixed(1)}%</span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
@@ -440,6 +516,12 @@ function AudioSettings() {
             <option key={d.id} value={d.id}>{d.name} ({d.type})</option>
           )) : <option>{t('settings.noDevicesFound')}</option>}
         </select>
+        <div className="mt-3">
+          <button onClick={testOutput} disabled={testingOutput || !outputs.length}
+            className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            {testingOutput ? t('settings.testingSpeaker') : t('settings.testSpeaker')}
+          </button>
+        </div>
       </div>
 
       <button onClick={saveAudio} className="px-4 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 transition-colors">

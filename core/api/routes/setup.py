@@ -499,6 +499,96 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
     return {"status": "ok"}
 
 
+@router.post("/audio/test/output")
+async def audio_test_output(body: dict[str, str]) -> dict[str, Any]:
+    """Play a short test tone on the selected output device."""
+    device = body.get("device", "default")
+    loop = asyncio.get_running_loop()
+
+    def _play():
+        is_pulse = device and not device.startswith("hw:") and device != "default"
+        if is_pulse:
+            cmd = ["paplay", "--device=" + device, "/usr/share/sounds/alsa/Front_Center.wav"]
+        else:
+            cmd = ["speaker-test", "-t", "wav", "-c", "2", "-l", "1"]
+            if device and device != "default":
+                cmd += ["-D", device]
+        subprocess.run(cmd, timeout=6, capture_output=True)
+
+    try:
+        await asyncio.wait_for(loop.run_in_executor(None, _play), timeout=8)
+        return {"status": "ok"}
+    except Exception as exc:
+        logger.warning("Output test failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/audio/test/input")
+async def audio_test_input(body: dict[str, str]) -> dict[str, Any]:
+    """Record 3s from input device, measure peak, then play back on output device."""
+    input_device = body.get("device", "default")
+    output_device = body.get("output_device", "default")
+    loop = asyncio.get_running_loop()
+
+    def _record_and_playback() -> dict:
+        import struct
+        import tempfile
+        import wave
+
+        # --- Record ---
+        is_pulse_in = input_device and not input_device.startswith("hw:") and input_device != "default"
+        if is_pulse_in:
+            rec_cmd = ["timeout", "3",
+                       "parecord", "--raw", "--format=s16le", "--rate=16000",
+                       "--channels=1", "--device=" + input_device]
+        else:
+            rec_cmd = ["arecord", "-d", "3", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"]
+            if input_device and input_device != "default":
+                rec_cmd += ["-D", input_device]
+
+        result = subprocess.run(rec_cmd, timeout=6, capture_output=True)
+        if result.returncode != 0 and not result.stdout:
+            raise RuntimeError(result.stderr.decode(errors="replace"))
+
+        raw = result.stdout
+        if len(raw) < 2:
+            return {"peak_level": 0.0}
+
+        samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+        peak = max(abs(s) for s in samples) if samples else 0
+
+        # --- Write temp WAV ---
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        try:
+            with wave.open(tmp.name, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(raw)
+
+            # --- Playback on output device ---
+            is_pulse_out = output_device and not output_device.startswith("hw:") and output_device != "default"
+            if is_pulse_out:
+                play_cmd = ["paplay", "--device=" + output_device, tmp.name]
+            else:
+                play_cmd = ["aplay"]
+                if output_device and output_device != "default":
+                    play_cmd += ["-D", output_device]
+                play_cmd.append(tmp.name)
+            subprocess.run(play_cmd, timeout=6, capture_output=True)
+        finally:
+            os.unlink(tmp.name)
+
+        return {"peak_level": round(peak / 32768.0, 4)}
+
+    try:
+        data = await asyncio.wait_for(loop.run_in_executor(None, _record_and_playback), timeout=15)
+        return {"status": "ok", **data}
+    except Exception as exc:
+        logger.warning("Input test failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 # ================================================================== #
 #  STT Models (Vosk)                                                   #
 # ================================================================== #
