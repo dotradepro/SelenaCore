@@ -456,8 +456,17 @@ async def vosk_status() -> dict[str, Any]:
     """Check if Vosk is installed."""
     try:
         import vosk  # noqa: F401
-        version = getattr(vosk, "__version__", "unknown")
-        return {"installed": True, "version": version}
+        version = getattr(vosk, "__version__", None)
+        if not version:
+            try:
+                result = subprocess.run(["pip", "show", "vosk"], capture_output=True, text=True, timeout=10)
+                for line in result.stdout.splitlines():
+                    if line.startswith("Version:"):
+                        version = line.split(":", 1)[1].strip()
+                        break
+            except Exception:
+                pass
+        return {"installed": True, "version": version or "installed"}
     except ImportError:
         return {"installed": False, "version": None}
 
