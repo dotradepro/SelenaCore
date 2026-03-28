@@ -302,7 +302,7 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
                 data = resp.json()
                 response_text = data.get("message", {}).get("content", "").strip()
 
-            return {"status": "ok", "response": response_text, "provider": provider, "model": model}
+            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
 
         else:
             # Cloud provider
@@ -322,7 +322,7 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             if not response_text:
                 return {"status": "error", "response": "", "error": "LLM returned empty response", "provider": provider}
 
-            return {"status": "ok", "response": response_text, "provider": provider, "model": model}
+            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
 
     except Exception as exc:
         logger.error("LLM chat failed: %s", exc)
