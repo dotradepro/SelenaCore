@@ -33,6 +33,8 @@ export default function LlmSection() {
   const [ollamaModels, setOllamaModels] = useState<LlmModel[]>([]);
   const [pullModel, setPullModel] = useState('');
   const [pulling, setPulling] = useState(false);
+  const [pullProgress, setPullProgress] = useState(0);
+  const [pullStatus, setPullStatus] = useState('');
   const [activeModel, setActiveModel] = useState('');
 
   // Cloud state
@@ -154,16 +156,35 @@ export default function LlmSection() {
   const handlePullModel = async () => {
     if (!pullModel.trim()) return;
     setPulling(true);
+    setPullProgress(0);
+    setPullStatus('starting...');
     try {
       await fetch('/api/ui/setup/ollama/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: pullModel.trim() }),
       });
-      setPullModel('');
-      fetchOllamaModels();
-    } catch { /* ignore */ }
-    setPulling(false);
+      // Poll progress
+      const poll = setInterval(async () => {
+        try {
+          const res = await fetch('/api/ui/setup/ollama/pull-progress').then(r => r.json());
+          setPullProgress(res.percent || 0);
+          setPullStatus(res.status || '');
+          if (!res.running) {
+            clearInterval(poll);
+            setPulling(false);
+            if (res.done) {
+              setPullModel('');
+              setPullStatus('');
+              fetchOllamaModels();
+            }
+          }
+        } catch { /* ignore */ }
+      }, 1500);
+    } catch {
+      setPulling(false);
+      setPullStatus('error');
+    }
   };
 
   const deleteOllamaModel = async (modelId: string) => {
@@ -344,21 +365,38 @@ export default function LlmSection() {
 
           {/* Pull new model */}
           {ollamaStatus.running && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text" value={pullModel} onChange={e => setPullModel(e.target.value)}
-                placeholder={t('settings.modelNamePlaceholder')}
-                onKeyDown={e => e.key === 'Enter' && handlePullModel()}
-                style={{
-                  flex: 1, padding: '6px 10px', fontSize: 12,
-                  background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 8, color: 'var(--tx)',
-                }}
-              />
-              <button onClick={handlePullModel} disabled={pulling || !pullModel.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1">
-                {pulling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                Pull
-              </button>
+            <div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text" value={pullModel} onChange={e => setPullModel(e.target.value)}
+                  placeholder={t('settings.modelNamePlaceholder')}
+                  onKeyDown={e => e.key === 'Enter' && handlePullModel()}
+                  disabled={pulling}
+                  style={{
+                    flex: 1, padding: '6px 10px', fontSize: 12,
+                    background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 8, color: 'var(--tx)',
+                  }}
+                />
+                <button onClick={handlePullModel} disabled={pulling || !pullModel.trim()}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1">
+                  {pulling ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                  Pull
+                </button>
+              </div>
+              {pulling && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--tx2)', marginBottom: 4 }}>
+                    <span>{pullStatus}</span>
+                    <span>{pullProgress.toFixed(1)}%</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--sf3)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${pullProgress}%`, height: '100%',
+                      background: 'var(--ac)', borderRadius: 3, transition: 'width 0.3s',
+                    }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

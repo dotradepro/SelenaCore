@@ -665,28 +665,82 @@ async def ollama_models() -> dict[str, Any]:
     return {"models": installed}
 
 
+class _OllamaPullState:
+    def __init__(self) -> None:
+        self.running = False
+        self.model = ""
+        self.status = ""
+        self.total = 0
+        self.completed = 0
+        self.error: str | None = None
+        self.done = False
+
+    def to_dict(self) -> dict[str, Any]:
+        pct = round(self.completed / self.total * 100, 1) if self.total > 0 else 0
+        return {
+            "running": self.running, "model": self.model,
+            "status": self.status, "percent": pct,
+            "total": self.total, "completed": self.completed,
+            "error": self.error, "done": self.done,
+        }
+
+
+_pull_state = _OllamaPullState()
+
+
 @router.post("/ollama/pull")
 async def ollama_pull(req: OllamaModelRequest) -> dict[str, Any]:
-    """Pull (download) an Ollama model."""
+    """Start pulling an Ollama model (async). Poll /ollama/pull-progress."""
+    if _pull_state.running:
+        return {"status": "already_running", **_pull_state.to_dict()}
+
+    _pull_state.running = True
+    _pull_state.model = req.model
+    _pull_state.status = "starting"
+    _pull_state.total = 0
+    _pull_state.completed = 0
+    _pull_state.error = None
+    _pull_state.done = False
+
+    asyncio.create_task(_ollama_pull_bg(req.model))
+    return {"status": "started", "model": req.model}
+
+
+@router.get("/ollama/pull-progress")
+async def ollama_pull_progress() -> dict[str, Any]:
+    """Poll Ollama model pull progress."""
+    return _pull_state.to_dict()
+
+
+async def _ollama_pull_bg(model: str) -> None:
     ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
     try:
-        async with httpx.AsyncClient(timeout=600) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=30.0)) as client:
             async with client.stream(
-                "POST", f"{ollama_url}/api/pull", json={"name": req.model}
+                "POST", f"{ollama_url}/api/pull", json={"name": model}
             ) as resp:
                 resp.raise_for_status()
-                last_status = ""
                 async for line in resp.aiter_lines():
-                    if line:
-                        try:
-                            data = json.loads(line)
-                            last_status = data.get("status", "")
-                        except Exception:
-                            pass
-        return {"status": "ok", "message": last_status}
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        _pull_state.status = data.get("status", "")
+                        if "total" in data:
+                            _pull_state.total = data["total"]
+                        if "completed" in data:
+                            _pull_state.completed = data["completed"]
+                    except Exception:
+                        pass
+        _pull_state.done = True
+        _pull_state.status = "success"
+        logger.info("Ollama pull '%s' completed", model)
     except Exception as exc:
-        logger.error("Ollama pull failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Ollama pull '%s' failed: %s", model, exc)
+        _pull_state.error = str(exc)
+        _pull_state.status = "error"
+    finally:
+        _pull_state.running = False
 
 
 @router.post("/ollama/delete-model")
