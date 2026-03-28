@@ -281,20 +281,24 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             except Exception:
                 return {"status": "error", "response": "", "error": "Ollama server not available", "provider": provider}
 
+            # Use /api/chat (messages format) — models follow system prompt much better
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": req.text})
+
             payload = {
                 "model": model,
-                "prompt": req.text,
+                "messages": messages,
                 "stream": False,
                 "options": {"temperature": 0.7, "num_predict": 512},
             }
-            if system_prompt:
-                payload["system"] = system_prompt
 
             async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{ollama_url}/api/generate", json=payload)
+                resp = await client.post(f"{ollama_url}/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                response_text = data.get("response", "").strip()
+                response_text = data.get("message", {}).get("content", "").strip()
 
             return {"status": "ok", "response": response_text, "provider": provider, "model": model}
 
