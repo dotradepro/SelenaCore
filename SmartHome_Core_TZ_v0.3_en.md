@@ -151,7 +151,7 @@ oauth:
 | `voice-core` | SETTINGS_ONLY | STT (Whisper.cpp), TTS (Piper), wake-word, speaker ID, privacy mode |
 | `llm-engine` | SETTINGS_ONLY | Ollama, Intent Router (Fast Matcher + LLM), model selection and download |
 | `network-scanner` | SETTINGS_ONLY | ARP sweep, mDNS, SSDP/UPnP, Zigbee/Z-Wave, OUI classification |
-| `user-manager` | SETTINGS_ONLY | Profiles, roles, voice prints, video authorization, audit log |
+| `user-manager` | SETTINGS_ONLY | Profiles (admin/resident), PIN/QR auth, voice prints, Face ID, audit log |
 | `secrets-vault` | HEADLESS | AES-256-GCM OAuth token storage, proxy for modules |
 | `backup-manager` | SETTINGS_ONLY | Local backup (USB/SD) + E2E cloud, QR secrets transfer |
 | `remote-access` | HEADLESS | Tailscale VPN client: auto-connect, tunnel status |
@@ -392,22 +392,21 @@ audio:
 
 ## 9. Users, Authorization, Audit
 
-### 9.1 Roles and Permissions
+### 9.1 User Model
 
-| Action | admin | resident | guest |
-|---|---|---|---|
-| Device management | Full | Full | Read only |
-| Install/remove modules | Yes | No | No |
-| Core settings and wizard | Yes | No | No |
-| Voice commands | All | All | Limited |
-| View audit log | Yes (all) | Own only | No |
-| OAuth authorization for integrations | Yes | No | No |
-| Tailscale management | Yes | No | No |
+Flat user model with no role-based permissions:
+
+- **admin** — first user created during wizard setup (has PIN)
+- **resident** — all subsequent users (house members, name + optional device link)
+
+The PIN/QR elevation gate is the only security boundary. Any elevated user
+(anyone who enters a valid PIN or scans QR) can access all settings, manage
+users, modules, and devices. No per-role permission matrix.
 
 ### 9.2 Authorization Methods in ui-core
 
 - **PIN** (4–8 digits) — always available
-- **Face ID** — if enrolled and the client has a camera. Browser captures a JPEG frame → POST → Pi face_recognition → JWT session. The photo is not saved.
+- **Face ID** — if enrolled and the client has a camera. Browser captures a JPEG frame → POST → Pi face_recognition → elevated session token. The photo is not saved.
 - **Voice print** — identification during voice requests (command personalization, not UI login)
 
 > **HTTPS is required** for `getUserMedia()`. Without it, the browser does not grant access to the camera and microphone. A self-signed certificate is generated automatically during initialization.
@@ -416,14 +415,18 @@ audio:
 
 ```sql
 user_id        TEXT PRIMARY KEY   -- uuid4
-name           TEXT               -- display name
-role           TEXT               -- admin | resident | guest
-pin_hash       TEXT               -- SHA256 PIN
-voice_enrolled BOOLEAN
-face_enrolled  BOOLEAN
-lang           TEXT               -- ru | uk | en
+username       TEXT UNIQUE        -- login name
+display_name   TEXT               -- display name
+role           TEXT               -- admin | resident
+pin_hash       TEXT               -- SHA256 PIN (salted)
 created_at     REAL               -- unix timestamp
+last_seen      REAL               -- last activity timestamp
+face_enrolled  INTEGER DEFAULT 0
+voice_enrolled INTEGER DEFAULT 0
+active         INTEGER DEFAULT 1  -- soft delete flag
 ```
+
+Migration: legacy `owner` role is normalized to `admin`, legacy `role_config` table is dropped.
 
 ### 9.4 Audit Log
 

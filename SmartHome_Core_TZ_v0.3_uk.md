@@ -151,7 +151,7 @@ oauth:
 | `voice-core` | SETTINGS_ONLY | STT (Whisper.cpp), TTS (Piper), wake-word, speaker ID, режим приватності |
 | `llm-engine` | SETTINGS_ONLY | Ollama, Intent Router (Fast Matcher + LLM), вибір і завантаження моделей |
 | `network-scanner` | SETTINGS_ONLY | ARP sweep, mDNS, SSDP/UPnP, Zigbee/Z-Wave, OUI класифікація |
-| `user-manager` | SETTINGS_ONLY | Профілі, ролі, голосові зліпки, відеоавторизація, аудит-лог |
+| `user-manager` | SETTINGS_ONLY | Профілі (admin/resident), PIN/QR авторизація, голосові зліпки, Face ID, аудит-лог |
 | `secrets-vault` | HEADLESS | AES-256-GCM сховище OAuth-токенів, proxy для модулів |
 | `backup-manager` | SETTINGS_ONLY | Локальний бекап (USB/SD) + хмара E2E, QR-перенесення секретів |
 | `remote-access` | HEADLESS | Tailscale VPN клієнт: автопідключення, статус тунелю |
@@ -392,22 +392,21 @@ audio:
 
 ## 9. Користувачі, авторизація, аудит
 
-### 9.1 Ролі і права
+### 9.1 Модель користувачів
 
-| Дія | admin | resident | guest |
-|---|---|---|---|
-| Керування пристроями | Повне | Повне | Тільки читання |
-| Встановлення/видалення модулів | Так | Ні | Ні |
-| Налаштування ядра і wizard | Так | Ні | Ні |
-| Голосові команди | Всі | Всі | Обмежені |
-| Перегляд аудит-логу | Так (всі) | Тільки свої | Ні |
-| OAuth авторизація інтеграцій | Так | Ні | Ні |
-| Керування Tailscale | Так | Ні | Ні |
+Плоска модель без рольових дозволів:
+
+- **admin** — перший користувач, створений під час визарда (має PIN)
+- **resident** — усі наступні (мешканці будинку, ім'я + опційна прив'язка пристрою)
+
+Гейт PIN/QR — єдиний бар'єр безпеки. Будь-який підвищений користувач
+(хто ввів PIN або підтвердив QR) може керувати всіма налаштуваннями,
+користувачами, модулями та пристроями. Ніякої матриці дозволів по ролях.
 
 ### 9.2 Способи авторизації у ui-core
 
 - **PIN** (4–8 цифр) — завжди доступний
-- **Face ID** — якщо зареєстровано і клієнт має камеру. Браузер захоплює JPEG кадр → POST → Pi face_recognition → JWT сесія. Фото не зберігається.
+- **Face ID** — якщо зареєстровано і клієнт має камеру. Браузер захоплює JPEG кадр → POST → Pi face_recognition → elevated session token. Фото не зберігається.
 - **Голосовий зліпок** — ідентифікація при голосовому запиті (персоналізація команд, не вхід у UI)
 
 > **HTTPS обов'язковий** для `getUserMedia()`. Без нього браузер не дає доступ до камери і мікрофона. Самопідписаний сертифікат генерується автоматично при ініціалізації.
@@ -416,14 +415,18 @@ audio:
 
 ```sql
 user_id        TEXT PRIMARY KEY   -- uuid4
-name           TEXT               -- відображуване ім'я
-role           TEXT               -- admin | resident | guest
-pin_hash       TEXT               -- SHA256 PIN
-voice_enrolled BOOLEAN
-face_enrolled  BOOLEAN
-lang           TEXT               -- ru | uk | en
+username       TEXT UNIQUE        -- логін
+display_name   TEXT               -- відображуване ім'я
+role           TEXT               -- admin | resident
+pin_hash       TEXT               -- SHA256 PIN (з сіллю)
 created_at     REAL               -- unix timestamp
+last_seen      REAL               -- час останньої активності
+face_enrolled  INTEGER DEFAULT 0
+voice_enrolled INTEGER DEFAULT 0
+active         INTEGER DEFAULT 1  -- м'яке видалення
 ```
+
+Міграція: legacy роль `owner` нормалізується в `admin`, legacy таблиця `role_config` видаляється.
 
 ### 9.4 Аудит-лог
 

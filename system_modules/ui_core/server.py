@@ -19,6 +19,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Receive, Scope, Send
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -30,6 +31,20 @@ from system_modules.ui_core.wizard import router as wizard_router
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that always sends Cache-Control: no-cache."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_with_no_cache(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.append((b"cache-control", b"no-cache, no-store, must-revalidate"))
+                message["headers"] = headers
+            await send(message)
+
+        await super().__call__(scope, receive, send_with_no_cache)
 CORE_API_BASE = os.getenv("CORE_API_BASE", "http://127.0.0.1:7070")
 
 
@@ -241,10 +256,10 @@ def create_ui_app() -> FastAPI:
         # Mount known asset sub-directories for efficient serving
         _assets = STATIC_DIR / "assets"
         if _assets.is_dir():
-            app.mount("/assets", StaticFiles(directory=str(_assets)), name="assets")
+            app.mount("/assets", NoCacheStaticFiles(directory=str(_assets)), name="assets")
         _icons = STATIC_DIR / "icons"
         if _icons.is_dir():
-            app.mount("/icons", StaticFiles(directory=str(_icons)), name="icons")
+            app.mount("/icons", NoCacheStaticFiles(directory=str(_icons)), name="icons")
 
         # SPA catch-all: any non-API, non-asset path returns index.html
         # so that React Router handles client-side routes on page refresh.
@@ -259,11 +274,13 @@ def create_ui_app() -> FastAPI:
                 return Response(
                     content=candidate.read_bytes(),
                     media_type=_guess_media_type(candidate.name),
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
                 )
             # Otherwise serve index.html for SPA routing
             return Response(
                 content=_index_html.read_bytes(),
                 media_type="text/html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
             )
 
     return app

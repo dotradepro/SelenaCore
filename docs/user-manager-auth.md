@@ -2,8 +2,8 @@
 
 🇺🇦 [Українська версія](uk/user-manager-auth.md)
 
-**Module:** `system_modules/user_manager/`  
-**Routes:** `/api/ui/modules/user-manager/`  
+**Module:** `system_modules/user_manager/`
+**Routes:** `/api/ui/modules/user-manager/`
 **Type:** SYSTEM (in-process, no port)
 
 ---
@@ -13,13 +13,16 @@
 User Manager handles all identity and access control for SelenaCore. It provides:
 
 - **Device token** authentication (long-lived, stored in HttpOnly cookie + header)
-- **Elevated sessions** for sensitive operations (PIN or QR approval, lasts 10 min)
-- **Full user CRUD** with roles: `owner` → `admin` → `user` → `guest`
+- **Elevated sessions** for sensitive operations (PIN or QR approval, lasts 5 min with sliding window)
+- **User CRUD** — flat model: first user = `admin`, all others = `resident` (house members)
 - **QR-based device registration** (new browser) and **QR-based kiosk unlock** (elevate)
 - **PIN confirmation** for quick elevation without QR
 
-All tokens are random, stored hashed in SQLite at `/var/lib/selena/selena.db`.  
-The database path is resolved as an **absolute path** via `sqlite+aiosqlite:////var/lib/selena/selena.db`  
+**No role-based permissions.** The PIN/QR elevation gate is the only security boundary.
+Any elevated user can manage settings, users, and devices.
+
+All tokens are random, stored hashed in SQLite at `/var/lib/selena/selena.db`.
+The database path is resolved as an **absolute path** via `sqlite+aiosqlite:////var/lib/selena/selena.db`
 (4 leading slashes = absolute; 3 slashes would be relative to the container's CWD).
 
 ---
@@ -45,7 +48,7 @@ Elevated operation (PATCH /users, DELETE /users, PIN change, etc.)
       │
       ▼
  _require_elevated() checks:
-      ├─ token valid + not expired (< 10 min) → proceed
+      ├─ token valid + not expired (< 5 min, sliding window) → proceed
       └─ missing / expired → 403 Forbidden
 ```
 
@@ -54,21 +57,21 @@ Elevated operation (PATCH /users, DELETE /users, PIN change, etc.)
 | Token | Storage | Expiry | Purpose |
 |-------|---------|--------|---------|
 | `device_token` | HttpOnly cookie + `localStorage('selena_device')` | 30 days | Identifies a registered browser/phone |
-| `elevated_token` | `sessionStorage('selena_elevated')` only | 10 min | Unlocks sensitive operations |
+| `elevated_token` | `sessionStorage('selena_elevated')` only | 5 min (sliding) | Unlocks sensitive operations |
 | `qr_session` | In-memory dict in user-manager | 5 min (`_QR_TTL = 300`) | One-time QR handshake |
 
 ---
 
-## Roles
+## User Model
 
-| Role | Level | Can do |
-|------|-------|--------|
-| `owner` | 4 | Everything, including deleting admins |
-| `admin` | 3 | Manage users (not owner), view audit log |
-| `user` | 2 | Own profile, change own PIN |
-| `guest` | 1 | Read-only, no sensitive operations |
+| Field | Description |
+|-------|-------------|
+| `admin` | First user created during wizard setup. Has PIN. |
+| `resident` | All subsequent users (house members). Created with name + optional device link. |
 
-Role-based permission config is stored per-role in `permissions` table and can be edited via `PATCH /roles/{role}` (owner only, requires elevation).
+There are no role-based permission checks. The `role` field is stored in the database
+(`admin` or `resident`) but carries no authorization weight. The elevation gate (PIN/QR)
+is the sole access control mechanism for all sections beyond the Dashboard.
 
 ---
 
@@ -81,7 +84,7 @@ A new device registers by providing username + PIN.
 ```
 Browser                       user-manager
    │                               │
-   │── POST /auth/register ────────►│
+   │── POST /auth/device/register ─►│
    │   {username, pin, device_name} │
    │                               │── verify user credentials
    │                               │── create device record
@@ -133,7 +136,7 @@ Kiosk                         user-manager
    │   X-Device-Token: <token>      │── verify device token
    │   {pin}                        │── check PIN hash
    │◄── 200 {elevated_token} ───────│
-   │    (10 min session)            │
+   │    (5 min session, sliding)    │
 ```
 
 ### QR elevation
@@ -165,11 +168,37 @@ Kiosk                         user-manager               Phone
    │  [gate unlocks, section opens]│  [Phone shows: "Done. You may close this tab."]
 ```
 
+### QR elevation via presence (no device token required)
+
+```
+Kiosk                         user-manager               Phone (tracked)
+   │                               │                        │
+   │── POST /auth/qr/start ────────►│                        │
+   │   {mode:"elevate"}            │── create session ──────│
+   │◄── {session_id, qr_image}     │                        │
+   │                               │   QR shown on kiosk    │
+   │  [kiosk shows QR + countdown] │    [Phone scans]       │
+   │                               │                        │
+   │                               │◄── POST /auth/qr/approve-by-presence/{id}
+   │                               │    (no token needed — server resolves
+   │                               │     IP → ARP MAC → presence DB → linked account)
+   │                               │── verify → elevated_token
+   │                               │── mark session "complete"
+   │                               │
+   │── GET /auth/qr/status/{id} ──►│  (polled every 2s by kiosk)
+   │◄── {status:"complete",        │
+   │     elevated_token:"..."}     │
+```
+
+This flow works when the phone is a tracked presence device (its MAC is in the
+presence-detection database with a `linked_account_id`). No device token
+or PIN is needed — identity is resolved from the network layer.
+
 ---
 
 ## QR Join Page (`/auth/qr/join/{session_id}`)
 
-A standalone HTML page served directly from `system_modules/user_manager/qr_join.html`.  
+A standalone HTML page served directly from `system_modules/user_manager/qr_join.html`.
 Designed for mobile browsers. Features:
 
 | Feature | Detail |
@@ -195,6 +224,18 @@ QR sessions are valid for **5 minutes** (`_QR_TTL = 300`).
 
 ---
 
+## UI Navigation
+
+The main interface has no sidebar. Navigation uses:
+
+- **Logo** (top-left of TopBar) — click to return to Dashboard
+- **Gear icon** (top-right of TopBar, next to clock) — opens Settings (requires PIN/QR elevation)
+- **Dashboard** (`/`) — always accessible, no authentication required
+- **Settings** (`/settings/*`) — protected by `KioskElevationGate`, contains all admin sections:
+  - Appearance, Voice & LLM, Audio, Network, Users, Modules, System, System Info, Integrity, Security, System Modules
+
+---
+
 ## API Reference
 
 Base path: `/api/ui/modules/user-manager`
@@ -203,101 +244,70 @@ Base path: `/api/ui/modules/user-manager`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/auth/register` | — | Register new device (username + PIN) |
+| `POST` | `/auth/setup` | — | First-time admin account creation (empty DB only) |
+| `POST` | `/auth/device/register` | — | Register new device (username + PIN) |
 | `POST` | `/auth/pin/confirm` | device token | Verify PIN → get elevated_token |
 | `POST` | `/auth/device/verify` | device token in header | Check token validity, returns user info |
-| `POST` | `/auth/device/revoke` | device token | Revoke own device token |
-| `GET`  | `/auth/devices` | device token | List all registered devices for own user |
+| `DELETE` | `/auth/device` | device token | Revoke own device token |
 
 ### Auth — QR flow
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `POST` | `/auth/qr/start` | — | Create QR session (`mode`: `access` or `elevate`) |
+| `POST` | `/auth/qr/start` | — | Create QR session (`mode`: `access`, `elevate`, `invite`, `wizard_setup`) |
 | `GET`  | `/auth/qr/status/{id}` | — | Poll session status |
 | `GET`  | `/auth/qr/info/{id}` | — | Get mode + `expires_in_seconds` (used by join page) |
 | `GET`  | `/auth/qr/join/{id}` | — | Phone approval page (HTML) |
 | `POST` | `/auth/qr/approve/{id}` | device token | Phone approves kiosk unlock (elevate mode) |
-| `POST` | `/auth/qr/complete/{id}` | — | Phone submits username+PIN (access mode) |
+| `POST` | `/auth/qr/approve-by-presence/{id}` | — | Approve QR via presence detection (IP → MAC → account) |
+| `POST` | `/auth/qr/complete/{id}` | — | Phone submits username+PIN (access/invite mode) |
+| `POST` | `/auth/qr/wizard-link/{id}` | — | Phone links during wizard setup + auto-adds presence tracking |
 
-#### `POST /auth/qr/start` — Request
+### Auth — Presence-based phone identification
 
-```json
-{ "mode": "access" }   // new browser registration
-{ "mode": "elevate" }  // kiosk unlock
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/phone/identify` | — | Identify phone by IP → MAC → presence user → linked account |
 
-#### `POST /auth/qr/start` — Response `201`
+### Auth — Elevated session
 
-```json
-{
-  "session_id": "uuid-...",
-  "join_url":   "http://192.168.1.45/api/ui/modules/user-manager/auth/qr/join/uuid-...",
-  "qr_image":   "data:image/png;base64,...",
-  "expires_in": 300
-}
-```
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/elevated/refresh` | elevated token | Reset TTL (sliding window keep-alive) |
+| `POST` | `/auth/elevated/revoke` | elevated token | Immediately invalidate session |
 
-`join_url` always contains the **LAN IP** when the request originates from localhost/127.0.0.1.
+### Auth — Browser sessions
 
-#### `GET /auth/qr/info/{id}` — Response `200`
-
-```json
-{
-  "mode": "elevate",
-  "status": "pending",
-  "expires_in_seconds": 247
-}
-```
-
-Returns `410 Gone` if the session has expired.
-
-#### `GET /auth/qr/status/{id}` — Response `200`
-
-```json
-// pending:
-{ "status": "pending" }
-
-// complete (access mode):
-{ "status": "complete", "device_token": "...", "user_id": "uuid-..." }
-
-// complete (elevate mode):
-{ "status": "complete", "elevated_token": "...", "user_id": "uuid-..." }
-```
-
-Returns `404` if session not found, `410` if expired.
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/session/heartbeat` | session token | Reset idle timer for QR temp session |
+| `POST` | `/auth/session/logout` | session token | End temporary browser session |
 
 ### Users CRUD
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET`    | `/users` | device token, role ≥ admin | List all users |
-| `POST`   | `/users` | device token + elevated, role ≥ admin | Create user |
+| `GET`    | `/users` | device token | List all users |
+| `POST`   | `/users` | device token + elevated | Create user (name + PIN) |
 | `GET`    | `/users/{id}` | device token | Get user by ID |
-| `PATCH`  | `/users/{id}` | device token + elevated, role ≥ admin | Update user |
-| `DELETE` | `/users/{id}` | device token + elevated, role = owner | Deactivate user |
+| `PATCH`  | `/users/{id}` | device token + elevated | Update user (display_name) |
+| `DELETE` | `/users/{id}` | device token + elevated | Deactivate user |
 | `POST`   | `/users/{id}/pin` | device token + elevated | Change PIN |
 
 ### Devices
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET`    | `/devices` | device token | List own devices (admins see all) |
+| `GET`    | `/users/{id}/devices` | device token | List user's registered devices |
 | `DELETE` | `/devices/{id}` | device token | Revoke device |
-
-### Roles & Permissions
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET`   | `/roles` | device token | List role permissions |
-| `PATCH` | `/roles/{role}` | device token + elevated, role = owner | Update role permissions |
+| `PATCH`  | `/devices/{id}` | device token | Rename device |
 
 ### System
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/me` | — | Own user info or guest context |
-| `GET` | `/health` | — | Module health check |
+| `GET` | `/auth/status` | — | Check if first-time setup is needed |
 
 ---
 
@@ -307,15 +317,15 @@ React component (`src/components/KioskElevationGate.tsx`) that wraps restricted 
 
 **Applies to all browser sessions** — there are no "trusted" browsers. Registered devices are only used for push notifications and QR auth, not to bypass elevation.
 
-**Restricted routes**: `/modules`, `/system`, `/integrity`, `/settings`
+**Restricted routes**: `/settings/*` (includes Modules, System Info, Integrity as tabs)
 **Always accessible**: `/` (dashboard)
 
 **Behaviour:**
-1. User navigates to a restricted section
+1. User clicks gear icon in TopBar
 2. Gate overlay covers the full screen
 3. User unlocks via PIN tab (username + PIN) or QR tab
 4. Elevated token stored in `sessionStorage` + Zustand store
-5. On success: overlay slides away, restricted section renders
+5. On success: overlay slides away, Settings section renders
 6. Inactivity 5 min → session auto-revoked → gate re-appears
 
 **PIN auth paths:**
@@ -335,13 +345,13 @@ React component (`src/components/KioskElevationGate.tsx`) that wraps restricted 
 
 ## Security Notes
 
-- `device_token` is generated via `secrets.token_urlsafe(48)` — 64 characters of base64url
+- `device_token` is generated via `uuid.uuid4()` — stored as SHA-256 hash only
 - Only the SHA-256 hash of the token is stored in the database
 - `elevated_token` is a separate short-lived token, never reused
 - QR sessions live only in-memory; a restart clears all pending sessions
 - `qr_join.html` reads the phone's token from `localStorage` / cookie — the token is **never** sent via URL
 - PATCH/DELETE on users requires both a valid device_token **and** a valid elevated_token
-- PIN brute-force protection: rate-limiting middleware (5 attempts → 10 min lock) is handled at the API middleware layer
+- PIN brute-force protection: 5 failed attempts → 10 min lockout (per-user, in-memory)
 
 ---
 
@@ -350,18 +360,24 @@ React component (`src/components/KioskElevationGate.tsx`) that wraps restricted 
 ```
 system_modules/user_manager/
   module.py          — FastAPI routes, QR session logic, LAN IP detection
-  profiles.py        — UserManager: CRUD, PIN hashing, role checks
+  profiles.py        — UserManager: CRUD, PIN hashing (admin/resident model)
   devices.py         — DeviceManager: token creation, verification, revoke
-  elevated.py        — ElevatedManager: short-lived elevated tokens
-  permissions.py     — PermissionsManager: per-role config
+  elevated.py        — ElevatedManager: short-lived elevated tokens (5 min TTL)
+  pin_auth.py        — PIN rate limiting (5 attempts → 10 min lock)
+  sessions.py        — BrowserSessionManager: temporary QR-based browser sessions
+  face_auth.py       — Face recognition enrollment/verification
+  audit_log.py       — Audit trail logging
   qr_join.html       — Phone approval page (standalone HTML, EN/UK)
   manifest.json      — SYSTEM type, no port field
 
 src/components/
-  AuthWall.tsx           — New browser registration overlay (PIN + QR tabs)
   KioskElevationGate.tsx — Kiosk lock overlay (PIN + QR tabs, countdown)
+  Layout.tsx             — TopBar with logo (→ home), gear icon (→ settings)
+  Settings.tsx           — All admin tabs (Appearance, Users, Modules, System, etc.)
+  UsersPanel.tsx         — User management (create residents, link devices)
 
-src/i18n/locales/
-  en.ts  — auth.* and kiosk.* keys
-  uk.ts  — auth.* and kiosk.* keys (Ukrainian)
+src/hooks/
+  useElevated.ts         — Elevated token lifecycle management
+  useKioskInactivity.ts  — 5-min inactivity auto-lock
+  useSessionKeepAlive.ts — QR session heartbeat
 ```

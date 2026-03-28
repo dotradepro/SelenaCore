@@ -110,7 +110,7 @@ module.register_static_routes(app)
 | llm_engine | 8101 |
 | ui_core | 80 (отдельно) |
 | secrets_vault | 8102 |
-| user_manager | 8103 |
+| user_manager | — (in-process, без порта) |
 | hw_monitor | 8104 |
 | backup_manager | 8105 |
 | remote_access | 8106 |
@@ -2621,13 +2621,13 @@ qrcode>=7.4
 
 ### Назначение
 
-Управление пользователями SelenaCore. CRUD профилей (admin/resident/guest), PIN-аутентификация с rate limiting, Face ID через face_recognition, голосовая биометрия через resemblyzer, аудит-лог действий.
+Управление пользователями SelenaCore. Плоская модель: первый пользователь = admin, остальные = resident (жильцы). CRUD профилей, PIN-аутентификация с rate limiting, Face ID через face_recognition, голосовая биометрия через resemblyzer, аудит-лог действий. Ролевых разрешений нет — гейт PIN/QR является единственным барьером безопасности.
 
 ### 15.1 Профили пользователей
 
 ```python
 # Хранение: SQLite в /var/lib/selena/selena.db
-# Роли: admin | resident | guest
+# Роли: admin (первый) | resident (все остальные)
 
 # Таблица users:
 # user_id TEXT PK, username TEXT UNIQUE, display_name TEXT,
@@ -2705,7 +2705,7 @@ GET    /audit?limit=100            → аудит-лог
 user.authenticated     { user_id, method: "pin"|"face"|"voice" }
 user.login_failed      { user_id, method, reason }
 user.lockout           { user_id, duration_sec: 600 }
-user.created           { user_id, username, role }
+user.created           { user_id, username }
 user.deleted           { user_id }
 ```
 
@@ -2713,9 +2713,9 @@ user.deleted           { user_id }
 
 ```
 Список пользователей:
-  Аватар · Имя · Роль · Последний вход
+  Аватар · Имя · Присутствие · Последний вход
   Значки: 🔐 PIN | 👤 Face ID | 🎤 Voice ID
-Кнопка "Добавить пользователя"
+Кнопка "Добавить жильца"
 ```
 
 **Зависимости:**
