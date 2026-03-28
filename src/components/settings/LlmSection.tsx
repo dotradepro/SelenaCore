@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Download, Trash2, Check, Eye, EyeOff, Loader2, Play, Square, MessageSquare } from 'lucide-react';
+import { RefreshCw, Download, Trash2, Check, Eye, EyeOff, Loader2, Play, Square, MessageSquare, Cloud } from 'lucide-react';
+import AccelBadge from './AccelBadge';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 
@@ -37,6 +38,9 @@ export default function LlmSection() {
   const [pullProgress, setPullProgress] = useState(0);
   const [pullStatus, setPullStatus] = useState('');
   const [activeModel, setActiveModel] = useState('');
+
+  // Hardware
+  const [gpuActive, setGpuActive] = useState(false);
 
   // System prompt
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -99,6 +103,7 @@ export default function LlmSection() {
     fetchOllamaModels();
     fetchActiveModel();
     fetchSystemPrompt();
+    fetch('/api/ui/setup/hardware/status').then(r => r.json()).then(d => setGpuActive(d.gpu_active || false)).catch(() => {});
   }, [fetchProviders, fetchOllamaStatus, fetchOllamaModels, fetchActiveModel, fetchSystemPrompt]);
 
   // When switching provider tab, load cloud models if configured
@@ -310,7 +315,17 @@ export default function LlmSection() {
     <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
       {/* Header */}
       <div style={{ marginBottom: 16 }}>
-        <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.llmRouter')}</h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.llmRouter')}</h4>
+          {activeProvider === 'ollama'
+            ? <AccelBadge mode={gpuActive ? 'gpu' : 'cpu'} />
+            : <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                fontSize: 10, fontWeight: 500, padding: '2px 6px', borderRadius: 4,
+                background: 'rgba(168,85,247,0.12)', color: '#a855f7',
+              }}><Cloud size={10} /> Cloud</span>
+          }
+        </div>
         <p style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 2 }}>{t('settings.llmProviderDesc')}</p>
       </div>
 

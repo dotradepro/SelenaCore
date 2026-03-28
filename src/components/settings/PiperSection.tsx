@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, Download, Trash2, Check, Search, Play, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
+import AccelBadge from './AccelBadge';
 
 interface PiperVoice {
   id: string;
@@ -45,6 +46,8 @@ export default function PiperSection() {
   const [numSpeakers, setNumSpeakers] = useState(1);
   const [savingSettings, setSavingSettings] = useState(false);
   const [testText, setTestText] = useState('');
+  const [gpuActive, setGpuActive] = useState(false);
+  const [onnxGpu, setOnnxGpu] = useState(false);
 
   const checkStatus = useCallback(async () => {
     try {
@@ -80,6 +83,10 @@ export default function PiperSection() {
     checkStatus();
     fetchInstalled();
     fetchSettings();
+    fetch('/api/ui/setup/hardware/status').then(r => r.json()).then(d => {
+      setGpuActive(d.gpu_active || false);
+      setOnnxGpu(d.onnxruntime_gpu || false);
+    }).catch(() => {});
   }, [checkStatus, fetchInstalled, fetchSettings]);
 
   const handleInstall = async () => {
@@ -261,7 +268,10 @@ export default function PiperSection() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.ttsVoice')}</h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.ttsVoice')}</h4>
+            <AccelBadge mode={gpuActive && onnxGpu ? 'gpu' : 'cpu'} />
+          </div>
           <p style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 2 }}>Piper TTS</p>
         </div>
         <span className={cn("text-xs px-2 py-1 rounded-md font-medium",

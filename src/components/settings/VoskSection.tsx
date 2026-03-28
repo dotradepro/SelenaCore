@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Download, Trash2, Check, Search, Loader2, Mic, Volume2, Send, Bot, MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
+import AccelBadge from './AccelBadge';
 
 interface VoskModel {
   id: string;
@@ -287,7 +288,10 @@ export default function VoskSection() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.sttModel')}</h4>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.sttModel')}</h4>
+            <AccelBadge mode="cpu-only" />
+          </div>
           <p style={{ fontSize: 12, color: 'var(--tx2)', marginTop: 2 }}>Vosk — {t('settings.voiceAssistantDesc')}</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
