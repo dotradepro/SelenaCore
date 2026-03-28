@@ -1,7 +1,7 @@
 {
     "name": "user-manager",
     "version": "1.0.0",
-    "description": "User profiles, device-token authentication, and role-based access control",
+    "description": "User profiles, device-token authentication, and PIN/QR elevation gate",
     "type": "SYSTEM",
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",

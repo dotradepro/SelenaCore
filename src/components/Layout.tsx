@@ -112,31 +112,6 @@ function useClock() {
 }
 
 /* ── SVG icons ── */
-const IcoHome = () => (
-  <svg viewBox="0 0 18 18" fill="none" width="18" height="18">
-    <path d="M2 8.5L9 2l7 6.5V16h-4v-4H6v4H2V8.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-  </svg>
-);
-const IcoModules = () => (
-  <svg viewBox="0 0 18 18" fill="none" width="18" height="18">
-    <rect x="2" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-    <rect x="10" y="2" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-    <rect x="2" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-    <rect x="10" y="10" width="6" height="6" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-  </svg>
-);
-const IcoSystem = () => (
-  <svg viewBox="0 0 18 18" fill="none" width="18" height="18">
-    <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-    <path d="M9 2v1.5M9 14.5V16M2 9h1.5M14.5 9H16M4.1 4.1l1.1 1.1M12.8 12.8l1.1 1.1M4.1 13.9l1.1-1.1M12.8 5.2l1.1-1.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-  </svg>
-);
-const IcoIntegrity = () => (
-  <svg viewBox="0 0 18 18" fill="none" width="18" height="18">
-    <path d="M9 2L3 5.5V10c0 3.5 2.5 6 6 7 3.5-1 6-3.5 6-7V5.5L9 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    <path d="M6.5 9.5l2 2 3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
 const IcoMic = () => (
   <svg viewBox="0 0 13 13" fill="none" width="13" height="13">
     <rect x="4" y="1" width="5" height="7" rx="2.5" stroke="currentColor" strokeWidth="1.2" />
@@ -151,13 +126,6 @@ const IcoSettings = () => (
   </svg>
 );
 
-const PAGES = [
-  { id: 'home', path: '/', label: 'Home', Icon: IcoHome },
-  { id: 'modules', path: '/modules', label: 'Modules', Icon: IcoModules },
-  { id: 'system', path: '/system', label: 'System', Icon: IcoSystem },
-  { id: 'integrity', path: '/integrity', label: 'Integrity', Icon: IcoIntegrity },
-];
-
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -168,7 +136,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fetchStats = useStore((s) => s.fetchStats);
   const fetchModules = useStore((s) => s.fetchModules);
   const voiceStatus = useStore((s) => s.voiceStatus);
-  const user = useStore((s) => s.user);
 
   useEffect(() => {
     fetchStats();
@@ -215,14 +182,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         flexShrink: 0,
         zIndex: 10,
       }}>
-        {/* Logo */}
-        <div style={{
-          width: 26, height: 26,
-          background: 'var(--ac)',
-          borderRadius: 7,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0, marginRight: 6,
-        }}>
+        {/* Logo — click to go home */}
+        <div
+          onClick={() => navigate('/')}
+          style={{
+            width: 26, height: 26,
+            background: 'var(--ac)',
+            borderRadius: 7,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, marginRight: 6,
+            cursor: 'pointer',
+          }}
+        >
           <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
             <path d="M7 1L2 4v5.5L7 13l5-3.5V4L7 1Z" stroke="white" strokeWidth="1.3" strokeLinejoin="round" />
             <circle cx="7" cy="7" r="1.8" fill="white" />
@@ -283,79 +254,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               {date}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* ═══════════ BODY ═══════════ */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'var(--sidebar) 1fr', overflow: 'hidden' }}>
-
-        {/* ── SIDEBAR ── */}
-        <nav style={{
-          background: 'var(--sf)',
-          borderRight: '1px solid var(--b)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          padding: '8px 0',
-          gap: 4,
-        }}>
-          {/* Home, Modules */}
-          {PAGES.slice(0, 2).map(({ id, path, label, Icon }) => (
-            <button
-              key={id}
-              title={label}
-              style={isActive(path) ? snavActive : snav}
-              onClick={() => navigate(path)}
-            >
-              <Icon />
-            </button>
-          ))}
 
           {/* Separator */}
-          <div style={{ width: 28, height: 1, background: 'var(--b)', margin: '4px 0', flexShrink: 0 }} />
+          <div style={{ width: 1, height: 18, background: 'var(--b2)', margin: '0 2px', flexShrink: 0 }} />
 
-          {/* System, Integrity */}
-          {PAGES.slice(2).map(({ id, path, label, Icon }) => (
-            <button
-              key={id}
-              title={label}
-              style={isActive(path) ? snavActive : snav}
-              onClick={() => navigate(path)}
-            >
-              <Icon />
-            </button>
-          ))}
-
-          <div style={{ flex: 1 }} />
-
-          {/* Separator */}
-          <div style={{ width: 28, height: 1, background: 'var(--b)', margin: '4px 0', flexShrink: 0 }} />
-
-          {/* User role avatar */}
-          {user && (
-            <button
-              title={`${user.name} · ${user.role}`}
-              onClick={() => navigate('/settings/users')}
-              style={{
-                width: 30, height: 30, borderRadius: '50%',
-                border: `2px solid ${user.role === 'owner' ? '#7c3aed'
-                  : user.role === 'admin' ? '#3b82f6'
-                    : user.role === 'user' ? '#10b981'
-                      : '#52525b'
-                  }`,
-                background: 'var(--sf3)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 700,
-                color: 'var(--tx)',
-                cursor: 'pointer',
-                flexShrink: 0,
-              }}
-            >
-              {user.name.slice(0, 1).toUpperCase()}
-            </button>
-          )}
-
-          {/* Settings */}
+          {/* Settings gear */}
           <button
             title="Settings"
             style={isActive('/settings') ? snavActive : snav}
@@ -368,16 +271,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div style={{
             width: 6, height: 6, borderRadius: '50%',
             background: intOk ? 'var(--gr)' : 'var(--rd)',
-            marginBottom: 8, flexShrink: 0,
+            flexShrink: 0,
             boxShadow: `0 0 5px ${intOk ? 'var(--gr)' : 'var(--rd)'}`,
           }} className="live-dot" />
-        </nav>
-
-        {/* ── PAGE CONTENT ── */}
-        <main style={{ position: 'relative', overflow: 'hidden' }}>
-          {children}
-        </main>
+        </div>
       </div>
+
+      {/* ═══════════ BODY ═══════════ */}
+      <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {children}
+      </main>
 
     </div>
   );

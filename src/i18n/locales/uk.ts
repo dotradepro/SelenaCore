@@ -477,6 +477,7 @@ const uk = {
             pinIncorrect: 'Невірний PIN',
             elevatedExpired: 'Сесія завершилась — підтвердіть PIN знову.',
             wallSubtitle: 'Доступ обмежено',
+            wallPinHint: 'Введіть PIN-код для продовження',
             wallNotice: 'Цей браузер не зареєстровано. Введіть імʼя користувача і PIN для продовження.',
             wallEnter: 'Увійти',
             wallFooter: 'SmartHome LK · Локальний хаб',

@@ -98,6 +98,16 @@ class ElevatedManager:
         session.expires_at = time.time() + ttl
         return True
 
+    def get_user_id(self, token: str) -> str | None:
+        """Return the user_id for a valid elevated token, or None."""
+        session = self._sessions.get(token)
+        if session is None:
+            return None
+        if time.time() > session.expires_at:
+            self._sessions.pop(token, None)
+            return None
+        return session.user_id
+
     def refresh(self, token: str, ttl: int = _DEFAULT_TTL_SEC) -> bool:
         """Extend the TTL of an existing elevated session.
 

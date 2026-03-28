@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X } from 'lucide-react';
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import UsersPanel from './UsersPanel';
+import Modules from './Modules';
+import ModuleDetail from './ModuleDetail';
+import SystemPage from './SystemPage';
+import IntegrityPage from './IntegrityPage';
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -16,13 +20,16 @@ export default function Settings() {
     { id: 'audio', label: t('settings.audio'), icon: Volume2, path: '/settings/audio' },
     { id: 'network', label: t('settings.networkAndVpn'), icon: Network, path: '/settings/network' },
     { id: 'users', label: t('settings.users'), icon: Users, path: '/settings/users' },
+    { id: 'modules', label: t('settings.modules', 'Modules'), icon: LayoutGrid, path: '/settings/modules' },
     { id: 'system', label: t('settings.system'), icon: Activity, path: '/settings/system' },
+    { id: 'system-info', label: t('settings.systemInfo', 'System Info'), icon: Cpu, path: '/settings/system-info' },
+    { id: 'integrity', label: t('settings.integrity', 'Integrity'), icon: ShieldCheck, path: '/settings/integrity' },
     { id: 'security', label: t('settings.security'), icon: Shield, path: '/settings/security' },
     { id: 'system-modules', label: t('settings.systemModules'), icon: Cpu, path: '/settings/system-modules' },
   ];
 
   const activeId =
-    tabs.find(tab => location.pathname === tab.path)?.id ??
+    tabs.find(tab => location.pathname === tab.path || location.pathname.startsWith(tab.path + '/'))?.id ??
     (location.pathname === '/settings' ? 'appearance' : '');
 
   return (
@@ -61,7 +68,12 @@ export default function Settings() {
           <Route path="/audio" element={<AudioSettings />} />
           <Route path="/network" element={<NetworkSettings />} />
           <Route path="/users" element={<UsersSettings />} />
+          <Route path="/modules" element={<Modules />} />
+          <Route path="/modules/:name" element={<ModuleDetail />} />
           <Route path="/system" element={<SystemSettings />} />
+          <Route path="/system-info" element={<SystemPage />} />
+          <Route path="/integrity" element={<IntegrityPage />} />
+          <Route path="/security" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
           <Route path="/system-modules" element={<SystemModulesSettings />} />
           <Route path="*" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
         </Routes>
@@ -387,10 +399,12 @@ function AudioSettings() {
 
   useEffect(() => {
     fetch('/api/ui/setup/audio/devices').then(r => r.json()).then(data => {
-      setInputs(data.inputs || []);
-      setOutputs(data.outputs || []);
-      if (data.inputs?.length) setSelectedInput(data.inputs[0].id);
-      if (data.outputs?.length) setSelectedOutput(data.outputs[0].id);
+      const ins = data.inputs || [];
+      const outs = data.outputs || [];
+      setInputs(ins);
+      setOutputs(outs);
+      setSelectedInput(data.selected_input || (ins.length ? ins[0].id : ''));
+      setSelectedOutput(data.selected_output || (outs.length ? outs[0].id : ''));
     }).catch(() => { });
   }, []);
 
@@ -444,6 +458,7 @@ function NetworkSettings() {
   const [netStatus, setNetStatus] = useState<any>(null);
   const [wifiNetworks, setWifiNetworks] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [selectedSsid, setSelectedSsid] = useState('');
@@ -457,6 +472,26 @@ function NetworkSettings() {
   }, []);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  const wifiEnabled = netStatus?.wifi?.enabled ?? false;
+  const wifiAdapterFound = netStatus?.wifi?.adapter_found ?? false;
+
+  const toggleWifi = async () => {
+    setToggling(true);
+    try {
+      const res = await fetch('/api/ui/setup/wifi/toggle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: !wifiEnabled }),
+      });
+      if (res.ok) {
+        // Wait for adapter to settle, then refresh status + scan
+        await new Promise(r => setTimeout(r, 2000));
+        await fetchStatus();
+        if (!wifiEnabled) scanWifi();
+      }
+    } catch { /* ignore */ }
+    setToggling(false);
+  };
 
   const scanWifi = async () => {
     setScanning(true);
@@ -483,7 +518,7 @@ function NetworkSettings() {
       } else {
         setPassword('');
         setSelectedSsid('');
-        fetchStatus();
+        await fetchStatus();
       }
     } catch (e: any) { setConnectError(e.message); }
     setConnecting(null);
@@ -507,65 +542,103 @@ function NetworkSettings() {
                 {netStatus.internet ? t('settings.connected') : t('settings.disconnected')}
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-zinc-400">IP</span>
-              <span className="text-zinc-200 font-mono text-xs">{netStatus.ip}</span>
-            </div>
-            {netStatus.interfaces?.map((iface: any) => (
-              <div key={iface.name} className="flex items-center justify-between text-sm">
-                <span className="text-zinc-400">{iface.name} ({iface.type})</span>
-                <span className="text-zinc-200 font-mono text-xs">{iface.ip}</span>
+            {netStatus.ethernet?.connected && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-400">Ethernet ({netStatus.ethernet.interface})</span>
+                <span className="text-zinc-200 font-mono text-xs">{netStatus.ethernet.ip}</span>
               </div>
-            ))}
+            )}
+            {netStatus.wifi?.connected && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-400">Wi-Fi ({netStatus.wifi.ssid})</span>
+                <span className="text-zinc-200 font-mono text-xs">{netStatus.wifi.ip}</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-sm text-zinc-500">{t('common.loading')}</div>
         )}
       </div>
 
-      {/* WiFi Networks */}
+      {/* WiFi Toggle + Networks */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="font-medium">{t('settings.wifiNetworks')}</h4>
-          <button onClick={scanWifi} disabled={scanning}
-            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors">
-            <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
-            {t('settings.scan')}
-          </button>
-        </div>
-        {!netStatus?.nmcli_available && (
-          <div className="text-xs text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2 mb-3">
-            {t('settings.nmcliNotAvailable')}
+          <div className="flex items-center gap-3">
+            <Wifi size={18} className={wifiEnabled ? "text-emerald-500" : "text-zinc-500"} />
+            <h4 className="font-medium">Wi-Fi</h4>
           </div>
-        )}
-        <div className="space-y-2 max-h-[240px] overflow-y-auto">
-          {wifiNetworks.map(net => (
-            <button key={net.ssid} onClick={() => { setSelectedSsid(net.ssid); setPassword(''); setConnectError(''); }}
-              className={cn("w-full p-3 rounded-lg border flex items-center justify-between text-sm transition-all",
-                selectedSsid === net.ssid ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700")}>
-              <div className="flex items-center gap-2">
-                <Wifi size={16} className={net.connected ? "text-emerald-500" : "text-zinc-400"} />
-                <span>{net.ssid}</span>
-                {net.security && <Lock size={12} className="text-zinc-500" />}
-              </div>
-              <span className="text-xs text-zinc-500">{net.signal}%</span>
+          {wifiAdapterFound ? (
+            <button onClick={toggleWifi} disabled={toggling}
+              className={cn(
+                "relative w-11 h-6 rounded-full transition-colors",
+                wifiEnabled ? "bg-emerald-500" : "bg-zinc-700",
+                toggling && "opacity-50"
+              )}>
+              <span className={cn(
+                "absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm",
+                wifiEnabled && "translate-x-5"
+              )} />
             </button>
-          ))}
-          {wifiNetworks.length === 0 && !scanning && (
-            <div className="text-center text-sm text-zinc-500 py-4">{t('settings.clickScan')}</div>
+          ) : (
+            <span className="text-xs text-zinc-500">{t('wizard.wifiAdapterNotFound')}</span>
           )}
         </div>
-        {selectedSsid && (
-          <div className="mt-4 space-y-3">
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-              placeholder={t('settings.wifiPassword')}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
-            {connectError && <div className="text-xs text-red-400">{connectError}</div>}
-            <button onClick={connectWifi} disabled={connecting !== null}
-              className="px-4 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50">
-              {connecting ? t('settings.connecting') : t('settings.connect')}
-            </button>
-          </div>
+
+        {wifiAdapterFound && !wifiEnabled && (
+          <p className="text-sm text-zinc-500">{t('wizard.wifiAdapterOff')}</p>
+        )}
+
+        {wifiEnabled && (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm text-zinc-400">
+                {netStatus?.wifi?.connected
+                  ? `${t('settings.connected')}: ${netStatus.wifi.ssid}`
+                  : t('settings.disconnected')}
+              </span>
+              <button onClick={scanWifi} disabled={scanning}
+                className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 transition-colors">
+                <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
+                {t('settings.scan')}
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[240px] overflow-y-auto">
+              {wifiNetworks.map(net => (
+                <button key={net.ssid} onClick={() => { setSelectedSsid(net.ssid); setPassword(''); setConnectError(''); }}
+                  className={cn("w-full p-3 rounded-lg border flex items-center justify-between text-sm transition-all",
+                    selectedSsid === net.ssid ? "border-emerald-500 bg-emerald-500/10" : "border-zinc-800 bg-zinc-950 hover:border-zinc-700")}>
+                  <div className="flex items-center gap-2">
+                    <Wifi size={16} className={net.connected ? "text-emerald-500" : "text-zinc-400"} />
+                    <span>{net.ssid}</span>
+                    {net.connected && <span className="text-xs text-emerald-500">{t('settings.connected')}</span>}
+                    {net.security && <Lock size={12} className="text-zinc-500" />}
+                  </div>
+                  <span className="text-xs text-zinc-500">{net.signal}%</span>
+                </button>
+              ))}
+              {wifiNetworks.length === 0 && !scanning && (
+                <div className="text-center text-sm text-zinc-500 py-4">{t('settings.clickScan')}</div>
+              )}
+              {scanning && (
+                <div className="text-center text-sm text-zinc-500 py-4">{t('wizard.wifiScanning')}</div>
+              )}
+            </div>
+
+            {selectedSsid && (
+              <div className="mt-4 space-y-3">
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder={t('settings.wifiPassword')}
+                  onKeyDown={(e) => e.key === 'Enter' && connectWifi()}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+                {connectError && <div className="text-xs text-red-400">{connectError}</div>}
+                <button onClick={connectWifi} disabled={connecting !== null}
+                  className="px-4 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50">
+                  {connecting ? t('settings.connecting') : t('settings.connect')}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

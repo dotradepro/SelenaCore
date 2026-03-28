@@ -1,7 +1,8 @@
 """
 system_modules/user_manager/profiles.py — User profiles CRUD
 
-Roles: admin | resident | guest
+First user is "admin", all subsequent users are "resident" (house members).
+No role-based permission checks — the PIN/QR elevation gate is the security boundary.
 Storage: SQLite (same DB used by core registry)
 """
 from __future__ import annotations
@@ -20,9 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 logger = logging.getLogger(__name__)
 
 DB_URL = os.environ.get("SELENA_DB_URL", "sqlite+aiosqlite:////var/lib/selena/selena.db")
-VALID_ROLES = {"owner", "admin", "user", "guest"}
-# backward-compat alias: "resident" stored in old DB rows maps to "user"
-_ROLE_ALIAS = {"resident": "user"}
+VALID_ROLES = {"admin", "resident"}
 
 
 @dataclass
@@ -86,6 +85,11 @@ class UserManager:
                     active INTEGER NOT NULL DEFAULT 1
                 )
             """))
+            # Migration: normalize legacy roles to admin/resident
+            await conn.execute(text("UPDATE users SET role = 'admin' WHERE role = 'owner'"))
+            await conn.execute(text("UPDATE users SET role = 'resident' WHERE role NOT IN ('admin', 'resident')"))
+            # Drop legacy permissions table
+            await conn.execute(text("DROP TABLE IF EXISTS role_config"))
 
     async def _execute(self, query: str, params: dict | None = None) -> Any:
         engine = await self._get_engine()
@@ -107,7 +111,8 @@ class UserManager:
 
     def _row_to_profile(self, row: dict) -> UserProfile:
         role = row["role"]
-        role = _ROLE_ALIAS.get(role, role)  # map legacy "resident" → "user"
+        if role not in VALID_ROLES:
+            role = "resident"  # normalize legacy roles
         return UserProfile(
             user_id=row["user_id"],
             username=row["username"],
@@ -131,12 +136,7 @@ class UserManager:
         username: str,
         display_name: str,
         pin: str,
-        role: str = "user",
     ) -> UserProfile:
-        # Map legacy alias
-        role = _ROLE_ALIAS.get(role, role)
-        if role not in VALID_ROLES:
-            raise ValueError(f"Invalid role '{role}'. Must be one of {VALID_ROLES}")
         if not pin or not pin.isdigit() or len(pin) < 4:
             raise InvalidPinError("PIN must be at least 4 digits")
 
@@ -146,10 +146,12 @@ class UserManager:
         if existing:
             raise UserAlreadyExistsError(f"Username '{username}' already exists")
 
-        # First ever user automatically becomes owner
+        # First ever user is the administrator; everyone else is a resident
         if await self.count_users() == 0:
-            role = "owner"
-            logger.info("First user — assigning role=owner")
+            role = "admin"
+            logger.info("First user — assigning role=admin")
+        else:
+            role = "resident"
 
         user_id = str(uuid.uuid4())
         now = time.time()
@@ -182,14 +184,10 @@ class UserManager:
         return [self._row_to_profile(r) for r in rows]
 
     async def update(self, user_id: str, **fields) -> UserProfile:
-        allowed = {"display_name", "role", "face_enrolled", "voice_enrolled", "active"}
+        allowed = {"display_name", "face_enrolled", "voice_enrolled", "active"}
         update_fields = {k: v for k, v in fields.items() if k in allowed}
         if not update_fields:
             raise ValueError("No valid fields to update")
-        if "role" in update_fields:
-            update_fields["role"] = _ROLE_ALIAS.get(update_fields["role"], update_fields["role"])
-            if update_fields["role"] not in VALID_ROLES:
-                raise ValueError(f"Invalid role: {update_fields['role']}")
 
         set_clause = ", ".join(f"{k} = :{k}" for k in update_fields)
         await self._execute(
@@ -217,6 +215,15 @@ class UserManager:
         if not row:
             return False
         return row["pin_hash"] == _hash_pin(pin)
+
+    async def find_by_pin(self, pin: str) -> UserProfile | None:
+        """Find the first active user whose PIN matches (for PIN-only auth)."""
+        pin_hash = _hash_pin(pin)
+        row = await self._fetch_one(
+            "SELECT * FROM users WHERE pin_hash = :h AND active = 1 LIMIT 1",
+            {"h": pin_hash},
+        )
+        return self._row_to_profile(row) if row else None
 
     async def delete(self, user_id: str) -> None:
         """Soft delete — sets active=0."""

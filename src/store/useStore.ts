@@ -345,15 +345,20 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchWizardStatus: async () => {
     set({ wizardLoading: true });
-    try {
-      const data = await apiFetch('/api/ui/wizard/status');
-      set({ isConfigured: data?.completed === true });
-    } catch (e) {
-      console.error('fetchWizardStatus failed', e);
-      set({ isConfigured: false });
-    } finally {
-      set({ wizardLoading: false });
+    const maxRetries = 5;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const data = await apiFetch('/api/ui/wizard/status');
+        set({ isConfigured: data?.completed === true, wizardLoading: false });
+        return;
+      } catch (e) {
+        console.error(`fetchWizardStatus attempt ${attempt}/${maxRetries} failed`, e);
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
     }
+    set({ isConfigured: false, wizardLoading: false });
   },
 
   fetchWizardRequirements: async () => {

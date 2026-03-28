@@ -1,52 +1,108 @@
 /**
- * AuthWall — full-screen authorization gate for unregistered browsers.
+ * AuthWall — full-screen PIN authorization gate.
  *
- * Two tabs:
- *  • PIN  — enter username + PIN to authenticate. Creates a device_token.
- *  • QR   — this browser shows a QR code; a registered device scans and approves.
- *           Polls /auth/qr/status until complete, then stores device_token.
+ * iPhone-style numeric keypad — PIN only, no username.
+ * Also supports QR tab for phone-based approval.
  *
- * Kiosk devices (localhost / 127.0.0.1 / ?kiosk=1) bypass this wall entirely
- * via AuthGate in App.tsx.
+ * Kiosk devices bypass this wall via AuthGate in App.tsx.
  */
-import { useState, useEffect, useRef, type KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, AlertCircle, Smartphone, QrCode, KeyRound, Check, RefreshCw, UserPlus } from 'lucide-react';
+import { AlertCircle, QrCode, KeyRound, Check, RefreshCw, UserPlus, Delete, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 
 const UM = '/api/ui/modules/user-manager';
+const PIN_LENGTH = 4;
 
-// ─── PIN Tab ──────────────────────────────────────────────────────────────────
+// ─── Numeric Keypad (iPhone-style) ──────────────────────────────────────────
+
+function NumPad({ onDigit, onDelete }: { onDigit: (d: string) => void; onDelete: () => void }) {
+    const keys = [
+        ['1', '2', '3'],
+        ['4', '5', '6'],
+        ['7', '8', '9'],
+        ['', '0', 'del'],
+    ];
+
+    return (
+        <div className="grid grid-cols-3 gap-4 mx-auto" style={{ width: 'fit-content' }}>
+            {keys.flat().map((key, i) => {
+                if (key === '') return <div key={i} className="w-[72px] h-[72px]" />;
+                if (key === 'del') {
+                    return (
+                        <button
+                            key="del"
+                            onClick={onDelete}
+                            className="w-[72px] h-[72px] rounded-full flex items-center justify-center transition-all duration-150 active:scale-90"
+                            style={{ color: 'var(--tx2)' }}
+                        >
+                            <Delete size={22} />
+                        </button>
+                    );
+                }
+                return (
+                    <button
+                        key={key}
+                        onClick={() => onDigit(key)}
+                        className="numpad-key w-[72px] h-[72px] rounded-full text-[26px] font-light flex items-center justify-center transition-all duration-150 active:scale-90"
+                    >
+                        {key}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+// ─── PIN Dots ────────────────────────────────────────────────────────────────
+
+function PinDots({ length, filled, shake }: { length: number; filled: number; shake: boolean }) {
+    return (
+        <div className={cn("flex gap-3 justify-center mb-8", shake && "animate-[shake_0.4s_ease-in-out]")}>
+            {Array.from({ length }).map((_, i) => (
+                <div
+                    key={i}
+                    className={cn(
+                        "w-3.5 h-3.5 rounded-full transition-all duration-200",
+                        i < filled ? "scale-110" : "scale-100",
+                    )}
+                    style={{
+                        background: i < filled ? 'var(--ac, #7c3aed)' : 'var(--b, rgba(255,255,255,0.1))',
+                    }}
+                />
+            ))}
+        </div>
+    );
+}
+
+// ─── PIN Tab ─────────────────────────────────────────────────────────────────
+
 function PinTab({ onSuccess }: { onSuccess: () => void }) {
     const { t } = useTranslation();
-
-    const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
-    const [showPin, setShowPin] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [shake, setShake] = useState(false);
     const [done, setDone] = useState(false);
 
-    const canSubmit = username.trim().length > 0 && pin.length >= 4 && !loading;
-
-    const submit = async () => {
-        if (!canSubmit) return;
+    const submit = useCallback(async (fullPin: string) => {
         setLoading(true);
         setError(null);
         try {
             const name = navigator.userAgent.slice(0, 40);
-            const res = await fetch(`${UM}/auth/device/register`, {
+            const res = await fetch(`${UM}/auth/pin/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ username: username.trim(), pin, device_name: name }),
+                body: JSON.stringify({ pin: fullPin, device_name: name }),
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
-                setError(body.detail ?? t('auth.registerFailed'));
-                setPin('');
+                setError(body.detail ?? t('auth.pinIncorrect'));
+                setShake(true);
+                setTimeout(() => { setShake(false); setPin(''); }, 500);
                 return;
             }
             if (body.device_token) {
@@ -56,15 +112,44 @@ function PinTab({ onSuccess }: { onSuccess: () => void }) {
                 } catch { /* ignore */ }
             }
             setDone(true);
-            setTimeout(onSuccess, 800);
+            setTimeout(onSuccess, 600);
         } catch {
             setError(t('common.error'));
+            setShake(true);
+            setTimeout(() => { setShake(false); setPin(''); }, 500);
         } finally {
             setLoading(false);
         }
-    };
+    }, [onSuccess, t]);
 
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') submit(); };
+    const addDigit = useCallback((d: string) => {
+        if (loading || done) return;
+        setError(null);
+        setPin(prev => {
+            const next = prev + d;
+            if (next.length >= PIN_LENGTH) {
+                setTimeout(() => submit(next), 150);
+            }
+            return next.length <= PIN_LENGTH ? next : prev;
+        });
+    }, [loading, done, submit]);
+
+    const deleteDigit = useCallback(() => {
+        if (loading || done) return;
+        setError(null);
+        setPin(prev => prev.slice(0, -1));
+    }, [loading, done]);
+
+    // Physical keyboard support
+    useEffect(() => {
+        const handler = (e: globalThis.KeyboardEvent) => {
+            if (loading || done) return;
+            if (e.key >= '0' && e.key <= '9') addDigit(e.key);
+            else if (e.key === 'Backspace') deleteDigit();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [addDigit, deleteDigit, loading, done]);
 
     if (done) {
         return (
@@ -80,103 +165,35 @@ function PinTab({ onSuccess }: { onSuccess: () => void }) {
     }
 
     return (
-        <div className="space-y-4">
-            {/* Username */}
-            <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.username')}
-                </label>
-                <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => { setUsername(e.target.value); setError(null); }}
-                    onKeyDown={handleKey}
-                    disabled={loading}
-                    autoComplete="username"
-                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
-                    style={{
-                        background: 'var(--bg)',
-                        border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`,
-                        color: 'var(--tx)',
-                    }}
-                    placeholder={t('auth.usernamePlaceholder')}
-                />
-            </div>
+        <div className="flex flex-col items-center">
+            <PinDots length={PIN_LENGTH} filled={pin.length} shake={shake} />
 
-            {/* PIN */}
-            <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.pin')}
-                </label>
-                <div className="relative">
-                    <input
-                        type={showPin ? 'text' : 'password'}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={8}
-                        value={pin}
-                        onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
-                        onKeyDown={handleKey}
-                        disabled={loading}
-                        autoComplete="current-password"
-                        className="w-full rounded-xl px-3 py-2.5 pr-10 text-sm font-mono tracking-widest focus:outline-none transition-all"
-                        style={{
-                            background: 'var(--bg)',
-                            border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`,
-                            color: 'var(--tx)',
-                        }}
-                        placeholder="••••"
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setShowPin((p) => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2"
-                        style={{ color: 'var(--tx3)' }}
-                    >
-                        {showPin ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                </div>
-            </div>
-
-            {/* Error */}
             {error && (
-                <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
+                <div className="flex items-center gap-2 text-xs text-red-400 mb-4 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
                     <AlertCircle size={13} className="shrink-0" />
                     <span>{error}</span>
                 </div>
             )}
 
-            {/* Submit */}
-            <button
-                onClick={submit}
-                disabled={!canSubmit}
-                className={cn(
-                    'w-full py-3 rounded-xl text-sm font-semibold text-white transition-all',
-                    'bg-violet-600 hover:bg-violet-500 active:scale-[0.98]',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                    'flex items-center justify-center gap-2',
-                )}
-            >
-                {loading ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                    t('auth.wallEnter')
-                )}
-            </button>
+            {loading ? (
+                <div className="flex justify-center py-8">
+                    <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : (
+                <NumPad onDigit={addDigit} onDelete={deleteDigit} />
+            )}
         </div>
     );
 }
 
-// ─── QR Tab ───────────────────────────────────────────────────────────────────
+// ─── QR Tab ──────────────────────────────────────────────────────────────────
 const QR_POLL_MS = 2000;
-const QR_EXPIRE_MS = 300_000; // 5 min (backend TTL)
+const QR_EXPIRE_MS = 300_000;
 
 function QrTab({ onSuccess }: { onSuccess: () => void }) {
     const { t } = useTranslation();
-
     const [qrImage, setQrImage] = useState<string | null>(null);
     const [joinUrl, setJoinUrl] = useState<string | null>(null);
-    const [sessionId, setSessionId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [expired, setExpired] = useState(false);
@@ -192,69 +209,46 @@ function QrTab({ onSuccess }: { onSuccess: () => void }) {
 
     const startSession = async () => {
         stopPolling();
-        setLoading(true);
-        setError(null);
-        setExpired(false);
-        setApproved(false);
-        setQrImage(null);
-        setSessionId(null);
+        setLoading(true); setError(null); setExpired(false); setApproved(false); setQrImage(null);
         try {
             const res = await fetch(`${UM}/auth/qr/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: 'access' }),
             });
-            if (!res.ok) throw new Error('Failed to create QR session');
+            if (!res.ok) throw new Error('Failed');
             const data = await res.json();
             setQrImage(data.qr_image ?? null);
             setJoinUrl(data.join_url ?? null);
-            setSessionId(data.session_id);
             setLoading(false);
 
-            // Poll for approval
             pollRef.current = setInterval(async () => {
                 try {
-                    const status = await fetch(`${UM}/auth/qr/status/${data.session_id}`);
-                    if (status.status === 410) {
-                        // expired
-                        stopPolling();
-                        setExpired(true);
-                        return;
-                    }
-                    if (!status.ok) return;
-                    const s = await status.json();
+                    const st = await fetch(`${UM}/auth/qr/status/${data.session_id}`);
+                    if (st.status === 410) { stopPolling(); setExpired(true); return; }
+                    if (!st.ok) return;
+                    const s = await st.json();
                     if (s.status === 'complete' && s.device_token) {
                         stopPolling();
                         try {
-                            if (s.session_token) {
-                                // Temporary session — store in sessionStorage (cleared on tab close)
-                                sessionStorage.setItem('selena_session', s.device_token);
-                            }
+                            if (s.session_token) sessionStorage.setItem('selena_session', s.device_token);
                             localStorage.setItem('selena_device', s.device_token);
                             document.cookie = `selena_device=${s.device_token}; max-age=${s.session_token ? 600 : 60 * 60 * 24 * 30}; path=/; samesite=strict`;
                         } catch { /* ignore */ }
                         setApproved(true);
                         setTimeout(onSuccess, 800);
                     }
-                } catch { /* network hiccup — ignore */ }
+                } catch { /* ignore */ }
             }, QR_POLL_MS);
 
-            // Auto-expire at client side
-            expireRef.current = setTimeout(() => {
-                stopPolling();
-                setExpired(true);
-            }, QR_EXPIRE_MS);
+            expireRef.current = setTimeout(() => { stopPolling(); setExpired(true); }, QR_EXPIRE_MS);
         } catch {
             setLoading(false);
             setError(t('common.error'));
         }
     };
 
-    useEffect(() => {
-        startSession();
-        return stopPolling;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    useEffect(() => { startSession(); return stopPolling; }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (approved) {
         return (
@@ -262,97 +256,56 @@ function QrTab({ onSuccess }: { onSuccess: () => void }) {
                 <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
                     <Check size={26} className="text-emerald-400" />
                 </div>
-                <p className="text-sm font-semibold" style={{ color: 'var(--tx)' }}>
-                    {t('auth.registerSuccess')}
-                </p>
+                <p className="text-sm font-semibold" style={{ color: 'var(--tx)' }}>{t('auth.registerSuccess')}</p>
             </div>
         );
     }
-
     if (expired) {
         return (
             <div className="flex flex-col items-center gap-4 py-6">
-                <p className="text-sm text-center" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.qrExpired')}
-                </p>
-                <button
-                    onClick={startSession}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white transition-all"
-                >
-                    <RefreshCw size={14} />
-                    {t('auth.qrRefresh')}
+                <p className="text-sm text-center" style={{ color: 'var(--tx2)' }}>{t('auth.qrExpired')}</p>
+                <button onClick={startSession}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white">
+                    <RefreshCw size={14} /> {t('auth.qrRefresh')}
                 </button>
             </div>
         );
     }
-
     if (loading) {
-        return (
-            <div className="flex items-center justify-center py-12">
-                <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex flex-col items-center gap-3 py-6">
-                <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
-                    <AlertCircle size={13} className="shrink-0" />
-                    <span>{error}</span>
-                </div>
-                <button onClick={startSession} className="text-xs text-violet-400 hover:underline">
-                    {t('auth.qrRefresh')}
-                </button>
-            </div>
-        );
+        return <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+        </div>;
     }
 
     return (
         <div className="flex flex-col items-center gap-4">
-            {/* QR image or fallback URL */}
             {qrImage ? (
-                <div className="p-2 rounded-xl bg-white">
-                    <img src={qrImage} alt="QR code" className="w-48 h-48" />
-                </div>
+                <div className="p-2 rounded-xl bg-white"><img src={qrImage} alt="QR" className="w-48 h-48" /></div>
             ) : (
                 <div className="w-48 h-48 rounded-xl border-2 border-dashed flex items-center justify-center"
-                    style={{ borderColor: 'var(--b)' }}>
-                    <QrCode size={40} style={{ color: 'var(--tx3)' }} />
-                </div>
+                    style={{ borderColor: 'var(--b)' }}><QrCode size={40} style={{ color: 'var(--tx3)' }} /></div>
             )}
-
-            {/* Instructions */}
             <div className="text-center space-y-1">
-                <p className="text-sm font-medium" style={{ color: 'var(--tx)' }}>
-                    {t('auth.qrScanTitle')}
-                </p>
-                <p className="text-xs" style={{ color: 'var(--tx3)' }}>
-                    {t('auth.qrScanDesc')}
-                </p>
+                <p className="text-sm font-medium" style={{ color: 'var(--tx)' }}>{t('auth.qrScanTitle')}</p>
+                <p className="text-xs" style={{ color: 'var(--tx3)' }}>{t('auth.qrScanDesc')}</p>
             </div>
-
-            {/* Pulse indicator — waiting */}
             <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--tx3)' }}>
                 <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
                 {t('auth.qrWaiting')}
             </div>
-
-            {/* Manual link fallback */}
             {joinUrl && (
                 <p className="text-xs text-center break-all" style={{ color: 'var(--tx3)' }}>
                     {t('auth.qrOrOpen')}{' '}
-                    <a href={joinUrl} target="_blank" rel="noreferrer"
-                        className="text-violet-400 hover:underline">
-                        {t('auth.qrOpenLink')}
-                    </a>
+                    <a href={joinUrl} target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">{t('auth.qrOpenLink')}</a>
                 </p>
             )}
+            {error && <p className="text-xs text-red-400">{error}</p>}
         </div>
     );
 }
 
-// ─── Setup Tab (first boot — no accounts yet) ─────────────────────────────────
+// ─── Setup Tab (first boot) ──────────────────────────────────────────────────
+
 function SetupTab({ onSuccess }: { onSuccess: () => void }) {
     const { t } = useTranslation();
     const [username, setUsername] = useState('');
@@ -432,12 +385,6 @@ function SetupTab({ onSuccess }: { onSuccess: () => void }) {
                     style={{ background: 'var(--bg)', border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`, color: 'var(--tx)' }}
                     placeholder={opts?.placeholder ?? ''}
                 />
-                {opts?.isPin && (
-                    <button type="button" onClick={() => setShowPin(s => !s)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--tx3)' }}>
-                        {showPin ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                )}
             </div>
         </div>
     );
@@ -470,15 +417,14 @@ function SetupTab({ onSuccess }: { onSuccess: () => void }) {
     );
 }
 
-// ─── AuthWall shell ───────────────────────────────────────────────────────────
+// ─── AuthWall shell ──────────────────────────────────────────────────────────
 type Tab = 'pin' | 'qr';
 
 export default function AuthWall() {
     const { t } = useTranslation();
     const initAuth = useStore((s) => s.initAuth);
     const [tab, setTab] = useState<Tab>('pin');
-    type DoneState = false | true;
-    const [globalDone, setGlobalDone] = useState<DoneState>(false);
+    const [globalDone, setGlobalDone] = useState(false);
     const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
 
     useEffect(() => {
@@ -494,10 +440,7 @@ export default function AuthWall() {
     };
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ background: 'var(--bg)' }}
-        >
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--bg)' }}>
             {/* Background grid */}
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none"
                 style={{
@@ -505,38 +448,24 @@ export default function AuthWall() {
                     backgroundSize: '28px 28px',
                 }}
             />
-            {/* Glow */}
             <div className="absolute w-96 h-96 rounded-full bg-violet-600/10 blur-3xl pointer-events-none" />
 
             <AnimatePresence mode="wait">
                 {globalDone ? (
-                    <motion.div
-                        key="done"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="flex flex-col items-center gap-4"
-                    >
+                    <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                        className="flex flex-col items-center gap-4">
                         <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
                             <Check size={28} className="text-emerald-400" />
                         </div>
-                        <p className="text-base font-semibold" style={{ color: 'var(--tx)' }}>
-                            {t('auth.registerSuccess')}
-                        </p>
+                        <p className="text-base font-semibold" style={{ color: 'var(--tx)' }}>{t('auth.registerSuccess')}</p>
                     </motion.div>
                 ) : (
-                    <motion.div
-                        key="card"
-                        initial={{ opacity: 0, y: 16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        className="relative z-10 w-full max-w-sm mx-4"
-                    >
-                        <div
-                            className="rounded-2xl border shadow-2xl overflow-hidden"
-                            style={{ background: 'var(--sf)', borderColor: 'var(--b)' }}
-                        >
+                    <motion.div key="card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }} className="relative z-10 w-full max-w-sm mx-4">
+                        <div className="rounded-2xl border shadow-2xl overflow-hidden"
+                            style={{ background: 'var(--sf)', borderColor: 'var(--b)' }}>
                             {/* Header */}
-                            <div className="px-8 pt-8 pb-6">
+                            <div className="px-8 pt-8 pb-4">
                                 <div className="flex flex-col items-center gap-3 mb-6">
                                     <div style={{
                                         width: 48, height: 48,
@@ -557,42 +486,22 @@ export default function AuthWall() {
                                             {setupRequired ? t('auth.setupTitle') : 'SmartHome'}
                                         </p>
                                         <p className="text-sm" style={{ color: 'var(--tx3)' }}>
-                                            {setupRequired ? t('auth.setupSubtitle') : t('auth.wallSubtitle')}
+                                            {setupRequired ? t('auth.setupSubtitle') : t('auth.wallPinHint')}
                                         </p>
                                     </div>
                                 </div>
 
-                                {/* Notice banner */}
-                                <div className="flex items-center gap-2 p-3 rounded-xl border mb-6"
-                                    style={{ borderColor: 'var(--b2)', background: 'var(--sf3)' }}
-                                >
-                                    {setupRequired
-                                        ? <UserPlus size={14} className="text-violet-400 shrink-0" />
-                                        : <Smartphone size={14} className="text-violet-400 shrink-0" />
-                                    }
-                                    <span className="text-xs" style={{ color: 'var(--tx3)' }}>
-                                        {setupRequired ? t('auth.setupNotice') : t('auth.wallNotice')}
-                                    </span>
-                                </div>
-
                                 {/* Tab switcher — only for normal mode */}
                                 {!setupRequired && (
-                                    <div className="flex rounded-xl p-1 mb-6"
-                                        style={{ background: 'var(--bg)' }}
-                                    >
+                                    <div className="flex rounded-xl p-1 mb-4" style={{ background: 'var(--bg)' }}>
                                         {([['pin', KeyRound, 'auth.tabPin'], ['qr', QrCode, 'auth.tabQr']] as const).map(
                                             ([id, Icon, key]) => (
-                                                <button
-                                                    key={id}
-                                                    onClick={() => setTab(id)}
+                                                <button key={id} onClick={() => setTab(id)}
                                                     className={cn(
                                                         'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-all',
-                                                        tab === id
-                                                            ? 'bg-violet-600 text-white shadow'
-                                                            : 'hover:opacity-80',
+                                                        tab === id ? 'bg-violet-600 text-white shadow' : 'hover:opacity-80',
                                                     )}
-                                                    style={tab !== id ? { color: 'var(--tx2)' } : {}}
-                                                >
+                                                    style={tab !== id ? { color: 'var(--tx2)' } : {}}>
                                                     <Icon size={13} />
                                                     {t(key)}
                                                 </button>
@@ -602,7 +511,7 @@ export default function AuthWall() {
                                 )}
                             </div>
 
-                            {/* Content area */}
+                            {/* Content */}
                             <div className="px-8 pb-8">
                                 {setupRequired === null ? (
                                     <div className="flex justify-center py-8">
@@ -612,24 +521,20 @@ export default function AuthWall() {
                                     <SetupTab onSuccess={handleSuccess} />
                                 ) : (
                                     <AnimatePresence mode="wait">
-                                        <motion.div
-                                            key={tab}
+                                        <motion.div key={tab}
                                             initial={{ opacity: 0, x: tab === 'pin' ? -12 : 12 }}
                                             animate={{ opacity: 1, x: 0 }}
                                             exit={{ opacity: 0 }}
-                                            transition={{ duration: 0.15 }}
-                                        >
+                                            transition={{ duration: 0.15 }}>
                                             {tab === 'pin'
                                                 ? <PinTab onSuccess={handleSuccess} />
-                                                : <QrTab onSuccess={handleSuccess} />
-                                            }
+                                                : <QrTab onSuccess={handleSuccess} />}
                                         </motion.div>
                                     </AnimatePresence>
                                 )}
                             </div>
                         </div>
 
-                        {/* Footer */}
                         <p className="text-center text-xs mt-4" style={{ color: 'var(--tx3)' }}>
                             {t('auth.wallFooter')}
                         </p>

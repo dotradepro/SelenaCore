@@ -5,8 +5,7 @@ Runs in-process inside smarthome-core.  Provides:
 
   • Device-token authentication (HttpOnly cookie + X-Device-Token header)
   • Short-lived elevated sessions for sensitive operations
-  • Full user CRUD with role-based access control
-  • Per-role permission configuration (owner only)
+  • User CRUD (flat model: admin + residents, no role-based permissions)
   • QR-based device registration flow
 
 All API routes are mounted at /api/ui/modules/user-manager/
@@ -30,14 +29,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from core.module_loader.system_module import SystemModule
 from system_modules.user_manager.devices import DeviceManager
+from system_modules.user_manager.pin_auth import get_pin_auth
 from system_modules.user_manager.elevated import ElevatedManager
-from system_modules.user_manager.permissions import PermissionsManager, RolePermissions
 from system_modules.user_manager.profiles import (
     InvalidPinError,
     UserAlreadyExistsError,
     UserManager,
     UserNotFoundError,
-    VALID_ROLES,
     _hash_pin,
 )
 from system_modules.user_manager.sessions import BrowserSessionManager
@@ -121,26 +119,17 @@ _ELEVATED_HEADER = "X-Elevated-Token"
 _COOKIE_MAX_AGE = 60 * 60 * 24 * 30   # 30 days
 _QR_TTL = 300                           # 5 minutes
 
-# Role privilege hierarchy — higher = more privilege
-_ROLE_HIERARCHY: dict[str, int] = {
-    "owner": 4,
-    "admin": 3,
-    "user": 2,
-    "guest": 1,
-}
-
-
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
 class RegisterDeviceRequest(BaseModel):
-    username: str
+    username: str = ""   # optional — ignored for PIN-only login
     pin: str
     device_name: str = "My Device"
 
 
 class PinConfirmRequest(BaseModel):
     pin: str
-    username: str = ""  # required for kiosk path (no device token)
+    username: str = ""  # optional — if empty, tries all users
 
 
 class ElevatedRevokeRequest(BaseModel):
@@ -155,12 +144,10 @@ class CreateUserRequest(BaseModel):
     username: str
     display_name: str
     pin: str
-    role: str = "user"
 
 
 class UpdateUserRequest(BaseModel):
     display_name: str | None = None
-    role: str | None = None
     active: bool | None = None
 
 
@@ -171,7 +158,6 @@ class ChangePinRequest(BaseModel):
 
 class QrStartRequest(BaseModel):
     mode: str = "access"  # "access" | "elevate" | "invite" | "wizard_setup"
-    role: str = "user"    # for mode="invite"
     display_name: str = ""  # pre-fill hint for invite
     wizard_username: str = ""  # only for wizard_setup: admin username from step 7
     wizard_pin: str = ""       # only for wizard_setup: admin PIN from step 7
@@ -179,21 +165,6 @@ class QrStartRequest(BaseModel):
 
 class WizardPhoneLinkRequest(BaseModel):
     device_name: str = "My Phone"
-
-
-class PermissionsUpdateRequest(BaseModel):
-    devices_view: bool | None = None
-    devices_control: bool | None = None
-    scenes_run: str | None = None
-    modules_configure: bool | None = None
-    users_manage: bool | None = None
-    roles_configure: bool | None = None
-    system_reboot: bool | None = None
-    system_update: bool | None = None
-    integrity_logs_view: bool | None = None
-    voice_commands: str | None = None
-    allowed_device_types: list[str] | None = None
-    allowed_widget_ids: list[str] | None = None
 
 
 # ── Module class ───────────────────────────────────────────────────────────────
@@ -206,7 +177,6 @@ class UserManagerModule(SystemModule):
         engine = create_async_engine(DB_URL, echo=False)
         self._users = UserManager(DB_URL)
         self._devices = DeviceManager(engine)
-        self._permissions = PermissionsManager(engine)
         self._elevated = ElevatedManager()
         self._sessions = BrowserSessionManager(db_path="/var/lib/selena/selena.db")
         # QR pending sessions: session_id → {expires_at, status, device_token?, user_id?}
@@ -217,7 +187,6 @@ class UserManagerModule(SystemModule):
     async def start(self) -> None:
         await self._users._get_engine()          # triggers ensure_tables via lazy init
         await self._devices.ensure_tables()
-        await self._permissions.ensure_tables()
         self._elevated.start_cleanup()
         self._sessions.start_cleanup()
         await self.publish("module.started", {"name": self.name})
@@ -249,20 +218,33 @@ class UserManagerModule(SystemModule):
     async def _require_device_auth(self, request: Request) -> dict[str, Any]:
         """Return verified user info dict or raise 401.
 
-        Checks browser session tokens first, then persistent device tokens.
+        Checks (in order):
+        1. Elevated token (PIN-only flow — no device token needed)
+        2. Browser session token (QR-issued temporary tokens)
+        3. Persistent device token
         """
+        # 1. Elevated token — PIN-only flow
+        elevated_token = request.headers.get(_ELEVATED_HEADER)
+        if elevated_token:
+            user_id = self._elevated.get_user_id(elevated_token)
+            if user_id:
+                try:
+                    profile = await self._users.get(user_id)
+                    return {"user_id": user_id, "role": profile.role, "display_name": profile.display_name}
+                except Exception:
+                    pass
+
+        # 2. Session / device token
         raw = self._get_raw_token(request)
-        if not raw:
-            raise HTTPException(status_code=401, detail="Device not registered")
-        # Try browser session first (QR-issued temporary tokens)
-        session_info = self._sessions.verify(raw)
-        if session_info:
-            return session_info
-        # Fall back to persistent device token
-        info = await self._devices.verify(raw)
-        if not info:
-            raise HTTPException(status_code=401, detail="Invalid or revoked device token")
-        return info
+        if raw:
+            session_info = self._sessions.verify(raw)
+            if session_info:
+                return session_info
+            info = await self._devices.verify(raw)
+            if info:
+                return info
+
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     def _require_elevated(self, request: Request, user_info: dict[str, Any]) -> None:
         """Raise 403 if no valid elevated token is present for the current user."""
@@ -271,13 +253,6 @@ class UserManagerModule(SystemModule):
             raise HTTPException(status_code=403, detail="Elevated session required")
         if not self._elevated.verify(elevated_token, user_info["user_id"]):
             raise HTTPException(status_code=403, detail="Elevated session expired or invalid")
-
-    def _require_role(self, user_info: dict[str, Any], min_role: str) -> None:
-        """Raise 403 if the user's role is insufficient for *min_role*."""
-        user_level = _ROLE_HIERARCHY.get(user_info.get("role", "guest"), 0)
-        required = _ROLE_HIERARCHY.get(min_role, 99)
-        if user_level < required:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     def _cleanup_qr_sessions(self) -> None:
         now = time.time()
@@ -332,7 +307,6 @@ class UserManagerModule(SystemModule):
                     username=req.username,
                     display_name=req.device_name or req.username,
                     pin=req.pin,
-                    role="owner",
                 )
             except UserAlreadyExistsError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -349,7 +323,7 @@ class UserManagerModule(SystemModule):
             )
             mod._set_device_cookie(response, plain_token)
             logger.info(
-                "First owner account created: username=%s ip=%s", req.username, ip
+                "First admin account created: username=%s ip=%s", req.username, ip
             )
             return {
                 "device_token": plain_token,
@@ -419,35 +393,38 @@ class UserManagerModule(SystemModule):
             No-token path: any browser without a device token sends username + PIN.
             Device-token path: registered device sends device token + PIN.
             """
+            # Try device-token path first (if token present and valid)
             raw_token = mod._get_raw_token(request)
+            if raw_token:
+                info = await mod._devices.verify(raw_token)
+                if info:
+                    if not await mod._users.verify_pin(info["user_id"], req.pin):
+                        raise HTTPException(status_code=401, detail="Incorrect PIN")
+                    elevated_token = mod._elevated.grant(info["user_id"])
+                    return {
+                        "elevated_token": elevated_token,
+                        "expires_in": 300,
+                        "user_id": info["user_id"],
+                        "role": info["role"],
+                    }
+                # Token invalid/revoked — fall through to PIN-only path
 
-            if not raw_token:
-                # No device token — authenticate by username + PIN (any IP, any browser)
-                if not req.username:
-                    raise HTTPException(status_code=400, detail="Username required for PIN auth")
+            # PIN-only path — find user by PIN (optionally by username)
+            if req.username:
                 profile = await mod._users.get_by_username(req.username)
-                if not profile:
-                    raise HTTPException(status_code=401, detail="User not found")
-                ok, msg = await get_pin_auth().authenticate(profile.user_id, req.pin, profile.pin_hash)
-                if not ok:
-                    raise HTTPException(status_code=401, detail=msg)
-                elevated_token = mod._elevated.grant(profile.user_id)
-                return {
-                    "elevated_token": elevated_token,
-                    "expires_in": 300,
-                    "user_id": profile.user_id,
-                    "role": profile.role,
-                }
-
-            info = await mod._require_device_auth(request)
-            if not await mod._users.verify_pin(info["user_id"], req.pin):
-                raise HTTPException(status_code=401, detail="Incorrect PIN")
-            elevated_token = mod._elevated.grant(info["user_id"])
+            else:
+                profile = await mod._users.find_by_pin(req.pin)
+            if not profile:
+                raise HTTPException(status_code=401, detail="Invalid PIN")
+            ok, msg = await get_pin_auth().authenticate(profile.user_id, req.pin, profile.pin_hash)
+            if not ok:
+                raise HTTPException(status_code=401, detail=msg)
+            elevated_token = mod._elevated.grant(profile.user_id)
             return {
                 "elevated_token": elevated_token,
                 "expires_in": 300,
-                "user_id": info["user_id"],
-                "role": info["role"],
+                "user_id": profile.user_id,
+                "role": profile.role,
             }
 
         # ── Auth: Elevated session revoke / refresh ────────────────────────────
@@ -651,7 +628,6 @@ class UserManagerModule(SystemModule):
             session_data: dict[str, Any] = {
                 "status": "pending",
                 "mode": req.mode,
-                "role": req.role,
                 "display_name": req.display_name,
                 "expires_at": expires_at,
                 "device_token": None,
@@ -661,7 +637,6 @@ class UserManagerModule(SystemModule):
             if req.mode == "wizard_setup" and req.wizard_username and req.wizard_pin:
                 session_data["wizard_username"] = req.wizard_username
                 session_data["wizard_pin_hash"] = _hash_pin(req.wizard_pin)
-                session_data["role"] = "owner"
                 session_data["display_name"] = req.wizard_username
             mod._qr_sessions[session_id] = session_data
             mod._cleanup_qr_sessions()
@@ -756,7 +731,6 @@ class UserManagerModule(SystemModule):
                 raise HTTPException(status_code=410, detail="QR session expired")
             return {
                 "mode": session["mode"],
-                "role": session.get("role", "user"),
                 "display_name": session.get("display_name", ""),
                 "status": session["status"],
                 "expires_in_seconds": int(remaining),
@@ -788,13 +762,11 @@ class UserManagerModule(SystemModule):
 
             if session["mode"] == "invite":
                 # Create new account + register device in one step
-                role = session.get("role", "user")
                 try:
                     profile = await mod._users.create(
                         username=req.username,
                         display_name=req.device_name or req.username,
                         pin=req.pin,
-                        role=role,
                     )
                 except UserAlreadyExistsError:
                     raise HTTPException(status_code=409, detail="Username already taken")
@@ -875,7 +847,7 @@ class UserManagerModule(SystemModule):
             ip = (request.client.host if request.client else "") or ""
             ua = request.headers.get("user-agent", "")
 
-            # Create admin/owner user if not exists
+            # Create admin user if not exists
             profile = await mod._users.get_by_username(wizard_username)
             if not profile:
                 try:
@@ -883,14 +855,13 @@ class UserManagerModule(SystemModule):
                         username=wizard_username,
                         display_name=wizard_username,
                         pin="0000",  # dummy — we'll overwrite hash directly
-                        role="owner",
                     )
                     # Overwrite with the correct hash from wizard
                     await mod._users._execute(
                         "UPDATE users SET pin_hash = :pin_hash WHERE user_id = :user_id",
                         {"pin_hash": wizard_pin_hash, "user_id": profile.user_id},
                     )
-                    logger.info("Wizard: created owner account '%s'", wizard_username)
+                    logger.info("Wizard: created admin account '%s'", wizard_username)
                 except UserAlreadyExistsError:
                     profile = await mod._users.get_by_username(wizard_username)
 
@@ -910,7 +881,7 @@ class UserManagerModule(SystemModule):
             session["display_name"] = profile.display_name or profile.username
 
             logger.info(
-                "Wizard: phone linked for owner '%s', device='%s' ip=%s",
+                "Wizard: phone linked for admin '%s', device='%s' ip=%s",
                 wizard_username, req.device_name, ip,
             )
 
@@ -1022,7 +993,6 @@ class UserManagerModule(SystemModule):
         @router.get("/users")
         async def list_users(request: Request) -> dict:
             info = await mod._require_device_auth(request)
-            mod._require_role(info, "admin")
             profiles = await mod._users.list_all()
             return {"users": [asdict(p) for p in profiles]}
 
@@ -1030,13 +1000,11 @@ class UserManagerModule(SystemModule):
         async def create_user(req: CreateUserRequest, request: Request) -> dict:
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
-            mod._require_role(info, "admin")
             try:
                 profile = await mod._users.create(
                     username=req.username,
                     display_name=req.display_name,
                     pin=req.pin,
-                    role=req.role,
                 )
             except UserAlreadyExistsError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -1047,9 +1015,6 @@ class UserManagerModule(SystemModule):
         @router.get("/users/{user_id}")
         async def get_user(user_id: str, request: Request) -> dict:
             info = await mod._require_device_auth(request)
-            is_self = info["user_id"] == user_id
-            if not is_self:
-                mod._require_role(info, "admin")
             try:
                 profile = await mod._users.get(user_id)
             except UserNotFoundError as exc:
@@ -1060,14 +1025,9 @@ class UserManagerModule(SystemModule):
         async def update_user(user_id: str, req: UpdateUserRequest, request: Request) -> dict:
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
-            mod._require_role(info, "admin")
-            if req.role == "owner" and info["role"] != "owner":
-                raise HTTPException(status_code=403, detail="Only owner can grant owner role")
             fields: dict[str, Any] = {}
             if req.display_name is not None:
                 fields["display_name"] = req.display_name
-            if req.role is not None:
-                fields["role"] = req.role
             if req.active is not None:
                 fields["active"] = req.active
             try:
@@ -1082,15 +1042,12 @@ class UserManagerModule(SystemModule):
         async def delete_user(user_id: str, request: Request) -> None:
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
-            mod._require_role(info, "admin")
             if info["user_id"] == user_id:
                 raise HTTPException(status_code=400, detail="Cannot deactivate own account")
             try:
-                target = await mod._users.get(user_id)
+                await mod._users.get(user_id)
             except UserNotFoundError as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
-            if target.role == "owner" and info.get("role") != "owner":
-                raise HTTPException(status_code=403, detail="Only owner can deactivate another owner")
             await mod._users.update(user_id, active=False)
 
         @router.post("/users/{user_id}/pin")
@@ -1103,8 +1060,6 @@ class UserManagerModule(SystemModule):
             info = await mod._require_device_auth(request)
             mod._require_elevated(request, info)
             is_self = info["user_id"] == user_id
-            if not is_self:
-                mod._require_role(info, "owner")
             try:
                 profile = await mod._users.get(user_id)
             except UserNotFoundError as exc:
@@ -1122,9 +1077,6 @@ class UserManagerModule(SystemModule):
         @router.get("/users/{user_id}/devices")
         async def list_user_devices(user_id: str, request: Request) -> dict:
             info = await mod._require_device_auth(request)
-            is_self = info["user_id"] == user_id
-            if not is_self:
-                mod._require_role(info, "admin")
             devices = await mod._devices.list_by_user(user_id)
             return {"devices": [asdict(d) for d in devices]}
 
@@ -1134,8 +1086,6 @@ class UserManagerModule(SystemModule):
             device = await mod._devices.get_by_id(device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
-            if device.user_id != info["user_id"]:
-                mod._require_role(info, "admin")
             await mod._devices.revoke(device_id)
 
         @router.patch("/devices/{device_id}")
@@ -1144,8 +1094,6 @@ class UserManagerModule(SystemModule):
             device = await mod._devices.get_by_id(device_id)
             if not device:
                 raise HTTPException(status_code=404, detail="Device not found")
-            if device.user_id != info["user_id"]:
-                mod._require_role(info, "admin")
             new_name = str(req.get("device_name", "")).strip()
             if not new_name:
                 raise HTTPException(status_code=422, detail="device_name required")
@@ -1153,42 +1101,6 @@ class UserManagerModule(SystemModule):
             if not updated:
                 raise HTTPException(status_code=404, detail="Device not found or already revoked")
             return {"device_id": device_id, "device_name": new_name}
-
-        # ── Role permissions ───────────────────────────────────────────────────
-
-        @router.get("/roles")
-        async def list_roles(request: Request) -> dict:
-            info = await mod._require_device_auth(request)
-            mod._require_role(info, "admin")
-            all_perms = await mod._permissions.get_all()
-            return {role: asdict(perms) for role, perms in all_perms.items()}
-
-        @router.get("/roles/{role}/permissions")
-        async def get_role_permissions(role: str, request: Request) -> dict:
-            info = await mod._require_device_auth(request)
-            mod._require_role(info, "admin")
-            if role not in VALID_ROLES:
-                raise HTTPException(status_code=404, detail=f"Unknown role '{role}'")
-            perms = await mod._permissions.get(role)
-            return asdict(perms)
-
-        @router.put("/roles/{role}/permissions")
-        async def set_role_permissions(
-            role: str, req: PermissionsUpdateRequest, request: Request
-        ) -> dict:
-            info = await mod._require_device_auth(request)
-            mod._require_elevated(request, info)
-            mod._require_role(info, "owner")
-            if role not in VALID_ROLES:
-                raise HTTPException(status_code=404, detail=f"Unknown role '{role}'")
-            if role == "owner":
-                raise HTTPException(status_code=400, detail="Owner permissions cannot be modified")
-            current = await mod._permissions.get(role)
-            updated = asdict(current)
-            updated.update(req.model_dump(exclude_none=True))
-            new_perms = RolePermissions(**updated)
-            await mod._permissions.set(role, new_perms)
-            return asdict(new_perms)
 
         # ── Widget / Settings HTML ─────────────────────────────────────────────
 

@@ -27,34 +27,13 @@ function getElev() {
     return sessionStorage.getItem('selena_elevated') ?? undefined;
 }
 
-function authHeaders(needElev = false): HeadersInit {
+function authHeaders(): HeadersInit {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
     const t = getToken();
     if (t) h['X-Device-Token'] = t;
-    if (needElev) {
-        const e = getElev();
-        if (e) h['X-Elevated-Token'] = e;
-    }
+    const e = getElev();
+    if (e) h['X-Elevated-Token'] = e;
     return h;
-}
-
-// ── role display helpers ──────────────────────────────────────────────────────
-const ROLE_COLOR: Record<string, string> = {
-    owner: 'bg-violet-500/20 text-violet-300 border-violet-500/30',
-    admin: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-    user: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-    guest: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
-};
-
-function RoleBadge({ role }: { role: string }) {
-    return (
-        <span className={cn(
-            'text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border',
-            ROLE_COLOR[role] ?? ROLE_COLOR.guest,
-        )}>
-            {role}
-        </span>
-    );
 }
 
 function PresenceBadge({ state, awaySec }: { state: string; awaySec: number | null }) {
@@ -105,19 +84,6 @@ interface RegisteredDevice {
     active: boolean;
 }
 
-interface RolePerms {
-    devices_view: boolean;
-    devices_control: boolean;
-    scenes_run: string;
-    modules_configure: boolean;
-    users_manage: boolean;
-    roles_configure: boolean;
-    system_reboot: boolean;
-    system_update: boolean;
-    integrity_logs_view: boolean;
-    voice_commands: string;
-}
-
 interface PresenceUser {
     user_id: string;
     name: string;
@@ -133,12 +99,7 @@ interface PresenceUser {
 // ═════════════════════════════════════════════════════════════════════════════
 export default function UsersPanel() {
     const { t } = useTranslation();
-    const currentUser = useStore((s) => s.user);
     const { pinModalProps } = useElevated();
-
-    const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
-    const isOwner = currentUser?.role === 'owner';
-    const isAdmin = currentUser?.role === 'admin' || isOwner;
 
     return (
         <div className="space-y-6">
@@ -149,28 +110,7 @@ export default function UsersPanel() {
                 <p style={{ fontSize: 13, color: 'var(--tx2)' }}>{t('usersPanel.desc')}</p>
             </div>
 
-            {/* Tab switcher */}
-            {isOwner && (
-                <div className="flex gap-1 p-1 bg-zinc-900 rounded-lg w-fit border border-zinc-800">
-                    {(['users', 'roles'] as const).map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={cn(
-                                'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
-                                activeTab === tab
-                                    ? 'bg-zinc-700 text-zinc-50'
-                                    : 'text-zinc-500 hover:text-zinc-300',
-                            )}
-                        >
-                            {t(`usersPanel.tab_${tab}`)}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {activeTab === 'users' && <UsersList canManage={isAdmin} isOwner={isOwner} />}
-            {activeTab === 'roles' && isOwner && <RolesEditor />}
+            <UsersList />
 
             <PinConfirmModal {...pinModalProps} />
         </div>
@@ -180,7 +120,7 @@ export default function UsersPanel() {
 // ═════════════════════════════════════════════════════════════════════════════
 //  Users list
 // ═════════════════════════════════════════════════════════════════════════════
-function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolean }) {
+function UsersList() {
     const { t } = useTranslation();
     const [users, setUsers] = useState<UserProfile[]>([]);
     const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
@@ -222,7 +162,7 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
             if (!confirm(t('usersPanel.confirmDelete', { name: u.username }))) return;
             await fetch(`${UM}/users/${u.user_id}`, {
                 method: 'DELETE',
-                headers: authHeaders(true),
+                headers: authHeaders(),
                 credentials: 'include',
             });
             load();
@@ -243,15 +183,13 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                 <span className="text-xs text-zinc-500">
                     {t('usersPanel.userCount', { count: users.length })}
                 </span>
-                {canManage && (
-                    <button
-                        onClick={() => setShowCreate(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors"
-                    >
-                        <Plus size={13} />
-                        {t('usersPanel.addUser')}
-                    </button>
-                )}
+                <button
+                    onClick={() => setShowCreate(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors"
+                >
+                    <Plus size={13} />
+                    {t('usersPanel.addUser')}
+                </button>
             </div>
 
             {/* User rows */}
@@ -266,8 +204,6 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
                                 key={u.user_id}
                                 user={u}
                                 presenceUser={linked}
-                                isOwner={isOwner}
-                                canManage={canManage}
                                 expanded={expandedId === u.user_id}
                                 onToggle={() => setExpandedId((id) => id === u.user_id ? null : u.user_id)}
                                 onDelete={() => deleteUser(u)}
@@ -281,7 +217,6 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
 
             {showCreate && (
                 <CreateUserModal
-                    isOwner={isOwner}
                     onClose={() => setShowCreate(false)}
                     onCreated={() => { setShowCreate(false); load(); }}
                 />
@@ -294,12 +229,10 @@ function UsersList({ canManage, isOwner }: { canManage: boolean; isOwner: boolea
 
 // ─── Single user row ──────────────────────────────────────────────────────────
 function UserRow({
-    user, presenceUser, isOwner, canManage, expanded, onToggle, onDelete, onRefresh, requestElevation,
+    user, presenceUser, expanded, onToggle, onDelete, onRefresh, requestElevation,
 }: {
     user: UserProfile;
     presenceUser: PresenceUser | null;
-    isOwner: boolean;
-    canManage: boolean;
     expanded: boolean;
     onToggle: () => void;
     onDelete: () => void;
@@ -309,7 +242,6 @@ function UserRow({
     const { t } = useTranslation();
     const [editing, setEditing] = useState(false);
     const [editName, setEditName] = useState(user.username);
-    const [editRole, setEditRole] = useState(user.role);
     const [saving, setSaving] = useState(false);
     const [devices, setDevices] = useState<RegisteredDevice[] | null>(null);
     const [devLoading, setDevLoading] = useState(false);
@@ -328,7 +260,7 @@ function UserRow({
     const [setupTrackingQr, setSetupTrackingQr] = useState<{ qr_svg: string; join_url: string } | null>(null);
 
     const initial = user.username.slice(0, 1).toUpperCase();
-    const canEditThis = isOwner || (canManage && user.role !== 'owner');
+    const canEditThis = true; // all elevated users can manage
 
     const loadDevices = useCallback(async () => {
         setDevLoading(true);
@@ -355,9 +287,9 @@ function UserRow({
             setSaving(true);
             await fetch(`${UM}/users/${user.user_id}`, {
                 method: 'PATCH',
-                headers: authHeaders(true),
+                headers: authHeaders(),
                 credentials: 'include',
-                body: JSON.stringify({ username: editName, role: editRole }),
+                body: JSON.stringify({ display_name: editName }),
             });
             setSaving(false);
             setEditing(false);
@@ -369,12 +301,11 @@ function UserRow({
         if (newPin.length < 4) return;
         requestElevation(async () => {
             setPinSaving(true);
-            const isSelf = isOwner && user.role === 'owner';
             await fetch(`${UM}/users/${user.user_id}/pin`, {
                 method: 'POST',
-                headers: authHeaders(true),
+                headers: authHeaders(),
                 credentials: 'include',
-                body: JSON.stringify({ current_pin: isSelf ? newPin : '', new_pin: newPin }),
+                body: JSON.stringify({ current_pin: '', new_pin: newPin }),
             });
             setPinSaving(false);
             setChangingPin(false);
@@ -406,7 +337,7 @@ function UserRow({
     const revokeDevice = async (deviceId: string) => {
         await fetch(`${UM}/devices/${deviceId}`, {
             method: 'DELETE',
-            headers: authHeaders(true),
+            headers: authHeaders(),
             credentials: 'include',
         });
         loadDevices();
@@ -416,7 +347,7 @@ function UserRow({
         if (!newName.trim()) return;
         await fetch(`${UM}/devices/${deviceId}`, {
             method: 'PATCH',
-            headers: authHeaders(true),
+            headers: authHeaders(),
             credentials: 'include',
             body: JSON.stringify({ device_name: newName.trim() }),
         });
@@ -472,23 +403,11 @@ function UserRow({
                             onChange={(e) => setEditName(e.target.value)}
                             className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-sm text-zinc-50 focus:outline-none focus:border-violet-500 w-32"
                         />
-                        {isOwner && user.role !== 'owner' && (
-                            <select
-                                value={editRole}
-                                onChange={(e) => setEditRole(e.target.value)}
-                                className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-50 focus:outline-none focus:border-violet-500"
-                            >
-                                {['admin', 'user', 'guest'].map((r) => (
-                                    <option key={r} value={r}>{r}</option>
-                                ))}
-                            </select>
-                        )}
                     </div>
                 ) : (
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium truncate">{user.username}</span>
-                            <RoleBadge role={user.role} />
                             {presenceUser && (
                                 <PresenceBadge state={presenceUser.state} awaySec={presenceUser.away_in_sec} />
                             )}
@@ -501,7 +420,7 @@ function UserRow({
                     {canEditThis && !editing && (
                         <>
                             <button
-                                onClick={() => { setEditing(true); setEditName(user.username); setEditRole(user.role); }}
+                                onClick={() => { setEditing(true); setEditName(user.username); }}
                                 className="p-1.5 text-zinc-500 hover:text-zinc-300 transition-colors"
                                 title={t('usersPanel.editUser')}
                             >
@@ -644,7 +563,7 @@ function UserRow({
                                         <span className="text-[10px] font-medium text-zinc-600 uppercase tracking-wide flex-1">
                                             {t('usersPanel.presenceDevices')}
                                         </span>
-                                        {canManage && (
+                                        {(
                                             <>
                                                 <button
                                                     onClick={addPresenceDevice}
@@ -679,7 +598,7 @@ function UserRow({
                                     </div>
                                 </div>
                             )}
-                            {!presenceUser && canManage && (
+                            {!presenceUser && (
                                 <div className="pt-2 border-t border-zinc-800/60">
                                     <div className="flex items-center gap-1 mb-1.5">
                                         <Wifi size={9} className="text-zinc-600" />
@@ -851,14 +770,12 @@ function DeviceRow({
 
 // ─── Create user modal ────────────────────────────────────────────────────────
 function CreateUserModal({
-    isOwner, onClose, onCreated,
+    onClose, onCreated,
 }: {
-    isOwner: boolean;
     onClose: () => void;
     onCreated: () => void;
 }) {
     const { t } = useTranslation();
-    const [role, setRole] = useState('user');
     const [loading, setLoading] = useState(false);
     const [qrData, setQrData] = useState<{ session_id: string; qr_image: string | null } | null>(null);
     const [status, setStatus] = useState<'idle' | 'waiting' | 'done' | 'expired'>('idle');
@@ -894,7 +811,7 @@ function CreateUserModal({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...authHeaders() },
                 credentials: 'include',
-                body: JSON.stringify({ mode: 'invite', role }),
+                body: JSON.stringify({ mode: 'invite' }),
             });
             if (res.ok) {
                 const d = await res.json();
@@ -918,22 +835,8 @@ function CreateUserModal({
 
                 {status === 'idle' && (
                     <>
-                        {isOwner && (
-                            <Field label={t('usersPanel.role')}>
-                                <select
-                                    value={role}
-                                    onChange={(e) => setRole(e.target.value)}
-                                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
-                                >
-                                    {['admin', 'user', 'guest'].map((r) => (
-                                        <option key={r} value={r}>{r}</option>
-                                    ))}
-                                </select>
-                            </Field>
-                        )}
                         <p className="text-[12px] text-zinc-500">
-                            {t('usersPanel.createQrWaiting').replace('…', '').trim() + ' — '}
-                            {t('usersPanel.role')}: <span className="text-zinc-300 font-medium">{role}</span>
+                            {t('usersPanel.createQrDesc', 'Scan QR code on the new resident\'s phone to register them.')}
                         </p>
                         <button
                             onClick={generate}
@@ -993,19 +896,6 @@ function CreateUserModal({
         </div>
     );
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  Roles permissions editor (owner only)
-// ═════════════════════════════════════════════════════════════════════════════
-const BOOL_PERMS: (keyof RolePerms)[] = [
-    'devices_view', 'devices_control', 'modules_configure',
-    'users_manage', 'system_reboot', 'system_update', 'integrity_logs_view',
-];
-
-const SELECT_PERMS: { key: keyof RolePerms; options: string[] }[] = [
-    { key: 'scenes_run', options: ['all', 'approved', 'none'] },
-    { key: 'voice_commands', options: ['all', 'basic', 'none'] },
-];
 
 // ─── QR modal for presence invites ──────────────────────────────────────────
 function PresenceQrModal({ qrSvg, onClose }: { qrSvg: string; onClose: () => void }) {
@@ -1109,7 +999,7 @@ function UnlinkedPresenceRow({
                         </p>
                     )}
                 </div>
-                {canManage && (
+                {(
                     <div className="flex items-center gap-2 shrink-0">
                         <select
                             value={selectedAccount}
@@ -1149,135 +1039,6 @@ function UnlinkedPresenceRow({
             </div>
             {/* QR modal */}
             {qr && <PresenceQrModal qrSvg={qr.qr_svg} onClose={() => setQr(null)} />}
-        </div>
-    );
-}
-
-// ─── Roles editor ─────────────────────────────────────────────────────────────
-function RolesEditor() {
-    const { t } = useTranslation();
-    const [roles, setRoles] = useState<string[]>([]);
-    const [selected, setSelected] = useState<string>('');
-    const [perms, setPerms] = useState<RolePerms | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
-    const { requestElevation, pinModalProps } = useElevated();
-
-    useEffect(() => {
-        fetch(`${UM}/roles`, { headers: authHeaders(), credentials: 'include' })
-            .then((r) => r.json())
-            .then((d) => {
-                const rs = Object.keys(d).filter((r) => r !== 'owner');
-                setRoles(rs);
-                if (rs.length > 0) setSelected(rs[0]);
-            })
-            .catch(() => { });
-    }, []);
-
-    useEffect(() => {
-        if (!selected) return;
-        setLoading(true);
-        setPerms(null);
-        fetch(`${UM}/roles/${selected}/permissions`, { headers: authHeaders(), credentials: 'include' })
-            .then((r) => r.json())
-            .then((d) => setPerms(d as RolePerms))
-            .catch(() => { })
-            .finally(() => setLoading(false));
-    }, [selected]);
-
-    const toggle = (key: keyof RolePerms) => {
-        if (!perms) return;
-        setPerms({ ...perms, [key]: !perms[key] });
-    };
-    const setSelect = (key: keyof RolePerms, val: string) => {
-        if (!perms) return;
-        setPerms({ ...perms, [key]: val });
-    };
-
-    const save = () => {
-        if (!perms) return;
-        requestElevation(async () => {
-            setSaving(true);
-            await fetch(`${UM}/roles/${selected}/permissions`, {
-                method: 'PUT',
-                headers: authHeaders(true),
-                credentials: 'include',
-                body: JSON.stringify({ permissions: perms }),
-            });
-            setSaving(false);
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-        });
-    };
-
-    return (
-        <div className="space-y-4">
-            {/* Role selector tabs */}
-            <div className="flex gap-1 p-1 bg-zinc-900 rounded-lg w-fit border border-zinc-800">
-                {roles.map((r) => (
-                    <button
-                        key={r}
-                        onClick={() => setSelected(r)}
-                        className={cn(
-                            'px-3 py-1.5 text-xs font-medium rounded-md transition-all',
-                            selected === r ? 'bg-zinc-700 text-zinc-50' : 'text-zinc-500 hover:text-zinc-300',
-                        )}
-                    >
-                        {r}
-                    </button>
-                ))}
-            </div>
-
-            {loading && <Spinner />}
-            {!loading && perms && (
-                <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-xl space-y-3">
-                    {/* Boolean toggles */}
-                    {BOOL_PERMS.map((key) => (
-                        <div key={key} className="flex items-center justify-between gap-3">
-                            <span className="text-sm text-zinc-300">{t(`usersPanel.perm_${key}`)}</span>
-                            <button
-                                onClick={() => toggle(key)}
-                                className={cn(
-                                    'relative w-9 h-5 rounded-full transition-colors',
-                                    perms[key] ? 'bg-violet-600' : 'bg-zinc-700',
-                                )}
-                            >
-                                <span className={cn(
-                                    'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                                    perms[key] ? 'translate-x-4' : 'translate-x-0.5',
-                                )} />
-                            </button>
-                        </div>
-                    ))}
-
-                    {/* Select dropdowns */}
-                    {SELECT_PERMS.map(({ key, options }) => (
-                        <div key={key} className="flex items-center justify-between gap-3">
-                            <span className="text-sm text-zinc-300">{t(`usersPanel.perm_${key}`)}</span>
-                            <select
-                                value={perms[key] as string}
-                                onChange={(e) => setSelect(key, e.target.value)}
-                                className="bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-violet-500"
-                            >
-                                {options.map((o) => <option key={o} value={o}>{o}</option>)}
-                            </select>
-                        </div>
-                    ))}
-
-                    <div className="pt-2 border-t border-zinc-800">
-                        <button
-                            onClick={save}
-                            disabled={saving}
-                            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-violet-600 hover:bg-violet-500 rounded-lg transition-colors disabled:opacity-50"
-                        >
-                            {saved ? <><Check size={13} /> {t('usersPanel.saved')}</> : saving ? '…' : <><Shield size={13} /> {t('usersPanel.savePermissions')}</>}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            <PinConfirmModal {...pinModalProps} />
         </div>
     );
 }

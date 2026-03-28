@@ -12,13 +12,14 @@
  *
  * After unlock the elevated session lasts 10 minutes server-side.
  */
-import { useState, useEffect, useRef, type ReactNode, type KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Eye, EyeOff, QrCode, KeyRound, AlertCircle, Check, RefreshCw, X } from 'lucide-react';
+import { Lock, QrCode, KeyRound, AlertCircle, Check, RefreshCw, ArrowLeft, Delete } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
+import { useKioskInactivity } from '../hooks/useKioskInactivity';
 
 const GATE_INACTIVITY_MS = 5 * 60 * 1000;
 const GATE_EVENTS = ['click', 'keypress', 'mousemove', 'scroll'] as const;
@@ -51,17 +52,17 @@ const UM = '/api/ui/modules/user-manager';
 const QR_POLL_MS = 2000;
 const QR_EXPIRE_MS = 300_000;
 
-// ─── PIN unlock pane ──────────────────────────────────────────────────────────
-function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
+// ─── PIN unlock pane (iPhone-style numpad) ───────────────────────────────────
+const PIN_LENGTH = 4;
+
+function PinPane({ onSuccess, onBack }: { onSuccess: (tok: string) => void; onBack: () => void }) {
     const { t } = useTranslation();
-    const [username, setUsername] = useState('');
     const [pin, setPin] = useState('');
-    const [show, setShow] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [shake, setShake] = useState(false);
 
-    const submit = async () => {
-        if (pin.length < 4 || loading) return;
+    const submit = useCallback(async (fullPin: string) => {
         setLoading(true);
         setError(null);
         try {
@@ -75,98 +76,93 @@ function PinPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
                     ...(token ? { 'X-Device-Token': token } : {}),
                 },
                 credentials: 'include',
-                body: JSON.stringify({ pin, username }),
+                body: JSON.stringify({ pin: fullPin }),
             });
             const body = await res.json().catch(() => ({}));
             if (!res.ok) {
                 setError(body.detail ?? t('auth.pinIncorrect'));
-                setPin('');
+                setShake(true);
+                setTimeout(() => { setShake(false); setPin(''); }, 500);
                 return;
             }
             onSuccess(body.elevated_token);
         } catch {
             setError(t('common.error'));
+            setShake(true);
+            setTimeout(() => { setShake(false); setPin(''); }, 500);
         } finally {
             setLoading(false);
         }
-    };
+    }, [onSuccess, t]);
 
-    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') submit(); };
+    const addDigit = useCallback((d: string) => {
+        if (loading) return;
+        setError(null);
+        setPin(prev => {
+            const next = prev + d;
+            if (next.length >= PIN_LENGTH) setTimeout(() => submit(next), 150);
+            return next.length <= PIN_LENGTH ? next : prev;
+        });
+    }, [loading, submit]);
+
+    const deleteDigit = useCallback(() => {
+        if (loading) return;
+        setError(null);
+        setPin(prev => prev.slice(0, -1));
+    }, [loading]);
+
+    useEffect(() => {
+        const handler = (e: globalThis.KeyboardEvent) => {
+            if (loading) return;
+            if (e.key >= '0' && e.key <= '9') addDigit(e.key);
+            else if (e.key === 'Backspace') deleteDigit();
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [addDigit, deleteDigit, loading]);
+
+    const rows = [['1','2','3'],['4','5','6'],['7','8','9'],['back','0','del']];
 
     return (
-        <div className="space-y-4">
-            <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.username')}
-                </label>
-                <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => { setUsername(e.target.value); setError(null); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-                    disabled={loading}
-                    autoComplete="username"
-                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
-                    style={{ background: 'var(--bg)', border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`, color: 'var(--tx)' }}
-                    placeholder={t('auth.usernamePlaceholder')}
-                />
-            </div>
-            <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--tx2)' }}>
-                    {t('auth.pin')}
-                </label>
-                <div className="relative">
-                    <input
-                        type={show ? 'text' : 'password'}
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        maxLength={8}
-                        value={pin}
-                        onChange={(e) => { setPin(e.target.value.replace(/\D/g, '')); setError(null); }}
-                        onKeyDown={handleKey}
-                        disabled={loading}
-                        autoFocus
-                        autoComplete="current-password"
-                        className="w-full rounded-xl px-3 py-2.5 pr-10 text-sm font-mono tracking-widest focus:outline-none transition-all"
-                        style={{
-                            background: 'var(--bg)',
-                            border: `1px solid ${error ? '#ef4444' : 'var(--b)'}`,
-                            color: 'var(--tx)',
-                        }}
-                        placeholder="••••"
-                    />
-                    <button
-                        type="button"
-                        onClick={() => setShow(s => !s)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2"
-                        style={{ color: 'var(--tx3)' }}
-                    >
-                        {show ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                </div>
+        <div className="flex flex-col items-center">
+            {/* PIN dots */}
+            <div className={cn("flex gap-3 justify-center mb-6", shake && "animate-[shake_0.4s_ease-in-out]")}>
+                {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+                    <div key={i} className={cn("w-3 h-3 rounded-full transition-all duration-200", i < pin.length ? "scale-110" : "")}
+                        style={{ background: i < pin.length ? 'var(--ac, #7c3aed)' : 'var(--b, rgba(255,255,255,0.1))' }} />
+                ))}
             </div>
 
             {error && (
-                <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
-                    <AlertCircle size={13} className="shrink-0" />
-                    <span>{error}</span>
+                <div className="flex items-center gap-2 text-xs text-red-400 mb-4 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                    <AlertCircle size={13} className="shrink-0" /><span>{error}</span>
                 </div>
             )}
 
-            <button
-                onClick={submit}
-                disabled={pin.length < 4 || username.trim().length === 0 || loading}
-                className={cn(
-                    'w-full py-2.5 rounded-xl text-sm font-semibold text-white transition-all',
-                    'bg-violet-600 hover:bg-violet-500 active:scale-[0.98]',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                    'flex items-center justify-center gap-2',
-                )}
-            >
-                {loading
-                    ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    : t('kiosk.unlock')}
-            </button>
+            {loading ? (
+                <div className="flex justify-center py-6">
+                    <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : (
+                <div className="grid grid-cols-3 gap-3 mx-auto" style={{ width: 'fit-content' }}>
+                    {rows.flat().map((key, i) => {
+                        if (key === 'back') return (
+                            <button key="back" onClick={onBack}
+                                className="w-[64px] h-[64px] rounded-full flex items-center justify-center transition-all duration-150 active:scale-90"
+                                style={{ color: 'var(--tx2)' }}><ArrowLeft size={20} /></button>
+                        );
+                        if (key === 'del') return (
+                            <button key="del" onClick={deleteDigit}
+                                className="w-[64px] h-[64px] rounded-full flex items-center justify-center transition-all duration-150 active:scale-90"
+                                style={{ color: 'var(--tx2)' }}><Delete size={18} /></button>
+                        );
+                        return (
+                            <button key={key} onClick={() => addDigit(key)}
+                                className="numpad-key w-[64px] h-[64px] rounded-full text-xl font-light flex items-center justify-center transition-all duration-150 active:scale-90">{key}</button>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 }
@@ -315,9 +311,10 @@ export default function KioskElevationGate({ children }: { children: ReactNode }
     const setElevatedToken = useStore(s => s.setElevatedToken);
     const [tab, setTab] = useState<Tab>('pin');
 
-    // Inactivity timer — only while the lock screen is visible (no elevated session)
-    // When elevated, useKioskInactivity (in AuthGate) handles the timeout instead
+    // Inactivity timer — while lock screen is visible, redirect to / after 5 min
     useGateInactivity(!elevatedToken);
+    // Inactivity timer — while elevated, revoke session after 5 min of no interaction
+    useKioskInactivity();
 
     if (elevatedToken) {
         return <>{children}</>;
@@ -399,23 +396,13 @@ export default function KioskElevationGate({ children }: { children: ReactNode }
                                     transition={{ duration: 0.12 }}
                                 >
                                     {tab === 'pin'
-                                        ? <PinPane onSuccess={handleSuccess} />
+                                        ? <PinPane onSuccess={handleSuccess} onBack={() => window.history.back()} />
                                         : <QrPane onSuccess={handleSuccess} />
                                     }
                                 </motion.div>
                             </AnimatePresence>
                         </div>
                     </div>
-
-                    {/* "Go back" hint */}
-                    <button
-                        onClick={() => window.history.back()}
-                        className="flex items-center gap-1.5 mx-auto mt-3 text-xs hover:opacity-80 transition-opacity"
-                        style={{ color: 'var(--tx3)' }}
-                    >
-                        <X size={11} />
-                        {t('common.back')}
-                    </button>
                 </div>
             </motion.div>
         </AnimatePresence>
