@@ -14,6 +14,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log/selena:/var/log/selena
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      - /run/user/1000/pulse:/run/user/1000/pulse
+      - /home/dotradepro/.config/pulse/cookie:/root/.config/pulse/cookie:ro
       - ./core:/opt/selena-core/core
       - ./system_modules:/opt/selena-core/system_modules
       - ./agent:/opt/selena-core/agent
@@ -21,6 +23,10 @@ services:
       - ./config:/opt/selena-core/config
       - ./modules:/opt/selena-core/modules
       - ./sdk:/opt/selena-core/sdk
+    devices:
+      - /dev/snd:/dev/snd
+    environment:
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
     env_file:
       - .env
     healthcheck:

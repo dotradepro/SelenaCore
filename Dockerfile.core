@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2-dev \
     libsndfile1-dev \
     libspeex-dev \
+    alsa-utils \
+    pulseaudio-utils \
     libvlc-dev \
     vlc-plugin-base \
     vlc-bin \

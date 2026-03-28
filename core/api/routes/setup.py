@@ -474,9 +474,13 @@ async def audio_devices() -> dict[str, Any]:
     try:
         from system_modules.voice_core.audio_manager import detect_audio_devices
         devices = detect_audio_devices()
+        cfg = read_config()
+        voice_cfg = cfg.get("voice", {}) or {}
         return {
             "inputs": [{"id": d.id, "name": d.name, "type": d.type} for d in devices.inputs],
             "outputs": [{"id": d.id, "name": d.name, "type": d.type} for d in devices.outputs],
+            "selected_input": voice_cfg.get("audio_force_input"),
+            "selected_output": voice_cfg.get("audio_force_output"),
         }
     except Exception as exc:
         logger.warning("Audio detection failed: %s", exc)
@@ -797,60 +801,8 @@ def _apply_timezone_sync(tz: str) -> None:
         logger.debug("timedatectl not available, timezone set in config only")
 
 
-# ================================================================== #
-#  Network Status (combined)                                           #
-# ================================================================== #
 
-@router.get("/network/status")
-async def network_status() -> dict[str, Any]:
-    """Get overall network status: WiFi, Ethernet, internet."""
-    ip = _get_current_ip()
-
-    # Check internet
-    internet = False
-    try:
-        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(2)
-        s.connect(("8.8.8.8", 53))
-        s.close()
-        internet = True
-    except Exception:
-        pass
-
-    # Get interfaces
-    interfaces: list[dict[str, str]] = []
-    try:
-        proc = subprocess.run(
-            ["ip", "-j", "addr", "show"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if proc.returncode == 0:
-            import json
-            for iface in json.loads(proc.stdout):
-                name = iface.get("ifname", "")
-                if name in ("lo",):
-                    continue
-                addrs = []
-                for addr_info in iface.get("addr_info", []):
-                    if addr_info.get("family") == "inet":
-                        addrs.append(addr_info.get("local", ""))
-                if addrs:
-                    interfaces.append({
-                        "name": name,
-                        "ip": addrs[0],
-                        "type": "wifi" if name.startswith("wl") else "ethernet",
-                    })
-    except Exception:
-        if ip != "unknown":
-            interfaces.append({"name": "default", "ip": ip, "type": "unknown"})
-
-    return {
-        "internet": internet,
-        "ip": ip,
-        "interfaces": interfaces,
-        "nmcli_available": _nmcli_available(),
-    }
+# Note: /network/status is defined earlier in this file (uses nmcli, returns wifi/ethernet/internet).
 
 
 # ================================================================== #
