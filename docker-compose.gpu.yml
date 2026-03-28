@@ -4,12 +4,14 @@
 
 services:
   core:
+    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - LD_LIBRARY_PATH=/usr/local/lib/ollama/cuda_v12:/usr/local/cuda/lib64:/usr/lib/aarch64-linux-gnu/tegra
-      - PATH=/usr/local/cuda/bin:/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - LD_LIBRARY_PATH=/usr/local/lib/ollama/cuda_v12:/usr/local/cuda-12.6/targets/aarch64-linux/lib:/usr/local/cuda/lib64:/usr/lib/aarch64-linux-gnu/tegra
+      - OLLAMA_URL=http://localhost:11434
     volumes:
+      - /usr/local/cuda-12.6:/usr/local/cuda-12.6:ro
       - /usr/local/cuda:/usr/local/cuda:ro
       - /usr/lib/aarch64-linux-gnu/tegra:/usr/lib/aarch64-linux-gnu/tegra:ro
       - /usr/sbin/nvidia-smi:/usr/sbin/nvidia-smi:ro
@@ -25,3 +27,21 @@ services:
       - /dev/nvhost-dbg-gpu:/dev/nvhost-dbg-gpu
       - /dev/nvhost-tsg-gpu:/dev/nvhost-tsg-gpu
       - /dev/nvhost-sched-gpu:/dev/nvhost-sched-gpu
+
+  # Ollama GPU server — separate container with full CUDA support for Jetson
+  ollama:
+    image: ollama/ollama
+    container_name: selena-ollama
+    restart: unless-stopped
+    runtime: nvidia
+    network_mode: host
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_NUM_GPU=999
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:
