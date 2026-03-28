@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Download, Trash2, Check, Eye, EyeOff, Loader2, Play, Square } from 'lucide-react';
+import { RefreshCw, Download, Trash2, Check, Eye, EyeOff, Loader2, Play, Square, MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 
@@ -37,6 +37,13 @@ export default function LlmSection() {
   const [pullProgress, setPullProgress] = useState(0);
   const [pullStatus, setPullStatus] = useState('');
   const [activeModel, setActiveModel] = useState('');
+
+  // System prompt
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [defaultPrompt, setDefaultPrompt] = useState('');
+  const [isCustomPrompt, setIsCustomPrompt] = useState(false);
+  const [savingPrompt, setSavingPrompt] = useState(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
 
   // Cloud state
   const [apiKey, setApiKey] = useState('');
@@ -77,12 +84,22 @@ export default function LlmSection() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchSystemPrompt = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/llm/system-prompt').then(r => r.json());
+      setSystemPrompt(res.prompt || '');
+      setDefaultPrompt(res.default || '');
+      setIsCustomPrompt(res.is_custom || false);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     fetchProviders();
     fetchOllamaStatus();
     fetchOllamaModels();
     fetchActiveModel();
-  }, [fetchProviders, fetchOllamaStatus, fetchOllamaModels, fetchActiveModel]);
+    fetchSystemPrompt();
+  }, [fetchProviders, fetchOllamaStatus, fetchOllamaModels, fetchActiveModel, fetchSystemPrompt]);
 
   // When switching provider tab, load cloud models if configured
   useEffect(() => {
@@ -254,6 +271,27 @@ export default function LlmSection() {
     } catch { /* ignore */ }
   };
 
+  const saveSystemPrompt = async () => {
+    setSavingPrompt(true);
+    try {
+      await fetch('/api/ui/setup/llm/system-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: systemPrompt }),
+      });
+      setIsCustomPrompt(systemPrompt !== defaultPrompt);
+    } catch { /* ignore */ }
+    setSavingPrompt(false);
+  };
+
+  const resetSystemPrompt = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/llm/system-prompt/reset', { method: 'POST' }).then(r => r.json());
+      setSystemPrompt(res.prompt || defaultPrompt);
+      setIsCustomPrompt(false);
+    } catch { /* ignore */ }
+  };
+
   const saveCloudModel = async () => {
     if (!selectedCloudModel) return;
     setSavingProvider(true);
@@ -289,6 +327,43 @@ export default function LlmSection() {
             {p.configured && p.id !== 'ollama' && <Check size={10} className="inline ml-1" />}
           </button>
         ))}
+      </div>
+
+      {/* System Prompt */}
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={() => setShowPromptEditor(!showPromptEditor)}
+          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mb-2">
+          <MessageSquare size={12} />
+          {t('settings.systemPrompt')}
+          {isCustomPrompt && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 ml-1">{t('settings.customPrompt')}</span>}
+        </button>
+
+        {showPromptEditor && (
+          <div style={{ background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 10, padding: 12 }}>
+            <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 6 }}>{t('settings.systemPromptDesc')}</div>
+            <textarea
+              value={systemPrompt}
+              onChange={e => setSystemPrompt(e.target.value)}
+              rows={6}
+              style={{
+                width: '100%', padding: '8px 10px', fontSize: 12, lineHeight: 1.5, resize: 'vertical',
+                background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 8, color: 'var(--tx)',
+                fontFamily: 'var(--font-sans)',
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button onClick={saveSystemPrompt} disabled={savingPrompt}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1">
+                {savingPrompt ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                {t('common.save')}
+              </button>
+              <button onClick={resetSystemPrompt}
+                className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1">
+                <RefreshCw size={12} /> {t('settings.resetToDefault')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Ollama panel */}

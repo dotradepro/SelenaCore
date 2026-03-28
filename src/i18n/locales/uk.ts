@@ -201,6 +201,12 @@ const uk = {
             aiResponse: 'Відповідь AI',
             speakResponse: 'Озвучити відповідь',
 
+            // System Prompt
+            systemPrompt: 'Системний промпт',
+            customPrompt: 'свій',
+            systemPromptDesc: 'Визначте хто AI, його особистість, правила та обмеження. Цей промпт надсилається з кожним запитом.',
+            resetToDefault: 'Скинути за замовчуванням',
+
             // LLM Providers
             llmProviderDesc: 'Оберіть між локальною Ollama або хмарними AI-провайдерами.',
             serverRunning: 'Працює',

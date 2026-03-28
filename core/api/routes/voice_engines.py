@@ -84,6 +84,10 @@ class LlmChatRequest(BaseModel):
     system: str | None = None
 
 
+class SystemPromptRequest(BaseModel):
+    prompt: str
+
+
 class SttTestRequest(BaseModel):
     device: str = "default"
     duration: int = 4
@@ -199,6 +203,44 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful smart home assistant named Selena. "
+    "Answer concisely in the same language as the user's message. "
+    "IMPORTANT: Your response will be read aloud by a TTS engine. "
+    "Do NOT use markdown, code blocks, bullet points, asterisks, URLs, emojis, or any special formatting. "
+    "Write plain natural text only."
+)
+
+
+@router.get("/llm/system-prompt")
+async def get_system_prompt() -> dict[str, Any]:
+    """Get the current system prompt for LLM."""
+    config = read_config()
+    saved = config.get("voice", {}).get("system_prompt", "")
+    return {
+        "prompt": saved or DEFAULT_SYSTEM_PROMPT,
+        "is_custom": bool(saved),
+        "default": DEFAULT_SYSTEM_PROMPT,
+    }
+
+
+@router.post("/llm/system-prompt")
+async def save_system_prompt(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom system prompt for LLM."""
+    prompt = req.prompt.strip()
+    if prompt == DEFAULT_SYSTEM_PROMPT:
+        prompt = ""  # don't save if it's the default
+    update_config("voice", "system_prompt", prompt)
+    return {"status": "ok"}
+
+
+@router.post("/llm/system-prompt/reset")
+async def reset_system_prompt() -> dict[str, Any]:
+    """Reset system prompt to default."""
+    update_config("voice", "system_prompt", "")
+    return {"status": "ok", "prompt": DEFAULT_SYSTEM_PROMPT}
+
+
 @router.post("/llm/chat")
 async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     """Send text to active LLM provider and return response."""
@@ -208,12 +250,19 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     config = read_config()
     voice_cfg = config.get("voice", {})
     provider = voice_cfg.get("llm_provider", "ollama")
-    system_prompt = req.system or (
-        "You are a helpful smart home assistant. Answer concisely in the same language as the user's message. "
-        "IMPORTANT: Your response will be read aloud by a TTS engine. "
+
+    # Use saved system prompt, fall back to default, allow override from request
+    saved_prompt = voice_cfg.get("system_prompt", "")
+    system_prompt = req.system or saved_prompt or DEFAULT_SYSTEM_PROMPT
+
+    # Always append TTS formatting rules
+    tts_rules = (
+        "\nIMPORTANT: Your response will be read aloud by a TTS engine. "
         "Do NOT use markdown, code blocks, bullet points, asterisks, URLs, emojis, or any special formatting. "
         "Write plain natural text only."
     )
+    if "TTS" not in system_prompt:
+        system_prompt += tts_rules
 
     try:
         if provider == "ollama":

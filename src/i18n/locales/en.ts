@@ -201,6 +201,12 @@ const en = {
             aiResponse: 'AI response',
             speakResponse: 'Speak response',
 
+            // System Prompt
+            systemPrompt: 'System prompt',
+            customPrompt: 'custom',
+            systemPromptDesc: 'Define who the AI is, its personality, rules, and restrictions. This prompt is sent with every request.',
+            resetToDefault: 'Reset to default',
+
             // LLM Providers
             llmProviderDesc: 'Choose between local Ollama or cloud AI providers.',
             serverRunning: 'Running',
