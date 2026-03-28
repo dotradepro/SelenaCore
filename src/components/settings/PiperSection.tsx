@@ -32,6 +32,8 @@ export default function PiperSection() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [installProgress, setInstallProgress] = useState('');
   const [saving, setSaving] = useState(false);
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
@@ -83,33 +85,39 @@ export default function PiperSection() {
   const handleInstall = async () => {
     setInstalling(true);
     setInstallAction('install');
+    setInstallProgress('pip install piper-tts...');
     try {
       await fetch('/api/ui/setup/piper/install', { method: 'POST' });
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/piper/install-progress').then(r => r.json());
+        if (res.output) setInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setInstalling(false);
+          setInstallProgress('');
           checkStatus();
         }
       }, 2000);
-    } catch { setInstalling(false); }
+    } catch { setInstalling(false); setInstallProgress(''); }
   };
 
   const handleUninstall = async () => {
     setInstalling(true);
     setInstallAction('uninstall');
+    setInstallProgress('pip uninstall piper-tts...');
     try {
       await fetch('/api/ui/setup/piper/uninstall', { method: 'POST' });
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/piper/install-progress').then(r => r.json());
+        if (res.output) setInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setInstalling(false);
+          setInstallProgress('');
           checkStatus();
         }
       }, 2000);
-    } catch { setInstalling(false); }
+    } catch { setInstalling(false); setInstallProgress(''); }
   };
 
   const loadCatalog = async () => {
@@ -137,6 +145,7 @@ export default function PiperSection() {
 
   const downloadVoice = async (voiceId: string) => {
     setDownloading(voiceId);
+    setDownloadProgress('starting...');
     try {
       await fetch('/api/ui/setup/tts/download', {
         method: 'POST',
@@ -145,13 +154,15 @@ export default function PiperSection() {
       });
       const poll = setInterval(async () => {
         const res = await fetch(`/api/ui/setup/tts/download-progress/${voiceId}`).then(r => r.json());
+        setDownloadProgress(res.progress || '');
         if (!res.running) {
           clearInterval(poll);
           setDownloading(null);
+          setDownloadProgress('');
           fetchInstalled();
         }
-      }, 3000);
-    } catch { setDownloading(null); }
+      }, 2000);
+    } catch { setDownloading(null); setDownloadProgress(''); }
   };
 
   const deleteVoice = async (voiceId: string) => {
@@ -279,6 +290,18 @@ export default function PiperSection() {
           <RefreshCw size={12} /> {t('common.refresh')}
         </button>
       </div>
+
+      {/* Install/uninstall progress */}
+      {installing && installProgress && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {installProgress}
+          </div>
+          <div style={{ height: 4, background: 'var(--sf3)', borderRadius: 2, overflow: 'hidden' }}>
+            <div className="animate-pulse" style={{ width: '60%', height: '100%', background: 'var(--ac)', borderRadius: 2 }} />
+          </div>
+        </div>
+      )}
 
       {/* Installed voices */}
       {installedVoices.length > 0 && (
@@ -475,11 +498,16 @@ export default function PiperSection() {
                       {v.size_bytes ? ` · ${formatSize(v.size_bytes)}` : ''}
                     </div>
                   </div>
-                  <button onClick={() => downloadVoice(v.id)} disabled={downloading !== null}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1 disabled:opacity-50">
-                    {downloading === v.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                    {downloading === v.id ? t('settings.downloading') : t('settings.download')}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {downloading === v.id && downloadProgress && (
+                      <span className="text-[10px] text-zinc-500">{downloadProgress}</span>
+                    )}
+                    <button onClick={() => downloadVoice(v.id)} disabled={downloading !== null}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1 disabled:opacity-50">
+                      {downloading === v.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                      {downloading === v.id ? t('settings.downloading') : t('settings.download')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

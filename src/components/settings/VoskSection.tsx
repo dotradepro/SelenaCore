@@ -27,6 +27,8 @@ export default function VoskSection() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState('');
+  const [installProgress, setInstallProgress] = useState('');
   const [saving, setSaving] = useState(false);
 
   // STT test flow
@@ -69,34 +71,39 @@ export default function VoskSection() {
   const handleInstall = async () => {
     setInstalling(true);
     setInstallAction('install');
+    setInstallProgress('pip install vosk...');
     try {
       await fetch('/api/ui/setup/vosk/install', { method: 'POST' });
-      // Poll progress
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/vosk/install-progress').then(r => r.json());
+        if (res.output) setInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setInstalling(false);
+          setInstallProgress('');
           checkStatus();
         }
       }, 2000);
-    } catch { setInstalling(false); }
+    } catch { setInstalling(false); setInstallProgress(''); }
   };
 
   const handleUninstall = async () => {
     setInstalling(true);
     setInstallAction('uninstall');
+    setInstallProgress('pip uninstall vosk...');
     try {
       await fetch('/api/ui/setup/vosk/uninstall', { method: 'POST' });
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/vosk/install-progress').then(r => r.json());
+        if (res.output) setInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setInstalling(false);
+          setInstallProgress('');
           checkStatus();
         }
       }, 2000);
-    } catch { setInstalling(false); }
+    } catch { setInstalling(false); setInstallProgress(''); }
   };
 
   const loadCatalog = async () => {
@@ -124,22 +131,24 @@ export default function VoskSection() {
 
   const downloadModel = async (modelId: string) => {
     setDownloading(modelId);
+    setDownloadProgress('starting...');
     try {
       await fetch('/api/ui/setup/stt/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: modelId }),
       });
-      // Poll progress
       const poll = setInterval(async () => {
         const res = await fetch(`/api/ui/setup/stt/download-progress/${modelId}`).then(r => r.json());
+        setDownloadProgress(res.progress || '');
         if (!res.running) {
           clearInterval(poll);
           setDownloading(null);
+          setDownloadProgress('');
           fetchInstalled();
         }
-      }, 3000);
-    } catch { setDownloading(null); }
+      }, 2000);
+    } catch { setDownloading(null); setDownloadProgress(''); }
   };
 
   const deleteModel = async (modelId: string) => {
@@ -309,6 +318,18 @@ export default function VoskSection() {
           <RefreshCw size={12} /> {t('common.refresh')}
         </button>
       </div>
+
+      {/* Install/uninstall progress */}
+      {installing && installProgress && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {installProgress}
+          </div>
+          <div style={{ height: 4, background: 'var(--sf3)', borderRadius: 2, overflow: 'hidden' }}>
+            <div className="animate-pulse" style={{ width: '60%', height: '100%', background: 'var(--ac)', borderRadius: 2 }} />
+          </div>
+        </div>
+      )}
 
       {/* Installed models */}
       {installedModels.length > 0 && (
@@ -494,11 +515,16 @@ export default function VoskSection() {
                       {m.notes && <span> · {m.notes}</span>}
                     </div>
                   </div>
-                  <button onClick={() => downloadModel(m.id)} disabled={downloading !== null}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1 disabled:opacity-50">
-                    {downloading === m.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-                    {downloading === m.id ? t('settings.downloading') : t('settings.download')}
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {downloading === m.id && downloadProgress && (
+                      <span className="text-[10px] text-zinc-500">{downloadProgress}</span>
+                    )}
+                    <button onClick={() => downloadModel(m.id)} disabled={downloading !== null}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1 disabled:opacity-50">
+                      {downloading === m.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                      {downloading === m.id ? t('settings.downloading') : t('settings.download')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

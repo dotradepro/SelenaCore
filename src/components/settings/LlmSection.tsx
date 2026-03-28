@@ -30,6 +30,7 @@ export default function LlmSection() {
   const [ollamaStatus, setOllamaStatus] = useState<{ installed: boolean; version: string | null; running: boolean }>({ installed: false, version: null, running: false });
   const [ollamaInstalling, setOllamaInstalling] = useState(false);
   const [ollamaAction, setOllamaAction] = useState('');
+  const [ollamaInstallProgress, setOllamaInstallProgress] = useState('');
   const [ollamaModels, setOllamaModels] = useState<LlmModel[]>([]);
   const [pullModel, setPullModel] = useState('');
   const [pulling, setPulling] = useState(false);
@@ -110,33 +111,39 @@ export default function LlmSection() {
   const handleOllamaInstall = async () => {
     setOllamaInstalling(true);
     setOllamaAction('install');
+    setOllamaInstallProgress('downloading ollama...');
     try {
       await fetch('/api/ui/setup/ollama/install', { method: 'POST' });
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/ollama/install-progress').then(r => r.json());
+        if (res.output) setOllamaInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setOllamaInstalling(false);
+          setOllamaInstallProgress('');
           fetchOllamaStatus();
         }
       }, 3000);
-    } catch { setOllamaInstalling(false); }
+    } catch { setOllamaInstalling(false); setOllamaInstallProgress(''); }
   };
 
   const handleOllamaUninstall = async () => {
     setOllamaInstalling(true);
     setOllamaAction('uninstall');
+    setOllamaInstallProgress('removing ollama...');
     try {
       await fetch('/api/ui/setup/ollama/uninstall', { method: 'POST' });
       const poll = setInterval(async () => {
         const res = await fetch('/api/ui/setup/ollama/install-progress').then(r => r.json());
+        if (res.output) setOllamaInstallProgress(res.output.split('\n').filter(Boolean).pop() || '');
         if (!res.running) {
           clearInterval(poll);
           setOllamaInstalling(false);
+          setOllamaInstallProgress('');
           fetchOllamaStatus();
         }
       }, 2000);
-    } catch { setOllamaInstalling(false); }
+    } catch { setOllamaInstalling(false); setOllamaInstallProgress(''); }
   };
 
   const handleOllamaStart = async () => {
@@ -333,6 +340,18 @@ export default function LlmSection() {
               <RefreshCw size={12} /> {t('common.refresh')}
             </button>
           </div>
+
+          {/* Install progress */}
+          {ollamaInstalling && ollamaInstallProgress && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--tx2)', marginBottom: 4, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {ollamaInstallProgress}
+              </div>
+              <div style={{ height: 4, background: 'var(--sf3)', borderRadius: 2, overflow: 'hidden' }}>
+                <div className="animate-pulse" style={{ width: '60%', height: '100%', background: 'var(--ac)', borderRadius: 2 }} />
+              </div>
+            </div>
+          )}
 
           {/* Ollama models */}
           {ollamaModels.length > 0 && (
