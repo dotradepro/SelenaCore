@@ -134,18 +134,18 @@
 </head>
 
 <body>
-    <h3>Import Adapters</h3>
+    <h3 data-i18n="title">Import Adapters</h3>
     <div id="status-display">
         <div class="status-row">
-            <span class="label">Status</span>
+            <span class="label" data-i18n="status">Status</span>
             <span id="status-badge" class="badge badge-idle">idle</span>
         </div>
         <div class="status-row">
-            <span class="label">Last import</span>
+            <span class="label" data-i18n="last_import">Last import</span>
             <span id="source-val" class="value">—</span>
         </div>
         <div class="status-row">
-            <span class="label">Devices imported</span>
+            <span class="label" data-i18n="devices_imported">Devices imported</span>
             <span id="count-val" class="value">—</span>
         </div>
     </div>
@@ -156,6 +156,25 @@
         <div class="adapter-pill">💡 Hue</div>
     </div>
     <script>
+        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        var L = {
+            en: { title: 'Import Adapters', status: 'Status', last_import: 'Last import', devices_imported: 'Devices imported' },
+            uk: { title: 'Імпорт адаптерів', status: 'Статус', last_import: 'Останній імпорт', devices_imported: 'Пристроїв імпортовано' }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+        window.addEventListener('message', function (e) {
+            if (e.data && e.data.type === 'lang_changed') {
+                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+                applyLang();
+                refresh();
+            }
+        });
+
         const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function refresh() {
             try {
@@ -167,7 +186,7 @@
                 badge.className = 'badge badge-' + d.status;
                 document.getElementById('source-val').textContent = d.source || '—';
                 document.getElementById('count-val').textContent = d.imported_count ?? '—';
-            } catch { }
+            } catch (e) { /* fetch error */ }
         }
         applyLang();
         refresh();
