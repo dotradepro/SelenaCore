@@ -160,21 +160,22 @@ class MediaPlayerModule(SystemModule):
     # ── Background tasks ──────────────────────────────────────────────────────
 
     async def _state_broadcast_loop(self) -> None:
-        """Broadcast media.state_changed every 3 s while playing."""
+        """Broadcast media.state_changed every 3 s while playing/buffering."""
         while True:
             await asyncio.sleep(3)
             try:
                 state = self._player.get_state()
-                if state == "playing":
+                if state in ("playing", "buffering"):
                     status = self._player.get_status()
-                    track = self._player.get_current_track()
-                    if track and track.artist and track.title:
-                        cover = await self._cover.fetch(track.artist, track.title)
-                        if cover and status.get("track") is not None:
-                            status["track"]["cover_url"] = cover
-                            # Persist fetched cover so polling picks it up too
-                            if self._player._stub_track:
-                                self._player._stub_track.cover_url = cover
+                    if state == "playing":
+                        track = self._player.get_current_track()
+                        if track and track.artist and track.title:
+                            cover = await self._cover.fetch(track.artist, track.title)
+                            if cover and status.get("track") is not None:
+                                status["track"]["cover_url"] = cover
+                                # Persist fetched cover so polling picks it up too
+                                if self._player._stub_track:
+                                    self._player._stub_track.cover_url = cover
                     await self.publish("media.state_changed", status)
             except Exception as exc:
                 logger.debug("State broadcast error: %s", exc)
@@ -223,7 +224,10 @@ class MediaPlayerModule(SystemModule):
                 body.url, body.source_type,
                 title=body.title, cover_url=body.cover_url or None,
             )
-            return {"ok": True}
+            state = svc._player.get_state()
+            if state == "error":
+                raise HTTPException(status_code=502, detail="VLC failed to start playback")
+            return {"ok": True, "state": state}
 
         @router.post("/player/pause")
         async def pause() -> dict:

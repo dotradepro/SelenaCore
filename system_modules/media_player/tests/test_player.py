@@ -92,7 +92,8 @@ def test_shuffle_toggle_off(player):
 async def test_play_url_calls_vlc(player):
     player._instance.media_new.return_value = MagicMock()
     await player.play_url("https://stream.example.com/radio", "radio")
-    player._instance.media_new.assert_called_once_with("https://stream.example.com/radio")
+    # Radio streams: HTTPS is converted to HTTP to avoid gnutls TLS issues
+    player._instance.media_new.assert_called_once_with("http://stream.example.com/radio")
     player._player.set_media.assert_called_once()
     player._player.play.assert_called_once()
     assert player._current_source_type == "radio"

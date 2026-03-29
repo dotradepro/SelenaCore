@@ -1,7 +1,9 @@
 # system_modules/media_player/player.py — Playback engine (python-vlc / libvlc).
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -31,7 +33,13 @@ class MediaPlayer:
         try:
             import vlc  # type: ignore[import-untyped]
             self._vlc = vlc
-            self._instance = vlc.Instance("--no-video")
+            aout = os.getenv("MEDIA_AUDIO_OUTPUT", "pulse").strip()
+            vlc_args = ["--no-video", "--no-xlib", "--network-caching=3000",
+                        "--http-reconnect", f"--aout={aout}"]
+            alsa_dev = os.getenv("MEDIA_ALSA_DEVICE", "").strip()
+            if aout == "alsa" and alsa_dev:
+                vlc_args.append(f"--alsa-audio-device={alsa_dev}")
+            self._instance = vlc.Instance(*vlc_args)
             self._player = self._instance.media_player_new()
             self._list_player = self._instance.media_list_player_new()
             self._list_player.set_media_player(self._player)
@@ -50,12 +58,19 @@ class MediaPlayer:
         # Soft state for stub mode — tracks what the UI selected
         self._stub_state: str = "stopped"
         self._stub_track: Optional[TrackInfo] = None
+        self._watchdog_task: Optional[asyncio.Task] = None
 
     # ── Playback ──────────────────────────────────────────────────────────────
 
     async def play_url(self, url: str, source_type: str = "http",
                        *, title: str = "", cover_url: Optional[str] = None) -> None:
         self._current_source_type = source_type
+        # For radio streams, prefer HTTP over HTTPS to avoid gnutls issues
+        # with non-standard TLS configurations on shoutcast/icecast servers
+        play_url = url
+        if source_type == "radio" and url.startswith("https://"):
+            play_url = "http://" + url[8:]
+            logger.info("Radio stream: using HTTP instead of HTTPS for %s", url)
         # Always track soft state so UI can display the selection
         self._stub_track = TrackInfo(
             title=title or url.rsplit("/", 1)[-1][:60],
@@ -63,14 +78,52 @@ class MediaPlayer:
             source_path=url,
             cover_url=cover_url,
         )
-        self._stub_state = "playing"
         if self._instance is None:
+            self._stub_state = "playing"
             logger.info("[stub] play_url: %s [%s]", url, source_type)
             return
-        media = self._instance.media_new(url)
+        media = self._instance.media_new(play_url)
         self._player.set_media(media)
-        self._player.play()
-        logger.info("Playing: %s [%s]", url, source_type)
+        rc = self._player.play()
+        if rc == -1:
+            self._stub_state = "error"
+            logger.error("VLC play() failed for: %s", play_url)
+            return
+        self._stub_state = "playing"
+        self._start_watchdog()
+        logger.info("Playing: %s [%s]", play_url, source_type)
+
+    def _start_watchdog(self) -> None:
+        """Restart stream if VLC drops to Ended/Error (e.g. TLS disconnect)."""
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+        self._watchdog_task = asyncio.ensure_future(self._watchdog_loop())
+
+    async def _watchdog_loop(self) -> None:
+        """Monitor playback and auto-reconnect radio streams on drop."""
+        await asyncio.sleep(5)  # give VLC time to start
+        while True:
+            await asyncio.sleep(3)
+            if self._instance is None:
+                return
+            state = self.get_state()
+            if state in ("error", "ended") and self._stub_track:
+                track = self._stub_track
+                if track.source_type == "radio" and track.source_path:
+                    logger.warning("Radio stream ended/error — reconnecting: %s",
+                                   track.source_path)
+                    url = track.source_path
+                    play_url = url
+                    if url.startswith("https://"):
+                        play_url = "http://" + url[8:]
+                    media = self._instance.media_new(play_url)
+                    self._player.set_media(media)
+                    self._player.play()
+                    await asyncio.sleep(5)
+                else:
+                    return
+            elif state == "stopped":
+                return
 
     async def play_playlist(self, urls: list[str]) -> None:
         if self._instance is None:
@@ -99,6 +152,9 @@ class MediaPlayer:
         self._player.pause()
 
     async def stop(self) -> None:
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+            self._watchdog_task = None
         if self._player is None:
             self._stub_state = "stopped"
             self._stub_track = None
@@ -128,12 +184,16 @@ class MediaPlayer:
             return self._stub_state
         state = self._player.get_state()
         mapping = {
+            self._vlc.State.NothingSpecial: "stopped",
+            self._vlc.State.Opening: "buffering",
+            self._vlc.State.Buffering: "buffering",
             self._vlc.State.Playing: "playing",
             self._vlc.State.Paused: "paused",
             self._vlc.State.Stopped: "stopped",
             self._vlc.State.Ended: "ended",
+            self._vlc.State.Error: "error",
         }
-        return mapping.get(state, "unknown")
+        return mapping.get(state, "stopped")
 
     def get_current_track(self) -> Optional[TrackInfo]:
         if self._player is None or self._vlc is None:
