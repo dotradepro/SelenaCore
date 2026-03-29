@@ -321,23 +321,26 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             except Exception:
                 return {"status": "error", "response": "", "error": "llama.cpp server not available", "provider": provider}
 
-            # OpenAI-compatible API
-            messages = []
+            # Use /v1/completions with raw prompt (avoids Jinja template issues with some models)
+            prompt_parts = []
             if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": req.text})
+                prompt_parts.append(f"System: {system_prompt}")
+            prompt_parts.append(f"User: {req.text}")
+            prompt_parts.append("Assistant:")
+            prompt = "\n".join(prompt_parts)
 
             payload = {
-                "messages": messages,
+                "prompt": prompt,
                 "max_tokens": 512,
                 "temperature": 0.7,
+                "stop": ["User:", "\nUser:"],
             }
 
             async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{llamacpp_url}/v1/chat/completions", json=payload)
+                resp = await client.post(f"{llamacpp_url}/v1/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                response_text = data.get("choices", [{}])[0].get("text", "").strip()
 
             return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": p_model}
 
