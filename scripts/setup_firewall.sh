@@ -28,8 +28,11 @@ iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 # Core API (local network only)
 iptables -A INPUT -p tcp --dport 7070 -m conntrack --ctstate NEW -j ACCEPT
 
-# UI (local network only)
+# UI HTTP (local network only)
 iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
+
+# UI HTTPS (local network only)
+iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
 
 # Block external access to module ports (8100-8200)
 # Modules are only accessible from internal docker network
@@ -42,6 +45,7 @@ iptables -A INPUT -p tcp --dport 11434 -s 127.0.0.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 11434 -j DROP
 
 # Save rules
+mkdir -p /etc/iptables
 iptables-save > /etc/iptables/rules.v4
 
 echo "[firewall] Rules saved to /etc/iptables/rules.v4"

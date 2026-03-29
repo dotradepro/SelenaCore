@@ -19,13 +19,13 @@ done
 
 # Auto-detect CUDA libraries
 for lib_dir in /usr/local/cuda/lib64 /usr/local/cuda-*/targets/*/lib /usr/lib/aarch64-linux-gnu/tegra; do
-    [ -d "$lib_dir" ] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH}"
+    [ -d "$lib_dir" ] && export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
 done
 
 # Include user pip packages if available
 if [ -d "$HOME/.local/lib" ]; then
     PYVER=$(python3 -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null)
-    [ -d "$HOME/.local/lib/$PYVER/site-packages" ] && export PYTHONPATH="$HOME/.local/lib/$PYVER/site-packages:${PYTHONPATH}"
+    [ -d "$HOME/.local/lib/$PYVER/site-packages" ] && export PYTHONPATH="$HOME/.local/lib/$PYVER/site-packages:${PYTHONPATH:-}"
     export PATH="$HOME/.local/bin:$PATH"
 fi
 

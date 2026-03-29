@@ -197,8 +197,6 @@ main() {
             export WLR_BACKENDS="${WLR_BACKENDS:-drm,libinput}"
             export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
             export WLR_NO_HARDWARE_CURSORS="${WLR_NO_HARDWARE_CURSORS:-1}"
-            local SCRIPT_DIR
-            SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
             export XCURSOR_PATH="${SCRIPT_DIR}/cursors:/usr/share/icons"
             export XCURSOR_THEME=default
             export XCURSOR_SIZE=24

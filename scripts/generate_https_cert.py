@@ -2,7 +2,7 @@
 """
 scripts/generate_https_cert.py — Self-signed HTTPS certificate generation
 
-Generates a self-signed TLS certificate for the SelenaCore UI server (:8080).
+Generates a self-signed TLS certificate for the SelenaCore UI server (:443).
 Certificate is stored in /secure/tls/ and used by the UI uvicorn process.
 
 Usage: python3 scripts/generate_https_cert.py [--hostname mydevice.local]

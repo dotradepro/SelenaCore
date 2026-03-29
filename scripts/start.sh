@@ -1,12 +1,13 @@
 #!/bin/bash
 # Start Core API (:7070) and UI Core (:80 HTTP + :443 HTTPS) in parallel
+set -euo pipefail
 
 # Auto-generate self-signed TLS certificate if not present
 TLS_CERT="/secure/tls/selena.crt"
 TLS_KEY="/secure/tls/selena.key"
 if [ ! -f "$TLS_CERT" ] || [ ! -f "$TLS_KEY" ]; then
   echo "[start.sh] Generating self-signed TLS certificate..."
-  python3 generate_https_cert.py && echo "[start.sh] TLS cert generated OK" \
+  python3 scripts/generate_https_cert.py && echo "[start.sh] TLS cert generated OK" \
     || echo "[start.sh] WARNING: cert generation failed, HTTPS will be disabled"
 fi
 
@@ -72,9 +73,9 @@ fi
 echo "[start.sh] Core API PID=$CORE_PID  UI Core PID=$UI_PID"
 
 # If any process exits, kill all others and exit
-wait -n $CORE_PID $UI_PID ${HTTPS_PID:+$HTTPS_PID}
+wait -n "$CORE_PID" "$UI_PID" ${HTTPS_PID:+"$HTTPS_PID"}
 EXIT_CODE=$?
 
 echo "[start.sh] One of the processes exited (code $EXIT_CODE), shutting down..."
-kill $CORE_PID $UI_PID $HTTPS_PID 2>/dev/null || true
+kill "$CORE_PID" "$UI_PID" ${HTTPS_PID:+"$HTTPS_PID"} 2>/dev/null || true
 exit $EXIT_CODE

@@ -7,11 +7,9 @@ both dark and light themes, matching the main app's design tokens from src/index
 import re
 import os
 
-BASE = "/home/selena/SelenaCore/system_modules"
+BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "system_modules")
 
 FILES = [
-    "weather_service/widget.html",
-    "weather_service/settings.html",
     "automation_engine/widget.html",
     "automation_engine/settings.html",
     "device_watchdog/widget.html",
@@ -20,6 +18,8 @@ FILES = [
     "energy_monitor/settings.html",
     "import_adapters/widget.html",
     "import_adapters/settings.html",
+    "media_player/widget.html",
+    "media_player/settings.html",
     "notification_router/widget.html",
     "notification_router/settings.html",
     "presence_detection/widget.html",
@@ -29,8 +29,11 @@ FILES = [
     "scheduler/settings.html",
     "update_manager/widget.html",
     "update_manager/settings.html",
+    "user_manager/settings.html",
     "voice_core/widget.html",
     "voice_core/settings.html",
+    "weather_service/widget.html",
+    "weather_service/settings.html",
 ]
 
 # Design tokens matching src/index.css

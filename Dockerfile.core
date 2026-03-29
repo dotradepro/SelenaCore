@@ -57,6 +57,6 @@ ENV PYTHONUNBUFFERED=1 \
     CORE_LOG_LEVEL=INFO \
     LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
 
-EXPOSE 7070 80
+EXPOSE 7070 80 443
 
 CMD ["/bin/bash", "/opt/selena-core/start.sh"]

@@ -39,5 +39,9 @@ CHROMIUM_FLAGS=(
     --user-data-dir=/tmp/chromium-kiosk
 )
 
-echo "[kiosk] Starting cage + chromium on ${UI_URL}"
-exec cage -- chromium "${CHROMIUM_FLAGS[@]}" "${UI_URL}"
+# Find chromium binary (chromium or chromium-browser depending on distro)
+CHROMIUM_BIN="$(command -v chromium 2>/dev/null || command -v chromium-browser 2>/dev/null)" \
+    || { echo "[kiosk] ERROR: chromium not found"; exit 1; }
+
+echo "[kiosk] Starting cage + $CHROMIUM_BIN on ${UI_URL}"
+exec cage -- "$CHROMIUM_BIN" "${CHROMIUM_FLAGS[@]}" "${UI_URL}"
