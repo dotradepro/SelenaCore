@@ -814,11 +814,13 @@ async def ollama_install_progress() -> dict[str, Any]:
 
 @router.get("/ollama/models")
 async def ollama_models() -> dict[str, Any]:
-    """List models from Ollama (installed + available to pull)."""
+    """List models — from Ollama API if running, fallback to disk scan."""
     ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
     installed: list[dict] = []
+
+    # Try Ollama API first
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{ollama_url}/api/tags")
             resp.raise_for_status()
             data = resp.json()
@@ -830,10 +832,49 @@ async def ollama_models() -> dict[str, Any]:
                     "size_gb": size_gb,
                     "installed": True,
                 })
-    except Exception as exc:
-        logger.warning("Ollama model list failed: %s", exc)
+    except Exception:
+        pass
+
+    # Fallback: scan disk manifests (works when Ollama is stopped)
+    if not installed:
+        installed = _scan_ollama_models_from_disk()
 
     return {"models": installed}
+
+
+def _scan_ollama_models_from_disk() -> list[dict]:
+    """Scan Ollama model manifests on disk (shared volume)."""
+    models = []
+    manifests_root = Path("/root/.ollama/models/manifests/registry.ollama.ai")
+    if not manifests_root.is_dir():
+        return models
+
+    for namespace in manifests_root.iterdir():
+        if not namespace.is_dir():
+            continue
+        for model_dir in namespace.iterdir():
+            if not model_dir.is_dir():
+                continue
+            for tag_file in model_dir.iterdir():
+                if not tag_file.is_file():
+                    continue
+                name = f"{model_dir.name}:{tag_file.name}" if namespace.name == "library" else f"{namespace.name}/{model_dir.name}:{tag_file.name}"
+                # Get size from manifest
+                size_gb = 0.0
+                try:
+                    manifest = json.loads(tag_file.read_text())
+                    for layer in manifest.get("layers", []):
+                        if layer.get("mediaType", "") == "application/vnd.ollama.image.model":
+                            size_gb = round(layer.get("size", 0) / (1024 ** 3), 1)
+                except Exception:
+                    pass
+                models.append({
+                    "id": name,
+                    "name": name,
+                    "size_gb": size_gb,
+                    "installed": True,
+                })
+    return models
 
 
 # Curated list of popular small models for edge devices
