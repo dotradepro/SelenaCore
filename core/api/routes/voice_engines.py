@@ -711,15 +711,20 @@ async def ollama_uninstall() -> dict[str, Any]:
 
 @router.post("/ollama/start")
 async def ollama_start() -> dict[str, Any]:
-    """Start Ollama server."""
-    ollama_bin = shutil.which("ollama")
-    if not ollama_bin:
-        raise HTTPException(status_code=503, detail="Ollama not installed")
-
+    """Start Ollama server (Docker container or local process)."""
     loop = asyncio.get_event_loop()
 
     def _start():
-        # Try systemctl first (host systems with systemd)
+        # Try starting Docker container first (GPU setup)
+        if shutil.which("docker"):
+            result = subprocess.run(
+                ["docker", "start", "selena-ollama"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                return "started docker container"
+
+        # Try systemctl (host systems)
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "start", "ollama"],
@@ -728,16 +733,15 @@ async def ollama_start() -> dict[str, Any]:
             if result.returncode == 0:
                 return "started via systemd"
 
-        # Fallback: start in background (Docker / non-systemd)
+        # Fallback: start local process
+        ollama_bin = shutil.which("ollama")
+        if not ollama_bin:
+            raise RuntimeError("Ollama not installed")
+
         env = os.environ.copy()
         env["OLLAMA_HOST"] = "0.0.0.0:11434"
-
-        # GPU acceleration
         from core.hardware import should_use_gpu
-        if should_use_gpu():
-            env["OLLAMA_NUM_GPU"] = "999"  # offload all layers to GPU
-        else:
-            env["OLLAMA_NUM_GPU"] = "0"  # CPU only
+        env["OLLAMA_NUM_GPU"] = "999" if should_use_gpu() else "0"
         subprocess.Popen(
             [ollama_bin, "serve"],
             stdout=subprocess.DEVNULL,
@@ -757,10 +761,20 @@ async def ollama_start() -> dict[str, Any]:
 
 @router.post("/ollama/stop")
 async def ollama_stop() -> dict[str, Any]:
-    """Stop Ollama server."""
+    """Stop Ollama server (Docker container or local process)."""
     loop = asyncio.get_event_loop()
 
     def _stop():
+        # Try stopping Docker container first (GPU setup)
+        if shutil.which("docker"):
+            result = subprocess.run(
+                ["docker", "stop", "selena-ollama"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                return "stopped docker container"
+
+        # Fallback: systemctl
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "stop", "ollama"],
@@ -768,7 +782,8 @@ async def ollama_stop() -> dict[str, Any]:
             )
             if result.returncode == 0:
                 return "stopped via systemd"
-        # Find and kill ollama process (pkill may not exist in slim containers)
+
+        # Fallback: kill process
         import signal
         try:
             for entry in Path("/proc").iterdir():
@@ -1536,10 +1551,15 @@ async def llm_providers() -> dict[str, Any]:
 
 @router.post("/llm/provider/select")
 async def llm_provider_select(req: ProviderSelectRequest) -> dict[str, Any]:
-    """Switch active LLM provider."""
+    """Switch active LLM provider. Auto-manages local servers:
+    - Ollama selected → start Ollama, stop llama.cpp
+    - llama.cpp selected → start llama.cpp, stop Ollama
+    - Cloud selected → stop both Ollama and llama.cpp
+    """
     config = read_config()
     voice_cfg = config.setdefault("voice", {})
     provider_configs = voice_cfg.get("providers", {})
+    old_provider = voice_cfg.get("llm_provider", "ollama")
 
     voice_cfg["llm_provider"] = req.provider
 
@@ -1552,7 +1572,56 @@ async def llm_provider_select(req: ProviderSelectRequest) -> dict[str, Any]:
     from core.config_writer import write_config
     write_config(config)
 
-    return {"status": "ok", "provider": req.provider, "model": saved_model}
+    # Auto-manage local servers
+    stopped = []
+    started = []
+
+    if req.provider == "ollama":
+        # Stop llama.cpp if running
+        try:
+            await llamacpp_stop()
+            stopped.append("llamacpp")
+        except Exception:
+            pass
+        # Start Ollama if not running
+        try:
+            await ollama_start()
+            started.append("ollama")
+        except Exception:
+            pass
+
+    elif req.provider == "llamacpp":
+        # Stop Ollama if running
+        try:
+            await ollama_stop()
+            stopped.append("ollama")
+        except Exception:
+            pass
+        # Start llama.cpp (needs model selected)
+        if saved_model:
+            try:
+                await llamacpp_start({"model": saved_model})
+                started.append("llamacpp")
+            except Exception:
+                pass
+
+    else:
+        # Cloud provider — stop both local servers to free GPU memory
+        try:
+            await ollama_stop()
+            stopped.append("ollama")
+        except Exception:
+            pass
+        try:
+            await llamacpp_stop()
+            stopped.append("llamacpp")
+        except Exception:
+            pass
+
+    return {
+        "status": "ok", "provider": req.provider, "model": saved_model,
+        "stopped": stopped, "started": started,
+    }
 
 
 @router.post("/llm/provider/apikey")
