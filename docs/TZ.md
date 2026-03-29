@@ -1,0 +1,1 @@
+../SmartHome_Core_TZ_v0.3_en.md
