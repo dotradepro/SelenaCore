@@ -1572,56 +1572,36 @@ async def llm_provider_select(req: ProviderSelectRequest) -> dict[str, Any]:
     from core.config_writer import write_config
     write_config(config)
 
-    # Auto-manage local servers
-    stopped = []
-    started = []
+    # Auto-manage local servers in background (don't block the response)
+    asyncio.create_task(_switch_local_servers(req.provider, saved_model))
 
-    if req.provider == "ollama":
-        # Stop llama.cpp if running
-        try:
-            await llamacpp_stop()
-            stopped.append("llamacpp")
-        except Exception:
-            pass
-        # Start Ollama if not running
-        try:
-            await ollama_start()
-            started.append("ollama")
-        except Exception:
-            pass
+    return {"status": "ok", "provider": req.provider, "model": saved_model}
 
-    elif req.provider == "llamacpp":
-        # Stop Ollama if running
-        try:
-            await ollama_stop()
-            stopped.append("ollama")
-        except Exception:
-            pass
-        # Start llama.cpp (needs model selected)
-        if saved_model:
-            try:
-                await llamacpp_start({"model": saved_model})
-                started.append("llamacpp")
-            except Exception:
-                pass
 
-    else:
-        # Cloud provider — stop both local servers to free GPU memory
-        try:
-            await ollama_stop()
-            stopped.append("ollama")
-        except Exception:
-            pass
-        try:
-            await llamacpp_stop()
-            stopped.append("llamacpp")
-        except Exception:
-            pass
+async def _switch_local_servers(provider: str, model: str) -> None:
+    """Background task: stop/start local LLM servers based on selected provider."""
+    try:
+        if provider == "ollama":
+            try: await llamacpp_stop()
+            except Exception: pass
+            try: await ollama_start()
+            except Exception: pass
 
-    return {
-        "status": "ok", "provider": req.provider, "model": saved_model,
-        "stopped": stopped, "started": started,
-    }
+        elif provider == "llamacpp":
+            try: await ollama_stop()
+            except Exception: pass
+            if model:
+                try: await llamacpp_start({"model": model})
+                except Exception: pass
+
+        else:
+            # Cloud — stop both to free GPU
+            try: await ollama_stop()
+            except Exception: pass
+            try: await llamacpp_stop()
+            except Exception: pass
+    except Exception as exc:
+        logger.warning("Server switch failed: %s", exc)
 
 
 @router.post("/llm/provider/apikey")
