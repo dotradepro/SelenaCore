@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   core:
     build:
@@ -8,16 +6,21 @@ services:
     container_name: selena-core
     restart: unless-stopped
     network_mode: host
+    pid: host
+    privileged: true
     volumes:
       - selena_data:/var/lib/selena
       - selena_secure:/secure
-      - ollama_data:/root/.ollama
+      - ${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/bin/docker:/usr/bin/docker:ro
+      - /usr/bin/systemctl:/usr/bin/systemctl:ro
+      - /run/systemd/system:/run/systemd/system:ro
+      - /usr/bin/nsenter:/usr/bin/nsenter:ro
       - /var/log/selena:/var/log/selena
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
-      - /run/user/1000/pulse:/run/user/1000/pulse
-      - /home/dotradepro/.config/pulse/cookie:/root/.config/pulse/cookie:ro
+      - /run/user/${HOST_UID:-1000}/pulse:/run/user/${HOST_UID:-1000}/pulse
+      - ${HOME}/.config/pulse/cookie:/root/.config/pulse/cookie:ro
       - ./core:/opt/selena-core/core
       - ./system_modules:/opt/selena-core/system_modules
       - ./agent:/opt/selena-core/agent
@@ -25,10 +28,14 @@ services:
       - ./config:/opt/selena-core/config
       - ./modules:/opt/selena-core/modules
       - ./sdk:/opt/selena-core/sdk
+      - ./scripts:/opt/selena-core/scripts:ro
     devices:
       - /dev/snd:/dev/snd
     environment:
-      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - PULSE_SERVER=unix:/run/user/${HOST_UID:-1000}/pulse/native
+      - HOST_USER=${USER:-root}
+      - OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}
+      - LLAMACPP_START_SCRIPT=${PWD}/scripts/llamacpp-start.sh
     env_file:
       - .env
     healthcheck:
@@ -56,9 +63,6 @@ services:
     depends_on:
       - core
 
-  # modules: запускаются отдельно для каждого модуля (см. modules/*/Dockerfile)
-  # smarthome-modules:latest — базовый образ, не запускается напрямую
-
 networks:
   selena_modules:
     driver: bridge
@@ -66,4 +70,3 @@ networks:
 volumes:
   selena_data:
   selena_secure:
-  ollama_data:
