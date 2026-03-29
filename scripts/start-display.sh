@@ -12,7 +12,8 @@
 set -euo pipefail
 
 UI_URL="${SELENA_UI_URL:-http://localhost}"
-COMPOSE_FILE="${COMPOSE_FILE:-/home/dotradepro/Downloads/SelenaCore/docker-compose.yml}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+COMPOSE_FILE="${COMPOSE_FILE:-${SCRIPT_DIR}/../docker-compose.yml}"
 LOG="${SELENA_LOG_DIR:-/var/log/selena}/display.log"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
