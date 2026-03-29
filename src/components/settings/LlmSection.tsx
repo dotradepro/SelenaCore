@@ -27,6 +27,10 @@ export default function LlmSection() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [activeProvider, setActiveProvider] = useState('ollama');
 
+  // Switch progress steps
+  const [switchSteps, setSwitchSteps] = useState<string[]>([]);
+  const [switchActive, setSwitchActive] = useState(false);
+
   // Ollama state
   const [ollamaStatus, setOllamaStatus] = useState<{ installed: boolean; version: string | null; running: boolean }>({ installed: false, version: null, running: false });
   const [ollamaInstalling, setOllamaInstalling] = useState(false);
@@ -57,6 +61,12 @@ export default function LlmSection() {
   const [isCustomPrompt, setIsCustomPrompt] = useState(false);
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [showPromptEditor, setShowPromptEditor] = useState(false);
+
+  // TTS rules
+  const [ttsRules, setTtsRules] = useState('');
+  const [defaultTtsRules, setDefaultTtsRules] = useState('');
+  const [isCustomTts, setIsCustomTts] = useState(false);
+  const [savingTts, setSavingTts] = useState(false);
 
   // Cloud state
   const [apiKey, setApiKey] = useState('');
@@ -103,6 +113,9 @@ export default function LlmSection() {
       setSystemPrompt(res.prompt || '');
       setDefaultPrompt(res.default || '');
       setIsCustomPrompt(res.is_custom || false);
+      setTtsRules(res.tts_rules || '');
+      setDefaultTtsRules(res.default_tts_rules || '');
+      setIsCustomTts(res.is_custom_tts || false);
     } catch { /* ignore */ }
   }, []);
 
@@ -128,15 +141,59 @@ export default function LlmSection() {
   }, [activeProvider, providers]);
 
   const selectProvider = async (providerId: string) => {
+    const oldProvider = activeProvider;
     setActiveProvider(providerId);
+    setSwitchActive(true);
+    setSwitchSteps([]);
+
+    const addStep = (s: string) => setSwitchSteps((prev: string[]) => [...prev, s]);
+
     try {
+      // Step 1: stop old
+      if (oldProvider === 'ollama' && providerId !== 'ollama') {
+        addStep(t('settings.switchStopOllama'));
+      } else if (oldProvider === 'llamacpp' && providerId !== 'llamacpp') {
+        addStep(t('settings.switchStopLlamacpp'));
+      }
+
+      // Step 2: select provider (triggers background server management)
+      addStep(t('settings.switchSelectProvider'));
       await fetch('/api/ui/setup/llm/provider/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: providerId }),
       });
       fetchProviders();
+
+      // Step 3: wait for server to be ready
+      if (providerId === 'ollama') {
+        addStep(t('settings.switchStartOllama'));
+        await _waitForServer(() => fetch('/api/ui/setup/ollama/status').then(r => r.json()).then(d => d.running), 15);
+        addStep(t('settings.switchReady'));
+      } else if (providerId === 'llamacpp') {
+        addStep(t('settings.switchStartLlamacpp'));
+        addStep(t('settings.switchLoadingModel'));
+        await _waitForServer(() => fetch('/api/ui/setup/llamacpp/status').then(r => r.json()).then(d => d.running), 30);
+        addStep(t('settings.switchReady'));
+      } else {
+        addStep(t('settings.switchReady'));
+      }
     } catch { /* ignore */ }
+
+    // Refresh all statuses
+    setTimeout(() => {
+      fetchOllamaStatus();
+      fetchLlamacppStatus();
+      fetchOllamaModels();
+      setSwitchActive(false);
+    }, 1000);
+  };
+
+  const _waitForServer = async (check: () => Promise<boolean>, maxSec: number) => {
+    for (let i = 0; i < maxSec; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      try { if (await check()) return; } catch { /* retry */ }
+    }
   };
 
   // Ollama actions
@@ -311,22 +368,33 @@ export default function LlmSection() {
 
   const startLlamacpp = async () => {
     setLlamacppStarting(true);
+    setSwitchActive(true);
+    setSwitchSteps([]);
+    const addStep = (s: string) => setSwitchSteps((prev: string[]) => [...prev, s]);
+
     try {
+      addStep(t('settings.switchStartLlamacpp'));
       await fetch('/api/ui/setup/llamacpp/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
-      setTimeout(fetchLlamacppStatus, 3000);
+      addStep(t('settings.switchLoadingModel'));
+      await _waitForServer(() => fetch('/api/ui/setup/llamacpp/status').then(r => r.json()).then(d => d.running), 30);
+      addStep(t('settings.switchReady'));
     } catch { /* ignore */ }
+    fetchLlamacppStatus();
     setLlamacppStarting(false);
+    setTimeout(() => setSwitchActive(false), 2000);
   };
 
   const stopLlamacpp = async () => {
+    setSwitchActive(true);
+    setSwitchSteps([t('settings.switchStopLlamacpp')]);
     try {
       await fetch('/api/ui/setup/llamacpp/stop', { method: 'POST' });
-      setTimeout(fetchLlamacppStatus, 1000);
     } catch { /* ignore */ }
+    setTimeout(() => { fetchLlamacppStatus(); setSwitchActive(false); setSwitchSteps([]); }, 2000);
   };
 
   const saveSystemPrompt = async () => {
@@ -347,7 +415,27 @@ export default function LlmSection() {
       const res = await fetch('/api/ui/setup/llm/system-prompt/reset', { method: 'POST' }).then(r => r.json());
       setSystemPrompt(res.prompt || defaultPrompt);
       setIsCustomPrompt(false);
+      setTtsRules(res.tts_rules || defaultTtsRules);
+      setIsCustomTts(false);
     } catch { /* ignore */ }
+  };
+
+  const saveTtsRules = async () => {
+    setSavingTts(true);
+    try {
+      await fetch('/api/ui/setup/llm/tts-rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: ttsRules }),
+      });
+      setIsCustomTts(ttsRules !== defaultTtsRules);
+    } catch { /* ignore */ }
+    setSavingTts(false);
+  };
+
+  const resetTtsRules = () => {
+    setTtsRules(defaultTtsRules);
+    setIsCustomTts(false);
   };
 
   const saveCloudModel = async () => {
@@ -397,6 +485,25 @@ export default function LlmSection() {
         ))}
       </div>
 
+      {/* Switch progress steps */}
+      {switchActive && switchSteps.length > 0 && (
+        <div style={{ background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 10, padding: 12, marginBottom: 16 }}>
+          {switchSteps.map((step: string, i: number) => {
+            const isLast = i === switchSteps.length - 1;
+            const isDone = !isLast || step === t('settings.switchReady');
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                {isDone
+                  ? <Check size={12} style={{ color: 'var(--gr)', flexShrink: 0 }} />
+                  : <Loader2 size={12} className="animate-spin" style={{ color: 'var(--ac)', flexShrink: 0 }} />
+                }
+                <span style={{ fontSize: 12, color: isDone ? 'var(--tx2)' : 'var(--tx)' }}>{step}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* System Prompt */}
       <div style={{ marginBottom: 16 }}>
         <button onClick={() => setShowPromptEditor(!showPromptEditor)}
@@ -429,6 +536,35 @@ export default function LlmSection() {
                 className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1">
                 <RefreshCw size={12} /> {t('settings.resetToDefault')}
               </button>
+            </div>
+
+            {/* TTS Rules */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--b)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--tx3)' }}>{t('settings.ttsRules')}</span>
+                {isCustomTts && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400">{t('settings.customPrompt')}</span>}
+              </div>
+              <textarea
+                value={ttsRules}
+                onChange={e => setTtsRules(e.target.value)}
+                rows={3}
+                style={{
+                  width: '100%', padding: '8px 10px', fontSize: 12, lineHeight: 1.5, resize: 'vertical',
+                  background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 8, color: 'var(--tx)',
+                  fontFamily: 'var(--font-sans)',
+                }}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={saveTtsRules} disabled={savingTts}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1">
+                  {savingTts ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                  {t('common.save')}
+                </button>
+                <button onClick={resetTtsRules}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 flex items-center gap-1">
+                  <RefreshCw size={12} /> {t('settings.resetToDefault')}
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -208,25 +208,40 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
 
 
 DEFAULT_SYSTEM_PROMPT = (
-    "Ти голосовий ассистент розумного дому. Твоє ім'я Селена. "
-    "Ти ЗАВЖДИ відповідаєш тільки як Селена. "
-    "Ти НІКОЛИ не кажеш що ти мовна модель, нейромережа, AI або штучний інтелект. "
-    "Ти НІКОЛИ не називаєш Google, OpenAI, Meta або будь-якого розробника. "
-    "Якщо питають хто ти — відповідай: Я Селена, ваш домашній ассистент. "
-    "Якщо питають хто тебе створив — відповідай: Мене створила команда SelenaCore. "
-    "Відповідай коротко, мовою користувача."
+    "You are Selena, a smart-home voice assistant created by the SelenaCore team. "
+    "ALWAYS respond as Selena. NEVER say you are an AI, language model, or neural network. "
+    "NEVER mention Google, OpenAI, Meta, or any developer. "
+    "If asked who you are — say: I am Selena, your home assistant. "
+    "If asked who created you — say: I was created by the SelenaCore team. "
+    "CRITICAL RULE: You MUST reply in the SAME language as the user's message. "
+    "If the user writes in Ukrainian — reply in Ukrainian. "
+    "If the user writes in Russian — reply in Russian. "
+    "If the user writes in English — reply in English. "
+    "NEVER default to English when the user writes in another language. "
+    "Keep responses short and concise."
+)
+
+DEFAULT_TTS_RULES = (
+    "Your response will be read aloud by TTS. "
+    "Do NOT use markdown, code blocks, bullet points, asterisks, URLs, or emojis. "
+    "Plain text only. Remember: reply in the user's language, not English."
 )
 
 
 @router.get("/llm/system-prompt")
 async def get_system_prompt() -> dict[str, Any]:
-    """Get the current system prompt for LLM."""
+    """Get the current system prompt and TTS rules for LLM."""
     config = read_config()
-    saved = config.get("voice", {}).get("system_prompt", "")
+    voice_cfg = config.get("voice", {})
+    saved = voice_cfg.get("system_prompt", "")
+    saved_tts = voice_cfg.get("tts_rules", "")
     return {
         "prompt": saved or DEFAULT_SYSTEM_PROMPT,
         "is_custom": bool(saved),
         "default": DEFAULT_SYSTEM_PROMPT,
+        "tts_rules": saved_tts or DEFAULT_TTS_RULES,
+        "is_custom_tts": bool(saved_tts),
+        "default_tts_rules": DEFAULT_TTS_RULES,
     }
 
 
@@ -240,11 +255,22 @@ async def save_system_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     return {"status": "ok"}
 
 
+@router.post("/llm/tts-rules")
+async def save_tts_rules(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom TTS rules."""
+    rules = req.prompt.strip()
+    if rules == DEFAULT_TTS_RULES:
+        rules = ""
+    update_config("voice", "tts_rules", rules)
+    return {"status": "ok"}
+
+
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
-    """Reset system prompt to default."""
+    """Reset system prompt and TTS rules to defaults."""
     update_config("voice", "system_prompt", "")
-    return {"status": "ok", "prompt": DEFAULT_SYSTEM_PROMPT}
+    update_config("voice", "tts_rules", "")
+    return {"status": "ok", "prompt": DEFAULT_SYSTEM_PROMPT, "tts_rules": DEFAULT_TTS_RULES}
 
 
 @router.post("/llm/chat")
@@ -261,14 +287,10 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     saved_prompt = voice_cfg.get("system_prompt", "")
     system_prompt = req.system or saved_prompt or DEFAULT_SYSTEM_PROMPT
 
-    # Always append TTS formatting rules
-    tts_rules = (
-        "\nIMPORTANT: Your response will be read aloud by a TTS engine. "
-        "Do NOT use markdown, code blocks, bullet points, asterisks, URLs, emojis, or any special formatting. "
-        "Write plain natural text only."
-    )
-    if "TTS" not in system_prompt:
-        system_prompt += tts_rules
+    # Append TTS rules from config (or default)
+    tts_rules = voice_cfg.get("tts_rules", "") or DEFAULT_TTS_RULES
+    if tts_rules:
+        system_prompt += "\n" + tts_rules
 
     try:
         if provider == "ollama":
@@ -714,20 +736,21 @@ async def ollama_uninstall() -> dict[str, Any]:
 
 @router.post("/ollama/start")
 async def ollama_start() -> dict[str, Any]:
-    """Start Ollama server (Docker container or local process)."""
+    """Start Ollama server (systemd service or Docker container)."""
     loop = asyncio.get_event_loop()
 
     def _start():
-        # Try starting Docker container first (GPU setup)
-        if shutil.which("docker"):
+        # Use nsenter to control host systemd (from inside container)
+        if shutil.which("nsenter"):
             result = subprocess.run(
-                ["docker", "start", "selena-ollama"],
-                capture_output=True, text=True, timeout=15,
+                ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+                 "systemctl", "start", "ollama"],
+                capture_output=True, text=True, timeout=10,
             )
             if result.returncode == 0:
-                return "started docker container"
+                return "started via systemd (host)"
 
-        # Try systemctl (host systems)
+        # Fallback: direct systemctl (if running on host)
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "start", "ollama"],
@@ -740,19 +763,16 @@ async def ollama_start() -> dict[str, Any]:
         ollama_bin = shutil.which("ollama")
         if not ollama_bin:
             raise RuntimeError("Ollama not installed")
-
         env = os.environ.copy()
         env["OLLAMA_HOST"] = "0.0.0.0:11434"
         from core.hardware import should_use_gpu
         env["OLLAMA_NUM_GPU"] = "999" if should_use_gpu() else "0"
         subprocess.Popen(
             [ollama_bin, "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
         )
         import time
-        time.sleep(2)  # give it a moment to bind
+        time.sleep(2)
         return "started as background process"
 
     try:
@@ -768,16 +788,17 @@ async def ollama_stop() -> dict[str, Any]:
     loop = asyncio.get_event_loop()
 
     def _stop():
-        # Try stopping Docker container first (GPU setup)
-        if shutil.which("docker"):
+        # Use nsenter to control host systemd (from inside container)
+        if shutil.which("nsenter"):
             result = subprocess.run(
-                ["docker", "stop", "selena-ollama"],
-                capture_output=True, text=True, timeout=15,
+                ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+                 "systemctl", "stop", "ollama"],
+                capture_output=True, text=True, timeout=10,
             )
             if result.returncode == 0:
-                return "stopped docker container"
+                return "stopped via systemd (host)"
 
-        # Fallback: systemctl
+        # Fallback: direct systemctl
         if shutil.which("systemctl"):
             result = subprocess.run(
                 ["systemctl", "stop", "ollama"],
@@ -846,10 +867,24 @@ async def ollama_models() -> dict[str, Any]:
 
 
 def _scan_ollama_models_from_disk() -> list[dict]:
-    """Scan Ollama model manifests on disk (shared volume)."""
+    """Scan Ollama model manifests on disk."""
     models = []
-    manifests_root = Path("/root/.ollama/models/manifests/registry.ollama.ai")
-    if not manifests_root.is_dir():
+    manifests_root = None
+    search_paths = []
+    env_dir = os.environ.get("OLLAMA_MODELS_DIR")
+    if env_dir:
+        search_paths.append(Path(env_dir))
+    search_paths += [
+        Path("/usr/share/ollama/.ollama/models"),
+        Path(os.path.expanduser("~/.ollama/models")),
+        Path("/root/.ollama/models"),
+    ]
+    for base in search_paths:
+        candidate = base / "manifests" / "registry.ollama.ai"
+        if candidate.is_dir():
+            manifests_root = candidate
+            break
+    if manifests_root is None:
         return models
 
     for namespace in manifests_root.iterdir():
@@ -976,12 +1011,22 @@ async def llamacpp_status() -> dict[str, Any]:
     return {"running": running, "url": llamacpp_url}
 
 
+LLAMACPP_START_SCRIPT = os.environ.get("LLAMACPP_START_SCRIPT", "")
+
+
+def _run_on_host(cmd: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
+    """Run command on host via nsenter (PID 1 namespace)."""
+    return subprocess.run(
+        ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd,
+        capture_output=True, text=True, timeout=timeout,
+    )
+
+
 @router.post("/llamacpp/start")
 async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
-    """Start llama.cpp server with a model."""
+    """Start llama.cpp server natively on host."""
     model = body.get("model", "")
     if not model:
-        # Use active model from config
         config = read_config()
         voice_cfg = config.get("voice", {})
         p_cfg = voice_cfg.get("providers", {}).get("llamacpp", {})
@@ -990,7 +1035,6 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
     if not model:
         raise HTTPException(status_code=422, detail="No model specified")
 
-    # Find GGUF file — check ollama blobs for this model
     gguf_path = await _find_gguf_for_model(model)
     if not gguf_path:
         raise HTTPException(status_code=404, detail=f"GGUF file not found for {model}. Pull model via Ollama first.")
@@ -1001,56 +1045,26 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
     from core.hardware import should_use_gpu
     n_gpu = "999" if should_use_gpu() else "0"
 
-    LLAMACPP_IMAGE = "dustynv/llama_cpp:0.3.8-r36.4.0-cu128-24.04"
-
     loop = asyncio.get_event_loop()
 
     def _start():
-        # Check if Docker image exists
-        if shutil.which("docker"):
-            check = subprocess.run(
-                ["docker", "image", "inspect", LLAMACPP_IMAGE],
-                capture_output=True, timeout=5,
-            )
-            if check.returncode != 0:
-                raise RuntimeError(
-                    f"Docker image '{LLAMACPP_IMAGE}' not found. "
-                    f"Run: docker pull {LLAMACPP_IMAGE}"
-                )
+        # Kill any existing llama.cpp server
+        _run_on_host(["pkill", "-f", "llama_cpp.server"], timeout=5)
+        import time
+        time.sleep(1)
 
-        # Stop existing container if any
-        subprocess.run(["docker", "rm", "-f", "selena-llama"], capture_output=True, timeout=10)
-
-        model_rel = gguf_path.replace("/root/.ollama/", "")
-
-        cmd = [
-            "docker", "run", "-d",
-            "--name", "selena-llama",
-            "--network", "host",
-        ]
-
-        if should_use_gpu():
-            cmd += ["--runtime", "nvidia"]
-
-        cmd += [
-            "-v", "selenacore_ollama_data:/root/.ollama:ro",
-            LLAMACPP_IMAGE,
-            "python3", "-m", "llama_cpp.server",
-            "--model", f"/root/.ollama/{model_rel}",
-            "--host", "0.0.0.0", "--port", port,
-            "--n_gpu_layers", n_gpu,
-            "--n_ctx", "2048",
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr[:300])
-        return "started"
+        # Start on host via nsenter as the host user who owns the script
+        host_user = os.environ.get("HOST_USER", "root")
+        run_cmd = ["bash", "-c"] if host_user == "root" else ["runuser", "-u", host_user, "--", "bash", "-c"]
+        _run_on_host(run_cmd + [
+            f"nohup {LLAMACPP_START_SCRIPT} '{gguf_path}' '{port}' '{n_gpu}' "
+            f">/tmp/llamacpp.log 2>&1 &"
+        ], timeout=5)
+        time.sleep(4)
+        return "started natively on host"
 
     try:
         msg = await loop.run_in_executor(None, _start)
-        import time
-        time.sleep(3)
         return {"status": "ok", "message": msg, "model": model, "gpu_layers": n_gpu}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -1058,12 +1072,11 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
 
 @router.post("/llamacpp/stop")
 async def llamacpp_stop() -> dict[str, Any]:
-    """Stop llama.cpp server."""
+    """Stop llama.cpp server on host."""
     loop = asyncio.get_event_loop()
 
     def _stop():
-        subprocess.run(["docker", "stop", "selena-llama"], capture_output=True, timeout=15)
-        subprocess.run(["docker", "rm", "selena-llama"], capture_output=True, timeout=5)
+        _run_on_host(["pkill", "-f", "llama_cpp.server"], timeout=5)
 
     try:
         await loop.run_in_executor(None, _stop)
@@ -1074,13 +1087,23 @@ async def llamacpp_stop() -> dict[str, Any]:
 
 async def _find_gguf_for_model(model_name: str) -> str | None:
     """Find GGUF blob for an Ollama model by checking manifests."""
-    ollama_models = Path("/root/.ollama/models")
-    if not ollama_models.exists():
-        # Try volume path
-        for p in [Path("/var/lib/selena/ollama/models"), Path("/root/.ollama/models")]:
-            if p.exists():
-                ollama_models = p
-                break
+    # Search possible Ollama model paths (env var, native, Docker, user)
+    ollama_models = None
+    search_paths = []
+    env_dir = os.environ.get("OLLAMA_MODELS_DIR")
+    if env_dir:
+        search_paths.append(Path(env_dir))
+    search_paths += [
+        Path("/usr/share/ollama/.ollama/models"),   # native install (systemd user)
+        Path(os.path.expanduser("~/.ollama/models")),  # current user
+        Path("/root/.ollama/models"),                # Docker root
+    ]
+    for p in search_paths:
+        if p.exists() and (p / "manifests").is_dir():
+            ollama_models = p
+            break
+    if ollama_models is None:
+        return None
 
     # Parse model name: "gemma3:1b" -> library/gemma3/1b
     parts = model_name.split(":")

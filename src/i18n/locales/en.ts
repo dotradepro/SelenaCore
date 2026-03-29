@@ -211,6 +211,7 @@ const en = {
             systemPrompt: 'System prompt',
             customPrompt: 'custom',
             systemPromptDesc: 'Define who the AI is, its personality, rules, and restrictions. This prompt is sent with every request.',
+            ttsRules: 'TTS formatting rules',
             resetToDefault: 'Reset to default',
 
             // LLM Providers
@@ -230,6 +231,15 @@ const en = {
             cloudModelsLoading: 'Loading models…',
             llamacppDesc: 'llama.cpp uses Ollama models (pull via Ollama first). Faster cold start, direct CUDA inference.',
             llamacppNoModels: 'No models available. Switch to Ollama tab and pull a model first.',
+
+            // Switch steps
+            switchStopOllama: 'Stopping Ollama server…',
+            switchStopLlamacpp: 'Stopping llama.cpp server…',
+            switchSelectProvider: 'Switching provider…',
+            switchStartOllama: 'Starting Ollama server…',
+            switchStartLlamacpp: 'Starting llama.cpp server…',
+            switchLoadingModel: 'Loading model into memory…',
+            switchReady: 'Ready',
 
             // Audio
             audioSubsystem: 'Audio subsystem',

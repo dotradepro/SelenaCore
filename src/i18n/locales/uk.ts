@@ -211,6 +211,7 @@ const uk = {
             systemPrompt: 'Системний промпт',
             customPrompt: 'свій',
             systemPromptDesc: 'Визначте хто AI, його особистість, правила та обмеження. Цей промпт надсилається з кожним запитом.',
+            ttsRules: 'Правила форматування TTS',
             resetToDefault: 'Скинути за замовчуванням',
 
             // LLM Providers
@@ -230,6 +231,15 @@ const uk = {
             cloudModelsLoading: 'Завантаження моделей…',
             llamacppDesc: 'llama.cpp використовує моделі Ollama (скачайте через Ollama). Швидший холодний старт, пряме CUDA прискорення.',
             llamacppNoModels: 'Немає моделей. Перейдіть на вкладку Ollama і скачайте модель.',
+
+            // Switch steps
+            switchStopOllama: 'Зупинка Ollama сервера…',
+            switchStopLlamacpp: 'Зупинка llama.cpp сервера…',
+            switchSelectProvider: 'Перемикання провайдера…',
+            switchStartOllama: 'Запуск Ollama сервера…',
+            switchStartLlamacpp: 'Запуск llama.cpp сервера…',
+            switchLoadingModel: 'Завантаження моделі в пам\'ять…',
+            switchReady: 'Готово',
 
             // Audio
             audioSubsystem: 'Аудіо-підсистема',

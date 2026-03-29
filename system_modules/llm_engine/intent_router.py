@@ -142,9 +142,12 @@ class IntentRouter:
             return self._system_prompt
 
         base = (
-            "Ты — голосовой ассистент SelenaCore для системы умного дома. "
-            "Отвечай кратко, по делу. Язык ответа — русский. "
-            "Формат ответа: одно-два предложения, без лишних слов. "
+            "You are Selena, a smart-home voice assistant by SelenaCore. "
+            "Keep answers short — one or two sentences. "
+            "CRITICAL: Reply in the SAME language as the user's message. "
+            "If the user speaks Ukrainian — reply in Ukrainian. "
+            "If the user speaks Russian — reply in Russian. "
+            "NEVER default to English unless the user writes in English. "
         )
 
         # Try to enrich with module info
