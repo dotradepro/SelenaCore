@@ -222,13 +222,14 @@ class TestConfigure:
         assert svc._interval == 600
         assert svc._units == "imperial"
 
-    def test_configure_invalidates_cache(self):
+    def test_configure_triggers_refetch(self):
         svc = make_service()
         svc._current = {"temperature": 20.0}
         svc._forecast = [{"date": "2024-06-02"}]
-        svc.configure(latitude=48.0)
-        assert svc._current is None
-        assert svc._forecast == []
+        with patch("asyncio.ensure_future") as mock_fut:
+            svc.configure(latitude=48.0)
+        assert svc.latitude == 48.0
+        mock_fut.assert_called_once()
 
     def test_configure_partial(self):
         svc = make_service(lat=50.0, lon=30.0)

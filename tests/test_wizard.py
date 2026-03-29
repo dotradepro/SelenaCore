@@ -5,57 +5,41 @@ from __future__ import annotations
 
 import json
 import pytest
-import tempfile
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
 
-class TestWizardFlow:
-    """Test the 9-step onboarding wizard state machine."""
+class TestWizardState:
+    """Test the wizard state management functions."""
 
     @pytest.fixture
     def wizard_state_file(self, tmp_path):
         return tmp_path / "wizard_state.json"
 
-    @pytest.fixture
-    def wizard(self, wizard_state_file):
+    def test_load_state_default(self, wizard_state_file):
         with patch("system_modules.ui_core.wizard.WIZARD_STATE_FILE", wizard_state_file):
-            from system_modules.ui_core.wizard import WizardManager
-            return WizardManager()
+            from system_modules.ui_core.wizard import _load_state
+            state = _load_state()
+            assert state["completed"] is False
+            assert state["current_step"] == "wifi"
 
-    def test_initial_step_is_wifi(self, wizard):
-        state = wizard.get_state()
-        assert state["step"] == "wifi" or state.get("completed") is False
+    def test_save_and_load_state(self, wizard_state_file):
+        with patch("system_modules.ui_core.wizard.WIZARD_STATE_FILE", wizard_state_file):
+            from system_modules.ui_core.wizard import _load_state, _save_state
+            state = {"completed": False, "current_step": "language", "data": {"wifi": {"ssid": "test"}}}
+            _save_state(state)
+            assert wizard_state_file.exists()
+            loaded = _load_state()
+            assert loaded["current_step"] == "language"
 
-    def test_step_progression(self, wizard):
-        """Test that confirming each step advances to the next."""
-        steps = ["wifi", "language", "device_name", "timezone", "stt_model",
-                 "tts_voice", "admin_user", "platform", "import"]
-        for i, step in enumerate(steps[:-1]):
-            wizard.set_step_data(step, {"confirmed": True})
-            state = wizard.get_state()
-            assert state["step"] == steps[i + 1] or state.get("completed")
-
-    def test_complete_wizard(self, wizard):
-        steps = ["wifi", "language", "device_name", "timezone", "stt_model",
-                 "tts_voice", "admin_user", "platform", "import"]
-        for step in steps:
-            wizard.set_step_data(step, {"confirmed": True, "skip": True})
-        state = wizard.get_state()
-        assert state.get("completed") is True
-
-    def test_state_persisted_to_file(self, wizard, wizard_state_file):
-        wizard.set_step_data("wifi", {"ssid": "MyNetwork", "confirmed": True})
-        assert wizard_state_file.exists()
-        saved = json.loads(wizard_state_file.read_text())
-        assert saved is not None
-
-    def test_reset_clears_state(self, wizard):
-        wizard.set_step_data("wifi", {"confirmed": True})
-        wizard.reset()
-        state = wizard.get_state()
-        assert state["step"] == "wifi"
-        assert not state.get("completed")
+    def test_steps_list(self):
+        from system_modules.ui_core.wizard import STEPS
+        assert "wifi" in STEPS
+        assert "language" in STEPS
+        assert "admin_user" in STEPS
+        assert "import" in STEPS
+        assert STEPS[0] == "wifi"
+        assert STEPS[-1] == "import"
 
 
 class TestWizardAPI:
@@ -63,18 +47,96 @@ class TestWizardAPI:
 
     @pytest.fixture
     def ui_client(self, tmp_path):
+        import system_modules.ui_core.wizard as wiz_mod
         state_file = tmp_path / "wizard_state.json"
-        with patch("system_modules.ui_core.wizard.WIZARD_STATE_FILE", state_file):
-            from system_modules.ui_core.server import ui_app
-            from fastapi.testclient import TestClient
-            return TestClient(ui_app)
+        orig = wiz_mod.WIZARD_STATE_FILE
+        wiz_mod.WIZARD_STATE_FILE = state_file
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        test_app = FastAPI()
+        test_app.include_router(wiz_mod.router)
+        yield TestClient(test_app)
+        wiz_mod.WIZARD_STATE_FILE = orig
 
-    def test_get_wizard_state(self, ui_client):
-        resp = ui_client.get("/api/ui/wizard/state")
+    def test_get_wizard_status(self, ui_client):
+        resp = ui_client.get("/api/ui/wizard/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "step" in data
+        assert "completed" in data
+        assert "current_step" in data
+        assert "steps" in data
 
     def test_submit_wizard_step(self, ui_client):
-        resp = ui_client.post("/api/ui/wizard/step", json={"step": "wifi", "data": {"skip": True}})
-        assert resp.status_code in (200, 201)
+        resp = ui_client.post(
+            "/api/ui/wizard/step",
+            json={"step": "wifi", "data": {"ssid": "MyWiFi"}},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+        assert data["next_step"] == "language"
+
+    def test_submit_unknown_step_rejected(self, ui_client):
+        resp = ui_client.post(
+            "/api/ui/wizard/step",
+            json={"step": "nonexistent_step", "data": {}},
+        )
+        assert resp.status_code == 422
+
+    def test_step_progression(self, ui_client):
+        """Test progression through steps that don't require DB."""
+        simple_steps = ["wifi", "language", "device_name", "timezone", "stt_model"]
+        for step in simple_steps:
+            resp = ui_client.post(
+                "/api/ui/wizard/step",
+                json={"step": step, "data": _step_data(step)},
+            )
+            assert resp.status_code == 200, f"Step {step} failed: {resp.text}"
+
+    def test_complete_wizard(self, ui_client):
+        from system_modules.ui_core.wizard import STEPS, _process_step
+
+        async def _mock_process(step, data, state):
+            return {}
+
+        with patch("system_modules.ui_core.wizard._process_step", new=_mock_process):
+            for step in STEPS:
+                resp = ui_client.post(
+                    "/api/ui/wizard/step",
+                    json={"step": step, "data": _step_data(step)},
+                )
+                assert resp.status_code == 200, f"Step {step} failed: {resp.text}"
+
+        status = ui_client.get("/api/ui/wizard/status")
+        assert status.json()["completed"] is True
+
+    def test_wizard_reset(self, ui_client):
+        # Submit a step first
+        ui_client.post(
+            "/api/ui/wizard/step",
+            json={"step": "wifi", "data": {"ssid": "test"}},
+        )
+        # Reset
+        resp = ui_client.post("/api/ui/wizard/reset")
+        assert resp.status_code == 200
+        # Check state is reset
+        status = ui_client.get("/api/ui/wizard/status")
+        assert status.json()["completed"] is False
+        assert status.json()["current_step"] == "wifi"
+
+
+def _step_data(step: str) -> dict:
+    """Generate minimal valid data for a wizard step."""
+    data = {
+        "wifi": {"ssid": "TestNet"},
+        "language": {"language": "ru"},
+        "device_name": {"name": "MyHome"},
+        "timezone": {"timezone": "Europe/Moscow"},
+        "stt_model": {"model": "base"},
+        "tts_voice": {"voice": "ru_RU-irina-medium"},
+        "admin_user": {"username": "admin", "pin": "1234"},
+        "home_devices": {"device_name": "Kiosk"},
+        "platform": {"device_hash": "abc123"},
+        "import": {"source": "manual"},
+    }
+    return data.get(step, {})

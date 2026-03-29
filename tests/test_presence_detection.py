@@ -70,20 +70,26 @@ class TestMacInArpTable:
 
         arp_data = {"192.168.1.1": "aa:bb:cc:dd:ee:ff", "192.168.1.2": "11:22:33:44:55:66"}
         with patch.object(p_mod, "_read_arp_table", return_value=arp_data):
-            assert p_mod.mac_in_arp_table("AA:BB:CC:DD:EE:FF") is True
+            found, ip = p_mod.mac_in_arp_table("AA:BB:CC:DD:EE:FF")
+            assert found is True
+            assert ip == "192.168.1.1"
 
     def test_mac_not_found(self):
         from system_modules.presence_detection import presence as p_mod
 
         with patch.object(p_mod, "_read_arp_table", return_value={}):
-            assert p_mod.mac_in_arp_table("aa:bb:cc:dd:ee:ff") is False
+            found, ip = p_mod.mac_in_arp_table("aa:bb:cc:dd:ee:ff")
+            assert found is False
+            assert ip is None
 
     def test_mac_case_insensitive(self):
         from system_modules.presence_detection import presence as p_mod
 
         arp_data = {"192.168.1.5": "AA:BB:CC:DD:EE:FF".lower()}
         with patch.object(p_mod, "_read_arp_table", return_value=arp_data):
-            assert p_mod.mac_in_arp_table("AA:BB:CC:DD:EE:FF") is True
+            found, ip = p_mod.mac_in_arp_table("AA:BB:CC:DD:EE:FF")
+            assert found is True
+            assert ip == "192.168.1.5"
 
 
 # ── User management ───────────────────────────────────────────────────────────
@@ -158,7 +164,8 @@ class TestDetectionLogic:
         from system_modules.presence_detection import presence as p_mod
         d = make_detector()
 
-        with patch.object(p_mod, "mac_in_arp_table", return_value=True):
+        with patch.object(p_mod, "mac_in_arp_table", return_value=(True, "192.168.1.10")), \
+             patch.object(p_mod, "_check_ip_neigh", new=AsyncMock(return_value=True)):
             result = await d._check_device({"type": "mac", "address": "aa:bb:cc:dd:ee:ff"})
 
         assert result is True
