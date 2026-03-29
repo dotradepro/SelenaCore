@@ -41,6 +41,31 @@ logger = logging.getLogger(__name__)
 CHECK_INTERVAL_SEC = int(os.environ.get("AGENT_CHECK_INTERVAL", "30"))
 MAX_RESTORE_ATTEMPTS = int(os.environ.get("AGENT_MAX_RESTORE_ATTEMPTS", "3"))
 LOG_PATH = "/var/log/selena/integrity.log"
+STATE_FILE = Path(
+    os.environ.get("CORE_DATA_DIR", "/var/lib/selena")
+) / "integrity_state.json"
+
+
+def _write_state(
+    status: str,
+    changed_files: list[dict] | None = None,
+    restore_attempts: int = 0,
+    safe_mode_since: float | None = None,
+) -> None:
+    """Write integrity state to shared file for Core API to read."""
+    state = {
+        "status": status,
+        "last_check": datetime.now(timezone.utc).timestamp(),
+        "check_interval_sec": CHECK_INTERVAL_SEC,
+        "changed_files": changed_files or [],
+        "restore_attempts": restore_attempts,
+        "safe_mode_since": safe_mode_since,
+    }
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps(state))
+    except Exception as e:
+        logger.debug("Could not write state file: %s", e)
 
 
 def log_incident(reason: str, changed: list[dict]) -> None:
@@ -71,8 +96,10 @@ async def run_check() -> None:
 
     changed = check_files(manifest)
     if changed:
+        _write_state("violated", changed_files=changed)
         await trigger_response("files_changed", changed)
     else:
+        _write_state("ok")
         logger.debug("Integrity check passed (%d files)", len(manifest))
 
 
@@ -89,12 +116,14 @@ async def trigger_response(reason: str, changed: list[dict]) -> None:
     # Step 4: Restore from backup (MAX_RESTORE_ATTEMPTS tries)
     for attempt in range(1, MAX_RESTORE_ATTEMPTS + 1):
         logger.info("Restore attempt %d/%d...", attempt, MAX_RESTORE_ATTEMPTS)
+        _write_state("restoring", changed_files=changed, restore_attempts=attempt)
         success = await restore_from_backup(changed)
         if success:
             await restart_core()
             await notify_platform_restored()
             # Recreate manifest after restore
             create_manifest()
+            _write_state("ok")
             logger.info("Integrity restored after %d attempt(s)", attempt)
             return
         await asyncio.sleep(5)
@@ -102,6 +131,13 @@ async def trigger_response(reason: str, changed: list[dict]) -> None:
     # Step 5: SAFE MODE — all restore attempts failed
     logger.critical(
         "All %d restore attempts failed — entering SAFE MODE", MAX_RESTORE_ATTEMPTS
+    )
+    safe_since = datetime.now(timezone.utc).timestamp()
+    _write_state(
+        "safe_mode",
+        changed_files=changed,
+        restore_attempts=MAX_RESTORE_ATTEMPTS,
+        safe_mode_since=safe_since,
     )
     await enter_safe_mode()
     await notify_platform_safe_mode()

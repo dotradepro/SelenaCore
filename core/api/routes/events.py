@@ -69,11 +69,11 @@ async def publish_event(
 @router.post("/subscribe", response_model=SubscribeResponse, status_code=201)
 async def subscribe_events(
     body: SubscribeRequest,
-    _token: str = Depends(verify_module_token),
+    module_id: str = Depends(verify_module_token),
 ) -> SubscribeResponse:
     bus = get_event_bus()
     sub = bus.subscribe(
-        module_id="module",  # extracted from token in full impl
+        module_id=module_id,
         event_types=body.event_types,
         webhook_url=body.webhook_url,
     )
