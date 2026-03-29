@@ -29,6 +29,8 @@ services:
       - ./modules:/opt/selena-core/modules
       - ./sdk:/opt/selena-core/sdk
       - ./scripts:/opt/selena-core/scripts:ro
+      - /media:/media:ro
+      - /mnt:/mnt:ro
     devices:
       - /dev/snd:/dev/snd
     environment:

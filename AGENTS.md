@@ -1882,5 +1882,73 @@ Response 200:
 
 ---
 
+## 19. СБОРКА И ЗАПУСК
+
+### Docker Compose — контейнеры
+
+Проект запускается через `docker compose` из корня репозитория.
+Два контейнера: `selena-core` (ядро + UI) и `selena-agent` (Integrity Agent).
+
+```bash
+# Статус контейнеров
+docker compose ps
+
+# Перезапуск всех контейнеров (после изменений в Python/config/system_modules)
+docker compose restart
+
+# Перезапуск только ядра
+docker compose restart core
+
+# Остановка
+docker compose down
+
+# Запуск (с пересборкой образа если менялись Dockerfile/requirements.txt)
+docker compose up -d --build
+
+# Запуск без пересборки
+docker compose up -d
+
+# Логи (live)
+docker compose logs -f core
+docker compose logs -f agent
+
+# Логи последних 100 строк
+docker compose logs --tail=100 core
+```
+
+### Фронтенд (React/Vite)
+
+UI собирается Vite и раздаётся из `system_modules/ui_core/static/`.
+Исходники: `src/`, конфиг: `vite.config.ts`.
+
+```bash
+# Сборка фронтенда (обязательно после изменений в src/)
+npx vite build
+
+# После сборки — перезапуск контейнера чтобы подхватил новый бандл
+docker compose restart core
+```
+
+⛔ **Важно:** изменения в `src/` (React-компоненты, i18n, store) **не применяются**
+до пересборки `npx vite build`. Перезапуск контейнера без пересборки
+покажет старый фронтенд.
+
+✅ Изменения в `system_modules/` (Python, HTML виджеты/настройки) подхватываются
+при перезапуске контейнера — volume-mount обеспечивает live-sync.
+
+### Типичные сценарии
+
+| Что изменилось | Что делать |
+|---|---|
+| Python-код в `core/` или `system_modules/` | `docker compose restart core` |
+| HTML виджеты/настройки модулей | `docker compose restart core` |
+| React-компоненты (`src/`) | `npx vite build && docker compose restart core` |
+| `requirements.txt` / `Dockerfile.core` | `docker compose up -d --build` |
+| `docker-compose.yml` / `.env` | `docker compose up -d` |
+| `config/core.yaml` | `docker compose restart core` |
+| Integrity Agent (`agent/`) | `docker compose restart agent` |
+
+---
+
 *SelenaCore · AGENTS.md · SmartHome LK · Open Source MIT*
 *Репозиторий: https://github.com/dotradepro/SelenaCore*
