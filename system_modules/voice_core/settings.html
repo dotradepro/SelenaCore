@@ -20,6 +20,7 @@
             --gr: #2EC98A;
             --am: #F5A93A;
             --rd: #E05454;
+            --pr: #a855f7;
         }
 
         :root.light {
@@ -36,13 +37,10 @@
             --gr: #1FAF75;
             --am: #DB8F1C;
             --rd: #C94040;
+            --pr: #9333ea;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: "DM Sans", system-ui, sans-serif;
@@ -55,20 +53,8 @@
             overflow-y: auto;
         }
 
-        h2 {
-            font-size: 15px;
-            font-weight: 600;
-            margin-bottom: 12px;
-        }
-
-        h3 {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--tx2);
-            margin: 18px 0 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
+        h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .subtitle { font-size: 12px; color: var(--tx2); margin-bottom: 16px; }
 
         .card {
             background: var(--sf);
@@ -78,629 +64,2102 @@
             margin-bottom: 12px;
         }
 
+        .card-inner {
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--tx);
+            margin-bottom: 2px;
+        }
+
+        .section-sub {
+            font-size: 12px;
+            color: var(--tx2);
+            margin-top: 2px;
+            margin-bottom: 12px;
+        }
+
+        .label-sm { font-size: 12px; font-weight: 500; color: var(--tx2); margin-bottom: 6px; }
+        .label-xs { font-size: 11px; color: var(--tx3); margin-bottom: 4px; }
+
         .row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--b);
-        }
-
-        .row:last-child {
-            border-bottom: none;
-        }
-
-        .row-label {
-            font-size: 13px;
-            color: var(--tx);
-        }
-
-        .row-sub {
-            font-size: 11px;
-            color: var(--tx3);
-            margin-top: 2px;
-        }
-
-        select,
-        input[type="number"],
-        input[type="range"] {
-            background: var(--sf2);
-            color: var(--tx);
-            border: 1px solid var(--b2);
-            border-radius: 8px;
-            padding: 6px 10px;
-            font-size: 13px;
-            outline: none;
-            min-width: 160px;
-        }
-
-        select:focus,
-        input:focus {
-            border-color: var(--ac);
-        }
-
-        input[type="range"] {
-            padding: 0;
-            height: 6px;
-            border: none;
-            cursor: pointer;
-        }
-
-        .toggle {
-            position: relative;
-            width: 40px;
-            height: 22px;
-            cursor: pointer;
-        }
-
-        .toggle input {
-            display: none;
-        }
-
-        .toggle .slider {
-            position: absolute;
-            inset: 0;
-            background: var(--sf2);
-            border-radius: 11px;
-            transition: .2s;
-            border: 1px solid var(--b2);
-        }
-
-        .toggle .slider::after {
-            content: "";
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            background: var(--tx2);
-            border-radius: 50%;
-            top: 2px;
-            left: 2px;
-            transition: .2s;
-        }
-
-        .toggle input:checked+.slider {
-            background: var(--ac);
-            border-color: var(--ac);
-        }
-
-        .toggle input:checked+.slider::after {
-            transform: translateX(18px);
-            background: #fff;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: .15s;
-        }
-
-        .btn-primary {
-            background: var(--ac);
-            color: var(--tx);
-        }
-
-        .btn-primary:hover {
-            background: var(--ac);
-        }
-
-        .btn-danger {
-            background: var(--rd);
-            color: var(--tx);
-        }
-
-        .btn-danger:hover {
-            background: var(--rd);
-        }
-
-        .btn-secondary {
-            background: var(--sf2);
-            color: var(--tx);
-            border: 1px solid var(--b2);
-        }
-
-        .btn-secondary:hover {
-            background: var(--sf2);
-        }
-
-        .btn:disabled {
-            opacity: .4;
-            cursor: not-allowed;
-        }
-
-        .actions {
-            display: flex;
             gap: 8px;
-            margin-top: 16px;
+            margin-bottom: 8px;
         }
 
-        .status-dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 6px;
-        }
-
-        .status-dot.ok {
-            background: var(--gr);
-        }
-
-        .status-dot.off {
-            background: var(--rd);
-        }
-
-        .status-dot.warn {
-            background: var(--am);
-        }
-
-        .range-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .range-val {
-            font-size: 12px;
-            color: var(--ac);
-            min-width: 36px;
-            text-align: right;
-        }
-
-        .device-list {
-            list-style: none;
-        }
-
-        .device-list li {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 0;
-            font-size: 12px;
-            color: var(--tx2);
-        }
-
-        .device-list li .name {
-            color: var(--tx);
-        }
+        .flex { display: flex; align-items: center; }
+        .gap4 { gap: 4px; }
+        .gap6 { gap: 6px; }
+        .gap8 { gap: 8px; }
+        .gap12 { gap: 12px; }
+        .wrap { flex-wrap: wrap; }
+        .mb8 { margin-bottom: 8px; }
+        .mb12 { margin-bottom: 12px; }
+        .mb16 { margin-bottom: 16px; }
+        .mt8 { margin-top: 8px; }
+        .mt12 { margin-top: 12px; }
+        .mt14 { margin-top: 14px; }
+        .flex1 { flex: 1; }
 
         .badge {
-            display: inline-block;
-            padding: 2px 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
             border-radius: 6px;
             font-size: 11px;
             font-weight: 500;
+            white-space: nowrap;
+        }
+        .badge-ok { background: rgba(46, 201, 138, .12); color: var(--gr); }
+        .badge-off { background: rgba(224, 84, 84, .12); color: var(--rd); }
+        .badge-warn { background: rgba(245, 169, 58, .12); color: var(--am); }
+        .badge-ac { background: rgba(79, 140, 247, .12); color: var(--ac); }
+        .badge-pr { background: rgba(168, 85, 247, .12); color: var(--pr); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: .15s;
+            white-space: nowrap;
+        }
+        .btn:disabled { opacity: .4; cursor: not-allowed; }
+        .btn-green { background: #059669; color: #fff; }
+        .btn-green:hover:not(:disabled) { background: #10b981; }
+        .btn-blue { background: #2563eb; color: #fff; }
+        .btn-blue:hover:not(:disabled) { background: #3b82f6; }
+        .btn-red { background: rgba(224, 84, 84, .15); color: var(--rd); }
+        .btn-red:hover:not(:disabled) { background: rgba(224, 84, 84, .25); }
+        .btn-amber { background: rgba(245, 169, 58, .15); color: var(--am); }
+        .btn-amber:hover:not(:disabled) { background: rgba(245, 169, 58, .25); }
+        .btn-ghost { background: transparent; color: var(--tx3); }
+        .btn-ghost:hover:not(:disabled) { color: var(--tx); }
+        .btn-secondary { background: var(--sf3); color: var(--tx); border: 1px solid var(--b2); }
+        .btn-secondary:hover:not(:disabled) { background: var(--sf2); }
+        .btn-purple { background: #7c3aed; color: #fff; }
+        .btn-purple:hover:not(:disabled) { background: #8b5cf6; }
+        .btn-link { background: none; border: none; color: var(--ac); cursor: pointer; font-size: 12px; padding: 0; }
+        .btn-link:hover { opacity: .8; }
+
+        input[type="text"], input[type="password"], textarea, select {
+            background: var(--sf2);
+            color: var(--tx);
+            border: 1px solid var(--b2);
+            border-radius: 8px;
+            padding: 7px 10px;
+            font-size: 12px;
+            outline: none;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus, select:focus { border-color: var(--ac); }
+        textarea { resize: vertical; line-height: 1.5; }
+
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            accent-color: var(--ac);
         }
 
-        .badge-ok {
-            background: rgba(46, 201, 138, .15);
-            color: var(--gr);
+        .progress-bar {
+            height: 4px;
+            background: var(--sf3);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .progress-bar .fill {
+            height: 100%;
+            background: var(--ac);
+            border-radius: 2px;
+            transition: width .3s;
         }
 
-        .badge-off {
-            background: rgba(224, 84, 84, .15);
-            color: var(--rd);
+        .model-item {
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--b2);
+            background: var(--sf2);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            transition: .15s;
+        }
+        .model-item.active {
+            border-color: var(--gr);
+            background: rgba(46, 201, 138, .08);
+        }
+        .model-name { font-size: 13px; font-weight: 500; }
+        .model-meta { font-size: 11px; color: var(--tx3); margin-top: 1px; }
+
+        .provider-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .provider-tab {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            background: var(--sf3);
+            color: var(--tx3);
+            transition: .15s;
+        }
+        .provider-tab:hover { color: var(--tx); }
+        .provider-tab.active { background: #2563eb; color: #fff; }
+
+        .slider-row { margin-bottom: 12px; }
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        .slider-label { font-size: 11px; color: var(--tx2); }
+        .slider-value { font-size: 11px; color: var(--tx); font-family: monospace; }
+        .slider-hints {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--tx3);
         }
 
-        .badge-warn {
-            background: rgba(245, 169, 58, .15);
-            color: var(--am);
-        }
+        .mono { font-family: monospace; }
+        .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .steps-list { margin-bottom: 12px; }
+        .step-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 12px; }
+        .step-done { color: var(--gr); }
+        .step-active { color: var(--ac); }
+
+        .hidden { display: none !important; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--b2); border-top-color: var(--ac); border-radius: 50%; animation: spin .6s linear infinite; }
+
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+        .pulse { animation: pulse 1.5s infinite; }
 
         .toast {
             position: fixed;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 12px;
+            right: 12px;
             background: var(--gr);
             color: #0B0C10;
-            padding: 8px 20px;
+            padding: 8px 16px;
             border-radius: 8px;
             font-size: 13px;
             font-weight: 500;
             opacity: 0;
-            transition: opacity .3s;
+            transform: translateY(-8px);
+            transition: opacity .3s, transform .3s;
             z-index: 100;
+            pointer-events: none;
+        }
+        .toast.show { opacity: 1; transform: translateY(0); }
+
+        .password-wrap { position: relative; }
+        .password-wrap input { width: 100%; padding-right: 36px; }
+        .password-toggle {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            background: none; border: none; cursor: pointer; color: var(--tx3); font-size: 14px;
         }
 
-        .toast.show {
-            opacity: 1;
-        }
+        .catalog-list { max-height: 400px; overflow-y: auto; }
 
-        .empty {
-            text-align: center;
-            color: var(--tx3);
-            padding: 20px;
-            font-size: 12px;
+        .wake-preset {
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--tx);
+            cursor: pointer;
+            transition: background .1s;
+        }
+        .wake-preset:hover {
+            background: var(--sf2);
+        }
+        .wake-preset + .wake-preset {
+            border-top: 1px solid var(--b);
         }
     </style>
 </head>
 
 <body>
 
-    <h2 data-i18n="title"></h2>
+<h2 data-i18n="title"></h2>
+<div class="subtitle" data-i18n="subtitle"></div>
 
-    <!-- Status -->
-    <div class="card" id="statusCard">
-        <div class="row">
-            <div>
-                <div class="row-label">Module Status</div>
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  GPU / Hardware Status                                           -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="gpuBar" class="row hidden" style="background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:10px 16px;margin-bottom:12px">
+    <div class="flex gap8">
+        <span id="gpuIcon" style="font-size:14px">&#9889;</span>
+        <span id="gpuLabel" style="font-size:12px"></span>
+        <span id="gpuBadge" class="badge"></span>
+        <span id="onnxBadge" class="badge badge-ac hidden">ONNX CUDA</span>
+    </div>
+    <button id="gpuToggleBtn" class="btn btn-secondary hidden" style="font-size:11px"></button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  VOSK — Speech-to-Text                                           -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="voskCard">
+    <div class="row">
+        <div>
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="stt_title"></span>
+                <span class="badge badge-ac">CPU</span>
             </div>
-            <span id="moduleStatus" class="badge badge-ok">Loading…</span>
+            <div class="section-sub">Vosk</div>
         </div>
-        <div class="row">
-            <div>
-                <div class="row-label">Privacy Mode</div>
-                <div class="row-sub">Disables microphone and wake word</div>
+        <span id="voskStatus" class="badge badge-off"></span>
+    </div>
+
+    <!-- Engine actions -->
+    <div class="flex gap8 mb12 wrap" id="voskActions"></div>
+    <div id="voskProgress" class="hidden mb12">
+        <div class="label-xs mono truncate" id="voskProgressText"></div>
+        <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
+    </div>
+
+    <!-- Installed models -->
+    <div id="voskInstalled" class="mb12 hidden">
+        <div class="label-sm" data-i18n="installed_models"></div>
+        <div id="voskModelList"></div>
+    </div>
+
+    <!-- Voice Pipeline Test -->
+    <div id="voskTestSection" class="card-inner hidden">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px" data-i18n="pipeline_test"></div>
+
+        <!-- Record & recognize -->
+        <div class="mb12">
+            <div class="label-xs">1. <span data-i18n="stt_test"></span></div>
+            <div class="flex gap8">
+                <button id="sttTestBtn" class="btn btn-blue" data-i18n="test_stt"></button>
+                <div id="sttPeakBar" class="hidden flex1" style="height:6px;background:var(--sf3);border-radius:3px;overflow:hidden">
+                    <div id="sttPeakFill" style="height:100%;border-radius:3px;transition:width .3s"></div>
+                </div>
             </div>
-            <label class="toggle">
-                <input type="checkbox" id="privacyToggle">
-                <span class="slider"></span>
-            </label>
+        </div>
+
+        <!-- Recognized text -->
+        <div id="sttResult" class="hidden mb12">
+            <div class="label-xs" data-i18n="recognized_text"></div>
+            <div id="sttRecognizedText" style="padding:10px 12px;background:var(--sf);border:1px solid var(--b);border-radius:8px;font-size:14px;min-height:36px"></div>
+            <div class="flex gap8 mt8" id="sttResultActions"></div>
+        </div>
+
+        <!-- Manual AI query -->
+        <div class="mb12">
+            <div class="label-xs">2. <span data-i18n="manual_ai"></span></div>
+            <div class="flex gap8">
+                <input type="text" id="manualAiInput" style="flex:1" data-placeholder-i18n="ai_placeholder">
+                <button id="manualAiBtn" class="btn btn-purple" disabled data-i18n="send_to_ai"></button>
+            </div>
+        </div>
+
+        <!-- AI Response -->
+        <div id="aiResponseSection" class="hidden">
+            <div class="flex gap6 mb4">
+                <span style="font-size:11px;color:var(--tx3)">3. <span data-i18n="ai_response"></span></span>
+                <span id="aiProviderLabel" style="font-size:11px;color:var(--tx2)"></span>
+            </div>
+            <div id="aiResponseText" style="padding:10px 12px;background:var(--sf);border:1px solid var(--ac);border-radius:8px;font-size:13px;line-height:1.5;white-space:pre-wrap"></div>
+            <div class="mt8">
+                <button id="speakAiBtn" class="btn btn-green" data-i18n="speak_response"></button>
+            </div>
         </div>
     </div>
 
-    <!-- STT Settings -->
-    <h3 data-i18n="h_stt"></h3>
-    <div class="card">
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_stt_model"></div>
-                <div class="row-sub" data-i18n="sub_stt_model"></div>
-            </div>
-            <select id="sttModel">
-                <option value="vosk-model-small-uk">🇺🇦 Ukrainian (small)</option>
-                <option value="vosk-model-small-en-us">🇺🇸 English (small)</option>
-                <option value="vosk-model-small-ru">🇷🇺 Russian (small)</option>
-                <option value="vosk-model-uk">🇺🇦 Ukrainian (large)</option>
-                <option value="vosk-model-en-us-0.22">🇺🇸 English (large)</option>
-            </select>
+    <!-- Catalog toggle -->
+    <button id="voskCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
+    <div id="voskCatalog" class="hidden mt8">
+        <div class="flex gap8 mb12">
+            <input type="text" id="voskSearch" style="flex:1;padding-left:8px" data-placeholder-i18n="search_models">
+            <select id="voskLangFilter"><option value="" data-i18n="all_languages"></option></select>
         </div>
+        <div id="voskCatalogList" class="catalog-list"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  Wake Word — Activation Phrase                                    -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="wakeWordCard">
+    <div class="row">
+        <div>
+            <span class="section-title" data-i18n="wake_title"></span>
+            <div class="section-sub" data-i18n="wake_desc"></div>
+        </div>
+        <span id="wakeStatus" class="badge badge-off">—</span>
+    </div>
+
+    <!-- Wake word model -->
+    <div class="mb12">
+        <div class="label-sm" data-i18n="wake_model"></div>
+        <div style="position:relative">
+            <div class="flex gap4">
+                <input type="text" id="wakeWordInput" style="flex:1" placeholder="hey selena">
+                <button id="wakePresetsBtn" class="btn btn-secondary" style="padding:6px 8px;font-size:16px;line-height:1" title="Presets">&#9662;</button>
+            </div>
+            <div id="wakePresetsList" class="hidden" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sf);border:1px solid var(--b2);border-radius:8px;z-index:10;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+                <div class="wake-preset" data-val="hey_jarvis">hey jarvis</div>
+                <div class="wake-preset" data-val="alexa">alexa</div>
+                <div class="wake-preset" data-val="hey_mycroft">hey mycroft</div>
+                <div class="wake-preset" data-val="hey_rhasspy">hey rhasspy</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- STT Listening -->
+    <div class="slider-row mb12">
+        <div class="slider-header">
+            <span class="slider-label" data-i18n="stt_silence"></span>
+            <span class="slider-value" id="sttSilenceVal">1.2s</span>
+        </div>
+        <input type="range" id="sttSilence" min="0.5" max="3.0" step="0.1" value="1.2">
+    </div>
+
+    <button id="wakeWordSaveBtn" class="btn btn-green" data-i18n="save"></button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  PIPER — Text-to-Speech                                          -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="piperCard">
+    <div class="row">
+        <div>
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="tts_title"></span>
+                <span id="piperAccelBadge" class="badge badge-ac">CPU</span>
+            </div>
+            <div class="section-sub">Piper TTS</div>
+        </div>
+        <span id="piperStatus" class="badge badge-off"></span>
+    </div>
+
+    <!-- Engine actions -->
+    <div class="flex gap8 mb12 wrap" id="piperActions"></div>
+    <div id="piperProgress" class="hidden mb12">
+        <div class="label-xs mono truncate" id="piperProgressText"></div>
+        <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
+    </div>
+
+    <!-- Installed voices -->
+    <div id="piperInstalled" class="mb12 hidden">
+        <div class="label-sm" data-i18n="installed_voices"></div>
+        <div id="piperVoiceList" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
     </div>
 
     <!-- TTS Settings -->
-    <h3 data-i18n="h_tts"></h3>
-    <div class="card">
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_tts_voice"></div>
-                <div class="row-sub" data-i18n="sub_tts_voice"></div>
-            </div>
-            <select id="ttsVoice">
-                <option value="uk_UA-ukrainian_tts-medium">🇺🇦 Ukrainian TTS</option>
-                <option value="uk_UA-lada-medium">🇺🇦 Lada (UK)</option>
-                <option value="en_US-amy-medium">🇺🇸 Amy (EN)</option>
-                <option value="en_US-ryan-high">🇺🇸 Ryan (EN)</option>
-                <option value="ru_RU-irina-medium">🇷🇺 Irina (RU)</option>
-                <option value="ru_RU-ruslan-medium">🇷🇺 Ruslan (RU)</option>
-            </select>
+    <div id="ttsSettingsSection" class="card-inner hidden">
+        <div class="label-sm mb12" data-i18n="tts_settings"></div>
+
+        <div class="slider-row">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="lengthScaleVal">1.00</span></div>
+            <input type="range" id="lengthScale" min="0.5" max="2.0" step="0.05" value="1.0">
+            <div class="slider-hints"><span data-i18n="fast"></span><span data-i18n="slow"></span></div>
         </div>
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_test_tts"></div>
-                <div class="row-sub" data-i18n="sub_test_tts"></div>
-            </div>
-            <button class="btn btn-secondary" id="testTtsBtn" data-i18n="test_btn"></button>
+        <div class="slider-row">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_intonation"></span><span class="slider-value" id="noiseScaleVal">0.667</span></div>
+            <input type="range" id="noiseScale" min="0" max="1" step="0.01" value="0.667">
+            <div class="slider-hints"><span data-i18n="monotone"></span><span data-i18n="expressive"></span></div>
+        </div>
+        <div class="slider-row">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_phoneme"></span><span class="slider-value" id="noiseWVal">0.800</span></div>
+            <input type="range" id="noiseW" min="0" max="1" step="0.01" value="0.8">
+            <div class="slider-hints"><span data-i18n="stable"></span><span data-i18n="varied"></span></div>
+        </div>
+        <div class="slider-row">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_pause"></span><span class="slider-value" id="sentenceSilenceVal">0.20s</span></div>
+            <input type="range" id="sentenceSilence" min="0" max="2" step="0.05" value="0.2">
+        </div>
+        <div class="slider-row">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="volumeVal">1.00</span></div>
+            <input type="range" id="ttsVolume" min="0.1" max="3.0" step="0.05" value="1.0">
+        </div>
+        <div id="speakerRow" class="slider-row hidden">
+            <div class="slider-header"><span class="slider-label" data-i18n="tts_speaker"></span><span class="slider-value" id="speakerVal">0</span></div>
+            <input type="range" id="ttsSpeaker" min="0" max="0" step="1" value="0">
+        </div>
+
+        <div class="mb8">
+            <input type="text" id="ttsTestText" style="width:100%" data-placeholder-i18n="tts_test_placeholder">
+        </div>
+        <div class="flex gap8">
+            <button id="ttsTestBtn" class="btn btn-blue" data-i18n="test_voice"></button>
+            <button id="ttsSaveBtn" class="btn btn-green" data-i18n="save"></button>
         </div>
     </div>
 
-    <!-- Wake Word -->
-    <h3 data-i18n="h_wake"></h3>
-    <div class="card">
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_wake_model"></div>
-                <div class="row-sub" data-i18n="sub_wake_model"></div>
-            </div>
-            <select id="wakeWordModel">
-                <option value="hey_selena">hey selena</option>
-                <option value="hey_jarvis">hey jarvis</option>
-                <option value="alexa">alexa</option>
-            </select>
+    <!-- Catalog toggle -->
+    <button id="piperCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
+    <div id="piperCatalog" class="hidden mt8">
+        <div class="flex gap8 mb12 wrap">
+            <input type="text" id="piperSearch" style="flex:1;min-width:150px" data-placeholder-i18n="search_voices">
+            <select id="piperLangFilter"><option value="" data-i18n="all_languages"></option></select>
+            <select id="piperQualityFilter"><option value="" data-i18n="all_qualities"></option></select>
         </div>
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_threshold"></div>
-                <div class="row-sub" data-i18n="sub_threshold"></div>
-            </div>
-            <div class="range-row">
-                <input type="range" id="wakeThreshold" min="0.1" max="1.0" step="0.05" value="0.5">
-                <span class="range-val" id="wakeThresholdVal">0.50</span>
-            </div>
+        <div id="piperCatalogList" class="catalog-list"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  LLM Router                                                      -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="llmCard">
+    <div class="mb16">
+        <div class="flex gap8">
+            <span class="section-title" data-i18n="llm_title"></span>
+            <span id="llmAccelBadge" class="badge badge-ac">CPU</span>
         </div>
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_detector_status"></div>
+        <div class="section-sub" data-i18n="llm_desc"></div>
+    </div>
+
+    <!-- Provider tabs -->
+    <div class="provider-tabs" id="providerTabs"></div>
+
+    <!-- Switch progress -->
+    <div id="switchSteps" class="card-inner hidden steps-list"></div>
+
+    <!-- System Prompt -->
+    <div class="mb16">
+        <button id="promptToggle" class="btn-link flex gap6">
+            <span data-i18n="system_prompt"></span>
+            <span id="customPromptBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </button>
+        <div id="promptEditor" class="card-inner hidden mt8">
+            <div class="label-xs mb4" data-i18n="system_prompt_desc"></div>
+            <textarea id="systemPromptText" rows="6" style="width:100%"></textarea>
+            <div class="flex gap8 mt8">
+                <button id="savePromptBtn" class="btn btn-green" data-i18n="save"></button>
+                <button id="resetPromptBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
             </div>
-            <span id="wakeStatus" class="badge badge-off">—</span>
+
+            <!-- TTS Rules -->
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b)">
+                <div class="flex gap6 mb4">
+                    <span class="label-xs" data-i18n="tts_rules"></span>
+                    <span id="customTtsBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+                </div>
+                <textarea id="ttsRulesText" rows="3" style="width:100%"></textarea>
+                <div class="flex gap8 mt8">
+                    <button id="saveTtsRulesBtn" class="btn btn-green" data-i18n="save"></button>
+                    <button id="resetTtsRulesBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Speaker ID -->
-    <h3 data-i18n="h_speaker"></h3>
-    <div class="card">
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_similarity"></div>
-                <div class="row-sub" data-i18n="sub_similarity"></div>
+    <!-- Ollama panel -->
+    <div id="ollamaPanel" class="hidden">
+        <div class="flex gap8 mb12">
+            <span id="ollamaStatusBadge" class="badge badge-off"></span>
+            <span id="ollamaRunBadge" class="badge hidden"></span>
+        </div>
+
+        <div class="flex gap8 mb16 wrap" id="ollamaActions"></div>
+        <div id="ollamaProgress" class="hidden mb12">
+            <div class="label-xs mono truncate" id="ollamaProgressText"></div>
+            <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
+        </div>
+
+        <!-- Ollama models -->
+        <div id="ollamaModels" class="mb12 hidden">
+            <div class="label-sm" data-i18n="installed_models"></div>
+            <div id="ollamaModelList"></div>
+        </div>
+
+        <!-- Pull model -->
+        <div id="ollamaPullSection" class="hidden">
+            <div class="flex gap8">
+                <input type="text" id="pullModelInput" style="flex:1" data-placeholder-i18n="model_name_placeholder">
+                <button id="pullModelBtn" class="btn btn-secondary">Pull</button>
             </div>
-            <div class="range-row">
-                <input type="range" id="speakerThreshold" min="0.3" max="1.0" step="0.05" value="0.75">
-                <span class="range-val" id="speakerThresholdVal">0.75</span>
+            <div id="pullProgress" class="hidden mt8">
+                <div class="row"><span id="pullStatusText" class="label-xs"></span><span id="pullPercent" class="label-xs"></span></div>
+                <div class="progress-bar"><div class="fill" id="pullFill" style="width:0%"></div></div>
             </div>
         </div>
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_enrolled"></div>
+
+        <!-- Ollama catalog -->
+        <div class="mt12">
+            <button id="ollamaCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
+            <div id="ollamaCatalog" class="hidden mt8">
+                <div id="ollamaCatalogList" class="catalog-list"></div>
             </div>
-            <span id="speakerCount" class="badge badge-ok">—</span>
         </div>
-        <ul class="device-list" id="speakerList"></ul>
     </div>
 
-    <!-- Audio Devices -->
-    <h3 data-i18n="h_audio"></h3>
-    <div class="card" id="audioCard">
-        <div class="row">
-            <div>
-                <div class="row-label" data-i18n="lbl_inputs"></div>
-            </div>
-            <span id="inputCount" class="badge badge-ok">—</span>
+    <!-- llama.cpp panel -->
+    <div id="llamacppPanel" class="hidden">
+        <div class="flex gap8 mb12">
+            <span id="llamacppStatusBadge" class="badge"></span>
         </div>
-        <ul class="device-list" id="inputList"></ul>
-        <div class="row" style="margin-top:8px">
-            <div>
-                <div class="row-label" data-i18n="lbl_outputs"></div>
-            </div>
-            <span id="outputCount" class="badge badge-ok">—</span>
+        <div class="label-xs mb8" data-i18n="llamacpp_desc"></div>
+        <div id="llamacppModelSelect" class="mb12 hidden">
+            <div class="label-sm" data-i18n="select_model"></div>
+            <select id="llamacppModel" style="width:100%"></select>
         </div>
-        <ul class="device-list" id="outputList"></ul>
+        <div id="llamacppNoModels" class="hidden" style="font-size:11px;color:var(--rd);margin-bottom:12px" data-i18n="llamacpp_no_models"></div>
+        <div class="flex gap8 mb16 wrap" id="llamacppActions"></div>
     </div>
 
-    <!-- Actions -->
-    <div class="actions">
-        <button class="btn btn-primary" id="saveBtn" data-i18n="save_btn"></button>
-        <button class="btn btn-secondary" id="refreshBtn" data-i18n="refresh_btn"></button>
+    <!-- Cloud provider panel -->
+    <div id="cloudPanel" class="hidden">
+        <div class="mb16">
+            <div class="label-sm" data-i18n="api_key"></div>
+            <div class="flex gap8">
+                <div class="password-wrap flex1">
+                    <input type="password" id="cloudApiKey" data-placeholder-i18n="api_key_placeholder">
+                    <button class="password-toggle" id="toggleKeyVis">&#128065;</button>
+                </div>
+                <button id="validateKeyBtn" class="btn btn-blue" data-i18n="validate_key"></button>
+            </div>
+            <div id="keyError" class="hidden" style="font-size:11px;color:var(--rd);margin-top:4px"></div>
+        </div>
+
+        <div id="cloudModelsSection" class="mb16 hidden">
+            <div class="label-sm" data-i18n="select_model"></div>
+            <div class="flex gap8">
+                <select id="cloudModelSelect" style="flex:1"></select>
+                <button id="saveCloudModelBtn" class="btn btn-green" data-i18n="save"></button>
+            </div>
+        </div>
     </div>
+</div>
 
-    <div class="toast" id="toast"></div>
+<div class="toast" id="toast"></div>
 
-    <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
-        var L = {
-            en: {
-                title: '�️ Voice Core Settings', loading: 'Loading…',
-                lbl_module_status: 'Module Status', lbl_privacy: 'Privacy Mode', sub_privacy: 'Disables microphone and wake word',
-                h_stt: 'Speech-to-Text (STT)', lbl_stt_model: 'STT Model', sub_stt_model: 'Vosk offline recognition model',
-                h_tts: 'Text-to-Speech (TTS)', lbl_tts_voice: 'TTS Voice', sub_tts_voice: 'Piper offline voice model',
-                lbl_test_tts: 'Test TTS', sub_test_tts: 'Speak a test phrase', test_btn: '▶ Test',
-                h_wake: 'Wake Word', lbl_wake_model: 'Wake Word Model', sub_wake_model: 'openWakeWord activation phrase',
-                lbl_threshold: 'Detection Threshold', sub_threshold: 'Higher = fewer false positives',
-                lbl_detector_status: 'Detector Status',
-                h_speaker: 'Speaker Identification', lbl_similarity: 'Similarity Threshold', sub_similarity: 'Min confidence for voice match',
-                lbl_enrolled: 'Enrolled Speakers',
-                h_audio: 'Audio Devices', lbl_inputs: 'Input Devices', lbl_outputs: 'Output Devices',
-                save_btn: 'Save Settings', refresh_btn: '↻ Refresh',
-                status_running: 'Running', status_offline: 'Offline',
-                wake_active: 'Active', wake_stopped: 'Stopped',
-                no_speakers: 'No speakers enrolled', speaker_removed: ' removed', no_devices: 'No devices detected',
-                saved_ok: 'Settings saved ✓', save_failed: 'Save failed: ',
-                priv_on: 'Privacy mode ON 🔇', priv_off: 'Privacy mode OFF 🎤️',
-                toggle_failed: 'Toggle failed',
-                speaking: '⏳ Speaking…', tts_test_ok: 'TTS test complete ✓', tts_test_failed: 'TTS test failed',
-                refreshed: 'Refreshed'
-            },
-            uk: {
-                title: '�️ Налаштування Voice Core', loading: 'Завантаження…',
-                lbl_module_status: 'Статус модуля', lbl_privacy: 'Режим приватності', sub_privacy: 'Вимикає мікрофон та wake word',
-                h_stt: 'Розпізнавання мовлення (STT)', lbl_stt_model: 'Модель STT', sub_stt_model: 'Офлайн-модель Vosk',
-                h_tts: 'Синтез мовлення (TTS)', lbl_tts_voice: 'Голос TTS', sub_tts_voice: 'Офлайн-голос Piper',
-                lbl_test_tts: 'Тест TTS', sub_test_tts: 'Вимовити тестову фразу', test_btn: '▶ Тест',
-                h_wake: 'Wake Word', lbl_wake_model: 'Модель Wake Word', sub_wake_model: 'Фраза активації openWakeWord',
-                lbl_threshold: 'Поріг виявлення', sub_threshold: 'Вищий = менше хибних спрацьовувань',
-                lbl_detector_status: 'Статус детектора',
-                h_speaker: 'Ідентифікація мовця', lbl_similarity: 'Поріг схожості', sub_similarity: 'Мін. впевненість для збігу голосу',
-                lbl_enrolled: 'Зареєстровані мовці',
-                h_audio: 'Аудіопристрої', lbl_inputs: 'Пристрої введення', lbl_outputs: 'Пристрої виведення',
-                save_btn: 'Зберегти', refresh_btn: '↻ Оновити',
-                status_running: 'Запущено', status_offline: 'Офлайн',
-                wake_active: 'Активний', wake_stopped: 'Зупинено',
-                no_speakers: 'Немає зареєстрованих мовців', speaker_removed: ' видалено', no_devices: 'Пристроїв не виявлено',
-                saved_ok: 'Збережено ✓', save_failed: 'Помилка збереження: ',
-                priv_on: 'Режим приватності УВІМК 🔇', priv_off: 'Режим приватності ВИМК 🎤️',
-                toggle_failed: 'Помилка перемикання',
-                speaking: '⏳ Вимовляється…', tts_test_ok: 'Тест TTS завершено ✓', tts_test_failed: 'Тест TTS не вдався',
-                refreshed: 'Оновлено'
+<script>
+(function() {
+    // ── i18n ──────────────────────────────────────────────────────
+    var LANG = (function(){ try { return localStorage.getItem('selena-lang') || 'en'; } catch(e) { return 'en'; } })();
+    var L = {
+        en: {
+            title: 'Voice & AI Settings',
+            subtitle: 'Manage STT, TTS, and LLM engines',
+            stt_title: 'Speech-to-Text (STT)',
+            tts_title: 'Text-to-Speech (TTS)',
+            llm_title: 'LLM Router',
+            llm_desc: 'Language model provider management',
+            installed: 'Installed',
+            not_installed: 'Not installed',
+            install_engine: 'Install',
+            uninstall_engine: 'Uninstall',
+            installing: 'Installing...',
+            uninstalling: 'Uninstalling...',
+            refresh: 'Refresh',
+            installed_models: 'Installed Models',
+            installed_voices: 'Installed Voices',
+            activate: 'Activate',
+            show_catalog: 'Show catalog',
+            hide_catalog: 'Hide catalog',
+            search_models: 'Search models...',
+            search_voices: 'Search voices...',
+            all_languages: 'All languages',
+            all_qualities: 'All qualities',
+            download: 'Download',
+            downloading: 'Downloading...',
+            fetching_catalog: 'Loading catalog...',
+            no_models_found: 'No models found',
+            no_voices_found: 'No voices found',
+            pipeline_test: 'Voice Pipeline Test',
+            stt_test: 'Record & Recognize',
+            test_stt: 'Record',
+            recording: 'Recording',
+            sec: 's',
+            recognized_text: 'Recognized text',
+            play_recording: 'Play recording',
+            send_to_ai: 'Send to AI',
+            manual_ai: 'Manual text to AI',
+            ai_placeholder: 'Type a question...',
+            ai_response: 'AI Response',
+            speak_response: 'Speak response',
+            tts_settings: 'TTS Settings',
+            tts_speed: 'Speed (length scale)',
+            tts_intonation: 'Intonation (noise scale)',
+            tts_phoneme: 'Phoneme width',
+            tts_pause: 'Sentence pause',
+            tts_volume: 'Volume',
+            tts_speaker: 'Speaker',
+            fast: 'Fast', slow: 'Slow',
+            monotone: 'Monotone', expressive: 'Expressive',
+            stable: 'Stable', varied: 'Varied',
+            test_voice: 'Test',
+            tts_test_placeholder: 'Test text (optional)...',
+            preview: 'Preview',
+            playing: 'Playing...',
+            save: 'Save',
+            server_running: 'Running',
+            server_stopped: 'Stopped',
+            start_server: 'Start',
+            stop_server: 'Stop',
+            model_name_placeholder: 'Model name (e.g. phi3:mini)...',
+            system_prompt: 'System Prompt',
+            system_prompt_desc: 'Instructions for the AI assistant personality',
+            custom: 'Custom',
+            reset_default: 'Reset to default',
+            tts_rules: 'TTS Rules',
+            api_key: 'API Key',
+            api_key_placeholder: 'Enter API key...',
+            validate_key: 'Validate',
+            validating_key: 'Validating...',
+            key_valid: 'Valid',
+            key_invalid: 'Invalid key',
+            select_model: 'Select model',
+            gpu_detected: 'GPU detected',
+            cpu_only: 'CPU only (no GPU)',
+            enable_gpu: 'Enable GPU',
+            force_cpu: 'Force CPU',
+            llamacpp_desc: 'llama.cpp runs GGUF models directly with GPU acceleration',
+            llamacpp_no_models: 'No models available. Download models in Ollama first.',
+            saved: 'Saved',
+            wake_title: 'Activation Phrase',
+            wake_desc: 'Wake word detection — always-on listener',
+            wake_model: 'Activation phrase',
+            wake_threshold: 'Detection threshold',
+            more_sensitive: 'More sensitive',
+            fewer_false: 'Fewer false positives',
+            wake_active: 'Active',
+            wake_stopped: 'Stopped',
+
+            stt_silence: 'Silence timeout',
+            privacy_mode: 'Privacy Mode',
+            privacy_desc: 'Disables microphone and wake word detection',
+            privacy_on: 'Privacy ON',
+            privacy_off: 'Privacy OFF',
+        },
+        uk: {
+            title: 'Голос та AI',
+            subtitle: 'Керування STT, TTS та LLM движками',
+            stt_title: 'Розпiзнавання мовлення (STT)',
+            tts_title: 'Синтез мовлення (TTS)',
+            llm_title: 'LLM маршрутизатор',
+            llm_desc: 'Керування провайдерами мовних моделей',
+            installed: 'Встановлено',
+            not_installed: 'Не встановлено',
+            install_engine: 'Встановити',
+            uninstall_engine: 'Видалити',
+            installing: 'Встановлення...',
+            uninstalling: 'Видалення...',
+            refresh: 'Оновити',
+            installed_models: 'Встановленi моделi',
+            installed_voices: 'Встановленi голоси',
+            activate: 'Активувати',
+            show_catalog: 'Показати каталог',
+            hide_catalog: 'Сховати каталог',
+            search_models: 'Пошук моделей...',
+            search_voices: 'Пошук голосiв...',
+            all_languages: 'Усi мови',
+            all_qualities: 'Уся якiсть',
+            download: 'Завантажити',
+            downloading: 'Завантаження...',
+            fetching_catalog: 'Завантаження каталогу...',
+            no_models_found: 'Моделей не знайдено',
+            no_voices_found: 'Голосiв не знайдено',
+            pipeline_test: 'Тест голосового пайплайну',
+            stt_test: 'Запис та розпiзнавання',
+            test_stt: 'Записати',
+            recording: 'Запис',
+            sec: 'с',
+            recognized_text: 'Розпiзнаний текст',
+            play_recording: 'Вiдтворити запис',
+            send_to_ai: 'Надiслати в AI',
+            manual_ai: 'Текст вручну до AI',
+            ai_placeholder: 'Введiть запитання...',
+            ai_response: 'Вiдповiдь AI',
+            speak_response: 'Озвучити вiдповiдь',
+            tts_settings: 'Налаштування TTS',
+            tts_speed: 'Швидкiсть',
+            tts_intonation: 'Iнтонацiя',
+            tts_phoneme: 'Ширина фонем',
+            tts_pause: 'Пауза мiж реченнями',
+            tts_volume: 'Гучнiсть',
+            tts_speaker: 'Диктор',
+            fast: 'Швидко', slow: 'Повiльно',
+            monotone: 'Монотонно', expressive: 'Експресивно',
+            stable: 'Стабiльно', varied: 'Рiзноманiтно',
+            test_voice: 'Тест',
+            tts_test_placeholder: 'Тестовий текст (необов\'язково)...',
+            preview: 'Прослухати',
+            playing: 'Вiдтворення...',
+            save: 'Зберегти',
+            server_running: 'Запущено',
+            server_stopped: 'Зупинено',
+            start_server: 'Запустити',
+            stop_server: 'Зупинити',
+            model_name_placeholder: 'Назва моделi (напр. phi3:mini)...',
+            system_prompt: 'Системний промпт',
+            system_prompt_desc: 'Iнструкцiї для особистостi AI-асистента',
+            custom: 'Кастомний',
+            reset_default: 'Скинути за замовч.',
+            tts_rules: 'Правила TTS',
+            api_key: 'API ключ',
+            api_key_placeholder: 'Введiть API ключ...',
+            validate_key: 'Перевiрити',
+            validating_key: 'Перевiрка...',
+            key_valid: 'Валiдний',
+            key_invalid: 'Невалiдний ключ',
+            select_model: 'Обрати модель',
+            gpu_detected: 'GPU виявлено',
+            cpu_only: 'Тiльки CPU (без GPU)',
+            enable_gpu: 'Увiмкнути GPU',
+            force_cpu: 'Примусово CPU',
+            llamacpp_desc: 'llama.cpp запускає GGUF моделi напряму з GPU прискоренням',
+            llamacpp_no_models: 'Немає моделей. Завантажте моделi в Ollama спочатку.',
+            saved: 'Збережено',
+            wake_title: 'Фраза активацiї',
+            wake_desc: 'Детекцiя wake word — постiйне прослуховування',
+            wake_model: 'Фраза активацiї',
+            wake_threshold: 'Порiг виявлення',
+            more_sensitive: 'Бiльш чутливий',
+            fewer_false: 'Менше хибних',
+            wake_active: 'Активний',
+            wake_stopped: 'Зупинено',
+
+            stt_silence: 'Таймаут тишi',
+            privacy_mode: 'Режим приватностi',
+            privacy_desc: 'Вимикає мiкрофон та wake word детекцiю',
+            privacy_on: 'Приватнiсть УВIМК',
+            privacy_off: 'Приватнiсть ВИМК',
+        }
+    };
+
+    function t(k) { return (L[LANG] || L.en)[k] || (L.en)[k] || k; }
+    function applyLang() {
+        document.querySelectorAll('[data-i18n]').forEach(function(el) { el.textContent = t(el.getAttribute('data-i18n')); });
+        document.querySelectorAll('[data-placeholder-i18n]').forEach(function(el) { el.placeholder = t(el.getAttribute('data-placeholder-i18n')); });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+    var $ = function(id) { return document.getElementById(id); };
+
+    function showToast(msg, ms) {
+        var el = $('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        setTimeout(function() { el.classList.remove('show'); }, ms || 2000);
+    }
+
+    async function api(path, opts) {
+        var resp = await fetch('/api/ui' + path, opts);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var ct = resp.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return resp.json();
+        return resp;
+    }
+
+    function postJson(path, body) {
+        return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }
+
+    function show(el) { if (typeof el === 'string') el = $(el); el.classList.remove('hidden'); }
+    function hide(el) { if (typeof el === 'string') el = $(el); el.classList.add('hidden'); }
+
+    function formatSize(bytes) {
+        if (!bytes) return '';
+        if (bytes > 1024 * 1024) return Math.round(bytes / (1024 * 1024)) + ' MB';
+        return Math.round(bytes / 1024) + ' KB';
+    }
+
+    // ── State ─────────────────────────────────────────────────────
+    var state = {
+        hw: null,
+        // Vosk
+        voskInstalled: false, voskVersion: null, voskInstalling: false,
+        voskModels: [], voskActive: '', voskCatalog: [], voskCatalogOpen: false,
+        recording: false, recognizedText: '', recordedAudioB64: '', peakLevel: 0,
+        aiResponse: '', aiProvider: '', aiModel: '',
+        // Piper
+        piperInstalled: false, piperVersion: null, piperInstalling: false,
+        piperVoices: [], piperActive: '', piperCatalog: [], piperCatalogOpen: false,
+        ttsSettings: { length_scale: 1.0, noise_scale: 0.667, noise_w_scale: 0.8, sentence_silence: 0.2, volume: 1.0, speaker: 0 },
+        numSpeakers: 1, previewingVoice: null, gpuActive: false, onnxGpu: false,
+        // LLM
+        providers: [], activeProvider: 'ollama',
+        ollamaInstalled: false, ollamaVersion: null, ollamaRunning: false, ollamaInstalling: false,
+        ollamaModels: [], ollamaActive: '',
+        pulling: false, pullProgress: 0, pullStatus: '',
+        llamacppRunning: false, llamacppStarting: false,
+        systemPrompt: '', defaultPrompt: '', isCustomPrompt: false,
+        ttsRules: '', defaultTtsRules: '', isCustomTts: false,
+        cloudModels: [], keyValid: null,
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  GPU
+    // ══════════════════════════════════════════════════════════════
+    async function loadHardware() {
+        try {
+            var hw = await api('/setup/hardware/status');
+            state.hw = hw;
+            state.gpuActive = hw.gpu_active || false;
+            state.onnxGpu = hw.onnxruntime_gpu || hw.piper_gpu || false;
+            show('gpuBar');
+            if (hw.gpu_detected) {
+                $('gpuIcon').innerHTML = '&#9889;';
+                $('gpuIcon').style.color = 'var(--gr)';
+                $('gpuLabel').textContent = t('gpu_detected') + ': ' + (hw.gpu_type === 'jetson' ? 'NVIDIA Jetson (CUDA)' : 'NVIDIA GPU (CUDA)');
+                $('gpuBadge').textContent = hw.gpu_active ? 'GPU Active' : 'CPU mode';
+                $('gpuBadge').className = 'badge ' + (hw.gpu_active ? 'badge-ok' : 'badge-warn');
+                if (hw.gpu_active && hw.onnxruntime_gpu) show('onnxBadge'); else hide('onnxBadge');
+                show('gpuToggleBtn');
+                $('gpuToggleBtn').textContent = hw.force_cpu ? t('enable_gpu') : t('force_cpu');
+            } else {
+                $('gpuIcon').innerHTML = '&#128187;';
+                $('gpuIcon').style.color = 'var(--tx3)';
+                $('gpuLabel').textContent = t('cpu_only');
+                hide('gpuBadge'); hide('onnxBadge'); hide('gpuToggleBtn');
+            }
+            // Update Piper accel badge
+            $('piperAccelBadge').textContent = (state.gpuActive && state.onnxGpu) ? 'GPU' : 'CPU';
+            $('piperAccelBadge').className = 'badge ' + ((state.gpuActive && state.onnxGpu) ? 'badge-ok' : 'badge-ac');
+            $('llmAccelBadge').textContent = state.gpuActive ? 'GPU' : 'CPU';
+            $('llmAccelBadge').className = 'badge ' + (state.gpuActive ? 'badge-ok' : 'badge-ac');
+        } catch(e) { /* ignore */ }
+    }
+
+    $('gpuToggleBtn').onclick = async function() {
+        if (!state.hw) return;
+        this.disabled = true;
+        try {
+            await postJson('/setup/hardware/gpu-override', { force_cpu: !state.hw.force_cpu });
+            await loadHardware();
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  WAKE WORD
+    // ══════════════════════════════════════════════════════════════
+    var MODULE_BASE = (function() {
+        var p = window.location.pathname;
+        return p.replace(/\/(widget|settings)(\.html)?$/, '');
+    })();
+
+    async function moduleApi(path, opts) {
+        var resp = await fetch(MODULE_BASE + path, opts);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+    }
+
+    function modulePost(path, body) {
+        return moduleApi(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }
+
+    async function loadWakeWordStatus() {
+        try {
+            var cfg = await moduleApi('/config');
+            $('wakeWordInput').value = (cfg.wake_word_model || 'hey jarvis').replace(/_/g, ' ');
+            $('wakeThreshold').value = cfg.wake_word_threshold || 0.5;
+            $('wakeThresholdVal').textContent = (cfg.wake_word_threshold || 0.5).toFixed(2);
+            // STT silence timeout
+            var silTO = cfg.stt_silence_timeout || 1.2;
+            $('sttSilence').value = silTO;
+            $('sttSilenceVal').textContent = parseFloat(silTO).toFixed(1) + 's';
+        } catch(e) { /* ignore */ }
+
+        try {
+            var ws = await moduleApi('/wakeword/status');
+            $('wakeStatus').textContent = ws.running ? t('wake_active') : t('wake_stopped');
+            $('wakeStatus').className = 'badge ' + (ws.running ? 'badge-ok' : 'badge-off');
+        } catch(e) {
+            $('wakeStatus').textContent = '—';
+            $('wakeStatus').className = 'badge badge-off';
+        }
+    }
+
+    $('sttSilence').oninput = function() {
+        $('sttSilenceVal').textContent = parseFloat(this.value).toFixed(1) + 's';
+    };
+
+    // Presets dropdown
+    $('wakePresetsBtn').onclick = function(e) {
+        e.stopPropagation();
+        $('wakePresetsList').classList.toggle('hidden');
+    };
+    document.addEventListener('click', function() { hide('wakePresetsList'); });
+    $('wakePresetsList').querySelectorAll('.wake-preset').forEach(function(el) {
+        el.onclick = function() {
+            $('wakeWordInput').value = this.getAttribute('data-val').replace(/_/g, ' ');
+            hide('wakePresetsList');
+        };
+    });
+
+    $('wakeWordSaveBtn').onclick = async function() {
+        var phrase = $('wakeWordInput').value.trim();
+        if (!phrase) return;
+        this.disabled = true;
+        try {
+            var payload = {
+                wake_word_model: phrase.replace(/\s+/g, '_'),
+                stt_silence_timeout: parseFloat($('sttSilence').value),
+            };
+            console.log('Wake save POST:', MODULE_BASE + '/config', payload);
+            var resp = await fetch(MODULE_BASE + '/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            console.log('Wake save response:', resp.status);
+            if (resp.ok) {
+                showToast(t('saved'));
+            } else {
+                var err = await resp.text();
+                console.error('Wake save error:', err);
+                showToast('Error: ' + resp.status);
+            }
+        } catch(e) {
+            console.error('Wake save exception:', e);
+            showToast('Error: ' + e.message);
+        }
+        this.disabled = false;
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  VOSK
+    // ══════════════════════════════════════════════════════════════
+    async function loadVoskStatus() {
+        try {
+            var res = await api('/setup/vosk/status');
+            state.voskInstalled = res.installed;
+            state.voskVersion = res.version;
+            $('voskStatus').textContent = res.installed ? t('installed') + ' v' + res.version : t('not_installed');
+            $('voskStatus').className = 'badge ' + (res.installed ? 'badge-ok' : 'badge-off');
+        } catch(e) { /* ignore */ }
+    }
+
+    async function loadVoskModels() {
+        try {
+            var res = await api('/setup/stt/models');
+            state.voskModels = res.models || [];
+            state.voskActive = res.active || '';
+            renderVoskModels();
+        } catch(e) { /* ignore */ }
+    }
+
+    function renderVoskModels() {
+        var list = $('voskModelList');
+        if (state.voskModels.length === 0) { hide('voskInstalled'); return; }
+        show('voskInstalled');
+        list.innerHTML = state.voskModels.map(function(m) {
+            var isActive = m.id === state.voskActive;
+            return '<div class="model-item' + (isActive ? ' active' : '') + '">' +
+                '<div><div class="model-name">' + m.name + '</div>' +
+                (m.size_mb ? '<div class="model-meta">' + m.size_mb + ' MB</div>' : '') + '</div>' +
+                '<div class="flex gap8">' +
+                '<button class="btn ' + (isActive ? 'btn-green' : 'btn-secondary') + '" ' + (isActive ? 'disabled' : '') +
+                ' onclick="window._voskSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
+                '<button class="btn btn-red" ' + (isActive ? 'disabled' : '') +
+                ' onclick="window._voskDelete(\'' + m.id + '\')">&#10005;</button>' +
+                '</div></div>';
+        }).join('');
+
+        // Show test section always — tests work via /api/ui/setup endpoints
+        show('voskTestSection');
+    }
+
+    window._voskSelect = async function(id) {
+        try { await postJson('/setup/stt/select', { model: id }); state.voskActive = id; renderVoskModels(); } catch(e) { /* ignore */ }
+    };
+    window._voskDelete = async function(id) {
+        try { await postJson('/setup/stt/delete', { model: id }); loadVoskModels(); } catch(e) { /* ignore */ }
+    };
+
+    function renderVoskActions() {
+        var html = '';
+        if (!state.voskInstalled) {
+            html += '<button class="btn btn-green" id="voskInstallBtn">' + t('install_engine') + '</button>';
+        } else {
+            html += '<button class="btn btn-red" id="voskUninstallBtn">' + t('uninstall_engine') + '</button>';
+        }
+        html += '<button class="btn btn-ghost" onclick="loadVoskStatus();loadVoskModels();">' + t('refresh') + '</button>';
+        $('voskActions').innerHTML = html;
+
+        if ($('voskInstallBtn')) $('voskInstallBtn').onclick = function() { voskEngineAction('install'); };
+        if ($('voskUninstallBtn')) $('voskUninstallBtn').onclick = function() { voskEngineAction('uninstall'); };
+    }
+
+    async function voskEngineAction(action) {
+        state.voskInstalling = true;
+        show('voskProgress');
+        $('voskProgressText').textContent = action === 'install' ? 'pip install vosk...' : 'pip uninstall vosk...';
+        $('voskActions').querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+        try {
+            await api('/setup/vosk/' + action, { method: 'POST' });
+            var poll = setInterval(async function() {
+                try {
+                    var res = await api('/setup/vosk/install-progress');
+                    if (res.output) $('voskProgressText').textContent = res.output.split('\n').filter(Boolean).pop() || '';
+                    if (!res.running) {
+                        clearInterval(poll);
+                        state.voskInstalling = false;
+                        hide('voskProgress');
+                        await loadVoskStatus();
+                        await loadVoskModels();
+                        renderVoskActions();
+                    }
+                } catch(e) { /* ignore */ }
+            }, 2000);
+        } catch(e) { state.voskInstalling = false; hide('voskProgress'); renderVoskActions(); }
+    }
+
+    // ── STT Test ──────────────────────────────────────────────────
+    $('sttTestBtn').onclick = async function() {
+        state.recording = true;
+        state.recognizedText = '';
+        state.recordedAudioB64 = '';
+        state.peakLevel = 0;
+        hide('sttResult'); hide('aiResponseSection');
+        var btn = $('sttTestBtn');
+        var dur = 4, cd = dur;
+        btn.disabled = true;
+        btn.className = 'btn btn-red pulse';
+        btn.textContent = t('recording') + ' ' + cd + t('sec');
+        var timer = setInterval(function() {
+            cd--;
+            if (cd <= 0) { clearInterval(timer); btn.textContent = t('recording') + '...'; }
+            else btn.textContent = t('recording') + ' ' + cd + t('sec');
+        }, 1000);
+
+        try {
+            var data = await postJson('/setup/stt/test', { device: 'default', duration: dur });
+            clearInterval(timer);
+            if (data.status === 'ok') {
+                state.recognizedText = data.text || '(...)';
+                state.recordedAudioB64 = data.audio_b64 || '';
+                state.peakLevel = data.peak_level || 0;
+                $('sttRecognizedText').textContent = state.recognizedText;
+                show('sttResult');
+                if (state.peakLevel > 0) {
+                    show('sttPeakBar');
+                    $('sttPeakFill').style.width = Math.min(state.peakLevel * 100, 100) + '%';
+                    $('sttPeakFill').style.background = state.peakLevel > 0.01 ? 'var(--gr)' : 'var(--rd)';
+                }
+                renderSttActions();
+            } else {
+                state.recognizedText = data.error || 'Error';
+                $('sttRecognizedText').textContent = state.recognizedText;
+                show('sttResult');
+            }
+        } catch(e) {
+            clearInterval(timer);
+            state.recognizedText = 'Connection error';
+            $('sttRecognizedText').textContent = state.recognizedText;
+            show('sttResult');
+        }
+        state.recording = false;
+        btn.disabled = false;
+        btn.className = 'btn btn-blue';
+        btn.textContent = t('test_stt');
+    };
+
+    function renderSttActions() {
+        var html = '';
+        if (state.recordedAudioB64) {
+            html += '<button class="btn btn-secondary" onclick="window._playRecording()">' + t('play_recording') + '</button>';
+        }
+        if (state.recognizedText && state.recognizedText !== '(...)' && state.recognizedText !== 'Connection error') {
+            html += '<button class="btn btn-secondary" id="sttTtsBtn">TTS</button>';
+            html += '<button class="btn btn-purple" onclick="window._sendToAi(window._getRecText())">' + t('send_to_ai') + '</button>';
+        }
+        $('sttResultActions').innerHTML = html;
+        if ($('sttTtsBtn')) $('sttTtsBtn').onclick = function() { window._speakText(state.recognizedText); };
+    }
+
+    window._getRecText = function() { return state.recognizedText; };
+    window._playRecording = function() {
+        if (!state.recordedAudioB64) return;
+        new Audio('data:audio/wav;base64,' + state.recordedAudioB64).play();
+    };
+
+    async function _speakTextInternal(text) {
+        if (!text) return;
+        try {
+            var resp = await fetch('/api/ui/setup/tts/speak', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, output_device: 'default' }),
+            });
+            if (resp.ok) {
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                var audio = new Audio(url);
+                audio.onended = function() { URL.revokeObjectURL(url); };
+                audio.onerror = function() { URL.revokeObjectURL(url); };
+                await audio.play();
+            }
+        } catch(e) { /* ignore */ }
+    }
+    window._speakText = _speakTextInternal;
+
+    window._sendToAi = async function(text) {
+        if (!text || text === '(...)') return;
+        state.aiResponse = ''; state.aiProvider = ''; state.aiModel = '';
+        hide('aiResponseSection');
+        try {
+            var res = await postJson('/setup/llm/chat', { text: text });
+            if (res.status === 'ok') {
+                state.aiResponse = res.response || '(empty)';
+                state.aiProvider = res.provider || '';
+                state.aiModel = res.model || '';
+            } else {
+                state.aiResponse = 'Error: ' + (res.error || 'unknown');
+                state.aiProvider = res.provider || '';
+            }
+        } catch(e) { state.aiResponse = 'Connection error'; }
+
+        $('aiResponseText').textContent = state.aiResponse;
+        $('aiProviderLabel').textContent = state.aiProvider ? '— ' + state.aiProvider + (state.aiModel ? ' / ' + state.aiModel : '') : '';
+        show('aiResponseSection');
+        if (state.aiResponse.startsWith('Error:') || state.aiResponse === '(empty)') {
+            hide('speakAiBtn');
+        } else {
+            show('speakAiBtn');
+        }
+    };
+
+    $('speakAiBtn').onclick = function() { _speakTextInternal(state.aiResponse); };
+
+    $('manualAiInput').oninput = function() { $('manualAiBtn').disabled = !this.value.trim(); };
+    $('manualAiInput').onkeydown = function(e) { if (e.key === 'Enter' && this.value.trim()) window._sendToAi(this.value.trim()); };
+    $('manualAiBtn').onclick = function() {
+        var v = $('manualAiInput').value.trim();
+        if (v) window._sendToAi(v);
+    };
+
+    // ── Vosk Catalog ──────────────────────────────────────────────
+    $('voskCatalogToggle').onclick = function() {
+        if (state.voskCatalogOpen) {
+            state.voskCatalogOpen = false;
+            hide('voskCatalog');
+            this.textContent = t('show_catalog');
+        } else {
+            state.voskCatalogOpen = true;
+            show('voskCatalog');
+            this.textContent = t('hide_catalog');
+            loadVoskCatalog();
+        }
+    };
+
+    async function loadVoskCatalog() {
+        $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
+        try {
+            var res = await api('/setup/stt/catalog');
+            state.voskCatalog = res.models || [];
+            renderVoskCatalog();
+        } catch(e) { $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>'; }
+    }
+
+    function renderVoskCatalog() {
+        var installedIds = {};
+        state.voskModels.forEach(function(m) { installedIds[m.id] = true; });
+        var search = ($('voskSearch').value || '').toLowerCase();
+        var lang = $('voskLangFilter').value;
+
+        // Build language options
+        var langs = {};
+        state.voskCatalog.forEach(function(m) { if (m.lang) langs[m.lang] = true; });
+        var langOpts = '<option value="">' + t('all_languages') + '</option>';
+        Object.keys(langs).sort().forEach(function(l) { langOpts += '<option value="' + l + '"' + (l === lang ? ' selected' : '') + '>' + l + '</option>'; });
+        $('voskLangFilter').innerHTML = langOpts;
+
+        var filtered = state.voskCatalog.filter(function(m) {
+            if (installedIds[m.id]) return false;
+            if (lang && m.lang !== lang) return false;
+            if (search && !m.name.toLowerCase().includes(search)) return false;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>';
+            return;
+        }
+
+        $('voskCatalogList').innerHTML = filtered.map(function(m) {
+            return '<div class="model-item">' +
+                '<div><div class="model-name">' + m.name + '</div>' +
+                '<div class="model-meta">' +
+                (m.lang ? m.lang.toUpperCase() : '') +
+                (m.size_mb ? ' &middot; ' + m.size_mb + ' MB' : '') +
+                (m.notes ? ' &middot; ' + m.notes : '') +
+                '</div></div>' +
+                '<button class="btn btn-secondary" onclick="window._voskDownload(\'' + m.id + '\',this)">' + t('download') + '</button>' +
+                '</div>';
+        }).join('');
+    }
+
+    $('voskSearch').oninput = renderVoskCatalog;
+    $('voskLangFilter').onchange = renderVoskCatalog;
+
+    window._voskDownload = async function(id, btn) {
+        btn.disabled = true;
+        btn.textContent = t('downloading');
+        try {
+            await postJson('/setup/stt/download', { model: id });
+            var poll = setInterval(async function() {
+                try {
+                    var res = await api('/setup/stt/download-progress/' + encodeURIComponent(id));
+                    if (res.progress) btn.textContent = res.progress;
+                    if (!res.running) {
+                        clearInterval(poll);
+                        btn.textContent = t('download');
+                        btn.disabled = false;
+                        loadVoskModels();
+                        renderVoskCatalog();
+                    }
+                } catch(e) { /* ignore */ }
+            }, 2000);
+        } catch(e) { btn.disabled = false; btn.textContent = t('download'); }
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  PIPER
+    // ══════════════════════════════════════════════════════════════
+    async function loadPiperStatus() {
+        try {
+            var res = await api('/setup/piper/status');
+            state.piperInstalled = res.installed;
+            state.piperVersion = res.version;
+            $('piperStatus').textContent = res.installed ? t('installed') + ' v' + res.version : t('not_installed');
+            $('piperStatus').className = 'badge ' + (res.installed ? 'badge-ok' : 'badge-off');
+        } catch(e) { /* ignore */ }
+    }
+
+    async function loadPiperVoices() {
+        try {
+            var res = await api('/setup/tts/voices');
+            state.piperVoices = res.voices || [];
+            state.piperActive = res.active || '';
+            renderPiperVoices();
+        } catch(e) { /* ignore */ }
+    }
+
+    async function loadTtsSettings() {
+        try {
+            var res = await api('/setup/tts/settings');
+            state.ttsSettings = {
+                length_scale: res.length_scale != null ? res.length_scale : 1.0,
+                noise_scale: res.noise_scale != null ? res.noise_scale : 0.667,
+                noise_w_scale: res.noise_w_scale != null ? res.noise_w_scale : 0.8,
+                sentence_silence: res.sentence_silence != null ? res.sentence_silence : 0.2,
+                volume: res.volume != null ? res.volume : 1.0,
+                speaker: res.speaker != null ? res.speaker : 0,
+            };
+            state.numSpeakers = res.num_speakers || 1;
+            applyTtsSliders();
+        } catch(e) { /* ignore */ }
+    }
+
+    function applyTtsSliders() {
+        $('lengthScale').value = state.ttsSettings.length_scale;
+        $('lengthScaleVal').textContent = state.ttsSettings.length_scale.toFixed(2);
+        $('noiseScale').value = state.ttsSettings.noise_scale;
+        $('noiseScaleVal').textContent = state.ttsSettings.noise_scale.toFixed(3);
+        $('noiseW').value = state.ttsSettings.noise_w_scale;
+        $('noiseWVal').textContent = state.ttsSettings.noise_w_scale.toFixed(3);
+        $('sentenceSilence').value = state.ttsSettings.sentence_silence;
+        $('sentenceSilenceVal').textContent = state.ttsSettings.sentence_silence.toFixed(2) + 's';
+        $('ttsVolume').value = state.ttsSettings.volume;
+        $('volumeVal').textContent = state.ttsSettings.volume.toFixed(2);
+        $('ttsSpeaker').value = state.ttsSettings.speaker;
+        $('speakerVal').textContent = state.ttsSettings.speaker;
+        if (state.numSpeakers > 1) {
+            show('speakerRow');
+            $('ttsSpeaker').max = state.numSpeakers - 1;
+        } else {
+            hide('speakerRow');
+        }
+    }
+
+    // Wire slider events
+    ['lengthScale', 'noiseScale', 'noiseW', 'sentenceSilence', 'ttsVolume', 'ttsSpeaker'].forEach(function(id) {
+        $(id).oninput = function() {
+            var v = parseFloat(this.value);
+            switch(id) {
+                case 'lengthScale': state.ttsSettings.length_scale = v; $('lengthScaleVal').textContent = v.toFixed(2); break;
+                case 'noiseScale': state.ttsSettings.noise_scale = v; $('noiseScaleVal').textContent = v.toFixed(3); break;
+                case 'noiseW': state.ttsSettings.noise_w_scale = v; $('noiseWVal').textContent = v.toFixed(3); break;
+                case 'sentenceSilence': state.ttsSettings.sentence_silence = v; $('sentenceSilenceVal').textContent = v.toFixed(2) + 's'; break;
+                case 'ttsVolume': state.ttsSettings.volume = v; $('volumeVal').textContent = v.toFixed(2); break;
+                case 'ttsSpeaker': state.ttsSettings.speaker = parseInt(this.value); $('speakerVal').textContent = this.value; break;
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        (function () {
-            const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+    });
 
-            const $ = (id) => document.getElementById(id);
+    $('ttsSaveBtn').onclick = async function() {
+        this.disabled = true;
+        try {
+            await postJson('/setup/tts/settings', state.ttsSettings);
+            showToast(t('saved'));
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
 
-            function showToast(msg, ms) {
-                const t = $('toast');
-                t.textContent = msg;
-                t.classList.add('show');
-                setTimeout(() => t.classList.remove('show'), ms || 2000);
+    $('ttsTestBtn').onclick = async function() {
+        this.disabled = true;
+        this.textContent = t('playing');
+        try {
+            await postJson('/setup/tts/settings', state.ttsSettings);
+            var text = $('ttsTestText').value.trim() || 'Hello, I am your voice assistant.';
+            var resp = await fetch('/api/ui/setup/tts/speak', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, output_device: 'default' }),
+            });
+            if (resp.ok) {
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                var audio = new Audio(url);
+                var self = this;
+                audio.onended = function() { URL.revokeObjectURL(url); self.disabled = false; self.textContent = t('test_voice'); };
+                audio.onerror = function() { URL.revokeObjectURL(url); self.disabled = false; self.textContent = t('test_voice'); };
+                await audio.play();
+                return;
             }
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+        this.textContent = t('test_voice');
+    };
 
-            async function api(path, opts) {
-                const resp = await fetch(BASE + path, opts);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                return resp.json();
-            }
+    function renderPiperVoices() {
+        var list = $('piperVoiceList');
+        if (state.piperVoices.length === 0) { hide('piperInstalled'); hide('ttsSettingsSection'); return; }
+        show('piperInstalled');
+        if (state.piperInstalled) show('ttsSettingsSection');
 
-            // ── Load config ──────────────────────────────────────────────
-            async function loadConfig() {
+        list.innerHTML = state.piperVoices.map(function(v) {
+            var isActive = v.id === state.piperActive;
+            return '<div class="model-item' + (isActive ? ' active' : '') + '" style="flex-direction:column;align-items:stretch">' +
+                '<div class="flex" style="justify-content:space-between;margin-bottom:4px;cursor:pointer" onclick="window._piperSelect(\'' + v.id + '\')">' +
+                '<div><div class="model-name">' + (v.name || v.id) + '</div>' +
+                '<div class="model-meta">' + (v.language ? v.language.toUpperCase() : '') + (v.size_mb ? ' &middot; ' + v.size_mb + ' MB' : '') + '</div></div>' +
+                (isActive ? '<span style="color:var(--gr)">&#10003;</span>' : '') +
+                '</div>' +
+                '<div class="flex gap8">' +
+                (state.piperInstalled ? '<button class="btn btn-ghost" style="font-size:11px" onclick="window._piperPreview(\'' + v.id + '\',this)">' + t('preview') + '</button>' : '') +
+                '<button class="btn btn-red" style="font-size:11px" ' + (isActive ? 'disabled' : '') + ' onclick="window._piperDelete(\'' + v.id + '\')">&#10005;</button>' +
+                '</div></div>';
+        }).join('');
+    }
+
+    window._piperSelect = async function(id) {
+        try { await postJson('/setup/tts/select', { voice: id }); state.piperActive = id; renderPiperVoices(); } catch(e) { /* ignore */ }
+    };
+    window._piperDelete = async function(id) {
+        try { await postJson('/setup/tts/delete', { voice: id }); loadPiperVoices(); } catch(e) { /* ignore */ }
+    };
+    window._piperPreview = async function(id, btn) {
+        if (state.previewingVoice) return;
+        state.previewingVoice = id;
+        btn.textContent = t('playing');
+        try {
+            var resp = await fetch('/api/ui/setup/tts/preview', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: 'Hello, I am your voice assistant.', voice: id }),
+            });
+            if (resp.ok) {
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                var audio = new Audio(url);
+                audio.onended = function() { URL.revokeObjectURL(url); state.previewingVoice = null; btn.textContent = t('preview'); };
+                audio.onerror = function() { URL.revokeObjectURL(url); state.previewingVoice = null; btn.textContent = t('preview'); };
+                await audio.play();
+            } else { state.previewingVoice = null; btn.textContent = t('preview'); }
+        } catch(e) { state.previewingVoice = null; btn.textContent = t('preview'); }
+    };
+
+    function renderPiperActions() {
+        var html = '';
+        if (!state.piperInstalled) {
+            html += '<button class="btn btn-green" id="piperInstallBtn">' + t('install_engine') + '</button>';
+        } else {
+            html += '<button class="btn btn-red" id="piperUninstallBtn">' + t('uninstall_engine') + '</button>';
+        }
+        html += '<button class="btn btn-ghost" onclick="loadPiperStatus();loadPiperVoices();">' + t('refresh') + '</button>';
+        $('piperActions').innerHTML = html;
+
+        if ($('piperInstallBtn')) $('piperInstallBtn').onclick = function() { piperEngineAction('install'); };
+        if ($('piperUninstallBtn')) $('piperUninstallBtn').onclick = function() { piperEngineAction('uninstall'); };
+    }
+
+    async function piperEngineAction(action) {
+        state.piperInstalling = true;
+        show('piperProgress');
+        $('piperProgressText').textContent = action === 'install' ? 'pip install piper-tts...' : 'pip uninstall piper-tts...';
+        $('piperActions').querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+        try {
+            await api('/setup/piper/' + action, { method: 'POST' });
+            var poll = setInterval(async function() {
                 try {
-                    const cfg = await api('/config');
-                    $('sttModel').value = cfg.stt_model || 'vosk-model-small-uk';
-                    $('ttsVoice').value = cfg.tts_voice || 'uk_UA-ukrainian_tts-medium';
-                    $('wakeWordModel').value = cfg.wake_word_model || 'hey_selena';
-                    $('wakeThreshold').value = cfg.wake_word_threshold || 0.5;
-                    $('wakeThresholdVal').textContent = (cfg.wake_word_threshold || 0.5).toFixed(2);
-                    $('speakerThreshold').value = cfg.speaker_threshold || 0.75;
-                    $('speakerThresholdVal').textContent = (cfg.speaker_threshold || 0.75).toFixed(2);
-                    $('privacyToggle').checked = cfg.privacy_mode || false;
-                    $('moduleStatus').textContent = t('status_running');
-                    $('moduleStatus').className = 'badge badge-ok';
-                } catch (e) {
-                    $('moduleStatus').textContent = t('status_offline');
-                    $('moduleStatus').className = 'badge badge-off';
-                }
-            }
-
-            // ── Load wake word status ────────────────────────────────────
-            async function loadWakeStatus() {
-                try {
-                    const s = await api('/wakeword/status');
-                    $('wakeStatus').textContent = s.running ? t('wake_active') : t('wake_stopped');
-                    $('wakeStatus').className = s.running ? 'badge badge-ok' : 'badge badge-off';
-                } catch { $('wakeStatus').textContent = '—'; }
-            }
-
-            // ── Load speakers ─────────────────────────────────────────────
-            async function loadSpeakers() {
-                try {
-                    const s = await api('/speakers');
-                    const list = s.speakers || [];
-                    $('speakerCount').textContent = list.length;
-                    const ul = $('speakerList');
-                    ul.innerHTML = '';
-                    if (list.length === 0) {
-                        ul.innerHTML = '<li class="empty">' + t('no_speakers') + '</li>';
-                    } else {
-                        list.forEach(id => {
-                            const li = document.createElement('li');
-                            li.innerHTML = '<span class="name">' + id + '</span>' +
-                                '<button class="btn btn-danger" style="padding:2px 8px;font-size:11px" data-uid="' + id + '">✕</button>';
-                            ul.appendChild(li);
-                        });
-                        ul.querySelectorAll('[data-uid]').forEach(btn => {
-                            btn.addEventListener('click', async function () {
-                                const uid = this.getAttribute('data-uid');
-                                await api('/speakers/' + encodeURIComponent(uid), { method: 'DELETE' });
-                                showToast('Speaker ' + uid + t('speaker_removed'));
-                                loadSpeakers();
-                            });
-                        });
+                    var res = await api('/setup/piper/install-progress');
+                    if (res.output) $('piperProgressText').textContent = res.output.split('\n').filter(Boolean).pop() || '';
+                    if (!res.running) {
+                        clearInterval(poll);
+                        state.piperInstalling = false;
+                        hide('piperProgress');
+                        await loadPiperStatus();
+                        await loadPiperVoices();
+                        renderPiperActions();
                     }
-                } catch { $('speakerCount').textContent = '—'; }
-            }
+                } catch(e) { /* ignore */ }
+            }, 2000);
+        } catch(e) { state.piperInstalling = false; hide('piperProgress'); renderPiperActions(); }
+    }
 
-            // ── Load audio devices ─────────────────────────────────────────
-            async function loadAudio() {
+    // ── Piper Catalog ─────────────────────────────────────────────
+    $('piperCatalogToggle').onclick = function() {
+        if (state.piperCatalogOpen) {
+            state.piperCatalogOpen = false;
+            hide('piperCatalog');
+            this.textContent = t('show_catalog');
+        } else {
+            state.piperCatalogOpen = true;
+            show('piperCatalog');
+            this.textContent = t('hide_catalog');
+            loadPiperCatalog();
+        }
+    };
+
+    async function loadPiperCatalog() {
+        $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
+        try {
+            var res = await api('/setup/tts/catalog');
+            state.piperCatalog = res.voices || [];
+            renderPiperCatalog();
+        } catch(e) { $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>'; }
+    }
+
+    function renderPiperCatalog() {
+        var installedIds = {};
+        state.piperVoices.forEach(function(v) { installedIds[v.id] = true; });
+        var search = ($('piperSearch').value || '').toLowerCase();
+        var lang = $('piperLangFilter').value;
+        var quality = $('piperQualityFilter').value;
+
+        var langs = {}, quals = {};
+        state.piperCatalog.forEach(function(v) { if (v.language) langs[v.language] = true; if (v.quality) quals[v.quality] = true; });
+        var langOpts = '<option value="">' + t('all_languages') + '</option>';
+        Object.keys(langs).sort().forEach(function(l) { langOpts += '<option value="' + l + '"' + (l === lang ? ' selected' : '') + '>' + l + '</option>'; });
+        $('piperLangFilter').innerHTML = langOpts;
+        var qualOpts = '<option value="">' + t('all_qualities') + '</option>';
+        Object.keys(quals).sort().forEach(function(q) { qualOpts += '<option value="' + q + '"' + (q === quality ? ' selected' : '') + '>' + q + '</option>'; });
+        $('piperQualityFilter').innerHTML = qualOpts;
+
+        var filtered = state.piperCatalog.filter(function(v) {
+            if (installedIds[v.id]) return false;
+            if (lang && v.language !== lang) return false;
+            if (quality && v.quality !== quality) return false;
+            if (search && !v.id.toLowerCase().includes(search) && !(v.name || '').toLowerCase().includes(search)) return false;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>';
+            return;
+        }
+
+        $('piperCatalogList').innerHTML = filtered.map(function(v) {
+            var meta = (v.language_name || v.language || '') +
+                (v.country ? ' (' + v.country + ')' : '') +
+                (v.quality ? ' &middot; ' + v.quality : '') +
+                (v.size_bytes ? ' &middot; ' + formatSize(v.size_bytes) : '');
+            return '<div class="model-item">' +
+                '<div><div class="model-name">' + v.id + '</div>' +
+                '<div class="model-meta">' + meta + '</div></div>' +
+                '<button class="btn btn-secondary" onclick="window._piperDownload(\'' + v.id + '\',this)">' + t('download') + '</button>' +
+                '</div>';
+        }).join('');
+    }
+
+    $('piperSearch').oninput = renderPiperCatalog;
+    $('piperLangFilter').onchange = renderPiperCatalog;
+    $('piperQualityFilter').onchange = renderPiperCatalog;
+
+    window._piperDownload = async function(id, btn) {
+        btn.disabled = true;
+        btn.textContent = t('downloading');
+        try {
+            await postJson('/setup/tts/download', { voice: id });
+            var poll = setInterval(async function() {
                 try {
-                    const d = await api('/audio/devices');
-                    const inputs = d.inputs || [];
-                    const outputs = d.outputs || [];
-                    $('inputCount').textContent = inputs.length;
-                    $('outputCount').textContent = outputs.length;
+                    var res = await api('/setup/tts/download-progress/' + encodeURIComponent(id));
+                    if (res.progress) btn.textContent = res.progress;
+                    if (!res.running) {
+                        clearInterval(poll);
+                        btn.textContent = t('download');
+                        btn.disabled = false;
+                        loadPiperVoices();
+                        renderPiperCatalog();
+                    }
+                } catch(e) { /* ignore */ }
+            }, 2000);
+        } catch(e) { btn.disabled = false; btn.textContent = t('download'); }
+    };
 
-                    const renderList = (items, ul) => {
-                        ul.innerHTML = '';
-                        if (items.length === 0) {
-                            ul.innerHTML = '<li class="empty">' + t('no_devices') + '</li>';
-                        } else {
-                            items.forEach(dev => {
-                                const li = document.createElement('li');
-                                li.innerHTML = '<span class="status-dot ok"></span><span class="name">' +
-                                    dev.name + '</span> <span style="color:var(--tx3)">(' + dev.type + ')</span>';
-                                ul.appendChild(li);
-                            });
+    // ══════════════════════════════════════════════════════════════
+    //  LLM
+    // ══════════════════════════════════════════════════════════════
+    async function loadProviders() {
+        try {
+            var res = await api('/setup/llm/providers');
+            state.providers = res.providers || [];
+            state.activeProvider = res.active || 'ollama';
+            renderProviderTabs();
+            showProviderPanel();
+        } catch(e) { /* ignore */ }
+    }
+
+    function renderProviderTabs() {
+        $('providerTabs').innerHTML = state.providers.map(function(p) {
+            return '<button class="provider-tab' + (p.id === state.activeProvider ? ' active' : '') + '" data-pid="' + p.id + '">' +
+                p.name + (p.configured && p.id !== 'ollama' ? ' &#10003;' : '') +
+                '</button>';
+        }).join('');
+        $('providerTabs').querySelectorAll('.provider-tab').forEach(function(btn) {
+            btn.onclick = function() { selectProvider(this.getAttribute('data-pid')); };
+        });
+    }
+
+    async function selectProvider(pid) {
+        var oldPid = state.activeProvider;
+        state.activeProvider = pid;
+        renderProviderTabs();
+
+        // Show switch steps
+        show('switchSteps');
+        var steps = [];
+        function addStep(text) {
+            steps.push(text);
+            $('switchSteps').innerHTML = steps.map(function(s, i) {
+                var isLast = i === steps.length - 1;
+                return '<div class="step-item ' + (isLast ? 'step-active' : 'step-done') + '">' +
+                    (isLast ? '<span class="spinner"></span>' : '&#10003;') + ' ' + s + '</div>';
+            }).join('');
+        }
+
+        try {
+            if (oldPid === 'ollama' && pid !== 'ollama') addStep('Stopping Ollama...');
+            else if (oldPid === 'llamacpp' && pid !== 'llamacpp') addStep('Stopping llama.cpp...');
+
+            addStep('Selecting provider...');
+            await postJson('/setup/llm/provider/select', { provider: pid });
+
+            if (pid === 'ollama') {
+                addStep('Starting Ollama...');
+                await waitForServer(function() { return api('/setup/ollama/status').then(function(d) { return d.running; }); }, 15);
+            } else if (pid === 'llamacpp') {
+                addStep('Starting llama.cpp...');
+                addStep('Loading model...');
+                await waitForServer(function() { return api('/setup/llamacpp/status').then(function(d) { return d.running; }); }, 30);
+            }
+            addStep('Ready');
+            // Mark all done
+            $('switchSteps').innerHTML = steps.map(function(s) {
+                return '<div class="step-item step-done">&#10003; ' + s + '</div>';
+            }).join('');
+        } catch(e) { /* ignore */ }
+
+        setTimeout(function() {
+            hide('switchSteps');
+            loadProviders();
+            loadOllamaStatus();
+            loadOllamaModels();
+            loadLlamacppStatus();
+            showProviderPanel();
+        }, 1500);
+    }
+
+    async function waitForServer(check, maxSec) {
+        for (var i = 0; i < maxSec; i++) {
+            await new Promise(function(r) { setTimeout(r, 1000); });
+            try { if (await check()) return; } catch(e) { /* retry */ }
+        }
+    }
+
+    function showProviderPanel() {
+        hide('ollamaPanel'); hide('llamacppPanel'); hide('cloudPanel');
+        var accelBadge = $('llmAccelBadge');
+        if (state.activeProvider === 'ollama') {
+            show('ollamaPanel');
+            accelBadge.textContent = state.gpuActive ? 'GPU' : 'CPU';
+            accelBadge.className = 'badge ' + (state.gpuActive ? 'badge-ok' : 'badge-ac');
+        } else if (state.activeProvider === 'llamacpp') {
+            show('llamacppPanel');
+            accelBadge.textContent = state.gpuActive ? 'GPU' : 'CPU';
+            accelBadge.className = 'badge ' + (state.gpuActive ? 'badge-ok' : 'badge-ac');
+        } else {
+            show('cloudPanel');
+            accelBadge.textContent = 'Cloud';
+            accelBadge.className = 'badge badge-pr';
+            loadCloudModels();
+        }
+    }
+
+    // ── System Prompt ─────────────────────────────────────────────
+    async function loadSystemPrompt() {
+        try {
+            var res = await api('/setup/llm/system-prompt');
+            state.systemPrompt = res.prompt || '';
+            state.defaultPrompt = res.default || '';
+            state.isCustomPrompt = res.is_custom || false;
+            state.ttsRules = res.tts_rules || '';
+            state.defaultTtsRules = res.default_tts_rules || '';
+            state.isCustomTts = res.is_custom_tts || false;
+            $('systemPromptText').value = state.systemPrompt;
+            $('ttsRulesText').value = state.ttsRules;
+            if (state.isCustomPrompt) show('customPromptBadge'); else hide('customPromptBadge');
+            if (state.isCustomTts) show('customTtsBadge'); else hide('customTtsBadge');
+        } catch(e) { /* ignore */ }
+    }
+
+    $('promptToggle').onclick = function() {
+        $('promptEditor').classList.toggle('hidden');
+    };
+
+    $('savePromptBtn').onclick = async function() {
+        this.disabled = true;
+        try {
+            await postJson('/setup/llm/system-prompt', { prompt: $('systemPromptText').value });
+            state.systemPrompt = $('systemPromptText').value;
+            state.isCustomPrompt = state.systemPrompt !== state.defaultPrompt;
+            if (state.isCustomPrompt) show('customPromptBadge'); else hide('customPromptBadge');
+            showToast(t('saved'));
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
+
+    $('resetPromptBtn').onclick = async function() {
+        try {
+            var res = await api('/setup/llm/system-prompt/reset', { method: 'POST' });
+            $('systemPromptText').value = res.prompt || state.defaultPrompt;
+            state.systemPrompt = $('systemPromptText').value;
+            state.isCustomPrompt = false;
+            hide('customPromptBadge');
+            $('ttsRulesText').value = res.tts_rules || state.defaultTtsRules;
+            state.ttsRules = $('ttsRulesText').value;
+            state.isCustomTts = false;
+            hide('customTtsBadge');
+        } catch(e) { /* ignore */ }
+    };
+
+    $('saveTtsRulesBtn').onclick = async function() {
+        this.disabled = true;
+        try {
+            await postJson('/setup/llm/tts-rules', { prompt: $('ttsRulesText').value });
+            state.ttsRules = $('ttsRulesText').value;
+            state.isCustomTts = state.ttsRules !== state.defaultTtsRules;
+            if (state.isCustomTts) show('customTtsBadge'); else hide('customTtsBadge');
+            showToast(t('saved'));
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
+
+    $('resetTtsRulesBtn').onclick = function() {
+        $('ttsRulesText').value = state.defaultTtsRules;
+        state.isCustomTts = false;
+        hide('customTtsBadge');
+    };
+
+    // ── Ollama ────────────────────────────────────────────────────
+    async function loadOllamaStatus() {
+        try {
+            var res = await api('/setup/ollama/status');
+            state.ollamaInstalled = res.installed;
+            state.ollamaVersion = res.version;
+            state.ollamaRunning = res.running;
+            $('ollamaStatusBadge').textContent = res.installed ? 'Ollama v' + res.version : t('not_installed');
+            $('ollamaStatusBadge').className = 'badge ' + (res.installed ? 'badge-ok' : 'badge-off');
+            if (res.installed) {
+                show('ollamaRunBadge');
+                $('ollamaRunBadge').textContent = res.running ? t('server_running') : t('server_stopped');
+                $('ollamaRunBadge').className = 'badge ' + (res.running ? 'badge-ok' : 'badge-warn');
+            } else {
+                hide('ollamaRunBadge');
+            }
+            renderOllamaActions();
+        } catch(e) { /* ignore */ }
+    }
+
+    async function loadOllamaModels() {
+        try {
+            var res = await api('/setup/ollama/models');
+            state.ollamaModels = res.models || [];
+        } catch(e) { /* ignore */ }
+        try {
+            var res2 = await api('/setup/llm/models');
+            state.ollamaActive = res2.active || '';
+        } catch(e) { /* ignore */ }
+        renderOllamaModels();
+    }
+
+    function renderOllamaModels() {
+        var list = $('ollamaModelList');
+        if (state.ollamaModels.length === 0) { hide('ollamaModels'); return; }
+        show('ollamaModels');
+        list.innerHTML = state.ollamaModels.map(function(m) {
+            var isActive = m.id === state.ollamaActive;
+            return '<div class="model-item' + (isActive ? ' active' : '') + '">' +
+                '<div><div class="model-name">' + m.name + '</div>' +
+                (m.size_gb !== undefined ? '<div class="model-meta">' + m.size_gb + ' GB</div>' : '') + '</div>' +
+                '<div class="flex gap8">' +
+                '<button class="btn ' + (isActive ? 'btn-green' : 'btn-secondary') + '" ' + (isActive ? 'disabled' : '') +
+                ' onclick="window._ollamaSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
+                '<button class="btn btn-red" ' + (isActive ? 'disabled' : '') +
+                ' onclick="window._ollamaDelete(\'' + m.id + '\')">&#10005;</button>' +
+                '</div></div>';
+        }).join('');
+
+        // llama.cpp model selector
+        if (state.ollamaModels.length > 0) {
+            show('llamacppModelSelect');
+            hide('llamacppNoModels');
+            $('llamacppModel').innerHTML = '<option value="">-- ' + t('select_model') + ' --</option>' +
+                state.ollamaModels.map(function(m) {
+                    return '<option value="' + m.id + '">' + m.name + (m.size_gb !== undefined ? ' (' + m.size_gb + ' GB)' : '') + '</option>';
+                }).join('');
+        } else {
+            hide('llamacppModelSelect');
+            show('llamacppNoModels');
+        }
+    }
+
+    window._ollamaSelect = async function(id) {
+        try { await postJson('/setup/llm/select', { model: id }); state.ollamaActive = id; renderOllamaModels(); } catch(e) { /* ignore */ }
+    };
+    window._ollamaDelete = async function(id) {
+        try { await postJson('/setup/ollama/delete-model', { model: id }); loadOllamaModels(); } catch(e) { /* ignore */ }
+    };
+
+    function renderOllamaActions() {
+        var html = '';
+        if (!state.ollamaInstalled) {
+            html += '<button class="btn btn-green" id="ollamaInstallBtn">' + t('install_engine') + '</button>';
+        } else {
+            if (!state.ollamaRunning) {
+                html += '<button class="btn btn-green" id="ollamaStartBtn">' + t('start_server') + '</button>';
+            } else {
+                html += '<button class="btn btn-amber" id="ollamaStopBtn">' + t('stop_server') + '</button>';
+            }
+            html += '<button class="btn btn-red" id="ollamaUninstallBtn">' + t('uninstall_engine') + '</button>';
+        }
+        html += '<button class="btn btn-ghost" onclick="loadOllamaStatus();loadOllamaModels();">' + t('refresh') + '</button>';
+        $('ollamaActions').innerHTML = html;
+
+        if ($('ollamaInstallBtn')) $('ollamaInstallBtn').onclick = function() { ollamaEngineAction('install'); };
+        if ($('ollamaUninstallBtn')) $('ollamaUninstallBtn').onclick = function() { ollamaEngineAction('uninstall'); };
+        if ($('ollamaStartBtn')) $('ollamaStartBtn').onclick = async function() {
+            try { await api('/setup/ollama/start', { method: 'POST' }); setTimeout(loadOllamaStatus, 2000); } catch(e) { /* ignore */ }
+        };
+        if ($('ollamaStopBtn')) $('ollamaStopBtn').onclick = async function() {
+            try { await api('/setup/ollama/stop', { method: 'POST' }); setTimeout(loadOllamaStatus, 1000); } catch(e) { /* ignore */ }
+        };
+
+        // Show pull section if running
+        if (state.ollamaRunning) show('ollamaPullSection'); else hide('ollamaPullSection');
+    }
+
+    async function ollamaEngineAction(action) {
+        state.ollamaInstalling = true;
+        show('ollamaProgress');
+        $('ollamaProgressText').textContent = action === 'install' ? 'downloading ollama...' : 'removing ollama...';
+        $('ollamaActions').querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+        try {
+            await api('/setup/ollama/' + action, { method: 'POST' });
+            var poll = setInterval(async function() {
+                try {
+                    var res = await api('/setup/ollama/install-progress');
+                    if (res.output) $('ollamaProgressText').textContent = res.output.split('\n').filter(Boolean).pop() || '';
+                    if (!res.running) {
+                        clearInterval(poll);
+                        state.ollamaInstalling = false;
+                        hide('ollamaProgress');
+                        await loadOllamaStatus();
+                        await loadOllamaModels();
+                    }
+                } catch(e) { /* ignore */ }
+            }, 3000);
+        } catch(e) { state.ollamaInstalling = false; hide('ollamaProgress'); renderOllamaActions(); }
+    }
+
+    // ── Pull model ────────────────────────────────────────────────
+    $('pullModelInput').onkeydown = function(e) { if (e.key === 'Enter' && this.value.trim()) pullModel(); };
+    $('pullModelBtn').onclick = pullModel;
+
+    async function pullModel() {
+        var name = $('pullModelInput').value.trim();
+        if (!name) return;
+        state.pulling = true;
+        state.pullProgress = 0;
+        state.pullStatus = 'starting...';
+        show('pullProgress');
+        $('pullModelBtn').disabled = true;
+        $('pullModelInput').disabled = true;
+
+        try {
+            await postJson('/setup/ollama/pull', { model: name });
+            var poll = setInterval(async function() {
+                try {
+                    var res = await api('/setup/ollama/pull-progress');
+                    state.pullProgress = res.percent || 0;
+                    state.pullStatus = res.status || '';
+                    $('pullStatusText').textContent = state.pullStatus;
+                    $('pullPercent').textContent = state.pullProgress.toFixed(1) + '%';
+                    $('pullFill').style.width = state.pullProgress + '%';
+                    if (!res.running) {
+                        clearInterval(poll);
+                        state.pulling = false;
+                        hide('pullProgress');
+                        $('pullModelBtn').disabled = false;
+                        $('pullModelInput').disabled = false;
+                        if (res.done) {
+                            $('pullModelInput').value = '';
+                            loadOllamaModels();
                         }
-                    };
-                    renderList(inputs, $('inputList'));
-                    renderList(outputs, $('outputList'));
-                } catch {
-                    $('inputCount').textContent = '—';
-                    $('outputCount').textContent = '—';
-                }
+                    }
+                } catch(e) { /* ignore */ }
+            }, 1500);
+        } catch(e) {
+            state.pulling = false;
+            hide('pullProgress');
+            $('pullModelBtn').disabled = false;
+            $('pullModelInput').disabled = false;
+        }
+    }
+
+    // ── Ollama Catalog ────────────────────────────────────────────
+    var ollamaCatalogData = [];
+    $('ollamaCatalogToggle').onclick = function() {
+        var el = $('ollamaCatalog');
+        if (el.classList.contains('hidden')) {
+            show(el);
+            this.textContent = t('hide_catalog');
+            loadOllamaCatalog();
+        } else {
+            hide(el);
+            this.textContent = t('show_catalog');
+        }
+    };
+
+    async function loadOllamaCatalog() {
+        $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
+        try {
+            var res = await api('/setup/llm/catalog');
+            ollamaCatalogData = res.models || [];
+            renderOllamaCatalog();
+        } catch(e) { $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>'; }
+    }
+
+    function renderOllamaCatalog() {
+        if (ollamaCatalogData.length === 0) {
+            $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>';
+            return;
+        }
+        $('ollamaCatalogList').innerHTML = ollamaCatalogData.map(function(m) {
+            return '<div class="model-item" style="padding:8px 10px">' +
+                '<div><span class="model-name" style="font-size:12px">' + m.name + '</span>' +
+                '<span class="model-meta" style="margin-left:8px">' + (m.size_gb || '') + ' GB</span></div>' +
+                '<button class="btn btn-secondary" style="font-size:11px;padding:4px 8px" ' +
+                (state.pulling ? 'disabled' : '') +
+                ' onclick="window._ollamaPullCatalog(\'' + m.id + '\')">Pull</button>' +
+                '</div>';
+        }).join('');
+    }
+
+    window._ollamaPullCatalog = function(id) {
+        $('pullModelInput').value = id;
+        pullModel();
+    };
+
+    // ── llama.cpp ─────────────────────────────────────────────────
+    async function loadLlamacppStatus() {
+        try {
+            var res = await api('/setup/llamacpp/status');
+            state.llamacppRunning = res.running || false;
+            $('llamacppStatusBadge').textContent = res.running ? t('server_running') : t('server_stopped');
+            $('llamacppStatusBadge').className = 'badge ' + (res.running ? 'badge-ok' : 'badge-warn');
+            renderLlamacppActions();
+        } catch(e) { /* ignore */ }
+    }
+
+    function renderLlamacppActions() {
+        var html = '';
+        if (!state.llamacppRunning) {
+            html += '<button class="btn btn-green" id="llamacppStartBtn">' + t('start_server') + '</button>';
+        } else {
+            html += '<button class="btn btn-amber" id="llamacppStopBtn">' + t('stop_server') + '</button>';
+        }
+        html += '<button class="btn btn-ghost" onclick="loadLlamacppStatus();loadOllamaModels();">' + t('refresh') + '</button>';
+        $('llamacppActions').innerHTML = html;
+
+        if ($('llamacppStartBtn')) $('llamacppStartBtn').onclick = async function() {
+            var model = $('llamacppModel').value;
+            if (!model) return;
+            this.disabled = true;
+            state.llamacppStarting = true;
+            show('switchSteps');
+            var steps = [];
+            function addStep(s) {
+                steps.push(s);
+                $('switchSteps').innerHTML = steps.map(function(s2, i) {
+                    var isLast = i === steps.length - 1;
+                    return '<div class="step-item ' + (isLast ? 'step-active' : 'step-done') + '">' +
+                        (isLast ? '<span class="spinner"></span>' : '&#10003;') + ' ' + s2 + '</div>';
+                }).join('');
             }
+            try {
+                addStep('Starting llama.cpp...');
+                await postJson('/setup/llamacpp/start', {});
+                addStep('Loading model...');
+                await waitForServer(function() { return api('/setup/llamacpp/status').then(function(d) { return d.running; }); }, 30);
+                addStep('Ready');
+                $('switchSteps').innerHTML = steps.map(function(s2) {
+                    return '<div class="step-item step-done">&#10003; ' + s2 + '</div>';
+                }).join('');
+            } catch(e) { /* ignore */ }
+            setTimeout(function() { hide('switchSteps'); loadLlamacppStatus(); }, 1500);
+            state.llamacppStarting = false;
+        };
 
-            // ── Save ──────────────────────────────────────────────────────
-            $('saveBtn').addEventListener('click', async () => {
-                try {
-                    await api('/config', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            stt_model: $('sttModel').value,
-                            tts_voice: $('ttsVoice').value,
-                            wake_word_model: $('wakeWordModel').value,
-                            wake_word_threshold: parseFloat($('wakeThreshold').value),
-                            speaker_threshold: parseFloat($('speakerThreshold').value),
-                            privacy_mode: $('privacyToggle').checked,
-                        }),
-                    });
-                    showToast(t('saved_ok'));
-                } catch (e) {
-                    showToast(t('save_failed') + e.message);
-                }
-            });
+        if ($('llamacppStopBtn')) $('llamacppStopBtn').onclick = async function() {
+            try { await api('/setup/llamacpp/stop', { method: 'POST' }); } catch(e) { /* ignore */ }
+            setTimeout(loadLlamacppStatus, 2000);
+        };
+    }
 
-            // ── Privacy toggle ────────────────────────────────────────────
-            $('privacyToggle').addEventListener('change', async function () {
-                try {
-                    await api('/config', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ privacy_mode: this.checked }),
-                    });
-                    showToast(this.checked ? t('priv_on') : t('priv_off'));
-                    loadWakeStatus();
-                } catch (e) {
-                    showToast(t('toggle_failed'));
-                }
-            });
+    $('llamacppModel').onchange = async function() {
+        if (!this.value) return;
+        try {
+            await postJson('/setup/llm/provider/model', { provider: 'llamacpp', model: this.value });
+        } catch(e) { /* ignore */ }
+    };
 
-            // ── Test TTS ──────────────────────────────────────────────────
-            $('testTtsBtn').addEventListener('click', async () => {
-                const btn = $('testTtsBtn');
-                btn.disabled = true;
-                btn.textContent = t('speaking');
-                try {
-                    await api('/tts/test', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text: 'Привіт! Голосовий модуль працює.', voice: $('ttsVoice').value }),
-                    });
-                    showToast(t('tts_test_ok'));
-                } catch (e) {
-                    showToast(t('tts_test_failed'));
-                } finally {
-                    btn.disabled = false;
-                    btn.textContent = t('test_btn');
-                }
-            });
+    // ── Cloud Provider ────────────────────────────────────────────
+    $('toggleKeyVis').onclick = function() {
+        var inp = $('cloudApiKey');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+    };
 
-            // ── Range sliders ─────────────────────────────────────────────
-            $('wakeThreshold').addEventListener('input', function () {
-                $('wakeThresholdVal').textContent = parseFloat(this.value).toFixed(2);
-            });
-            $('speakerThreshold').addEventListener('input', function () {
-                $('speakerThresholdVal').textContent = parseFloat(this.value).toFixed(2);
-            });
+    $('validateKeyBtn').onclick = async function() {
+        var key = $('cloudApiKey').value.trim();
+        if (!key) return;
+        this.disabled = true;
+        this.textContent = t('validating_key');
+        hide('keyError');
+        try {
+            var res = await postJson('/setup/llm/provider/validate', { provider: state.activeProvider, api_key: key });
+            state.keyValid = res.valid;
+            if (res.valid) {
+                this.textContent = t('key_valid');
+                this.className = 'btn btn-green';
+                state.cloudModels = res.models || [];
+                await postJson('/setup/llm/provider/apikey', { provider: state.activeProvider, api_key: key });
+                renderCloudModels();
+            } else {
+                this.textContent = t('validate_key');
+                this.className = 'btn btn-blue';
+                $('keyError').textContent = res.error || t('key_invalid');
+                show('keyError');
+            }
+        } catch(e) {
+            this.textContent = t('validate_key');
+            this.className = 'btn btn-blue';
+            $('keyError').textContent = 'Connection error';
+            show('keyError');
+            state.keyValid = false;
+        }
+        this.disabled = false;
+    };
 
-            // ── Refresh ──────────────────────────────────────────────────
-            $('refreshBtn').addEventListener('click', () => {
-                loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
-                showToast(t('refreshed'));
-            });
+    async function loadCloudModels() {
+        var prov = state.providers.find(function(p) { return p.id === state.activeProvider; });
+        if (!prov || !prov.configured) return;
+        try {
+            var res = await api('/setup/llm/provider/models?provider=' + state.activeProvider);
+            state.cloudModels = res.models || [];
+            renderCloudModels();
+        } catch(e) { /* ignore */ }
+    }
 
-            // ── Init ──────────────────────────────────────────────────────
-            window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio(); } });
-            applyLang();
-            loadConfig(); loadWakeStatus(); loadSpeakers(); loadAudio();
-        })();
-    </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
+    function renderCloudModels() {
+        if (state.cloudModels.length === 0) { hide('cloudModelsSection'); return; }
+        show('cloudModelsSection');
+        var prov = state.providers.find(function(p) { return p.id === state.activeProvider; });
+        $('cloudModelSelect').innerHTML = '<option value="">-- ' + t('select_model') + ' --</option>' +
+            state.cloudModels.map(function(m) {
+                return '<option value="' + m.id + '"' + (prov && prov.model === m.id ? ' selected' : '') + '>' + (m.name || m.id) + '</option>';
+            }).join('');
+    }
+
+    $('saveCloudModelBtn').onclick = async function() {
+        var model = $('cloudModelSelect').value;
+        if (!model) return;
+        this.disabled = true;
+        try {
+            await postJson('/setup/llm/provider/model', { provider: state.activeProvider, model: model });
+            loadProviders();
+            showToast(t('saved'));
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  Init
+    // ══════════════════════════════════════════════════════════════
+    window.addEventListener('message', function(e) {
+        if (e.data && e.data.type === 'lang_changed') {
+            try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch(ex) {}
+            applyLang(); init();
+        }
+    });
+
+    async function init() {
+        applyLang();
+        await Promise.all([
+            loadHardware(),
+            loadWakeWordStatus(),
+            loadVoskStatus(),
+            loadVoskModels(),
+            loadPiperStatus(),
+            loadPiperVoices(),
+            loadTtsSettings(),
+            loadProviders(),
+            loadOllamaStatus(),
+            loadOllamaModels(),
+            loadLlamacppStatus(),
+            loadSystemPrompt(),
+        ]);
+        renderVoskActions();
+        renderPiperActions();
+    }
+    init();
+})();
+</script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})()</script>
 </body>
 
 </html>

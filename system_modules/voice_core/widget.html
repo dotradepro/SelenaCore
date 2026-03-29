@@ -38,11 +38,7 @@
             --rd: #C94040;
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box }
 
         body {
             font-family: "DM Sans", system-ui, sans-serif;
@@ -79,25 +75,15 @@
             border-radius: 50%;
             transition: all .3s
         }
-
-        .sdot.ok {
-            background: var(--gr)
-        }
-
-        .sdot.off {
-            background: var(--rd)
-        }
-
-        .sdot.listen {
-            background: var(--gr);
-            box-shadow: 0 0 5px var(--gr)
-        }
+        .sdot.ok { background: var(--gr) }
+        .sdot.off { background: var(--rd) }
 
         .center {
             display: flex;
             align-items: center;
             justify-content: center;
-            flex: 1
+            flex: 1;
+            gap: 12px;
         }
 
         .mic {
@@ -109,45 +95,39 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
             position: relative;
             color: var(--tx);
             transition: all .2s;
         }
+        .mic svg { width: 20px; height: 20px }
 
-        .mic:hover {
-            background: rgba(79, 140, 247, .18)
-        }
-
-        .mic svg {
-            width: 20px;
-            height: 20px
-        }
-
-        @keyframes rp {
-            0% {
-                transform: scale(1);
-                opacity: .7
-            }
-
-            100% {
-                transform: scale(1.5);
-                opacity: 0
-            }
-        }
-
-        .mic.listening::before,
-        .mic.listening::after {
-            content: '';
-            position: absolute;
-            inset: -5px;
+        .privacy-btn {
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            border: 1.5px solid var(--ac);
-            animation: rp 1.6s ease-out infinite;
+            border: 1.5px solid var(--b2);
+            background: var(--sf2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all .2s;
+            color: var(--tx3);
+            font-size: 16px;
+            position: absolute;
+            right: 8px;
         }
-
-        .mic.listening::after {
-            animation-delay: .55s
+        .privacy-btn:hover {
+            border-color: var(--tx3);
+            color: var(--tx2);
+        }
+        .privacy-btn.active {
+            background: rgba(224, 84, 84, .15);
+            border-color: var(--rd);
+            color: var(--rd);
+        }
+        .privacy-btn.active:hover {
+            background: rgba(224, 84, 84, .25);
         }
 
         .bottom {
@@ -167,7 +147,6 @@
             font-size: 9px;
             color: var(--tx3)
         }
-
         .info .dot {
             width: 5px;
             height: 5px;
@@ -176,27 +155,8 @@
             margin-right: 2px;
             vertical-align: middle
         }
-
-        .info .dot.ok {
-            background: var(--gr)
-        }
-
-        .info .dot.off {
-            background: var(--rd)
-        }
-
-        .priv {
-            background: rgba(224, 84, 84, .12);
-            color: var(--rd);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 9px;
-            text-align: center;
-        }
-
-        .priv.hidden {
-            display: none
-        }
+        .info .dot.ok { background: var(--gr) }
+        .info .dot.off { background: var(--rd) }
     </style>
 </head>
 
@@ -206,18 +166,26 @@
     <div class="top">
         <div class="lbl" data-i18n="voice_label"></div>
         <div class="sdot" id="statusDot"></div>
-        <span id="privBadge" class="priv hidden">🔇</span>
     </div>
 
-    <!-- Mic button -->
-    <div class="center">
-        <div class="mic" id="micBtn">
+    <!-- Center: mic icon + privacy button -->
+    <div class="center" style="position:relative">
+        <div class="mic" id="micIcon">
             <svg viewBox="0 0 26 26" fill="none">
                 <rect x="9" y="2" width="8" height="13" rx="4" stroke="currentColor" stroke-width="1.5" />
                 <path d="M4.5 12c0 4.7 3.8 8.5 8.5 8.5S21.5 16.7 21.5 12M13 20.5V24M9 24h8" stroke="currentColor"
                     stroke-width="1.5" stroke-linecap="round" />
             </svg>
         </div>
+        <button class="privacy-btn" id="privacyBtn" title="Privacy Mode">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"/>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+        </button>
     </div>
 
     <!-- Bottom: status + info -->
@@ -233,29 +201,28 @@
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { voice_label: 'Voice · Core', ready: 'Ready', offline: 'Offline' },
-            uk: { voice_label: 'Voice · Core', ready: 'Готово', offline: 'Офлайн' }
+            en: { voice_label: 'Voice · Core', ready: 'Ready', offline: 'Offline', priv_on: 'Privacy ON', priv_off: 'Privacy OFF' },
+            uk: { voice_label: 'Voice · Core', ready: 'Готово', offline: 'Офлайн', priv_on: 'Приватнiсть УВIМК', priv_off: 'Приватнiсть ВИМК' }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
         window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
         (function () {
-            const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-            const $ = id => document.getElementById(id);
+            var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+            var $ = function(id) { return document.getElementById(id); };
+            var privacyMode = false;
 
             async function load() {
                 try {
-                    const cfg = await (await fetch(BASE + '/config')).json();
-                    $('statusDot').className = 'sdot ok';
-                    if (cfg.privacy_mode) {
-                        $('privBadge').className = 'priv';
-                        $('statusDot').className = 'sdot off';
-                    } else {
-                        $('privBadge').className = 'priv hidden';
-                    }
+                    var cfg = await (await fetch(BASE + '/config')).json();
+                    privacyMode = cfg.privacy_mode || false;
+                    $('statusDot').className = 'sdot ' + (privacyMode ? 'off' : 'ok');
+                    updatePrivacyBtn();
                     $('sttDot').className = 'dot ok';
                     $('ttsDot').className = 'dot ok';
-                } catch {
+                    $('statusText').textContent = t('ready');
+                    $('statusText').style.color = 'var(--tx3)';
+                } catch(e) {
                     $('statusDot').className = 'sdot off';
                     $('sttDot').className = 'dot off';
                     $('ttsDot').className = 'dot off';
@@ -264,14 +231,39 @@
                     $('statusText').style.color = 'var(--rd)';
                 }
                 try {
-                    const wk = await (await fetch(BASE + '/wakeword/status')).json();
+                    var wk = await (await fetch(BASE + '/wakeword/status')).json();
                     $('wakeDot').className = wk.running ? 'dot ok' : 'dot off';
-                } catch { $('wakeDot').className = 'dot off' }
+                } catch(e) { $('wakeDot').className = 'dot off'; }
             }
 
-            // Open settings page in parent app
-            $('micBtn').addEventListener('click', function () {
-                window.parent.postMessage({ type: 'openSettings', module: 'voice-core' }, '*');
+            function updatePrivacyBtn() {
+                var btn = $('privacyBtn');
+                if (privacyMode) {
+                    btn.classList.add('active');
+                    btn.title = t('priv_on');
+                } else {
+                    btn.classList.remove('active');
+                    btn.title = t('priv_off');
+                }
+            }
+
+            $('privacyBtn').addEventListener('click', async function() {
+                this.style.opacity = '0.5';
+                this.style.pointerEvents = 'none';
+                try {
+                    var res = await fetch(BASE + '/privacy/toggle', { method: 'POST' });
+                    var data = await res.json();
+                    privacyMode = data.privacy_mode;
+                    $('statusDot').className = 'sdot ' + (privacyMode ? 'off' : 'ok');
+                    updatePrivacyBtn();
+                    // Reload wake word status
+                    try {
+                        var wk = await (await fetch(BASE + '/wakeword/status')).json();
+                        $('wakeDot').className = wk.running ? 'dot ok' : 'dot off';
+                    } catch(e) {}
+                } catch(e) { /* ignore */ }
+                this.style.opacity = '';
+                this.style.pointerEvents = '';
             });
 
             load();

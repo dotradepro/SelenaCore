@@ -103,3 +103,11 @@ def get_stt(model: str = DEFAULT_MODEL) -> STTEngine:
     if _stt is None:
         _stt = STTEngine(model=model)
     return _stt
+
+
+def reload_stt(model: str) -> STTEngine:
+    """Force-reload STT engine with a new model."""
+    global _stt
+    logger.info("Reloading STT engine with model '%s'", model)
+    _stt = STTEngine(model=model)
+    return _stt
