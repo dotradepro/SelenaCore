@@ -957,23 +957,27 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
     from core.hardware import should_use_gpu
     n_gpu = "999" if should_use_gpu() else "0"
 
+    LLAMACPP_IMAGE = "dustynv/llama_cpp:0.3.8-r36.4.0-cu128-24.04"
+
     loop = asyncio.get_event_loop()
 
     def _start():
-        # Check if dustynv/llama_cpp image exists
-        result = subprocess.run(
-            ["docker", "ps", "-q", "-f", "name=selena-llama"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.stdout.strip():
-            # Already running, stop first
-            subprocess.run(["docker", "stop", "selena-llama"], capture_output=True, timeout=10)
-            subprocess.run(["docker", "rm", "selena-llama"], capture_output=True, timeout=5)
+        # Check if Docker image exists
+        if shutil.which("docker"):
+            check = subprocess.run(
+                ["docker", "image", "inspect", LLAMACPP_IMAGE],
+                capture_output=True, timeout=5,
+            )
+            if check.returncode != 0:
+                raise RuntimeError(
+                    f"Docker image '{LLAMACPP_IMAGE}' not found. "
+                    f"Run: docker pull {LLAMACPP_IMAGE}"
+                )
 
-        # gguf_path is inside our container at /root/.ollama/models/blobs/...
-        # For docker run we mount the shared ollama_data volume
-        # and use the same internal path
-        model_rel = gguf_path.replace("/root/.ollama/", "")  # models/blobs/sha256-xxx
+        # Stop existing container if any
+        subprocess.run(["docker", "rm", "-f", "selena-llama"], capture_output=True, timeout=10)
+
+        model_rel = gguf_path.replace("/root/.ollama/", "")
 
         cmd = [
             "docker", "run", "-d",
@@ -986,7 +990,7 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
 
         cmd += [
             "-v", "selenacore_ollama_data:/root/.ollama:ro",
-            "dustynv/llama_cpp:0.3.8-r36.4.0-cu128-24.04",
+            LLAMACPP_IMAGE,
             "python3", "-m", "llama_cpp.server",
             "--model", f"/root/.ollama/{model_rel}",
             "--host", "0.0.0.0", "--port", port,
