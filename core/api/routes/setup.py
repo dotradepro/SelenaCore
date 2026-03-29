@@ -590,6 +590,106 @@ async def audio_test_input(body: dict[str, str]) -> dict[str, Any]:
 
 
 # ================================================================== #
+#  Audio Volume / Mic Gain                                             #
+# ================================================================== #
+
+
+@router.get("/audio/levels")
+async def audio_levels() -> dict[str, Any]:
+    """Get current output volume and input gain from config."""
+    cfg = read_config().get("voice", {}) or {}
+    return {
+        "output_volume": cfg.get("output_volume", 100),
+        "input_gain": cfg.get("input_gain", 100),
+    }
+
+
+@router.post("/audio/levels")
+async def audio_set_levels(body: dict[str, Any]) -> dict[str, Any]:
+    """Set output volume and/or input gain. Persists to config + applies via pactl."""
+    loop = asyncio.get_running_loop()
+    cfg = read_config().get("voice", {}) or {}
+
+    out_vol = body.get("output_volume")
+    in_gain = body.get("input_gain")
+
+    if out_vol is not None:
+        out_vol = max(0, min(150, int(out_vol)))
+        update_config("voice", "output_volume", out_vol)
+        # Apply via pactl to the configured output
+        out_device = cfg.get("audio_force_output")
+        if out_device:
+            def _set_vol():
+                subprocess.run(
+                    ["pactl", "set-sink-volume", out_device, f"{out_vol}%"],
+                    timeout=3, capture_output=True,
+                    env=_pulse_env(),
+                )
+            await loop.run_in_executor(None, _set_vol)
+
+    if in_gain is not None:
+        in_gain = max(0, min(150, int(in_gain)))
+        update_config("voice", "input_gain", in_gain)
+        # Apply via pactl to the configured input
+        in_device = cfg.get("audio_force_input")
+        if in_device:
+            def _set_gain():
+                subprocess.run(
+                    ["pactl", "set-source-volume", in_device, f"{in_gain}%"],
+                    timeout=3, capture_output=True,
+                    env=_pulse_env(),
+                )
+            await loop.run_in_executor(None, _set_gain)
+
+    return {"status": "ok", "output_volume": out_vol, "input_gain": in_gain}
+
+
+def _pulse_env() -> dict[str, str]:
+    """Return environment dict for pactl to reach PulseAudio."""
+    import glob as _glob
+    env = os.environ.copy()
+    if env.get("PULSE_SERVER") or env.get("PULSE_RUNTIME_PATH"):
+        return env
+    sockets = sorted(_glob.glob("/run/user/*/pulse/native"))
+    if sockets:
+        env["PULSE_SERVER"] = f"unix:{sockets[0]}"
+    return env
+
+
+@router.get("/audio/mic-level")
+async def audio_mic_level() -> dict[str, Any]:
+    """Read current mic level (peak) from a quick 200ms sample."""
+    import struct
+    cfg = read_config().get("voice", {}) or {}
+    input_device = cfg.get("audio_force_input", "default")
+    loop = asyncio.get_running_loop()
+
+    def _sample() -> float:
+        is_pulse = input_device and not input_device.startswith("hw:") and input_device != "default"
+        if is_pulse:
+            cmd = ["timeout", "0.3",
+                   "parecord", "--raw", "--format=s16le", "--rate=16000",
+                   "--channels=1", "--device=" + input_device]
+        else:
+            cmd = ["arecord", "-d", "1", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"]
+            if input_device and input_device != "default":
+                cmd += ["-D", input_device]
+        result = subprocess.run(cmd, timeout=2, capture_output=True)
+        raw = result.stdout
+        if len(raw) < 2:
+            return 0.0
+        samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+        peak = max(abs(s) for s in samples) if samples else 0
+        return round(peak / 32768.0, 4)
+
+    try:
+        level = await asyncio.wait_for(loop.run_in_executor(None, _sample), timeout=3)
+        return {"level": level}
+    except Exception:
+        return {"level": 0.0}
+
+
+# ================================================================== #
 #  STT Models (Vosk)                                                   #
 # ================================================================== #
 
@@ -633,9 +733,15 @@ async def stt_models() -> dict[str, Any]:
 
 @router.post("/stt/select")
 async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
-    """Select and persist Vosk STT model choice."""
+    """Select and persist Vosk STT model choice, reload engine."""
     update_config("voice", "stt_model", req.model)
     os.environ["VOSK_MODEL"] = req.model
+    # Reload STT engine in voice-core module
+    try:
+        from system_modules.voice_core.stt import reload_stt
+        reload_stt(req.model)
+    except Exception as exc:
+        logger.warning("STT reload failed: %s", exc)
     logger.info("STT model set to %s", req.model)
     return {"status": "ok", "model": req.model}
 
