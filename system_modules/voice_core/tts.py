@@ -156,6 +156,8 @@ class TTSEngine:
     async def synthesize(self, text: str, voice: str | None = None, settings: TTSSettings | None = None) -> bytes:
         """Convert text to WAV audio bytes using Piper.
 
+        Auto-detects GPU server (piper-gpu on port 5100) and uses it if available.
+        Falls back to local CPU piper binary.
         Returns raw WAV bytes, or empty bytes if synthesis failed.
         """
         clean = sanitize_for_tts(text)
@@ -163,12 +165,69 @@ class TTSEngine:
             return b""
 
         v = voice or self.voice
-        model_path = self._model_path(v)
         s = settings or _load_tts_settings()
 
+        # Try GPU server first (separate container with CUDA onnxruntime)
+        gpu_result = await self._try_gpu_server(clean, v, s)
+        if gpu_result:
+            return gpu_result
+
+        # Fallback: local CPU piper binary
+        model_path = self._model_path(v)
         async with self._lock:
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(None, self._synthesize_sync, clean, model_path, s)
+
+    async def _try_gpu_server(self, text: str, voice: str, settings: TTSSettings) -> bytes | None:
+        """Try to use Piper GPU server if running."""
+        try:
+            import httpx
+            gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+            payload = {
+                "text": text, "voice": voice,
+                "length_scale": settings.length_scale,
+                "noise_scale": settings.noise_scale,
+                "noise_w_scale": settings.noise_w_scale,
+                "sentence_silence": settings.sentence_silence,
+                "volume": settings.volume,
+                "speaker": settings.speaker,
+            }
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{gpu_url}/synthesize", json=payload)
+                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("audio/"):
+                    wav = resp.content
+                    # Post-process: trim trailing noise
+                    trimmed = self._trim_trailing_noise_bytes(wav)
+                    return trimmed or wav
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _trim_trailing_noise_bytes(wav_bytes: bytes) -> bytes | None:
+        """Trim trailing noise from WAV bytes using ffmpeg."""
+        import tempfile
+        src = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        dst = src.name + ".trimmed.wav"
+        try:
+            src.write(wav_bytes)
+            src.close()
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", src.name, "-af",
+                 "apad=pad_dur=0.1,areverse,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-40dB,areverse",
+                 "-ar", "16000", "-ac", "1", dst],
+                capture_output=True, timeout=10,
+            )
+            if result.returncode == 0 and Path(dst).exists():
+                data = Path(dst).read_bytes()
+                if len(data) > 100:
+                    return data
+        except Exception:
+            pass
+        finally:
+            Path(src.name).unlink(missing_ok=True)
+            Path(dst).unlink(missing_ok=True)
+        return None
 
     def _synthesize_sync(self, text: str, model_path: str, settings: TTSSettings | None = None) -> bytes:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:

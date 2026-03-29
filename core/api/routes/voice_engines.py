@@ -462,7 +462,21 @@ async def tts_settings_save(req: TtsSettingsRequest) -> dict[str, Any]:
 async def hardware_status() -> dict[str, Any]:
     """Return hardware info including GPU detection."""
     from core.hardware import get_hardware_info
-    return get_hardware_info()
+    info = get_hardware_info()
+
+    # Check if Piper GPU server is running
+    piper_gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            resp = await client.get(f"{piper_gpu_url}/health")
+            if resp.status_code == 200:
+                info["piper_gpu"] = True
+    except Exception:
+        pass
+    if "piper_gpu" not in info:
+        info["piper_gpu"] = False
+
+    return info
 
 
 @router.post("/hardware/gpu-override")

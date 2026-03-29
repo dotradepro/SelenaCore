@@ -85,7 +85,7 @@ export default function PiperSection() {
     fetchSettings();
     fetch('/api/ui/setup/hardware/status').then(r => r.json()).then(d => {
       setGpuActive(d.gpu_active || false);
-      setOnnxGpu(d.onnxruntime_gpu || false);
+      setOnnxGpu(d.onnxruntime_gpu || d.piper_gpu || false);
     }).catch(() => {});
   }, [checkStatus, fetchInstalled, fetchSettings]);
 

@@ -1,0 +1,12 @@
+# Piper TTS with CUDA support for NVIDIA Jetson
+# Based on dustynv/onnxruntime which has pre-built onnxruntime-gpu for Jetson
+FROM dustynv/onnxruntime:1.22-r36.4.0-cu128-24.04
+
+RUN pip3 install --no-cache-dir --index-url https://pypi.org/simple/ piper-tts pathvalidate
+
+# Piper TTS HTTP server wrapper
+COPY scripts/piper-gpu-server.py /opt/piper-server.py
+
+EXPOSE 5100
+
+CMD ["python3", "/opt/piper-server.py"]
