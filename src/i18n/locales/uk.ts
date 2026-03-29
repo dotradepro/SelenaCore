@@ -254,6 +254,10 @@ const uk = {
             playingBack: 'Відтворення запису…',
             recording: 'REC',
             sec: 'с',
+            micGain: 'Чутливість мікрофона',
+            volume: 'Гучність',
+            micMonitor: 'Монітор мікрофона',
+            stopMonitor: 'Зупинити монітор',
 
             // Network
             networkTitle: 'Мережа',

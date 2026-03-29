@@ -254,6 +254,10 @@ const en = {
             playingBack: 'Playing back…',
             recording: 'REC',
             sec: 's',
+            micGain: 'Microphone gain',
+            volume: 'Volume',
+            micMonitor: 'Monitor mic',
+            stopMonitor: 'Stop monitor',
 
             // Network
             networkTitle: 'Network',

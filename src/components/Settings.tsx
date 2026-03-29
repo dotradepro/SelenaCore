@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Mic, Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid, ShieldCheck } from 'lucide-react';
+import { Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -9,15 +9,12 @@ import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
 import IntegrityPage from './IntegrityPage';
-import VoiceSettings from './settings/VoiceSettings';
-
 export default function Settings() {
   const { t } = useTranslation();
   const location = useLocation();
 
   const tabs = [
     { id: 'appearance', label: t('settings.appearance'), icon: Palette, path: '/settings/appearance' },
-    { id: 'voice', label: t('settings.voiceAndLlm'), icon: Mic, path: '/settings/voice' },
     { id: 'audio', label: t('settings.audio'), icon: Volume2, path: '/settings/audio' },
     { id: 'network', label: t('settings.networkAndVpn'), icon: Network, path: '/settings/network' },
     { id: 'users', label: t('settings.users'), icon: Users, path: '/settings/users' },
@@ -65,7 +62,6 @@ export default function Settings() {
         <Routes>
           <Route path="/" element={<AppearanceSettings />} />
           <Route path="/appearance" element={<AppearanceSettings />} />
-          <Route path="/voice" element={<VoiceSettings />} />
           <Route path="/audio" element={<AudioSettings />} />
           <Route path="/network" element={<NetworkSettings />} />
           <Route path="/users" element={<UsersSettings />} />
@@ -174,8 +170,6 @@ function AppearanceSettings() {
   );
 }
 
-// VoiceSettings is now in ./settings/VoiceSettings.tsx
-
 // ================================================================ //
 //  Audio Settings                                                     //
 // ================================================================ //
@@ -191,6 +185,11 @@ function AudioSettings() {
   const [micLevel, setMicLevel] = useState<number | null>(null);
   const [countdown, setCountdown] = useState(0);
   const [playingBack, setPlayingBack] = useState(false);
+  const [outputVolume, setOutputVolume] = useState(100);
+  const [inputGain, setInputGain] = useState(100);
+  const [liveMicLevel, setLiveMicLevel] = useState(0);
+  const [micMonitoring, setMicMonitoring] = useState(false);
+  const micMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch('/api/ui/setup/audio/devices').then(r => r.json()).then(data => {
@@ -201,6 +200,11 @@ function AudioSettings() {
       setSelectedInput(data.selected_input || (ins.length ? ins[0].id : ''));
       setSelectedOutput(data.selected_output || (outs.length ? outs[0].id : ''));
     }).catch(() => { });
+    fetch('/api/ui/setup/audio/levels').then(r => r.json()).then(data => {
+      setOutputVolume(data.output_volume ?? 100);
+      setInputGain(data.input_gain ?? 100);
+    }).catch(() => { });
+    return () => { if (micMonitorRef.current) clearInterval(micMonitorRef.current); };
   }, []);
 
   const saveAudio = async () => {
@@ -208,6 +212,26 @@ function AudioSettings() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: selectedInput, output: selectedOutput }),
     });
+    await fetch('/api/ui/setup/audio/levels', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ output_volume: outputVolume, input_gain: inputGain }),
+    });
+  };
+
+  const applyVolume = async (vol: number) => {
+    setOutputVolume(vol);
+    await fetch('/api/ui/setup/audio/levels', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ output_volume: vol }),
+    }).catch(() => {});
+  };
+
+  const applyGain = async (gain: number) => {
+    setInputGain(gain);
+    await fetch('/api/ui/setup/audio/levels', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input_gain: gain }),
+    }).catch(() => {});
   };
 
   const testOutput = async () => {
@@ -221,12 +245,28 @@ function AudioSettings() {
     setTestingOutput(false);
   };
 
+  const toggleMicMonitor = () => {
+    if (micMonitoring) {
+      if (micMonitorRef.current) clearInterval(micMonitorRef.current);
+      micMonitorRef.current = null;
+      setMicMonitoring(false);
+      setLiveMicLevel(0);
+    } else {
+      setMicMonitoring(true);
+      const poll = setInterval(async () => {
+        try {
+          const res = await fetch('/api/ui/setup/audio/mic-level').then(r => r.json());
+          setLiveMicLevel(res.level || 0);
+        } catch { /* ignore */ }
+      }, 350);
+      micMonitorRef.current = poll;
+    }
+  };
+
   const testInput = async () => {
     setTestingInput(true);
     setMicLevel(null);
     setPlayingBack(false);
-
-    // Start countdown timer (3 seconds recording)
     setCountdown(3);
     const timer = setInterval(() => {
       setCountdown(prev => {
@@ -234,7 +274,6 @@ function AudioSettings() {
         return prev - 1;
       });
     }, 1000);
-
     try {
       const res = await fetch('/api/ui/setup/audio/test/input', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -260,6 +299,7 @@ function AudioSettings() {
         <p className="text-sm text-zinc-400">{t('settings.audioSubsystemDesc')}</p>
       </div>
 
+      {/* Microphone */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
         <h4 className="font-medium mb-4">{t('settings.microphone')}</h4>
         <select value={selectedInput} onChange={(e) => { setSelectedInput(e.target.value); }}
@@ -268,7 +308,29 @@ function AudioSettings() {
             <option key={d.id} value={d.id}>{d.name} ({d.type})</option>
           )) : <option>{t('settings.noDevicesFound')}</option>}
         </select>
-        <div className="mt-3 flex items-center gap-3">
+
+        {/* Mic gain slider */}
+        <div className="mt-4">
+          <div className="flex justify-between mb-1">
+            <span className="text-xs text-zinc-400">{t('settings.micGain')}</span>
+            <span className="text-xs text-zinc-300 font-mono">{inputGain}%</span>
+          </div>
+          <input type="range" min={0} max={150} step={5} value={inputGain}
+            onChange={(e) => applyGain(parseInt(e.target.value))}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-emerald-500"
+            style={{ background: `linear-gradient(to right, #10b981 ${inputGain / 1.5}%, #27272a ${inputGain / 1.5}%)` }} />
+        </div>
+
+        {/* Live mic level + test */}
+        <div className="mt-4 flex items-center gap-3">
+          <button onClick={toggleMicMonitor}
+            className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+              micMonitoring
+                ? 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'
+                : 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700'
+            }`}>
+            {micMonitoring ? t('settings.stopMonitor') : t('settings.micMonitor')}
+          </button>
           <button onClick={testInput} disabled={testingInput || playingBack || !inputs.length}
             className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             {testingInput
@@ -286,18 +348,35 @@ function AudioSettings() {
               <span className="text-xs text-red-400">{t('settings.recording')}</span>
             </div>
           )}
-          {micLevel !== null && !testingInput && (
-            <div className="flex items-center gap-2 flex-1">
-              <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
-                <div className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(micLevel * 100, 100)}%`, backgroundColor: micLevel > 0.01 ? '#10b981' : '#ef4444' }} />
-              </div>
-              <span className="text-xs text-zinc-400">{(micLevel * 100).toFixed(1)}%</span>
-            </div>
-          )}
         </div>
+
+        {/* Live level bar */}
+        {micMonitoring && (
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex-1 h-3 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-150"
+                style={{
+                  width: `${Math.min(liveMicLevel * 100, 100)}%`,
+                  backgroundColor: liveMicLevel > 0.5 ? '#ef4444' : liveMicLevel > 0.1 ? '#f59e0b' : liveMicLevel > 0.01 ? '#10b981' : '#3f3f46',
+                }} />
+            </div>
+            <span className="text-xs text-zinc-400 font-mono w-12 text-right">{(liveMicLevel * 100).toFixed(1)}%</span>
+          </div>
+        )}
+
+        {/* Test result level */}
+        {micLevel !== null && !testingInput && !micMonitoring && (
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(micLevel * 100, 100)}%`, backgroundColor: micLevel > 0.01 ? '#10b981' : '#ef4444' }} />
+            </div>
+            <span className="text-xs text-zinc-400">{(micLevel * 100).toFixed(1)}%</span>
+          </div>
+        )}
       </div>
 
+      {/* Speaker */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
         <h4 className="font-medium mb-4">{t('settings.speaker')}</h4>
         <select value={selectedOutput} onChange={(e) => { setSelectedOutput(e.target.value); }}
@@ -306,7 +385,20 @@ function AudioSettings() {
             <option key={d.id} value={d.id}>{d.name} ({d.type})</option>
           )) : <option>{t('settings.noDevicesFound')}</option>}
         </select>
-        <div className="mt-3">
+
+        {/* Volume slider */}
+        <div className="mt-4">
+          <div className="flex justify-between mb-1">
+            <span className="text-xs text-zinc-400">{t('settings.volume')}</span>
+            <span className="text-xs text-zinc-300 font-mono">{outputVolume}%</span>
+          </div>
+          <input type="range" min={0} max={150} step={5} value={outputVolume}
+            onChange={(e) => applyVolume(parseInt(e.target.value))}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-emerald-500"
+            style={{ background: `linear-gradient(to right, #10b981 ${outputVolume / 1.5}%, #27272a ${outputVolume / 1.5}%)` }} />
+        </div>
+
+        <div className="mt-4">
           <button onClick={testOutput} disabled={testingOutput || !outputs.length}
             className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-medium hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             {testingOutput ? t('settings.testingSpeaker') : t('settings.testSpeaker')}
