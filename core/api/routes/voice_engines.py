@@ -315,7 +315,7 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             # Check if running
             try:
                 async with httpx.AsyncClient(timeout=3) as client:
-                    resp = await client.get(f"{llamacpp_url}/health")
+                    resp = await client.get(f"{llamacpp_url}/v1/models")
                     if resp.status_code != 200:
                         return {"status": "error", "response": "", "error": "llama.cpp server not running", "provider": provider}
             except Exception:
@@ -925,7 +925,7 @@ async def llamacpp_status() -> dict[str, Any]:
     running = False
     try:
         async with httpx.AsyncClient(timeout=3) as client:
-            resp = await client.get(f"{llamacpp_url}/health")
+            resp = await client.get(f"{llamacpp_url}/v1/models")
             running = resp.status_code == 200
     except Exception:
         pass
