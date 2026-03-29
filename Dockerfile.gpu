@@ -1,0 +1,30 @@
+# Unified GPU container: Ollama + Piper TTS
+# For NVIDIA Jetson (JetPack 6 / L4T R36)
+
+# Stage 1: copy ollama binary from official image
+FROM ollama/ollama:latest AS ollama-src
+
+# Stage 2: build on onnxruntime base (has CUDA for Piper)
+FROM dustynv/onnxruntime:1.22-r36.4.0-cu128-24.04
+
+# Copy Ollama binary + libs from official image
+COPY --from=ollama-src /bin/ollama /usr/local/bin/ollama
+COPY --from=ollama-src /usr/lib/ollama /usr/lib/ollama
+
+# Install Piper TTS
+RUN pip3 install --no-cache-dir --index-url https://pypi.org/simple/ piper-tts pathvalidate
+
+# Copy Piper GPU server
+COPY scripts/piper-gpu-server.py /opt/piper-server.py
+COPY scripts/gpu-entrypoint.sh /opt/gpu-entrypoint.sh
+RUN chmod +x /opt/gpu-entrypoint.sh
+
+ENV OLLAMA_HOST=0.0.0.0:11434 \
+    OLLAMA_NUM_GPU=999 \
+    PIPER_MODELS_DIR=/var/lib/selena/models/piper \
+    PIPER_PORT=5100 \
+    PATH="/opt/venv/bin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:${PATH}"
+
+EXPOSE 11434 5100 8081
+
+CMD ["/opt/gpu-entrypoint.sh"]
