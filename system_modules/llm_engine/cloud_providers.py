@@ -18,6 +18,10 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "name": "Ollama (Local)",
         "needs_key": False,
     },
+    "llamacpp": {
+        "name": "llama.cpp (Local)",
+        "needs_key": False,
+    },
     "openai": {
         "name": "OpenAI",
         "base_url": "https://api.openai.com/v1",

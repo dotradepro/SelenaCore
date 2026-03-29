@@ -13,6 +13,7 @@ services:
       - selena_secure:/secure
       - ollama_data:/root/.ollama
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /usr/bin/docker:/usr/bin/docker:ro
       - /var/log/selena:/var/log/selena
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
       - /run/user/1000/pulse:/run/user/1000/pulse

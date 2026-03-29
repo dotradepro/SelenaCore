@@ -39,6 +39,15 @@ export default function LlmSection() {
   const [pullStatus, setPullStatus] = useState('');
   const [activeModel, setActiveModel] = useState('');
 
+  // Model catalog
+  const [catalogModels, setCatalogModels] = useState<LlmModel[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+
+  // llama.cpp state
+  const [llamacppRunning, setLlamacppRunning] = useState(false);
+  const [llamacppStarting, setLlamacppStarting] = useState(false);
+
   // Hardware
   const [gpuActive, setGpuActive] = useState(false);
 
@@ -104,6 +113,7 @@ export default function LlmSection() {
     fetchActiveModel();
     fetchSystemPrompt();
     fetch('/api/ui/setup/hardware/status').then(r => r.json()).then(d => setGpuActive(d.gpu_active || false)).catch(() => {});
+    fetchLlamacppStatus();
   }, [fetchProviders, fetchOllamaStatus, fetchOllamaModels, fetchActiveModel, fetchSystemPrompt]);
 
   // When switching provider tab, load cloud models if configured
@@ -276,6 +286,49 @@ export default function LlmSection() {
     } catch { /* ignore */ }
   };
 
+  const loadCatalog = async () => {
+    setShowCatalog(true);
+    setCatalogLoading(true);
+    try {
+      const res = await fetch('/api/ui/setup/llm/catalog').then(r => r.json());
+      setCatalogModels(res.models || []);
+    } catch { /* ignore */ }
+    setCatalogLoading(false);
+  };
+
+  const pullFromCatalog = (modelId: string) => {
+    setPullModel(modelId);
+    setTimeout(() => handlePullModel(), 100);
+  };
+
+  // llama.cpp
+  const fetchLlamacppStatus = async () => {
+    try {
+      const res = await fetch('/api/ui/setup/llamacpp/status').then(r => r.json());
+      setLlamacppRunning(res.running || false);
+    } catch { /* ignore */ }
+  };
+
+  const startLlamacpp = async () => {
+    setLlamacppStarting(true);
+    try {
+      await fetch('/api/ui/setup/llamacpp/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      setTimeout(fetchLlamacppStatus, 3000);
+    } catch { /* ignore */ }
+    setLlamacppStarting(false);
+  };
+
+  const stopLlamacpp = async () => {
+    try {
+      await fetch('/api/ui/setup/llamacpp/stop', { method: 'POST' });
+      setTimeout(fetchLlamacppStatus, 1000);
+    } catch { /* ignore */ }
+  };
+
   const saveSystemPrompt = async () => {
     setSavingPrompt(true);
     try {
@@ -317,7 +370,7 @@ export default function LlmSection() {
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <h4 style={{ fontWeight: 600, fontSize: 15, color: 'var(--tx)' }}>{t('settings.llmRouter')}</h4>
-          {activeProvider === 'ollama'
+          {activeProvider === 'ollama' || activeProvider === 'llamacpp'
             ? <AccelBadge mode={gpuActive ? 'gpu' : 'cpu'} />
             : <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -511,8 +564,115 @@ export default function LlmSection() {
         </div>
       )}
 
+      {/* Model catalog (for Ollama) */}
+      {activeProvider === 'ollama' && (
+        <div style={{ marginTop: 12 }}>
+          <button onClick={showCatalog ? () => setShowCatalog(false) : loadCatalog}
+            className="text-xs text-blue-400 hover:text-blue-300 mb-2">
+            {showCatalog ? t('settings.hideCatalog') : t('settings.showCatalog')}
+          </button>
+          {showCatalog && (
+            <div>
+              {catalogLoading ? (
+                <div className="flex items-center gap-2 text-xs text-zinc-400 py-2">
+                  <Loader2 size={14} className="animate-spin" /> {t('settings.fetchingCatalog')}
+                </div>
+              ) : catalogModels.length === 0 ? (
+                <div className="text-xs text-zinc-500 py-2">{t('settings.noModelsFound')}</div>
+              ) : (
+                <div className="space-y-1" style={{ maxHeight: 250, overflowY: 'auto' }}>
+                  {catalogModels.map(m => (
+                    <div key={m.id} className="p-2 rounded-lg border border-zinc-800 bg-zinc-950 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-medium">{m.name}</span>
+                        <span className="text-zinc-500 ml-2">{m.size_gb} GB</span>
+                      </div>
+                      <button onClick={() => pullFromCatalog(m.id)} disabled={pulling}
+                        className="px-2 py-1 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 disabled:opacity-50 flex items-center gap-1">
+                        <Download size={10} /> Pull
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* llama.cpp panel */}
+      {activeProvider === 'llamacpp' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span className={cn("text-xs px-2 py-1 rounded-md font-medium",
+              llamacppRunning ? "text-emerald-500 bg-emerald-500/10" : "text-amber-400 bg-amber-500/10")}>
+              {llamacppRunning ? t('settings.serverRunning') : t('settings.serverStopped')}
+            </span>
+          </div>
+
+          <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 10 }}>
+            {t('settings.llamacppDesc')}
+          </div>
+
+          {/* Select model from installed Ollama models */}
+          {ollamaModels.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--tx2)', marginBottom: 6 }}>
+                {t('settings.selectModel')}
+              </label>
+              <select
+                value={providers.find(p => p.id === 'llamacpp')?.model || ''}
+                onChange={async (e) => {
+                  await fetch('/api/ui/setup/llm/provider/model', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: 'llamacpp', model: e.target.value }),
+                  });
+                  fetchProviders();
+                }}
+                style={{
+                  width: '100%', padding: '8px 10px', fontSize: 12,
+                  background: 'var(--sf2)', border: '1px solid var(--b2)', borderRadius: 8, color: 'var(--tx)',
+                }}>
+                <option value="">-- {t('settings.selectModel')} --</option>
+                {ollamaModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name} ({m.size_gb} GB)</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {ollamaModels.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--rd)', marginBottom: 12 }}>
+              {t('settings.llamacppNoModels')}
+            </div>
+          )}
+
+          {/* Start / Stop */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+            {!llamacppRunning ? (
+              <button onClick={startLlamacpp}
+                disabled={llamacppStarting || !providers.find(p => p.id === 'llamacpp')?.model}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 flex items-center gap-1">
+                {llamacppStarting ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                {t('settings.startServer')}
+              </button>
+            ) : (
+              <button onClick={stopLlamacpp}
+                className="text-xs px-3 py-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 flex items-center gap-1">
+                <Square size={12} /> {t('settings.stopServer')}
+              </button>
+            )}
+            <button onClick={() => { fetchLlamacppStatus(); fetchOllamaModels(); }}
+              className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
+              <RefreshCw size={12} /> {t('common.refresh')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Cloud provider panel */}
-      {activeProvider !== 'ollama' && (
+      {activeProvider !== 'ollama' && activeProvider !== 'llamacpp' && (
         <div>
           {/* API key input */}
           <div style={{ marginBottom: 16 }}>

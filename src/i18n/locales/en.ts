@@ -228,6 +228,8 @@ const en = {
             keyInvalid: 'Invalid key',
             selectModel: 'Select model',
             cloudModelsLoading: 'Loading models…',
+            llamacppDesc: 'llama.cpp uses Ollama models (pull via Ollama first). Faster cold start, direct CUDA inference.',
+            llamacppNoModels: 'No models available. Switch to Ollama tab and pull a model first.',
 
             // Audio
             audioSubsystem: 'Audio subsystem',

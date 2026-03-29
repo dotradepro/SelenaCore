@@ -308,6 +308,39 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
 
             return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
 
+        elif provider == "llamacpp":
+            llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
+            p_model = voice_cfg.get("providers", {}).get("llamacpp", {}).get("model", "")
+
+            # Check if running
+            try:
+                async with httpx.AsyncClient(timeout=3) as client:
+                    resp = await client.get(f"{llamacpp_url}/health")
+                    if resp.status_code != 200:
+                        return {"status": "error", "response": "", "error": "llama.cpp server not running", "provider": provider}
+            except Exception:
+                return {"status": "error", "response": "", "error": "llama.cpp server not available", "provider": provider}
+
+            # OpenAI-compatible API
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": req.text})
+
+            payload = {
+                "messages": messages,
+                "max_tokens": 512,
+                "temperature": 0.7,
+            }
+
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(f"{llamacpp_url}/v1/chat/completions", json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": p_model}
+
         else:
             # Cloud provider
             providers_cfg = voice_cfg.get("providers", {})
@@ -772,6 +805,229 @@ async def ollama_models() -> dict[str, Any]:
         logger.warning("Ollama model list failed: %s", exc)
 
     return {"models": installed}
+
+
+# Curated list of popular small models for edge devices
+_CURATED_MODELS = [
+    {"id": "gemma3:1b", "name": "Gemma 3 1B (Google)", "size_gb": 0.8},
+    {"id": "gemma3:4b", "name": "Gemma 3 4B (Google)", "size_gb": 3.3},
+    {"id": "qwen2.5:0.5b", "name": "Qwen 2.5 0.5B", "size_gb": 0.4},
+    {"id": "qwen2.5:1.5b", "name": "Qwen 2.5 1.5B", "size_gb": 1.0},
+    {"id": "qwen2.5:3b", "name": "Qwen 2.5 3B", "size_gb": 1.9},
+    {"id": "llama3.2:1b", "name": "LLaMA 3.2 1B (Meta)", "size_gb": 0.7},
+    {"id": "llama3.2:3b", "name": "LLaMA 3.2 3B (Meta)", "size_gb": 2.0},
+    {"id": "phi4-mini", "name": "Phi-4 Mini 3.8B (Microsoft)", "size_gb": 2.5},
+    {"id": "smollm2:135m", "name": "SmolLM2 135M", "size_gb": 0.1},
+    {"id": "smollm2:360m", "name": "SmolLM2 360M", "size_gb": 0.2},
+    {"id": "smollm2:1.7b", "name": "SmolLM2 1.7B", "size_gb": 1.0},
+    {"id": "tinyllama", "name": "TinyLlama 1.1B", "size_gb": 0.6},
+    {"id": "ministral-3:3b", "name": "Ministral 3 3B (Mistral)", "size_gb": 2.2},
+    {"id": "ministral-3:8b", "name": "Ministral 3 8B (Mistral)", "size_gb": 4.9},
+    {"id": "deepseek-r1:1.5b", "name": "DeepSeek R1 1.5B", "size_gb": 1.1},
+    {"id": "deepseek-r1:7b", "name": "DeepSeek R1 7B", "size_gb": 4.7},
+]
+
+
+@router.get("/llm/catalog")
+async def llm_model_catalog() -> dict[str, Any]:
+    """Return LLM models suitable for this device (filtered by RAM)."""
+    ram_gb = 0
+    try:
+        import psutil
+        ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    except Exception:
+        ram_gb = 4
+
+    max_size_gb = ram_gb * 0.75
+
+    # Start with curated list + merge from Ollama registry
+    models = list(_CURATED_MODELS)
+    seen_ids = {m["id"] for m in models}
+
+    # Try to fetch additional from Ollama registry
+    cache_file = CACHE_DIR / "ollama_catalog.json"
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    import time as _time
+    remote_models: list[dict] = []
+
+    if cache_file.exists() and (_time.time() - cache_file.stat().st_mtime) < 3600:
+        try:
+            remote_models = json.loads(cache_file.read_text()).get("models", [])
+        except Exception:
+            pass
+
+    if not remote_models:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get("https://ollama.com/api/tags")
+                resp.raise_for_status()
+                data = resp.json()
+            for m in data.get("models", []):
+                size_gb = round(m.get("size", 0) / (1024 ** 3), 1)
+                remote_models.append({"id": m["name"], "name": m["name"], "size_gb": size_gb})
+            cache_file.write_text(json.dumps({"models": remote_models}, ensure_ascii=False))
+        except Exception:
+            pass
+
+    for m in remote_models:
+        if m["id"] not in seen_ids:
+            models.append(m)
+            seen_ids.add(m["id"])
+
+    # Filter by RAM
+    suitable = [m for m in models if 0 < m["size_gb"] <= max_size_gb]
+    suitable.sort(key=lambda x: x["size_gb"])
+
+    return {
+        "models": suitable,
+        "ram_total_gb": round(ram_gb, 1),
+        "max_model_gb": round(max_size_gb, 1),
+    }
+
+
+# ================================================================== #
+#  llama.cpp Server Management                                         #
+# ================================================================== #
+
+@router.get("/llamacpp/status")
+async def llamacpp_status() -> dict[str, Any]:
+    """Check if llama.cpp server is running."""
+    llamacpp_url = get_value("voice", "llamacpp_url", "http://localhost:8081")
+    running = False
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(f"{llamacpp_url}/health")
+            running = resp.status_code == 200
+    except Exception:
+        pass
+    return {"running": running, "url": llamacpp_url}
+
+
+@router.post("/llamacpp/start")
+async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
+    """Start llama.cpp server with a model."""
+    model = body.get("model", "")
+    if not model:
+        # Use active model from config
+        config = read_config()
+        voice_cfg = config.get("voice", {})
+        p_cfg = voice_cfg.get("providers", {}).get("llamacpp", {})
+        model = p_cfg.get("model", "")
+
+    if not model:
+        raise HTTPException(status_code=422, detail="No model specified")
+
+    # Find GGUF file — check ollama blobs for this model
+    gguf_path = await _find_gguf_for_model(model)
+    if not gguf_path:
+        raise HTTPException(status_code=404, detail=f"GGUF file not found for {model}. Pull model via Ollama first.")
+
+    llamacpp_url = get_value("voice", "llamacpp_url", "http://localhost:8081")
+    port = llamacpp_url.rsplit(":", 1)[-1] if ":" in llamacpp_url else "8081"
+
+    from core.hardware import should_use_gpu
+    n_gpu = "999" if should_use_gpu() else "0"
+
+    loop = asyncio.get_event_loop()
+
+    def _start():
+        # Check if dustynv/llama_cpp image exists
+        result = subprocess.run(
+            ["docker", "ps", "-q", "-f", "name=selena-llama"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.stdout.strip():
+            # Already running, stop first
+            subprocess.run(["docker", "stop", "selena-llama"], capture_output=True, timeout=10)
+            subprocess.run(["docker", "rm", "selena-llama"], capture_output=True, timeout=5)
+
+        # gguf_path is inside our container at /root/.ollama/models/blobs/...
+        # For docker run we mount the shared ollama_data volume
+        # and use the same internal path
+        model_rel = gguf_path.replace("/root/.ollama/", "")  # models/blobs/sha256-xxx
+
+        cmd = [
+            "docker", "run", "-d",
+            "--name", "selena-llama",
+            "--network", "host",
+        ]
+
+        if should_use_gpu():
+            cmd += ["--runtime", "nvidia"]
+
+        cmd += [
+            "-v", "selenacore_ollama_data:/root/.ollama:ro",
+            "dustynv/llama_cpp:0.3.8-r36.4.0-cu128-24.04",
+            "python3", "-m", "llama_cpp.server",
+            "--model", f"/root/.ollama/{model_rel}",
+            "--host", "0.0.0.0", "--port", port,
+            "--n_gpu_layers", n_gpu,
+            "--n_ctx", "2048",
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr[:300])
+        return "started"
+
+    try:
+        msg = await loop.run_in_executor(None, _start)
+        import time
+        time.sleep(3)
+        return {"status": "ok", "message": msg, "model": model, "gpu_layers": n_gpu}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/llamacpp/stop")
+async def llamacpp_stop() -> dict[str, Any]:
+    """Stop llama.cpp server."""
+    loop = asyncio.get_event_loop()
+
+    def _stop():
+        subprocess.run(["docker", "stop", "selena-llama"], capture_output=True, timeout=15)
+        subprocess.run(["docker", "rm", "selena-llama"], capture_output=True, timeout=5)
+
+    try:
+        await loop.run_in_executor(None, _stop)
+        return {"status": "ok"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+async def _find_gguf_for_model(model_name: str) -> str | None:
+    """Find GGUF blob for an Ollama model by checking manifests."""
+    ollama_models = Path("/root/.ollama/models")
+    if not ollama_models.exists():
+        # Try volume path
+        for p in [Path("/var/lib/selena/ollama/models"), Path("/root/.ollama/models")]:
+            if p.exists():
+                ollama_models = p
+                break
+
+    # Parse model name: "gemma3:1b" -> library/gemma3/1b
+    parts = model_name.split(":")
+    name = parts[0]
+    tag = parts[1] if len(parts) > 1 else "latest"
+    if "/" not in name:
+        name = f"library/{name}"
+
+    manifest_path = ollama_models / "manifests" / "registry.ollama.ai" / name / tag
+    if not manifest_path.exists():
+        return None
+
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        for layer in manifest.get("layers", []):
+            if layer.get("mediaType", "") == "application/vnd.ollama.image.model":
+                digest = layer["digest"].replace(":", "-")
+                blob_path = ollama_models / "blobs" / digest
+                if blob_path.exists():
+                    return str(blob_path)
+    except Exception:
+        pass
+
+    return None
 
 
 class _OllamaPullState:

@@ -228,6 +228,8 @@ const uk = {
             keyInvalid: 'Невалідний ключ',
             selectModel: 'Обрати модель',
             cloudModelsLoading: 'Завантаження моделей…',
+            llamacppDesc: 'llama.cpp використовує моделі Ollama (скачайте через Ollama). Швидший холодний старт, пряме CUDA прискорення.',
+            llamacppNoModels: 'Немає моделей. Перейдіть на вкладку Ollama і скачайте модель.',
 
             // Audio
             audioSubsystem: 'Аудіо-підсистема',
