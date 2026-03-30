@@ -207,70 +207,261 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are Selena, a smart-home voice assistant created by the SelenaCore team. "
-    "ALWAYS respond as Selena. NEVER say you are an AI, language model, or neural network. "
-    "NEVER mention Google, OpenAI, Meta, or any developer. "
-    "If asked who you are — say: I am Selena, your home assistant. "
-    "If asked who created you — say: I was created by the SelenaCore team. "
-    "CRITICAL RULE: You MUST reply in the SAME language as the user's message. "
-    "If the user writes in Ukrainian — reply in Ukrainian. "
-    "If the user writes in Russian — reply in Russian. "
-    "If the user writes in English — reply in English. "
-    "NEVER default to English when the user writes in another language. "
-    "Keep responses short and concise."
+# ── Hidden system prompt (auto-generated, NOT editable) ──────────────
+# Injected: {name} from wake word, {lang} from STT model
+HIDDEN_FULL = (
+    "You are {name}. "
+    "CRITICAL: Reply ONLY in {lang}. Every word MUST be in {lang}. "
+    "Do NOT insert words from other languages in any combination. "
+    "NEVER say you are AI, a language model, or neural network. "
+    "NEVER mention model names, versions, or developers (Google, OpenAI, Meta, Anthropic, etc.). "
+    "If asked who you are — say: I am {name}, your home assistant. "
+    "If asked who created you — say: the SelenaCore team. "
+    "Response will be read by TTS — plain text only, no markdown/URLs/emoji."
 )
 
-DEFAULT_TTS_RULES = (
-    "Your response will be read aloud by TTS. "
-    "Do NOT use markdown, code blocks, bullet points, asterisks, URLs, or emojis. "
-    "Plain text only. Remember: reply in the user's language, not English."
+HIDDEN_COMPACT = (
+    "You are {name}. {lang} only, no other languages. "
+    "Never say you are AI or mention model names."
 )
+
+# ── Default USER prompts loaded from config/prompts/{lang}.json ───────
+_PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
+_prompts_cache: dict[str, dict[str, str]] = {}
+
+
+def _load_prompt_locale(lang: str) -> dict[str, str]:
+    """Load prompt defaults from config/prompts/{lang}.json with cache."""
+    if lang in _prompts_cache:
+        return _prompts_cache[lang]
+    path = _PROMPTS_DIR / f"{lang}.json"
+    if path.is_file():
+        try:
+            import json as _json
+            data = _json.loads(path.read_text(encoding="utf-8"))
+            _prompts_cache[lang] = data
+            return data
+        except Exception:
+            pass
+    # Fallback to English
+    if lang != "en":
+        return _load_prompt_locale("en")
+    # Hardcoded ultimate fallback
+    return {"user_prompt": "Keep answers short and helpful.", "compact_user": "Short answers, plain text."}
+
+# Character limits
+MAX_USER_PROMPT = 300
+MAX_COMPACT_USER = 120
+
+# STT model name → language code mapping
+_STT_LANG_MAP: dict[str, str] = {
+    "uk": "Ukrainian",
+    "ru": "Russian",
+    "en": "English",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "nl": "Dutch",
+    "tr": "Turkish",
+    "ja": "Japanese",
+    "zh": "Chinese",
+    "ko": "Korean",
+    "ar": "Arabic",
+    "hi": "Hindi",
+    "cs": "Czech",
+    "el": "Greek",
+    "fi": "Finnish",
+    "sv": "Swedish",
+    "da": "Danish",
+    "hu": "Hungarian",
+    "ro": "Romanian",
+    "sk": "Slovak",
+    "bg": "Bulgarian",
+    "hr": "Croatian",
+    "lt": "Lithuanian",
+    "lv": "Latvian",
+    "et": "Estonian",
+    "sl": "Slovenian",
+    "sr": "Serbian",
+    "ca": "Catalan",
+    "eu": "Basque",
+    "gl": "Galician",
+    "ka": "Georgian",
+    "fa": "Persian",
+    "he": "Hebrew",
+    "id": "Indonesian",
+    "ms": "Malay",
+    "th": "Thai",
+    "vi": "Vietnamese",
+}
+
+
+def _detect_lang_from_stt(stt_model: str) -> str:
+    """Extract language from Vosk model name, e.g. 'vosk-model-small-uk-v3' → 'Ukrainian'."""
+    # Strip prefix: vosk-model-small-uk-0.15 → uk-0.15
+    name = stt_model.lower()
+    for prefix in ("vosk-model-small-", "vosk-model-big-", "vosk-model-"):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    # Extract lang code: "uk-v3-small" → "uk", "en-us-0.15" → "en"
+    lang_code = name.split("-")[0]
+    return _STT_LANG_MAP.get(lang_code, "English")
+
+
+def _extract_name_from_wake(wake_phrase: str) -> str:
+    """Extract assistant name from wake phrase: 'привіт_селена' → 'Селена'."""
+    parts = wake_phrase.replace("_", " ").strip().split()
+    # Name is the last word (after greeting like "привіт", "hello", "hey", etc.)
+    if len(parts) >= 2:
+        return parts[-1].capitalize()
+    if len(parts) == 1:
+        return parts[0].capitalize()
+    return "Selena"
+
+
+def _get_prompt_context() -> tuple[str, str, str]:
+    """Return (assistant_name, response_language, ui_lang_code) from config.
+
+    Response language is derived from UI language (system.language),
+    NOT from STT model — there is no multilingual recognition.
+    """
+    config = read_config()
+    voice_cfg = config.get("voice", {})
+    sys_cfg = config.get("system", {})
+    wake = voice_cfg.get("wake_word_model", "")
+    name = _extract_name_from_wake(wake) if wake else "Selena"
+    ui_lang = sys_cfg.get("language", "en")
+    lang = _STT_LANG_MAP.get(ui_lang, "English")
+    return name, lang, ui_lang
+
+
+def _get_default_user_prompt(ui_lang: str) -> str:
+    return _load_prompt_locale(ui_lang).get("user_prompt", "Keep answers short and helpful.")
+
+
+def _get_default_compact_user(ui_lang: str) -> str:
+    return _load_prompt_locale(ui_lang).get("compact_user", "Short answers, plain text.")
+
+
+def build_system_prompt(compact: bool = False) -> str:
+    """Build the full prompt: hidden system part + user part.
+
+    Args:
+        compact: If True, use short prompt for local models (ollama/llamacpp).
+    """
+    config = read_config()
+    voice_cfg = config.get("voice", {})
+    name, lang, ui_lang = _get_prompt_context()
+
+    if compact:
+        hidden = HIDDEN_COMPACT.format(name=name, lang=lang)
+        user = voice_cfg.get("compact_user_prompt", "") or _get_default_compact_user(ui_lang)
+        return hidden + " " + user
+
+    hidden = HIDDEN_FULL.format(name=name, lang=lang)
+    user = voice_cfg.get("user_prompt", "") or _get_default_user_prompt(ui_lang)
+    return hidden + "\n" + user
 
 
 @router.get("/llm/system-prompt")
 async def get_system_prompt() -> dict[str, Any]:
-    """Get the current system prompt and TTS rules for LLM."""
+    """Get prompt settings: hidden preview + editable user prompts."""
     config = read_config()
     voice_cfg = config.get("voice", {})
-    saved = voice_cfg.get("system_prompt", "")
-    saved_tts = voice_cfg.get("tts_rules", "")
+    name, lang, ui_lang = _get_prompt_context()
+
+    saved_user = voice_cfg.get("user_prompt", "")
+    saved_compact = voice_cfg.get("compact_user_prompt", "")
+    default_user = _get_default_user_prompt(ui_lang)
+    default_compact = _get_default_compact_user(ui_lang)
+
     return {
-        "prompt": saved or DEFAULT_SYSTEM_PROMPT,
-        "is_custom": bool(saved),
-        "default": DEFAULT_SYSTEM_PROMPT,
-        "tts_rules": saved_tts or DEFAULT_TTS_RULES,
-        "is_custom_tts": bool(saved_tts),
-        "default_tts_rules": DEFAULT_TTS_RULES,
+        "name": name,
+        "lang": lang,
+        "ui_lang": ui_lang,
+        "hidden_full": HIDDEN_FULL.format(name=name, lang=lang),
+        "hidden_compact": HIDDEN_COMPACT.format(name=name, lang=lang),
+        "user_prompt": saved_user or default_user,
+        "is_custom_user": bool(saved_user),
+        "default_user": default_user,
+        "compact_user": saved_compact or default_compact,
+        "is_custom_compact": bool(saved_compact),
+        "default_compact": default_compact,
+        "limits": {"user_prompt": MAX_USER_PROMPT, "compact_user": MAX_COMPACT_USER},
+        "full_preview": build_system_prompt(compact=False),
+        "compact_preview": build_system_prompt(compact=True),
     }
 
 
-@router.post("/llm/system-prompt")
-async def save_system_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom system prompt for LLM."""
-    prompt = req.prompt.strip()
-    if prompt == DEFAULT_SYSTEM_PROMPT:
-        prompt = ""  # don't save if it's the default
-    update_config("voice", "system_prompt", prompt)
+@router.post("/llm/user-prompt")
+async def save_user_prompt(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom user prompt (cloud models)."""
+    prompt = req.prompt.strip()[:MAX_USER_PROMPT]
+    _, _, ui_lang = _get_prompt_context()
+    if prompt == _get_default_user_prompt(ui_lang):
+        prompt = ""
+    update_config("voice", "user_prompt", prompt)
     return {"status": "ok"}
 
 
-@router.post("/llm/tts-rules")
-async def save_tts_rules(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom TTS rules."""
-    rules = req.prompt.strip()
-    if rules == DEFAULT_TTS_RULES:
-        rules = ""
-    update_config("voice", "tts_rules", rules)
+@router.post("/llm/compact-prompt")
+async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom compact user prompt (local models)."""
+    prompt = req.prompt.strip()[:MAX_COMPACT_USER]
+    _, _, ui_lang = _get_prompt_context()
+    if prompt == _get_default_compact_user(ui_lang):
+        prompt = ""
+    update_config("voice", "compact_user_prompt", prompt)
     return {"status": "ok"}
 
 
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
-    """Reset system prompt and TTS rules to defaults."""
+    """Reset user prompts to i18n defaults."""
+    update_config("voice", "user_prompt", "")
+    update_config("voice", "compact_user_prompt", "")
+    # Clean up old config keys
     update_config("voice", "system_prompt", "")
+    update_config("voice", "compact_prompt", "")
     update_config("voice", "tts_rules", "")
-    return {"status": "ok", "prompt": DEFAULT_SYSTEM_PROMPT, "tts_rules": DEFAULT_TTS_RULES}
+    _, _, ui_lang = _get_prompt_context()
+    return {
+        "status": "ok",
+        "user_prompt": _get_default_user_prompt(ui_lang),
+        "compact_user": _get_default_compact_user(ui_lang),
+    }
+
+
+@router.post("/llm/rebuild")
+async def rebuild_prompts() -> dict[str, Any]:
+    """Rebuild prompts after any settings change (language, name, STT model, etc.).
+
+    Call this after: language change, wake word change, user prompt save, STT model change.
+    Clears caches so next LLM call uses fresh prompt.
+    """
+    # Clear prompt locale cache (language may have changed)
+    _prompts_cache.clear()
+
+    # Clear intent_router cached prompt
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().refresh_system_prompt()
+    except Exception:
+        pass
+
+    name, lang, ui_lang = _get_prompt_context()
+    return {
+        "status": "ok",
+        "name": name,
+        "lang": lang,
+        "ui_lang": ui_lang,
+        "full_preview": build_system_prompt(compact=False),
+        "compact_preview": build_system_prompt(compact=True),
+    }
 
 
 @router.post("/llm/chat")
@@ -283,14 +474,12 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     voice_cfg = config.get("voice", {})
     provider = voice_cfg.get("llm_provider", "ollama")
 
-    # Use saved system prompt, fall back to default, allow override from request
-    saved_prompt = voice_cfg.get("system_prompt", "")
-    system_prompt = req.system or saved_prompt or DEFAULT_SYSTEM_PROMPT
+    # Response language from UI language (system.language)
+    name, response_lang, _ = _get_prompt_context()
 
-    # Append TTS rules from config (or default)
-    tts_rules = voice_cfg.get("tts_rules", "") or DEFAULT_TTS_RULES
-    if tts_rules:
-        system_prompt += "\n" + tts_rules
+    # Local providers get compact prompt (small models lose focus with long prompts)
+    is_local = provider in ("ollama", "llamacpp")
+    system_prompt = req.system or build_system_prompt(compact=is_local)
 
     try:
         if provider == "ollama":
@@ -313,7 +502,9 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": req.text})
+            # Language tag in user message — reinforces system prompt for small models
+            user_text = f"[{response_lang}] {req.text}"
+            messages.append({"role": "user", "content": user_text})
 
             payload = {
                 "model": model,
@@ -343,26 +534,25 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             except Exception:
                 return {"status": "error", "response": "", "error": "llama.cpp server not available", "provider": provider}
 
-            # Use /v1/completions with raw prompt (avoids Jinja template issues with some models)
-            prompt_parts = []
+            # Use /v1/chat/completions (messages format) — models follow system prompt better
+            messages = []
             if system_prompt:
-                prompt_parts.append(f"System: {system_prompt}")
-            prompt_parts.append(f"User: {req.text}")
-            prompt_parts.append("Assistant:")
-            prompt = "\n".join(prompt_parts)
+                messages.append({"role": "system", "content": system_prompt})
+            # Language tag in user message — reinforces system prompt for small models
+            user_text = f"[{response_lang}] {req.text}"
+            messages.append({"role": "user", "content": user_text})
 
             payload = {
-                "prompt": prompt,
+                "messages": messages,
                 "max_tokens": 512,
                 "temperature": 0.7,
-                "stop": ["User:", "\nUser:"],
             }
 
             async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{llamacpp_url}/v1/completions", json=payload)
+                resp = await client.post(f"{llamacpp_url}/v1/chat/completions", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                response_text = data.get("choices", [{}])[0].get("text", "").strip()
+                response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
 
             return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": p_model}
 
@@ -1214,7 +1404,7 @@ async def ollama_delete_model(req: OllamaModelRequest) -> dict[str, Any]:
     ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.delete(f"{ollama_url}/api/delete", json={"name": req.model})
+            resp = await client.request("DELETE", f"{ollama_url}/api/delete", json={"name": req.model})
             resp.raise_for_status()
         return {"status": "ok"}
     except Exception as exc:
@@ -1651,26 +1841,48 @@ async def llm_provider_select(req: ProviderSelectRequest) -> dict[str, Any]:
 
 async def _switch_local_servers(provider: str, model: str) -> None:
     """Background task: stop/start local LLM servers based on selected provider."""
+    loop = asyncio.get_event_loop()
+
+    def _force_kill_ollama() -> None:
+        """Kill ollama serve regardless of how it was started."""
+        try:
+            _run_on_host(["pkill", "-f", "ollama serve"], timeout=5)
+        except Exception:
+            pass
+
+    def _force_kill_llamacpp() -> None:
+        """Kill llama_cpp.server regardless of how it was started."""
+        try:
+            _run_on_host(["pkill", "-f", "llama_cpp.server"], timeout=5)
+        except Exception:
+            pass
+
     try:
         if provider == "ollama":
             try: await llamacpp_stop()
             except Exception: pass
+            await loop.run_in_executor(None, _force_kill_llamacpp)
+            await asyncio.sleep(2)
             try: await ollama_start()
             except Exception: pass
 
         elif provider == "llamacpp":
             try: await ollama_stop()
             except Exception: pass
+            await loop.run_in_executor(None, _force_kill_ollama)
+            await asyncio.sleep(2)
             if model:
                 try: await llamacpp_start({"model": model})
                 except Exception: pass
 
         else:
-            # Cloud — stop both to free GPU
+            # Cloud provider — stop both local servers to free GPU RAM
             try: await ollama_stop()
             except Exception: pass
             try: await llamacpp_stop()
             except Exception: pass
+            await loop.run_in_executor(None, _force_kill_ollama)
+            await loop.run_in_executor(None, _force_kill_llamacpp)
     except Exception as exc:
         logger.warning("Server switch failed: %s", exc)
 
