@@ -1,0 +1,4 @@
+{
+  "fetch_error": "Could not fetch weather data.",
+  "current_weather": "Currently in {city}: {emoji} {sign}{temp}{unit}, {condition}. Feels like {fl_sign}{feels_like}{unit}. Humidity {humidity}%, wind {wind}\u00a0m/s."
+}

@@ -1,0 +1,4 @@
+{
+  "fetch_error": "Не вдалося отримати дані про погоду.",
+  "current_weather": "Зараз у {city}: {emoji} {sign}{temp}{unit}, {condition}. Відчувається як {fl_sign}{feels_like}{unit}. Вологість {humidity}%, вітер {wind}\u00a0м/с."
+}
