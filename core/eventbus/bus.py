@@ -75,7 +75,7 @@ class DirectSubscription:
 
 class EventBus:
     def __init__(self) -> None:
-        self._queue: asyncio.Queue[Event] = asyncio.Queue()
+        self._queue: asyncio.Queue[Event] = asyncio.Queue(maxsize=10000)
         self._subscriptions: dict[str, Subscription] = {}
         self._direct_subs: dict[str, DirectSubscription] = {}
         self._running = False
@@ -152,7 +152,15 @@ class EventBus:
 
     async def publish(self, type: str, source: str, payload: dict[str, Any]) -> Event:
         event = Event.create(type=type, source=source, payload=payload)
-        await self._queue.put(event)
+        try:
+            self._queue.put_nowait(event)
+        except asyncio.QueueFull:
+            logger.warning("EventBus queue full, dropping oldest event")
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            self._queue.put_nowait(event)
         logger.debug("Event published: %s from %s", type, source)
         return event
 

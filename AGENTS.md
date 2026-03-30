@@ -59,9 +59,9 @@ selena-core/
       commands.py              # обработчики команд платформы
   system_modules/
     voice_core/
-      stt.py                   # Whisper.cpp wrapper
+      stt.py                   # Vosk STT wrapper (offline, ARM-optimized)
       tts.py                   # Piper wrapper
-      wake_word.py             # openWakeWord
+      wake_word.py             # Vosk grammar-based wake word
       speaker_id.py            # resemblyzer
       privacy.py               # режим приватности (GPIO + команда)
     llm_engine/
@@ -193,9 +193,9 @@ LABEL = "beta"   # "beta" | "rc" | ""
 | SQLAlchemy | 2.0+ | ORM для SQLite |
 | SQLite | встроен | Хранилище Device Registry, аудит-лог |
 | Docker SDK (docker-py) | 7.0+ | Управление контейнерами |
-| Whisper.cpp (pywhispercpp) | latest | STT локально |
+| Vosk | 0.3.45 | STT локально (offline, ARM/aarch64) |
 | Piper (piper-tts) | latest | TTS локально |
-| openWakeWord | latest | Wake-word детектор |
+| Vosk grammar | — | Wake-word (через основную STT модель) |
 | resemblyzer | latest | Speaker ID (голосовые слепки) |
 | face_recognition (dlib) | latest | Face ID |
 | Ollama | latest | LLM runner (phi-3-mini, gemma-2b) |
@@ -1137,9 +1137,9 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | Issue | Заголовок | Labels |
 |---|---|---|
 | #27 | `feat(voice): audio device autodetect (USB/I2S/BT/HDMI/jack)` | `phase-6`, `feat`, `voice` |
-| #28 | `feat(voice): Whisper.cpp STT wrapper + streaming` | `phase-6`, `feat`, `voice` |
+| #28 | `feat(voice): Vosk STT wrapper + streaming` | `phase-6`, `feat`, `voice` |
 | #29 | `feat(voice): Piper TTS wrapper + voice selection` | `phase-6`, `feat`, `voice` |
-| #30 | `feat(voice): openWakeWord integration + background loop` | `phase-6`, `feat`, `voice` |
+| #30 | `feat(voice): Vosk grammar wake word + background loop` | `phase-6`, `feat`, `voice` |
 | #31 | `feat(voice): resemblyzer Speaker ID + enrollment flow` | `phase-6`, `feat`, `voice` |
 | #32 | `feat(voice): privacy mode (GPIO button + voice command)` | `phase-6`, `feat`, `voice` |
 | #33 | `feat(voice): WebRTC audio stream from browser → Whisper` | `phase-6`, `feat`, `voice` |

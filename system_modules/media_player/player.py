@@ -35,7 +35,9 @@ class MediaPlayer:
             self._vlc = vlc
             aout = os.getenv("MEDIA_AUDIO_OUTPUT", "pulse").strip()
             vlc_args = ["--no-video", "--no-xlib", "--network-caching=3000",
-                        "--http-reconnect", f"--aout={aout}"]
+                        "--http-reconnect", f"--aout={aout}",
+                        "--no-spu", "--no-osd",
+                        "--no-video-title-show", "--no-snapshot-preview"]
             alsa_dev = os.getenv("MEDIA_ALSA_DEVICE", "").strip()
             if aout == "alsa" and alsa_dev:
                 vlc_args.append(f"--alsa-audio-device={alsa_dev}")

@@ -12,20 +12,26 @@ if [ ! -f "$TLS_CERT" ] || [ ! -f "$TLS_KEY" ]; then
 fi
 
 # --- GPU/CUDA Detection ---
-GPU_FOUND=0
-GPU_TYPE=none
+# Skip detection if already set via docker-compose environment
+if [ -n "${SELENA_GPU_AVAILABLE:-}" ]; then
+  GPU_FOUND=$SELENA_GPU_AVAILABLE
+  GPU_TYPE=${SELENA_GPU_TYPE:-none}
+else
+  GPU_FOUND=0
+  GPU_TYPE=none
 
-# Method 1: nvidia-smi works fully
-if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
-  GPU_FOUND=1
-  [ -f /etc/nv_tegra_release ] && GPU_TYPE=jetson || GPU_TYPE=discrete
-fi
-
-# Method 2: Jetson — check /dev/nvidia0 + libcuda.so (nvidia-smi may not work in container)
-if [ "$GPU_FOUND" = "0" ] && [ -e /dev/nvidia0 ]; then
-  if ldconfig -p 2>/dev/null | grep -q libcuda || [ -f /usr/lib/aarch64-linux-gnu/tegra/libcuda.so ]; then
+  # Method 1: nvidia-smi works fully
+  if command -v nvidia-smi &>/dev/null && nvidia-smi &>/dev/null 2>&1; then
     GPU_FOUND=1
-    GPU_TYPE=jetson
+    [ -f /etc/nv_tegra_release ] && GPU_TYPE=jetson || GPU_TYPE=discrete
+  fi
+
+  # Method 2: Jetson — check /dev/nvidia0 + libcuda.so (nvidia-smi may not work in container)
+  if [ "$GPU_FOUND" = "0" ] && [ -e /dev/nvidia0 ]; then
+    if ldconfig -p 2>/dev/null | grep -q libcuda || [ -f /usr/lib/aarch64-linux-gnu/tegra/libcuda.so ]; then
+      GPU_FOUND=1
+      GPU_TYPE=jetson
+    fi
   fi
 fi
 

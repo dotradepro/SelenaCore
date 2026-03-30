@@ -17,8 +17,6 @@ import logging
 import os
 from pathlib import Path
 
-import numpy as np
-
 logger = logging.getLogger(__name__)
 
 ENCODINGS_DIR = os.environ.get("FACE_ENCODINGS_DIR", "/var/lib/selena/face_encodings")
@@ -36,6 +34,7 @@ def _load_lib():
 
 def _jpeg_to_array(jpeg_bytes: bytes):
     """Convert JPEG bytes to numpy array for face_recognition."""
+    import numpy as np
     from PIL import Image
     img = Image.open(io.BytesIO(jpeg_bytes)).convert("RGB")
     return np.array(img)
@@ -61,6 +60,7 @@ def enroll(user_id: str, jpeg_bytes: bytes) -> bool:
             logger.warning("No face detected in enrollment image for user %s", user_id)
             return False
 
+        import numpy as np
         Path(ENCODINGS_DIR).mkdir(parents=True, exist_ok=True)
         np.save(str(_encoding_path(user_id)), encodings[0])
         logger.info("Face enrolled for user %s", user_id)
@@ -101,6 +101,7 @@ def identify(jpeg_bytes: bytes) -> str | None:
     for enc_file in enc_dir.glob("*.npy"):
         user_id = enc_file.stem
         try:
+            import numpy as np
             known = np.load(str(enc_file))
             distance = fr.face_distance([known], unknown)[0]
             if distance < best_distance:

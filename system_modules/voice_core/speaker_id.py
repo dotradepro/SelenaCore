@@ -12,12 +12,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-import numpy as np
-
-if TYPE_CHECKING:
-    pass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +26,7 @@ class SpeakerID:
 
     def __init__(self) -> None:
         self._encoder = None
-        self._embeddings: dict[str, np.ndarray] = {}
+        self._embeddings: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._load_embeddings()
 
@@ -54,6 +49,10 @@ class SpeakerID:
         path = Path(EMBEDDINGS_DIR)
         if not path.exists():
             return
+        try:
+            import numpy as np
+        except ImportError:
+            return
         for emb_file in path.glob("*.npy"):
             user_id = emb_file.stem
             try:
@@ -62,16 +61,18 @@ class SpeakerID:
             except Exception as e:
                 logger.warning("Failed to load embedding for %s: %s", user_id, e)
 
-    def _save_embedding(self, user_id: str, embedding: np.ndarray) -> None:
+    def _save_embedding(self, user_id: str, embedding: Any) -> None:
+        import numpy as np
         path = Path(EMBEDDINGS_DIR)
         path.mkdir(parents=True, exist_ok=True)
         np.save(str(path / f"{user_id}.npy"), embedding)
 
-    def _audio_to_float(self, audio_bytes: bytes) -> np.ndarray:
+    def _audio_to_float(self, audio_bytes: bytes) -> Any:
+        import numpy as np
         audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
         return audio_int16.astype(np.float32) / 32768.0
 
-    def _compute_embedding(self, audio_float: np.ndarray) -> np.ndarray | None:
+    def _compute_embedding(self, audio_float: Any) -> Any | None:
         if not self._load_model():
             return None
         try:
@@ -109,6 +110,8 @@ class SpeakerID:
         """
         if not self._embeddings or not audio_bytes:
             return None
+
+        import numpy as np
 
         loop = asyncio.get_event_loop()
         audio_float = self._audio_to_float(audio_bytes)
