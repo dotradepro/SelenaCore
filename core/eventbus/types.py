@@ -1,8 +1,8 @@
 """
-core/eventbus/types.py — константы типов событий Event Bus
+core/eventbus/types.py — Event Bus event type constants
 """
 
-# Core events (публикует только ядро — core.*)
+# Core events (published only by the core — core.*)
 CORE_INTEGRITY_VIOLATION = "core.integrity_violation"
 CORE_INTEGRITY_RESTORED = "core.integrity_restored"
 CORE_SAFE_MODE_ENTERED = "core.safe_mode_entered"

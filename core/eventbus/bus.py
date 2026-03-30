@@ -1,11 +1,14 @@
 """
-core/eventbus/bus.py — Event Bus на asyncio.Queue с webhook доставкой
+core/eventbus/bus.py — Event Bus: asyncio.Queue dispatch + direct callbacks + Module Bus delivery
+
+Delivery channels:
+  1. DirectSubscription — in-process async callbacks (SYSTEM modules)
+  2. Module Bus — WebSocket delivery to user modules (via core/module_bus.py)
+  3. Webhook (deprecated) — kept for backward compat but will be removed
 """
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import json
 import logging
 import uuid
@@ -13,14 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from core.eventbus.types import CORE_EVENTS
 
 logger = logging.getLogger(__name__)
-
-WEBHOOK_RETRY_ATTEMPTS = 3
-WEBHOOK_TIMEOUT_SEC = 10
 
 
 @dataclass
@@ -53,6 +51,7 @@ class Event:
 
 @dataclass
 class Subscription:
+    """Deprecated webhook subscription — kept for API compat."""
     subscription_id: str
     module_id: str
     event_types: list[str]
@@ -103,6 +102,7 @@ class EventBus:
         webhook_url: str,
         secret: str = "",
     ) -> Subscription:
+        """Deprecated: webhook subscriptions. Use Module Bus for user modules."""
         sub = Subscription(
             subscription_id=str(uuid.uuid4()),
             module_id=module_id,
@@ -112,7 +112,7 @@ class EventBus:
         )
         self._subscriptions[sub.subscription_id] = sub
         logger.info(
-            "Subscription created: %s → %s for %s",
+            "Subscription created (deprecated webhook): %s → %s for %s",
             sub.subscription_id,
             webhook_url,
             event_types,
@@ -177,17 +177,6 @@ class EventBus:
                 logger.error("EventBus dispatch error: %s", e, exc_info=True)
 
     async def _deliver(self, event: Event) -> None:
-        matched = [
-            sub
-            for sub in self._subscriptions.values()
-            if event.type in sub.event_types or "*" in sub.event_types
-        ]
-        for sub in matched:
-            asyncio.create_task(
-                self._deliver_to_webhook(event, sub),
-                name=f"webhook-{sub.subscription_id}-{event.event_id[:8]}",
-            )
-
         # Dispatch to in-process (SYSTEM module) callbacks
         for sub in list(self._direct_subs.values()):
             if event.type in sub.event_types or "*" in sub.event_types:
@@ -196,52 +185,16 @@ class EventBus:
                     name=f"direct-{sub.module_id}-{event.event_id[:8]}",
                 )
 
-    async def _deliver_to_webhook(self, event: Event, sub: Subscription) -> None:
-        body = event.to_dict()
-        body_bytes = json.dumps(body).encode()
-
-        headers = {
-            "Content-Type": "application/json",
-            "X-Selena-Event": event.type,
-        }
-        if sub.secret:
-            sig = hmac.new(
-                sub.secret.encode(), body_bytes, hashlib.sha256
-            ).hexdigest()
-            headers["X-Selena-Signature"] = f"sha256={sig}"
-
-        for attempt in range(1, WEBHOOK_RETRY_ATTEMPTS + 1):
-            try:
-                async with httpx.AsyncClient(timeout=WEBHOOK_TIMEOUT_SEC) as client:
-                    resp = await client.post(
-                        sub.webhook_url, content=body_bytes, headers=headers
-                    )
-                    if resp.status_code < 500:
-                        return
-                    logger.warning(
-                        "Webhook %s returned %s (attempt %d/%d)",
-                        sub.webhook_url,
-                        resp.status_code,
-                        attempt,
-                        WEBHOOK_RETRY_ATTEMPTS,
-                    )
-            except Exception as e:
-                logger.warning(
-                    "Webhook %s error (attempt %d/%d): %s",
-                    sub.webhook_url,
-                    attempt,
-                    WEBHOOK_RETRY_ATTEMPTS,
-                    e,
-                )
-            if attempt < WEBHOOK_RETRY_ATTEMPTS:
-                await asyncio.sleep(2**attempt)
-
-        logger.error(
-            "Webhook %s failed after %d attempts for event %s",
-            sub.webhook_url,
-            WEBHOOK_RETRY_ATTEMPTS,
-            event.event_id,
-        )
+        # Deliver to bus-connected user modules
+        try:
+            from core.module_bus import get_module_bus
+            await get_module_bus().deliver_event_to_bus(
+                source=event.source,
+                event_type=event.type,
+                payload=event.payload,
+            )
+        except Exception as exc:
+            logger.debug("Bus event delivery failed: %s", exc)
 
 
 # Singleton

@@ -1,5 +1,5 @@
 """
-core/main.py — точка входа FastAPI приложения SelenaCore
+core/main.py — FastAPI application entry point for SelenaCore
 """
 from __future__ import annotations
 
@@ -121,6 +121,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         source="core",
         payload={},
     )
+    # Gracefully shut down bus-connected user modules (drain period)
+    from core.module_bus import get_module_bus
+    await get_module_bus().shutdown_all(drain_ms=5000)
     # Gracefully stop all in-process system modules
     await sandbox.shutdown_in_process_modules()
     await bus.stop()
@@ -153,6 +156,10 @@ def create_app() -> FastAPI:
     app.include_router(modules.router, prefix=api_prefix)
     app.include_router(secrets.router, prefix=api_prefix)
     app.include_router(intents.router, prefix=api_prefix)
+
+    # Module Bus — WebSocket endpoint for user modules
+    from core.api.routes import bus as bus_routes
+    app.include_router(bus_routes.router, prefix=api_prefix)
 
     # UI routes (no auth — localhost only, protected by iptables)
     from core.api.routes import voice_engines

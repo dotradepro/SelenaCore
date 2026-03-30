@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import yaml
 logger = logging.getLogger(__name__)
 
 _CONFIG_PATH: Path | None = None
+_config_lock = threading.Lock()
 
 
 def _get_config_path() -> Path:
@@ -34,8 +36,9 @@ def read_config() -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        with path.open("r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+        with _config_lock:
+            with path.open("r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
     except Exception as exc:
         logger.error("Failed to read config %s: %s", path, exc)
         return {}
@@ -46,21 +49,22 @@ def write_config(config: dict[str, Any]) -> None:
     path = _get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(path.parent), suffix=".tmp", prefix=".core_yaml_"
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-        os.replace(tmp_path, str(path))
-        logger.info("Config written to %s", path)
-    except Exception as exc:
-        logger.error("Failed to write config: %s", exc)
+    with _config_lock:
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(path.parent), suffix=".tmp", prefix=".core_yaml_"
+        )
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
+            os.replace(tmp_path, str(path))
+            logger.debug("Config written to %s", path)
+        except Exception as exc:
+            logger.error("Failed to write config: %s", exc)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
 
 def update_config(section: str, key: str, value: Any) -> dict[str, Any]:
@@ -75,6 +79,15 @@ def update_section(section: str, data: dict[str, Any]) -> dict[str, Any]:
     """Merge data into a config section. Returns updated config."""
     config = read_config()
     config.setdefault(section, {}).update(data)
+    write_config(config)
+    return config
+
+
+def update_many(updates: list[tuple[str, str, Any]]) -> dict[str, Any]:
+    """Apply multiple (section, key, value) updates in a single read-write cycle."""
+    config = read_config()
+    for section, key, value in updates:
+        config.setdefault(section, {})[key] = value
     write_config(config)
     return config
 

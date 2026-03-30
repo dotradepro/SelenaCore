@@ -1,5 +1,5 @@
 """
-core/module_loader/sandbox.py — Docker-изоляция модулей
+core/module_loader/sandbox.py — Docker isolation for modules
 """
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ class DockerSandbox:
         """Start a locally-discovered module.
 
         SYSTEM modules are loaded in-process via importlib (no subprocess).
-        All other types are launched as uvicorn subprocesses.
+        User modules are launched as subprocesses that connect to the bus.
         """
         info = self._modules.get(name)
         if info is None:
@@ -155,13 +155,21 @@ class DockerSandbox:
 
         module_dir = info.module_dir
         project_root = str(Path(module_dir).parent.parent)
-        env = {**os.environ, "PYTHONPATH": f"{project_root}:{module_dir}"}
+
+        from core.config import get_settings
+        settings = get_settings()
+        bus_url = f"ws://localhost:{settings.core_port}/api/v1/bus"
+
+        env = {
+            **os.environ,
+            "PYTHONPATH": f"{project_root}:{module_dir}",
+            "MODULE_DIR": module_dir,
+            "SELENA_BUS_URL": bus_url,
+            "MODULE_TOKEN": info.manifest.get("token", os.environ.get("MODULE_TOKEN", "")),
+        }
 
         proc = subprocess.Popen(
-            [
-                sys.executable, "-m", "uvicorn", "main:app",
-                "--host", "127.0.0.1", "--port", str(info.port),
-            ],
+            [sys.executable, "main.py"],
             cwd=module_dir,
             env=env,
             stdout=subprocess.PIPE,
@@ -169,8 +177,9 @@ class DockerSandbox:
         )
         self._processes[name] = proc
 
-        # Poll for health readiness
-        import httpx
+        # Poll for bus connection readiness
+        from core.module_bus import get_module_bus
+        bus = get_module_bus()
         for _ in range(30):
             await asyncio.sleep(0.5)
             if proc.poll() is not None:
@@ -179,25 +188,18 @@ class DockerSandbox:
                 info.error = f"Process exited: {stderr[:500]}"
                 logger.error("Module %s process exited: %s", name, info.error)
                 return info
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(
-                        f"http://127.0.0.1:{info.port}/health", timeout=2.0,
-                    )
-                    if resp.status_code == 200:
-                        info.status = ModuleStatus.RUNNING
-                        logger.info(
-                            "Local module %s started on port %d (pid=%d)",
-                            name, info.port, proc.pid,
-                        )
-                        return info
-            except Exception:
-                pass
+            if bus.is_connected(name):
+                info.status = ModuleStatus.RUNNING
+                logger.info(
+                    "Local module %s connected to bus (pid=%d)",
+                    name, proc.pid,
+                )
+                return info
 
         info.status = ModuleStatus.ERROR
-        info.error = "Startup timeout (15s)"
+        info.error = "Startup timeout (15s) — module did not connect to bus"
         proc.terminate()
-        logger.error("Module %s startup timed out", name)
+        logger.error("Module %s startup timed out (no bus connection)", name)
         return info
 
     async def _start_in_process(self, info: ModuleInfo) -> ModuleInfo:
@@ -285,21 +287,23 @@ class DockerSandbox:
                     detach=True,
                     name=f"selena-module-{name}",
                     volumes={str(module_dir): {"bind": "/opt/selena-module", "mode": "ro"}},
-                    ports={f"{info.port}/tcp": info.port},
                     network="selena_selena_internal",
                     mem_limit=mem_limit,
                     cpu_quota=cpu_quota,
                     restart_policy={"Name": "unless-stopped"},
                     environment={
                         "MODULE_NAME": name,
-                        "CORE_API_URL": "http://selena-core:7070/api/v1",
+                        "MODULE_DIR": "/opt/selena-module",
+                        "SELENA_BUS_URL": "ws://selena-core:7070/api/v1/bus",
+                        "MODULE_TOKEN": info.manifest.get("token", ""),
                     },
+                    command=["python", "main.py"],
                     remove=False,
                     auto_remove=False,
                 ),
             )
             info.container_id = container.id
-            logger.info("Module %s started: container=%s port=%s", name, container.short_id, info.port)
+            logger.info("Module %s started: container=%s", name, container.short_id)
         except Exception as e:
             info.status = ModuleStatus.ERROR
             info.error = str(e)
