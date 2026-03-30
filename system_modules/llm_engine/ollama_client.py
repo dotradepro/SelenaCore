@@ -81,27 +81,30 @@ class OllamaClient:
         model: str | None = None,
         temperature: float = 0.7,
     ) -> str:
-        """Generate a completion (non-streaming)."""
+        """Generate a completion (non-streaming) via /api/chat messages format."""
         if not _should_use_llm():
             return ""
 
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
         payload: dict = {
             "model": model or self.model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": False,
             "options": {"temperature": temperature, "num_predict": 512},
         }
-        if system:
-            payload["system"] = system
 
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
                 resp = await client.post(
-                    f"{self.base_url}/api/generate",
+                    f"{self.base_url}/api/chat",
                     json=payload,
                 )
                 resp.raise_for_status()
-                return resp.json().get("response", "").strip()
+                return resp.json().get("message", {}).get("content", "").strip()
         except Exception as e:
             logger.error("Ollama generate error: %s", e)
             return ""
@@ -113,23 +116,26 @@ class OllamaClient:
         model: str | None = None,
         temperature: float = 0.7,
     ) -> AsyncGenerator[str, None]:
-        """Generate a streaming completion, yielding tokens as they arrive."""
+        """Generate a streaming completion via /api/chat, yielding tokens."""
         if not _should_use_llm():
             return
 
+        messages: list[dict[str, str]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
         payload: dict = {
             "model": model or self.model,
-            "prompt": prompt,
+            "messages": messages,
             "stream": True,
             "options": {"temperature": temperature, "num_predict": 512},
         }
-        if system:
-            payload["system"] = system
 
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT * 2) as client:
                 async with client.stream(
-                    "POST", f"{self.base_url}/api/generate", json=payload
+                    "POST", f"{self.base_url}/api/chat", json=payload
                 ) as resp:
                     resp.raise_for_status()
                     async for line in resp.aiter_lines():
@@ -137,7 +143,7 @@ class OllamaClient:
                             continue
                         try:
                             data = json.loads(line)
-                            token = data.get("response", "")
+                            token = data.get("message", {}).get("content", "")
                             if token:
                                 yield token
                             if data.get("done"):

@@ -206,14 +206,13 @@ async def generate(
         elif provider == "google":
             url = f"{prov['base_url']}/models/{model}:generateContent?key={api_key}"
             contents = [{"parts": [{"text": prompt}]}]
-            if system:
-                payload_system = {"parts": [{"text": system}], "role": "user"}
-                contents.insert(0, payload_system)
             # Use 8192 for thinking models (2.5-pro etc.) that consume tokens on reasoning
-            payload = {
+            payload: dict[str, Any] = {
                 "contents": contents,
                 "generationConfig": {"temperature": temperature, "maxOutputTokens": 8192},
             }
+            if system:
+                payload["systemInstruction"] = {"parts": [{"text": system}]}
             headers.pop("Content-Type", None)
 
         else:  # openai / groq (OpenAI-compatible)
