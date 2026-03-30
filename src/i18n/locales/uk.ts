@@ -207,11 +207,15 @@ const uk = {
             aiResponse: 'Відповідь AI',
             speakResponse: 'Озвучити відповідь',
 
-            // System Prompt
-            systemPrompt: 'Системний промпт',
+            // AI Prompts
+            promptSection: 'Промпти AI',
+            userPromptLabel: 'Ваші інструкції (хмарні моделі)',
+            userPromptDesc: 'Особистість та поведінка для OpenAI, Gemini тощо',
+            compactUserLabel: 'Ваші інструкції (локальні моделі)',
+            compactUserDesc: 'Короткі інструкції для Ollama / llama.cpp',
+            hiddenSystemLabel: 'Автоматичний системний промпт (ім\'я, мова, правила):',
+            showHidden: 'Показати системний промпт',
             customPrompt: 'свій',
-            systemPromptDesc: 'Визначте хто AI, його особистість, правила та обмеження. Цей промпт надсилається з кожним запитом.',
-            ttsRules: 'Правила форматування TTS',
             resetToDefault: 'Скинути за замовчуванням',
 
             // LLM Providers

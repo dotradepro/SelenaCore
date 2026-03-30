@@ -207,11 +207,15 @@ const en = {
             aiResponse: 'AI response',
             speakResponse: 'Speak response',
 
-            // System Prompt
-            systemPrompt: 'System prompt',
+            // AI Prompts
+            promptSection: 'AI Prompts',
+            userPromptLabel: 'Your instructions (cloud models)',
+            userPromptDesc: 'Personality and behavior for OpenAI, Gemini, etc.',
+            compactUserLabel: 'Your instructions (local models)',
+            compactUserDesc: 'Short instructions for Ollama / llama.cpp',
+            hiddenSystemLabel: 'Auto-generated system prompt (name, language, rules):',
+            showHidden: 'Show system prompt',
             customPrompt: 'custom',
-            systemPromptDesc: 'Define who the AI is, its personality, rules, and restrictions. This prompt is sent with every request.',
-            ttsRules: 'TTS formatting rules',
             resetToDefault: 'Reset to default',
 
             // LLM Providers

@@ -419,21 +419,39 @@
         <span id="wakeStatus" class="badge badge-off">—</span>
     </div>
 
-    <!-- Wake word model -->
+    <!-- Wake word: greeting + name -->
     <div class="mb12">
-        <div class="label-sm" data-i18n="wake_model"></div>
+        <div class="label-sm" data-i18n="wake_greeting"></div>
         <div style="position:relative">
             <div class="flex gap4">
-                <input type="text" id="wakeWordInput" style="flex:1" placeholder="hey selena">
-                <button id="wakePresetsBtn" class="btn btn-secondary" style="padding:6px 8px;font-size:16px;line-height:1" title="Presets">&#9662;</button>
+                <input type="text" id="wakeGreetingInput" style="flex:1" placeholder="привіт">
+                <button id="greetPresetsBtn" class="btn btn-secondary" style="padding:6px 8px;font-size:16px;line-height:1" title="Presets">&#9662;</button>
             </div>
-            <div id="wakePresetsList" class="hidden" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sf);border:1px solid var(--b2);border-radius:8px;z-index:10;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)">
-                <div class="wake-preset" data-val="hey_jarvis">hey jarvis</div>
-                <div class="wake-preset" data-val="alexa">alexa</div>
-                <div class="wake-preset" data-val="hey_mycroft">hey mycroft</div>
-                <div class="wake-preset" data-val="hey_rhasspy">hey rhasspy</div>
+            <div id="greetPresetsList" class="hidden" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sf);border:1px solid var(--b2);border-radius:8px;z-index:10;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+                <div class="greet-preset" data-val="привіт">привіт</div>
+                <div class="greet-preset" data-val="hey">hey</div>
+                <div class="greet-preset" data-val="hello">hello</div>
+                <div class="greet-preset" data-val="ok">ok</div>
+                <div class="greet-preset" data-val="слухай">слухай</div>
             </div>
         </div>
+    </div>
+    <div class="mb12">
+        <div class="label-sm" data-i18n="wake_name"></div>
+        <div style="position:relative">
+            <div class="flex gap4">
+                <input type="text" id="wakeNameInput" style="flex:1" placeholder="селена">
+                <button id="namePresetsBtn" class="btn btn-secondary" style="padding:6px 8px;font-size:16px;line-height:1" title="Presets">&#9662;</button>
+            </div>
+            <div id="namePresetsList" class="hidden" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sf);border:1px solid var(--b2);border-radius:8px;z-index:10;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+                <div class="name-preset" data-val="селена">селена</div>
+                <div class="name-preset" data-val="selena">selena</div>
+                <div class="name-preset" data-val="jarvis">jarvis</div>
+                <div class="name-preset" data-val="alice">alice</div>
+                <div class="name-preset" data-val="alexa">alexa</div>
+            </div>
+        </div>
+        <div class="label-xs mt4" style="opacity:.6" id="wakePreview"></div>
     </div>
 
     <!-- STT Listening -->
@@ -547,30 +565,52 @@
     <!-- Switch progress -->
     <div id="switchSteps" class="card-inner hidden steps-list"></div>
 
-    <!-- System Prompt -->
+    <!-- AI Prompts -->
     <div class="mb16">
         <button id="promptToggle" class="btn-link flex gap6">
-            <span data-i18n="system_prompt"></span>
+            <span data-i18n="prompt_section"></span>
             <span id="customPromptBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+            <span id="detectedLangBadge" class="badge badge-ok" style="margin-left:auto"></span>
         </button>
         <div id="promptEditor" class="card-inner hidden mt8">
-            <div class="label-xs mb4" data-i18n="system_prompt_desc"></div>
-            <textarea id="systemPromptText" rows="6" style="width:100%"></textarea>
-            <div class="flex gap8 mt8">
-                <button id="savePromptBtn" class="btn btn-green" data-i18n="save"></button>
-                <button id="resetPromptBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
+
+            <!-- User prompt (cloud models) -->
+            <div class="mb12">
+                <div class="flex gap6 mb4">
+                    <span class="label-xs" data-i18n="user_prompt_label"></span>
+                    <span id="customUserBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+                </div>
+                <div class="label-xs mb4" style="opacity:.6" data-i18n="user_prompt_desc"></div>
+                <textarea id="userPromptText" rows="3" style="width:100%"></textarea>
+                <div class="flex gap8 mt4" style="align-items:center">
+                    <button id="saveUserBtn" class="btn btn-green" data-i18n="save"></button>
+                    <span id="userCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+                </div>
             </div>
 
-            <!-- TTS Rules -->
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b)">
+            <!-- Compact user prompt (local models) -->
+            <div style="padding-top:14px;border-top:1px solid var(--b)">
                 <div class="flex gap6 mb4">
-                    <span class="label-xs" data-i18n="tts_rules"></span>
-                    <span id="customTtsBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+                    <span class="label-xs" data-i18n="compact_user_label"></span>
+                    <span id="customCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
                 </div>
-                <textarea id="ttsRulesText" rows="3" style="width:100%"></textarea>
-                <div class="flex gap8 mt8">
-                    <button id="saveTtsRulesBtn" class="btn btn-green" data-i18n="save"></button>
-                    <button id="resetTtsRulesBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
+                <div class="label-xs mb4" style="opacity:.6" data-i18n="compact_user_desc"></div>
+                <textarea id="compactUserText" rows="2" style="width:100%"></textarea>
+                <div class="flex gap8 mt4" style="align-items:center">
+                    <button id="saveCompactBtn" class="btn btn-green" data-i18n="save"></button>
+                    <span id="compactCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+                </div>
+            </div>
+
+            <!-- Reset + hidden preview -->
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b)">
+                <div class="flex gap8 mb8">
+                    <button id="resetPromptsBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
+                    <button id="previewToggle" class="btn-link" style="margin-left:auto;font-size:12px" data-i18n="show_hidden"></button>
+                </div>
+                <div id="hiddenPreview" class="hidden" style="background:var(--bg);padding:8px;border-radius:6px;font-size:11px;opacity:.7;white-space:pre-wrap;word-break:break-word">
+                    <div class="label-xs mb4" style="opacity:.5" data-i18n="hidden_system_label"></div>
+                    <div id="hiddenPreviewText"></div>
                 </div>
             </div>
         </div>
@@ -721,11 +761,15 @@
             start_server: 'Start',
             stop_server: 'Stop',
             model_name_placeholder: 'Model name (e.g. phi3:mini)...',
-            system_prompt: 'System Prompt',
-            system_prompt_desc: 'Instructions for the AI assistant personality',
+            prompt_section: 'AI Prompts',
+            user_prompt_label: 'Your instructions (cloud models)',
+            user_prompt_desc: 'Personality and behavior for OpenAI, Gemini, etc.',
+            compact_user_label: 'Your instructions (local models)',
+            compact_user_desc: 'Short instructions for Ollama / llama.cpp',
+            hidden_system_label: 'Auto-generated system prompt (name, language, rules):',
+            show_hidden: 'Show system prompt',
             custom: 'Custom',
             reset_default: 'Reset to default',
-            tts_rules: 'TTS Rules',
             api_key: 'API Key',
             api_key_placeholder: 'Enter API key...',
             validate_key: 'Validate',
@@ -742,7 +786,9 @@
             saved: 'Saved',
             wake_title: 'Activation Phrase',
             wake_desc: 'Wake word detection — always-on listener',
-            wake_model: 'Activation phrase',
+            wake_greeting: 'Greeting word',
+            wake_name: 'Assistant name',
+            wake_preview: 'Activation phrase:',
             wake_threshold: 'Detection threshold',
             more_sensitive: 'More sensitive',
             fewer_false: 'Fewer false positives',
@@ -815,11 +861,15 @@
             start_server: 'Запустити',
             stop_server: 'Зупинити',
             model_name_placeholder: 'Назва моделi (напр. phi3:mini)...',
-            system_prompt: 'Системний промпт',
-            system_prompt_desc: 'Iнструкцiї для особистостi AI-асистента',
+            prompt_section: 'Промпти AI',
+            user_prompt_label: 'Вашi iнструкцiї (хмарнi моделi)',
+            user_prompt_desc: 'Особистiсть та поведiнка для OpenAI, Gemini тощо',
+            compact_user_label: 'Вашi iнструкцiї (локальнi моделi)',
+            compact_user_desc: 'Короткi iнструкцiї для Ollama / llama.cpp',
+            hidden_system_label: 'Автоматичний системний промпт (iм\'я, мова, правила):',
+            show_hidden: 'Показати системний промпт',
             custom: 'Кастомний',
             reset_default: 'Скинути за замовч.',
-            tts_rules: 'Правила TTS',
             api_key: 'API ключ',
             api_key_placeholder: 'Введiть API ключ...',
             validate_key: 'Перевiрити',
@@ -836,7 +886,9 @@
             saved: 'Збережено',
             wake_title: 'Фраза активацiї',
             wake_desc: 'Детекцiя wake word — постiйне прослуховування',
-            wake_model: 'Фраза активацiї',
+            wake_greeting: 'Слово привiтання',
+            wake_name: 'Iм\'я асистента',
+            wake_preview: 'Фраза активацiї:',
             wake_threshold: 'Порiг виявлення',
             more_sensitive: 'Бiльш чутливий',
             fewer_false: 'Менше хибних',
@@ -907,8 +959,10 @@
         ollamaModels: [], ollamaActive: '',
         pulling: false, pullProgress: 0, pullStatus: '',
         llamacppRunning: false, llamacppStarting: false,
-        systemPrompt: '', defaultPrompt: '', isCustomPrompt: false,
-        ttsRules: '', defaultTtsRules: '', isCustomTts: false,
+        userPrompt: '', defaultUser: '', isCustomUser: false,
+        compactUser: '', defaultCompact: '', isCustomCompact: false,
+        limits: { user_prompt: 300, compact_user: 120 },
+        detectedLang: '', assistantName: '',
         cloudModels: [], keyValid: null,
     };
 
@@ -945,6 +999,11 @@
         } catch(e) { /* ignore */ }
     }
 
+    // Rebuild LLM prompts after any settings change (name, language, etc.)
+    function rebuildPrompts() {
+        return api('/setup/llm/rebuild', { method: 'POST' }).catch(function() {});
+    }
+
     $('gpuToggleBtn').onclick = async function() {
         if (!state.hw) return;
         this.disabled = true;
@@ -973,13 +1032,28 @@
         return moduleApi(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     }
 
+    function updateWakePreview() {
+        var g = $('wakeGreetingInput').value.trim();
+        var n = $('wakeNameInput').value.trim();
+        var phrase = (g && n) ? g + ' ' + n : (g || n || '');
+        $('wakePreview').textContent = t('wake_preview') + ' ' + (phrase || '—');
+    }
+
     async function loadWakeWordStatus() {
         try {
             var cfg = await moduleApi('/config');
-            $('wakeWordInput').value = (cfg.wake_word_model || 'hey jarvis').replace(/_/g, ' ');
+            var full = (cfg.wake_word_model || 'привіт_селена').replace(/_/g, ' ');
+            var parts = full.split(/\s+/);
+            if (parts.length >= 2) {
+                $('wakeGreetingInput').value = parts.slice(0, -1).join(' ');
+                $('wakeNameInput').value = parts[parts.length - 1];
+            } else {
+                $('wakeGreetingInput').value = '';
+                $('wakeNameInput').value = parts[0] || '';
+            }
+            updateWakePreview();
             $('wakeThreshold').value = cfg.wake_word_threshold || 0.5;
             $('wakeThresholdVal').textContent = (cfg.wake_word_threshold || 0.5).toFixed(2);
-            // STT silence timeout
             var silTO = cfg.stt_silence_timeout || 1.2;
             $('sttSilence').value = silTO;
             $('sttSilenceVal').textContent = parseFloat(silTO).toFixed(1) + 's';
@@ -995,48 +1069,67 @@
         }
     }
 
+    $('wakeGreetingInput').oninput = updateWakePreview;
+    $('wakeNameInput').oninput = updateWakePreview;
+
     $('sttSilence').oninput = function() {
         $('sttSilenceVal').textContent = parseFloat(this.value).toFixed(1) + 's';
     };
 
-    // Presets dropdown
-    $('wakePresetsBtn').onclick = function(e) {
+    // Greeting presets
+    $('greetPresetsBtn').onclick = function(e) {
         e.stopPropagation();
-        $('wakePresetsList').classList.toggle('hidden');
+        $('greetPresetsList').classList.toggle('hidden');
     };
-    document.addEventListener('click', function() { hide('wakePresetsList'); });
-    $('wakePresetsList').querySelectorAll('.wake-preset').forEach(function(el) {
+    $('greetPresetsList').querySelectorAll('.greet-preset').forEach(function(el) {
         el.onclick = function() {
-            $('wakeWordInput').value = this.getAttribute('data-val').replace(/_/g, ' ');
-            hide('wakePresetsList');
+            $('wakeGreetingInput').value = this.getAttribute('data-val');
+            hide('greetPresetsList');
+            updateWakePreview();
         };
     });
 
+    // Name presets
+    $('namePresetsBtn').onclick = function(e) {
+        e.stopPropagation();
+        $('namePresetsList').classList.toggle('hidden');
+    };
+    $('namePresetsList').querySelectorAll('.name-preset').forEach(function(el) {
+        el.onclick = function() {
+            $('wakeNameInput').value = this.getAttribute('data-val');
+            hide('namePresetsList');
+            updateWakePreview();
+        };
+    });
+
+    document.addEventListener('click', function() {
+        hide('greetPresetsList');
+        hide('namePresetsList');
+    });
+
     $('wakeWordSaveBtn').onclick = async function() {
-        var phrase = $('wakeWordInput').value.trim();
-        if (!phrase) return;
+        var greeting = $('wakeGreetingInput').value.trim();
+        var name = $('wakeNameInput').value.trim();
+        if (!name) return;
+        var phrase = greeting ? greeting + '_' + name : name;
         this.disabled = true;
         try {
             var payload = {
                 wake_word_model: phrase.replace(/\s+/g, '_'),
                 stt_silence_timeout: parseFloat($('sttSilence').value),
             };
-            console.log('Wake save POST:', MODULE_BASE + '/config', payload);
             var resp = await fetch(MODULE_BASE + '/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
-            console.log('Wake save response:', resp.status);
             if (resp.ok) {
+                rebuildPrompts().then(loadSystemPrompt);
                 showToast(t('saved'));
             } else {
-                var err = await resp.text();
-                console.error('Wake save error:', err);
                 showToast('Error: ' + resp.status);
             }
         } catch(e) {
-            console.error('Wake save exception:', e);
             showToast('Error: ' + e.message);
         }
         this.disabled = false;
@@ -1720,69 +1813,95 @@
         }
     }
 
-    // ── System Prompt ─────────────────────────────────────────────
+    // ── AI Prompts ─────────────────────────────────────────────────
+    function charCount(id, countId, limit) {
+        var len = $(id).value.length;
+        $(countId).textContent = len + ' / ' + limit;
+        $(countId).style.color = len > limit ? '#e53' : '';
+    }
+
     async function loadSystemPrompt() {
         try {
             var res = await api('/setup/llm/system-prompt');
-            state.systemPrompt = res.prompt || '';
-            state.defaultPrompt = res.default || '';
-            state.isCustomPrompt = res.is_custom || false;
-            state.ttsRules = res.tts_rules || '';
-            state.defaultTtsRules = res.default_tts_rules || '';
-            state.isCustomTts = res.is_custom_tts || false;
-            $('systemPromptText').value = state.systemPrompt;
-            $('ttsRulesText').value = state.ttsRules;
-            if (state.isCustomPrompt) show('customPromptBadge'); else hide('customPromptBadge');
-            if (state.isCustomTts) show('customTtsBadge'); else hide('customTtsBadge');
+            state.userPrompt = res.user_prompt || '';
+            state.defaultUser = res.default_user || '';
+            state.isCustomUser = res.is_custom_user || false;
+            state.compactUser = res.compact_user || '';
+            state.defaultCompact = res.default_compact || '';
+            state.isCustomCompact = res.is_custom_compact || false;
+            state.detectedLang = res.lang || '';
+            state.assistantName = res.name || '';
+            if (res.limits) state.limits = res.limits;
+
+            $('userPromptText').value = state.userPrompt;
+            $('userPromptText').maxLength = state.limits.user_prompt;
+            $('compactUserText').value = state.compactUser;
+            $('compactUserText').maxLength = state.limits.compact_user;
+
+            var hasCustom = state.isCustomUser || state.isCustomCompact;
+            if (hasCustom) show('customPromptBadge'); else hide('customPromptBadge');
+            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
+            if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
+            $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
+            $('hiddenPreviewText').textContent = res.hidden_full || '';
+
+            charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
+            charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
         } catch(e) { /* ignore */ }
     }
 
-    $('promptToggle').onclick = function() {
-        $('promptEditor').classList.toggle('hidden');
-    };
+    $('promptToggle').onclick = function() { $('promptEditor').classList.toggle('hidden'); };
+    $('previewToggle').onclick = function() { $('hiddenPreview').classList.toggle('hidden'); };
 
-    $('savePromptBtn').onclick = async function() {
+    $('userPromptText').oninput = function() { charCount('userPromptText', 'userCharCount', state.limits.user_prompt); };
+    $('compactUserText').oninput = function() { charCount('compactUserText', 'compactCharCount', state.limits.compact_user); };
+
+    // Save user prompt (cloud)
+    $('saveUserBtn').onclick = async function() {
         this.disabled = true;
         try {
-            await postJson('/setup/llm/system-prompt', { prompt: $('systemPromptText').value });
-            state.systemPrompt = $('systemPromptText').value;
-            state.isCustomPrompt = state.systemPrompt !== state.defaultPrompt;
-            if (state.isCustomPrompt) show('customPromptBadge'); else hide('customPromptBadge');
+            await postJson('/setup/llm/user-prompt', { prompt: $('userPromptText').value });
+            state.userPrompt = $('userPromptText').value;
+            state.isCustomUser = state.userPrompt !== state.defaultUser;
+            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
+            if (state.isCustomUser || state.isCustomCompact) show('customPromptBadge'); else hide('customPromptBadge');
+            rebuildPrompts();
             showToast(t('saved'));
         } catch(e) { /* ignore */ }
         this.disabled = false;
     };
 
-    $('resetPromptBtn').onclick = async function() {
+    // Save compact prompt (local)
+    $('saveCompactBtn').onclick = async function() {
+        this.disabled = true;
+        try {
+            await postJson('/setup/llm/compact-prompt', { prompt: $('compactUserText').value });
+            state.compactUser = $('compactUserText').value;
+            state.isCustomCompact = state.compactUser !== state.defaultCompact;
+            if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
+            if (state.isCustomUser || state.isCustomCompact) show('customPromptBadge'); else hide('customPromptBadge');
+            rebuildPrompts();
+            showToast(t('saved'));
+        } catch(e) { /* ignore */ }
+        this.disabled = false;
+    };
+
+    // Reset all
+    $('resetPromptsBtn').onclick = async function() {
         try {
             var res = await api('/setup/llm/system-prompt/reset', { method: 'POST' });
-            $('systemPromptText').value = res.prompt || state.defaultPrompt;
-            state.systemPrompt = $('systemPromptText').value;
-            state.isCustomPrompt = false;
-            hide('customPromptBadge');
-            $('ttsRulesText').value = res.tts_rules || state.defaultTtsRules;
-            state.ttsRules = $('ttsRulesText').value;
-            state.isCustomTts = false;
-            hide('customTtsBadge');
-        } catch(e) { /* ignore */ }
-    };
-
-    $('saveTtsRulesBtn').onclick = async function() {
-        this.disabled = true;
-        try {
-            await postJson('/setup/llm/tts-rules', { prompt: $('ttsRulesText').value });
-            state.ttsRules = $('ttsRulesText').value;
-            state.isCustomTts = state.ttsRules !== state.defaultTtsRules;
-            if (state.isCustomTts) show('customTtsBadge'); else hide('customTtsBadge');
+            $('userPromptText').value = res.user_prompt || state.defaultUser;
+            state.userPrompt = $('userPromptText').value;
+            state.isCustomUser = false;
+            $('compactUserText').value = res.compact_user || state.defaultCompact;
+            state.compactUser = $('compactUserText').value;
+            state.isCustomCompact = false;
+            hide('customPromptBadge'); hide('customUserBadge'); hide('customCompactBadge');
+            charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
+            charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
+            rebuildPrompts().then(loadSystemPrompt);
             showToast(t('saved'));
         } catch(e) { /* ignore */ }
-        this.disabled = false;
-    };
-
-    $('resetTtsRulesBtn').onclick = function() {
-        $('ttsRulesText').value = state.defaultTtsRules;
-        state.isCustomTts = false;
-        hide('customTtsBadge');
     };
 
     // ── Ollama ────────────────────────────────────────────────────
@@ -1867,9 +1986,10 @@
             }
             html += '<button class="btn btn-red" id="ollamaUninstallBtn">' + t('uninstall_engine') + '</button>';
         }
-        html += '<button class="btn btn-ghost" onclick="loadOllamaStatus();loadOllamaModels();">' + t('refresh') + '</button>';
+        html += '<button class="btn btn-ghost" id="ollamaRefreshBtn">' + t('refresh') + '</button>';
         $('ollamaActions').innerHTML = html;
 
+        if ($('ollamaRefreshBtn')) $('ollamaRefreshBtn').onclick = function() { loadOllamaStatus(); loadOllamaModels(); };
         if ($('ollamaInstallBtn')) $('ollamaInstallBtn').onclick = function() { ollamaEngineAction('install'); };
         if ($('ollamaUninstallBtn')) $('ollamaUninstallBtn').onclick = function() { ollamaEngineAction('uninstall'); };
         if ($('ollamaStartBtn')) $('ollamaStartBtn').onclick = async function() {
@@ -1996,6 +2116,8 @@
     };
 
     // ── llama.cpp ─────────────────────────────────────────────────
+    window._refreshLlamacpp = function() { loadLlamacppStatus(); loadOllamaModels(); };
+
     async function loadLlamacppStatus() {
         try {
             var res = await api('/setup/llamacpp/status');
@@ -2013,7 +2135,7 @@
         } else {
             html += '<button class="btn btn-amber" id="llamacppStopBtn">' + t('stop_server') + '</button>';
         }
-        html += '<button class="btn btn-ghost" onclick="loadLlamacppStatus();loadOllamaModels();">' + t('refresh') + '</button>';
+        html += '<button class="btn btn-ghost" onclick="window._refreshLlamacpp()">' + t('refresh') + '</button>';
         $('llamacppActions').innerHTML = html;
 
         if ($('llamacppStartBtn')) $('llamacppStartBtn').onclick = async function() {
