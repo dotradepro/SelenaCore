@@ -339,12 +339,13 @@ class SettingsBody(BaseModel):
 
 @router.post("/settings")
 async def save_settings(body: SettingsBody) -> dict[str, Any]:
-    """Broadcast a settings change to all connected browsers via SSE."""
+    """Save settings and broadcast change to all connected browsers via SSE."""
     payload: dict[str, Any] = {}
     if body.theme is not None:
         payload["theme"] = body.theme
     if body.language is not None:
         payload["language"] = body.language
+        update_config("system", "language", body.language)
     if payload:
         broadcast_event("settings_changed", payload)
     return {"ok": True}

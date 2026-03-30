@@ -307,16 +307,24 @@ export const useStore = create<AppState>((set, get) => ({
     changeLanguage(lang);
     localStorage.setItem('selena-lang', lang);
     set({ selectedLanguage: lang });
-    // Broadcast to other browsers/devices
+    // Save language → rebuild prompts → THEN notify iframes
     fetch('/api/ui/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: lang }),
-    }).catch(() => { });
-    // Notify iframes
-    document.querySelectorAll('iframe').forEach(f => {
-      try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
-    });
+    })
+      .then(() => fetch('/api/ui/setup/llm/rebuild', { method: 'POST' }))
+      .then(() => {
+        document.querySelectorAll('iframe').forEach(f => {
+          try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
+        });
+      })
+      .catch(() => {
+        // Notify iframes even on error so UI language at least updates
+        document.querySelectorAll('iframe').forEach(f => {
+          try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
+        });
+      });
   },
   setTheme: (mode) => {
     localStorage.setItem('selena-theme', mode);
