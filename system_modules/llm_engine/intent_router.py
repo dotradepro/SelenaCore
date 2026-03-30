@@ -124,10 +124,24 @@ class IntentRouter:
             except Exception as e:
                 logger.error("LLM error: %s", e)
 
-        # Fallback
+        # Fallback — use language-aware message
+        _fallbacks = {
+            "uk": "Вибачте, я не зрозумів запит. Спробуйте ще раз.",
+            "ru": "Извините, я не понял запрос. Попробуйте ещё раз.",
+            "en": "Sorry, I didn't understand. Please try again.",
+        }
+        try:
+            from core.config_writer import get_value as _gv
+            import os as _os
+            _stt = _gv("voice", "stt_model", _os.environ.get("VOSK_MODEL", "vosk-model-small-en-us"))
+            _code = _stt.lower().replace("vosk-model-small-", "").replace("vosk-model-big-", "").replace("vosk-model-", "").split("-")[0]
+        except Exception:
+            _code = "en"
+        fallback_msg = _fallbacks.get(_code, _fallbacks["en"])
+
         result = IntentResult(
             intent="unknown",
-            response="Извините, я не понял запрос. Попробуйте ещё раз.",
+            response=fallback_msg,
             action=None,
             source="fallback",
             latency_ms=int(time.time() * 1000) - start_ms,
@@ -137,37 +151,20 @@ class IntentRouter:
         return result
 
     def _get_system_prompt(self) -> str:
-        """Build dynamic system prompt including current module registry and device types."""
+        """Build system prompt — compact for local Ollama, via build_system_prompt()."""
         if self._system_prompt:
             return self._system_prompt
 
-        base = (
-            "You are Selena, a smart-home voice assistant by SelenaCore. "
-            "Keep answers short — one or two sentences. "
-            "CRITICAL: Reply in the SAME language as the user's message. "
-            "If the user speaks Ukrainian — reply in Ukrainian. "
-            "If the user speaks Russian — reply in Russian. "
-            "NEVER default to English unless the user writes in English. "
-        )
-
-        # Try to enrich with module info
-        try:
-            from core.module_loader.sandbox import get_sandbox
-            modules = get_sandbox().list_modules()
-            if modules:
-                module_list = ", ".join(m.name for m in modules if m.status == "RUNNING")
-                base += f"Активные модули: {module_list}. "
-        except Exception:
-            pass
-
-        return base
+        # Intent router uses local Ollama → compact prompt for small models
+        from core.api.routes.voice_engines import build_system_prompt
+        return build_system_prompt(compact=True)
 
     def set_system_prompt(self, prompt: str) -> None:
-        """Override the LLM system prompt."""
+        """Override the LLM system prompt (manual override, bypasses config)."""
         self._system_prompt = prompt
 
     def refresh_system_prompt(self) -> None:
-        """Clear cached prompt so it rebuilds on next call."""
+        """Clear cached prompt so it re-reads from config on next call."""
         self._system_prompt = None
 
     async def _publish_event(self, result: IntentResult) -> None:
