@@ -38,7 +38,7 @@ async def pwa_manifest() -> JSONResponse:
             {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
         ],
         "categories": ["utilities"],
-        "lang": "ru",
+        "lang": "en",
     })
 
 

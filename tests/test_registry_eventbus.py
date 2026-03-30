@@ -199,12 +199,24 @@ class TestModuleValidator:
             "version": "1.0.0",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
-            "permissions": ["device.read"],
+            "permissions": ["devices.read"],
         }
         result = validate_manifest(manifest)
         assert result.valid is True
         assert result.errors == []
+
+    def test_valid_manifest_with_deprecated_port(self):
+        from core.module_loader.validator import validate_manifest
+        manifest = {
+            "name": "test-module",
+            "version": "1.0.0",
+            "type": "UI",
+            "api_version": "1",
+            "port": 8100,
+            "permissions": ["devices.read"],
+        }
+        result = validate_manifest(manifest)
+        assert result.valid is True  # port is deprecated but ignored
 
     def test_missing_required_fields(self):
         from core.module_loader.validator import validate_manifest
@@ -219,7 +231,6 @@ class TestModuleValidator:
             "version": "1.0.0",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
             "permissions": [],
         }
         result = validate_manifest(manifest)
@@ -240,20 +251,6 @@ class TestModuleValidator:
         assert result.valid is False
         assert any("system" in e.lower() or "port" in e.lower() for e in result.errors)
 
-    def test_port_out_of_range_rejected(self):
-        from core.module_loader.validator import validate_manifest
-        manifest = {
-            "name": "my-module",
-            "version": "1.0.0",
-            "type": "UI",
-            "api_version": "1",
-            "port": 9999,
-            "permissions": [],
-        }
-        result = validate_manifest(manifest)
-        assert result.valid is False
-        assert any("port" in e.lower() for e in result.errors)
-
     def test_invalid_version_rejected(self):
         from core.module_loader.validator import validate_manifest
         manifest = {
@@ -261,7 +258,6 @@ class TestModuleValidator:
             "version": "not-semver",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
             "permissions": [],
         }
         result = validate_manifest(manifest)
@@ -275,12 +271,23 @@ class TestModuleValidator:
             "version": "1.0.0",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
-            "permissions": ["device.read", "admin.nuke"],
+            "permissions": ["devices.read", "admin.nuke"],
         }
         result = validate_manifest(manifest)
         assert result.valid is False
         assert any("permission" in e.lower() for e in result.errors)
+
+    def test_bus_permissions_valid(self):
+        from core.module_loader.validator import validate_manifest
+        manifest = {
+            "name": "my-module",
+            "version": "1.0.0",
+            "type": "UI",
+            "api_version": "1",
+            "permissions": ["devices.read", "devices.control", "events.publish", "modules.list"],
+        }
+        result = validate_manifest(manifest)
+        assert result.valid is True
 
 
 # ---- FastMatcher ----
@@ -299,13 +306,6 @@ class TestFastMatcher:
         matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
         result = matcher.match("what is the meaning of life")
         assert result is None
-
-    def test_russian_keywords(self):
-        from system_modules.llm_engine.fast_matcher import FastMatcher
-        matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
-        result = matcher.match("включи свет")
-        assert result is not None
-        assert result.intent == "turn_on_light"
 
     def test_privacy_rule(self):
         from system_modules.llm_engine.fast_matcher import FastMatcher

@@ -98,7 +98,8 @@ async def test_pause_announces(handler, module):
     await handler.handle("media.pause", {})
     module._player.pause.assert_called_once()
     call_text = module.speak.call_args[0][0]
-    assert "Пауза" in call_text
+    from core.i18n import t
+    assert t("media.paused") in call_text
 
 
 @pytest.mark.asyncio
@@ -148,7 +149,7 @@ async def test_whats_playing_nothing(handler, module):
     module._player.get_current_track.return_value = None
     await handler.handle("media.whats_playing", {})
     call_text = module.speak.call_args[0][0]
-    assert "ничего" in call_text.lower()
+    assert "nothing" in call_text.lower()
 
 
 @pytest.mark.asyncio
@@ -157,7 +158,7 @@ async def test_shuffle_toggle_on(handler, module):
     await handler.handle("media.shuffle_toggle", {})
     module._player.set_shuffle.assert_called_once_with(True)
     call_text = module.speak.call_args[0][0]
-    assert "включено" in call_text.lower()
+    assert "enabled" in call_text.lower()
 
 
 @pytest.mark.asyncio
@@ -166,7 +167,7 @@ async def test_shuffle_toggle_off(handler, module):
     await handler.handle("media.shuffle_toggle", {})
     module._player.set_shuffle.assert_called_once_with(False)
     call_text = module.speak.call_args[0][0]
-    assert "выключено" in call_text.lower()
+    assert "disabled" in call_text.lower()
 
 
 @pytest.mark.asyncio

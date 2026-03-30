@@ -1,7 +1,7 @@
 {
     "name": "scheduler",
     "version": "0.1.0",
-    "description": "Центральный планировщик задач: cron, interval, sunrise/sunset триггеры",
+    "description": "Central task scheduler: cron, interval, sunrise/sunset triggers",
     "type": "SYSTEM",
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",

@@ -1,5 +1,5 @@
 """
-agent/responder.py — цепочка реагирования на нарушение целостности
+agent/responder.py — integrity violation response chain
 """
 from __future__ import annotations
 

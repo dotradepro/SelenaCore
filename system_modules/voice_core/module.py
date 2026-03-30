@@ -277,28 +277,53 @@ class VoiceCoreModule(SystemModule):
             await asyncio.sleep(2)
             self._listen_task = asyncio.create_task(self._audio_loop())
 
+    # ── Language detection ──────────────────────────────────────────────
+
+    def _detect_lang(self) -> str:
+        """Derive language code from STT model name."""
+        stt = self._config.get("stt_model", "")
+        code = (
+            stt.lower()
+            .replace("vosk-model-small-", "")
+            .replace("vosk-model-big-", "")
+            .replace("vosk-model-", "")
+            .split("-")[0]
+        )
+        return code if code in ("uk", "en") else "en"
+
     # ── Command processing pipeline ──────────────────────────────────────
 
     async def _process_command(self, text: str) -> None:
-        """LLM → TTS → playback, then back to IDLE."""
+        """IntentRouter → TTS → playback, then back to IDLE.
+
+        Resolution order (handled by IntentRouter):
+          Tier 1:   FastMatcher (keyword/regex rules) — zero latency
+          Tier 1.5: System module intents (in-process) — microseconds
+          Tier 2:   User module intents (HTTP) — milliseconds
+          Tier 3:   LLM fallback — dynamic understanding
+        """
         start_ts = time.monotonic()
         try:
             logger.info("Voice pipeline: recognized '%s'", text)
             await self.publish("voice.recognized", {"text": text})
 
-            # LLM
-            logger.info("Voice pipeline: querying LLM...")
-            response_text = await self._query_llm(text)
-            if not response_text:
-                logger.warning("Voice pipeline: LLM returned empty response")
-                return
-            logger.info("Voice pipeline: LLM response '%s'", response_text[:120])
-            await self.publish("voice.response", {"text": response_text, "query": text})
+            # Route through IntentRouter (includes LLM as Tier 3 fallback)
+            lang = self._detect_lang()
+            from system_modules.llm_engine.intent_router import get_intent_router
+            result = await get_intent_router().route(text, user_id=None, lang=lang)
 
-            # TTS + playback
-            logger.info("Voice pipeline: speaking...")
-            await self._stream_speak(response_text)
-            await self.publish("voice.speak_done", {"text": response_text})
+            logger.info(
+                "Voice pipeline: intent='%s' source='%s' latency=%dms",
+                result.intent, result.source, result.latency_ms,
+            )
+
+            # System modules handle their own TTS via EventBus (voice.speak).
+            # For all other sources (fast_matcher, llm, fallback) we speak here.
+            if result.source != "system_module" and result.response:
+                await self.publish("voice.response", {"text": result.response, "query": text})
+                logger.info("Voice pipeline: speaking...")
+                await self._stream_speak(result.response)
+                await self.publish("voice.speak_done", {"text": result.response})
 
             # History
             duration_ms = int((time.monotonic() - start_ts) * 1000)
@@ -309,8 +334,8 @@ class VoiceCoreModule(SystemModule):
                     user_id=None,
                     wake_word=self._config.get("wake_word_model", ""),
                     recognized_text=text,
-                    intent=None,
-                    response=response_text,
+                    intent=result.intent,
+                    response=result.response,
                     duration_ms=duration_ms,
                 ))
 

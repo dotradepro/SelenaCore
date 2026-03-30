@@ -1,7 +1,7 @@
 {
     "name": "device-watchdog",
     "version": "0.1.0",
-    "description": "Мониторинг доступности устройств: ICMP ping, MQTT/Zigbee heartbeat",
+    "description": "Device availability monitoring: ICMP ping, MQTT/Zigbee heartbeat",
     "type": "SYSTEM",
     "ui_profile": "ICON_SETTINGS",
     "api_version": "1.0",

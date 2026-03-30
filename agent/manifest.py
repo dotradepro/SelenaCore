@@ -1,5 +1,5 @@
 """
-agent/manifest.py — создание и верификация SHA256 манифеста файлов ядра
+agent/manifest.py — SHA256 manifest creation and verification for core files
 """
 from __future__ import annotations
 

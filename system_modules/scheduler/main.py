@@ -1,5 +1,5 @@
 """
-system_modules/scheduler/main.py — точка входа FastAPI модуля scheduler [#69]
+system_modules/scheduler/main.py — FastAPI entry point for scheduler module [#69]
 """
 from __future__ import annotations
 

@@ -1,7 +1,7 @@
 {
     "name": "protocol-bridge",
     "version": "0.1.0",
-    "description": "Шлюз протоколов MQTT/Zigbee/Z-Wave/HTTP ↔ Device Registry",
+    "description": "Protocol gateway: MQTT/Zigbee/Z-Wave/HTTP ↔ Device Registry",
     "type": "SYSTEM",
     "ui_profile": "FULL",
     "api_version": "1.0",

@@ -1,5 +1,5 @@
 """
-core/api/auth.py — проверка module_token через Bearer авторизацию
+core/api/auth.py — module_token verification via Bearer authorization
 """
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def _load_valid_tokens() -> dict[str, str]:
 async def verify_module_token(
     credentials: HTTPAuthorizationCredentials | None = Security(_bearer_scheme),
 ) -> str:
-    """FastAPI dependency — проверяет Bearer токен модуля.
+    """FastAPI dependency — verifies module Bearer token.
 
     Returns the module_id associated with the token.
     """

@@ -1,5 +1,5 @@
 """
-core/registry/service.py — DeviceRegistry сервис
+core/registry/service.py — DeviceRegistry service
 """
 from __future__ import annotations
 

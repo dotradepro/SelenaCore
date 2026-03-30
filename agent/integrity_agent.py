@@ -1,7 +1,7 @@
 """
-agent/integrity_agent.py — Integrity Agent (отдельный процесс)
+agent/integrity_agent.py — Integrity Agent (separate process)
 
-ВАЖНО: этот файл НЕ импортирует ничего из core/ — работает независимо.
+IMPORTANT: this file does NOT import anything from core/ — runs independently.
 """
 from __future__ import annotations
 

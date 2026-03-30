@@ -1,9 +1,9 @@
 """
-system_modules/device_watchdog/watchdog.py — бизнес-логика мониторинга устройств
+system_modules/device_watchdog/watchdog.py — device monitoring business logic
 
-Периодически проверяет доступность всех устройств в Device Registry.
-Поддерживает: ICMP ping (icmplib, без root), MQTT/Zigbee last_seen timeout.
-Публикует device.online / device.offline при изменении статуса.
+Periodically checks availability of all devices in Device Registry.
+Supports: ICMP ping (icmplib, no root required), MQTT/Zigbee last_seen timeout.
+Publishes device.online / device.offline events on status change.
 """
 from __future__ import annotations
 

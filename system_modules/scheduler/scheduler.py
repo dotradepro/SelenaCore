@@ -1,12 +1,12 @@
 """
-system_modules/scheduler/scheduler.py — бизнес-логика планировщика задач
+system_modules/scheduler/scheduler.py — Scheduler business logic
 
-Поддерживаемые триггеры:
-  cron:<expression>      стандартный cron (apscheduler)
-  every:<N>s|m|h         периодический интервал
-  sunrise[+/-<N>m]       на восходе солнца ± смещение
-  sunset[+/-<N>m]        на закате ± смещение
-  <HH:MM>                конкретное время каждый день (→ cron:0 <MM> <HH> * * *)
+Supported triggers:
+  cron:<expression>      standard cron (apscheduler)
+  every:<N>s|m|h         periodic interval
+  sunrise[+/-<N>m]       at sunrise +/- offset
+  sunset[+/-<N>m]        at sunset +/- offset
+  <HH:MM>                specific time every day (→ cron:0 <MM> <HH> * * *)
 """
 from __future__ import annotations
 

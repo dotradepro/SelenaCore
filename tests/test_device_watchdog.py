@@ -1,5 +1,5 @@
 """
-tests/test_device_watchdog.py — pytest тесты для модуля device_watchdog [#70]
+tests/test_device_watchdog.py — pytest tests for device_watchdog module [#70]
 """
 from __future__ import annotations
 

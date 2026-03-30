@@ -1,5 +1,5 @@
 """
-core/registry/models.py — SQLAlchemy ORM модели для Device Registry
+core/registry/models.py — SQLAlchemy ORM models for Device Registry
 """
 from __future__ import annotations
 

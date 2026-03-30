@@ -26,7 +26,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.config_writer import get_value, read_config, update_config
+from core.config_writer import get_value, read_config, update_config, update_many
+from core.i18n import t
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["voice-engines"])
@@ -135,7 +136,7 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
     try:
         raw = await asyncio.wait_for(loop.run_in_executor(None, _record), timeout=duration + 5)
         if len(raw) < 100:
-            return {"status": "error", "text": "", "error": "No audio recorded"}
+            return {"status": "error", "text": "", "error": t("api.no_audio")}
 
         # Peak level
         samples = struct.unpack(f"<{len(raw) // 2}h", raw)
@@ -148,9 +149,9 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
             engine = STTEngine(model=active_model)
             text = await engine.transcribe(raw, sample_rate=16000)
         except ImportError:
-            return {"status": "error", "text": "", "error": "Vosk not installed"}
+            return {"status": "error", "text": "", "error": t("api.vosk_not_installed")}
         except Exception as exc:
-            return {"status": "error", "text": "", "error": f"STT error: {exc}"}
+            return {"status": "error", "text": "", "error": t("api.stt_error", error=str(exc))}
 
         # Encode audio as base64 WAV for frontend playback
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -182,7 +183,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
     from fastapi.responses import Response
 
     if not req.text.strip():
-        raise HTTPException(status_code=422, detail="Text is empty")
+        raise HTTPException(status_code=422, detail=t("api.text_empty"))
 
     voice = req.voice or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"))
 
@@ -191,7 +192,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         engine = TTSEngine(voice=voice)
         wav_bytes = await engine.synthesize(req.text[:500])
         if not wav_bytes:
-            raise HTTPException(status_code=503, detail="TTS synthesis failed")
+            raise HTTPException(status_code=503, detail=t("api.tts_failed"))
 
         # Also play on device if requested
         if req.output_device and req.output_device != "none":
@@ -199,7 +200,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
 
         return Response(content=wav_bytes, media_type="audio/wav")
     except ImportError:
-        raise HTTPException(status_code=503, detail="Piper TTS not installed")
+        raise HTTPException(status_code=503, detail=t("api.piper_not_installed"))
     except HTTPException:
         raise
     except Exception as exc:
@@ -422,12 +423,13 @@ async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
     """Reset user prompts to i18n defaults."""
-    update_config("voice", "user_prompt", "")
-    update_config("voice", "compact_user_prompt", "")
-    # Clean up old config keys
-    update_config("voice", "system_prompt", "")
-    update_config("voice", "compact_prompt", "")
-    update_config("voice", "tts_rules", "")
+    update_many([
+        ("voice", "user_prompt", ""),
+        ("voice", "compact_user_prompt", ""),
+        ("voice", "system_prompt", ""),       # clean up old config keys
+        ("voice", "compact_prompt", ""),
+        ("voice", "tts_rules", ""),
+    ])
     _, _, ui_lang = _get_prompt_context()
     return {
         "status": "ok",
@@ -468,7 +470,7 @@ async def rebuild_prompts() -> dict[str, Any]:
 async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     """Send text to active LLM provider and return response."""
     if not req.text.strip():
-        raise HTTPException(status_code=422, detail="Text is empty")
+        raise HTTPException(status_code=422, detail=t("api.text_empty"))
 
     config = read_config()
     voice_cfg = config.get("voice", {})
@@ -494,9 +496,9 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
                 async with httpx.AsyncClient(timeout=3) as client:
                     resp = await client.get(f"{ollama_url}/api/tags")
                     if resp.status_code != 200:
-                        return {"status": "error", "response": "", "error": "Ollama server not running", "provider": provider}
+                        return {"status": "error", "response": "", "error": t("api.ollama_not_running"), "provider": provider}
             except Exception:
-                return {"status": "error", "response": "", "error": "Ollama server not available", "provider": provider}
+                return {"status": "error", "response": "", "error": t("api.ollama_not_available"), "provider": provider}
 
             # Use /api/chat (messages format) — models follow system prompt much better
             messages = []
@@ -530,9 +532,9 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
                 async with httpx.AsyncClient(timeout=3) as client:
                     resp = await client.get(f"{llamacpp_url}/v1/models")
                     if resp.status_code != 200:
-                        return {"status": "error", "response": "", "error": "llama.cpp server not running", "provider": provider}
+                        return {"status": "error", "response": "", "error": t("api.llamacpp_not_running"), "provider": provider}
             except Exception:
-                return {"status": "error", "response": "", "error": "llama.cpp server not available", "provider": provider}
+                return {"status": "error", "response": "", "error": t("api.llamacpp_not_available"), "provider": provider}
 
             # Use /v1/chat/completions (messages format) — models follow system prompt better
             messages = []
@@ -564,15 +566,15 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
             model = p_cfg.get("model", "")
 
             if not api_key:
-                return {"status": "error", "response": "", "error": f"No API key for {provider}", "provider": provider}
+                return {"status": "error", "response": "", "error": t("api.no_api_key", provider=provider), "provider": provider}
             if not model:
-                return {"status": "error", "response": "", "error": f"No model selected for {provider}", "provider": provider}
+                return {"status": "error", "response": "", "error": t("api.no_model_selected", provider=provider), "provider": provider}
 
             from system_modules.llm_engine.cloud_providers import generate
             response_text = await generate(provider, api_key, model, req.text, system_prompt)
 
             if not response_text:
-                return {"status": "error", "response": "", "error": "LLM returned empty response", "provider": provider}
+                return {"status": "error", "response": "", "error": t("api.llm_empty_response"), "provider": provider}
 
             return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
 
@@ -1223,11 +1225,11 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
         model = p_cfg.get("model", "")
 
     if not model:
-        raise HTTPException(status_code=422, detail="No model specified")
+        raise HTTPException(status_code=422, detail=t("api.no_model_specified"))
 
     gguf_path = await _find_gguf_for_model(model)
     if not gguf_path:
-        raise HTTPException(status_code=404, detail=f"GGUF file not found for {model}. Pull model via Ollama first.")
+        raise HTTPException(status_code=404, detail=t("api.gguf_not_found", model=model))
 
     llamacpp_url = get_value("voice", "llamacpp_url", "http://localhost:8081")
     port = llamacpp_url.rsplit(":", 1)[-1] if ":" in llamacpp_url else "8081"
@@ -1696,7 +1698,7 @@ async def stt_delete(req: ModelIdRequest) -> dict[str, Any]:
     if model_path.is_dir():
         shutil.rmtree(model_path)
         return {"status": "ok"}
-    raise HTTPException(status_code=404, detail="Model not found")
+    raise HTTPException(status_code=404, detail=t("api.model_not_found"))
 
 
 _tts_download_state: dict[str, dict] = {}
@@ -1722,7 +1724,7 @@ async def _download_piper_voice(voice_id: str) -> None:
     # e.g., en_US-amy-medium -> en/en_US/amy/medium/en_US-amy-medium.onnx
     parts = voice_id.split("-", 1)  # ["en_US", "amy-medium"]
     if len(parts) < 2:
-        _tts_download_state[voice_id] = {"running": False, "progress": "error", "error": "Invalid voice ID"}
+        _tts_download_state[voice_id] = {"running": False, "progress": "error", "error": t("api.invalid_voice_id")}
         return
 
     locale = parts[0]  # en_US
@@ -1778,7 +1780,7 @@ async def tts_delete(req: VoiceIdRequest) -> dict[str, Any]:
         onnx.unlink()
         json_file.unlink(missing_ok=True)
         return {"status": "ok"}
-    raise HTTPException(status_code=404, detail="Voice not found")
+    raise HTTPException(status_code=404, detail=t("api.voice_not_found"))
 
 
 # ================================================================== #
@@ -1930,7 +1932,7 @@ async def llm_provider_models(provider: str | None = None) -> dict[str, Any]:
     api_key = p_cfg.get("api_key", "")
 
     if not api_key:
-        return {"models": [], "error": "No API key configured"}
+        return {"models": [], "error": t("api.no_api_key_configured")}
 
     from system_modules.llm_engine.cloud_providers import list_models
     models = await list_models(active, api_key)

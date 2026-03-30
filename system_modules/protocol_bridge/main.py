@@ -1,5 +1,5 @@
 """
-system_modules/protocol_bridge/main.py — точка входа FastAPI модуля protocol_bridge [#71]
+system_modules/protocol_bridge/main.py — FastAPI entry point for protocol_bridge module [#71]
 """
 from __future__ import annotations
 

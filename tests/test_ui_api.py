@@ -1,5 +1,5 @@
 """
-tests/test_ui_api.py — тесты UI API endpoints (no auth required)
+tests/test_ui_api.py — UI API endpoint tests (no auth required)
 """
 from __future__ import annotations
 

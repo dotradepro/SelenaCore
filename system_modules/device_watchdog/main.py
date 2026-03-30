@@ -1,5 +1,5 @@
 """
-system_modules/device_watchdog/main.py — точка входа FastAPI модуля device_watchdog [#70]
+system_modules/device_watchdog/main.py — FastAPI entry point for device_watchdog module [#70]
 """
 from __future__ import annotations
 

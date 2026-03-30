@@ -1,14 +1,14 @@
 """
-system_modules/protocol_bridge/bridge.py — бизнес-логика Protocol Bridge
+system_modules/protocol_bridge/bridge.py — Protocol Bridge business logic
 
-Шлюз между физическими протоколами умного дома и Device Registry:
-  - MQTT: auto-discovery (Home Assistant стандарт) + state/command
-  - Zigbee: через zigbee2mqtt (MQTT)
-  - Z-Wave: через zwave-js-ui (опционально)
-  - HTTP/REST: polling WiFi устройств (Shelly, Sonoff DIY, etc.)
+Gateway between physical smart home protocols and Device Registry:
+  - MQTT: auto-discovery (Home Assistant standard) + state/command
+  - Zigbee: via zigbee2mqtt (MQTT)
+  - Z-Wave: via zwave-js-ui (optional)
+  - HTTP/REST: polling WiFi devices (Shelly, Sonoff DIY, etc.)
 
-Другие модули работают только с абстрактными Device Registry устройствами
-и не знают о протоколах.
+Other modules work only with abstract Device Registry devices
+and are unaware of the underlying protocols.
 """
 from __future__ import annotations
 

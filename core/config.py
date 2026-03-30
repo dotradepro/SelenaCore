@@ -1,5 +1,5 @@
 """
-core/config.py — загрузка конфигурации из core.yaml + .env
+core/config.py — configuration loading from core.yaml + .env
 """
 from __future__ import annotations
 

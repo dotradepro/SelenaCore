@@ -1,5 +1,5 @@
 """
-tests/test_api.py — тесты Core API endpoints (health, devices, events)
+tests/test_api.py — Core API endpoint tests (health, devices, events)
 """
 from __future__ import annotations
 

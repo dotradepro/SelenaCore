@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.auth import verify_module_token
 from core.eventbus.bus import get_event_bus
+from core.i18n import t
 from core.eventbus.types import DEVICE_REGISTERED, DEVICE_REMOVED, DEVICE_STATE_CHANGED
 from core.registry.models import Device
 from core.registry.service import DeviceNotFoundError, DeviceRegistry
@@ -130,7 +131,7 @@ async def get_device(
 ) -> DeviceResponse:
     device = await registry.get(device_id)
     if device is None:
-        raise HTTPException(status_code=404, detail="Device not found")
+        raise HTTPException(status_code=404, detail=t("api.device_not_found"))
     return DeviceResponse.from_orm(device)
 
 
@@ -149,11 +150,11 @@ async def update_device_state(
             try:
                 old_device = await registry.get(device_id)
                 if old_device is None:
-                    raise HTTPException(status_code=404, detail="Device not found")
+                    raise HTTPException(status_code=404, detail=t("api.device_not_found"))
                 old_state = old_device.get_state()
                 device = await registry.update_state(device_id, body.state)
             except DeviceNotFoundError:
-                raise HTTPException(status_code=404, detail="Device not found")
+                raise HTTPException(status_code=404, detail=t("api.device_not_found"))
         bus = get_event_bus()
         await bus.publish(
             type=DEVICE_STATE_CHANGED,
@@ -181,7 +182,7 @@ async def delete_device(
             try:
                 await registry.delete(device_id)
             except DeviceNotFoundError:
-                raise HTTPException(status_code=404, detail="Device not found")
+                raise HTTPException(status_code=404, detail=t("api.device_not_found"))
     bus = get_event_bus()
     await bus.publish(
         type=DEVICE_REMOVED,

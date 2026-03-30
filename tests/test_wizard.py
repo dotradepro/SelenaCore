@@ -129,11 +129,11 @@ def _step_data(step: str) -> dict:
     """Generate minimal valid data for a wizard step."""
     data = {
         "wifi": {"ssid": "TestNet"},
-        "language": {"language": "ru"},
+        "language": {"language": "uk"},
         "device_name": {"name": "MyHome"},
-        "timezone": {"timezone": "Europe/Moscow"},
+        "timezone": {"timezone": "Europe/Kyiv"},
         "stt_model": {"model": "base"},
-        "tts_voice": {"voice": "ru_RU-irina-medium"},
+        "tts_voice": {"voice": "uk_UA-ukrainian_tts-medium"},
         "admin_user": {"username": "admin", "pin": "1234"},
         "home_devices": {"device_name": "Kiosk"},
         "platform": {"device_hash": "abc123"},

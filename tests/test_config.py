@@ -44,9 +44,9 @@ class TestYamlConfig:
     def test_load_valid_yaml(self, tmp_path):
         from core.config import _load_yaml_config
         cfg = tmp_path / "test.yaml"
-        cfg.write_text("system:\n  language: ru\n  timezone: Europe/Moscow\n")
+        cfg.write_text("system:\n  language: uk\n  timezone: Europe/Kyiv\n")
         result = _load_yaml_config(cfg)
-        assert result["system"]["language"] == "ru"
+        assert result["system"]["language"] == "uk"
 
     def test_load_empty_yaml(self, tmp_path):
         from core.config import _load_yaml_config
@@ -72,10 +72,10 @@ class TestConfigWriter:
 
     def test_write_and_read(self):
         from core.config_writer import write_config, read_config
-        data = {"system": {"language": "ru"}, "core": {"port": 7070}}
+        data = {"system": {"language": "uk"}, "core": {"port": 7070}}
         write_config(data)
         result = read_config()
-        assert result["system"]["language"] == "ru"
+        assert result["system"]["language"] == "uk"
         assert result["core"]["port"] == 7070
 
     def test_update_config(self):

@@ -27,7 +27,7 @@ from zoneinfo import available_timezones
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.config_writer import get_value, read_config, update_config
+from core.config_writer import get_value, read_config, update_config, update_many
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -492,10 +492,13 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
     """Persist audio device selection to core.yaml."""
     input_device = body.get("input")
     output_device = body.get("output")
+    updates = []
     if input_device:
-        update_config("voice", "audio_force_input", input_device)
+        updates.append(("voice", "audio_force_input", input_device))
     if output_device:
-        update_config("voice", "audio_force_output", output_device)
+        updates.append(("voice", "audio_force_output", output_device))
+    if updates:
+        update_many(updates)
     return {"status": "ok"}
 
 
@@ -858,10 +861,9 @@ async def llm_select(req: SelectModelRequest) -> dict[str, Any]:
         manager = get_model_manager()
         ok = await manager.switch_model(req.model)
         if ok:
-            update_config("voice", "llm_model", req.model)
-            # Also save in provider config
             config = read_config()
             voice_cfg = config.setdefault("voice", {})
+            voice_cfg["llm_model"] = req.model
             provider = voice_cfg.get("llm_provider", "ollama")
             providers = voice_cfg.setdefault("providers", {})
             providers.setdefault(provider, {})["model"] = req.model
@@ -1237,6 +1239,8 @@ async def _provision_download_llm(model_id: str) -> None:
 
 async def _provision_finalize() -> None:
     """Mark wizard as completed in config."""
-    update_config("wizard", "completed", True)
-    update_config("wizard", "provisioned", True)
+    update_many([
+        ("wizard", "completed", True),
+        ("wizard", "provisioned", True),
+    ])
     await asyncio.sleep(0.5)

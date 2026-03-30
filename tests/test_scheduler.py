@@ -1,5 +1,5 @@
 """
-tests/test_scheduler.py — pytest тесты для модуля scheduler [#69]
+tests/test_scheduler.py — pytest tests for scheduler module [#69]
 """
 from __future__ import annotations
 

@@ -132,6 +132,17 @@ class MediaPlayerModule(SystemModule):
             self._on_event,
         )
 
+        # Register voice intent patterns with IntentRouter (Tier 1.5)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            from .intent_patterns import MEDIA_INTENTS
+            intent_router = get_intent_router()
+            for entry in MEDIA_INTENTS:
+                intent_router.register_system_intent(entry)
+            logger.info("MediaPlayer: registered %d voice intents", len(MEDIA_INTENTS))
+        except Exception as exc:
+            logger.warning("MediaPlayer: failed to register intents: %s", exc)
+
         # Broadcast state periodically while playing
         self._state_task = asyncio.create_task(self._state_broadcast_loop())
 
@@ -143,14 +154,19 @@ class MediaPlayerModule(SystemModule):
             self._state_task.cancel()
         await self._player.stop()
         self._cleanup_subscriptions()
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().unregister_system_intents(self.name)
+        except Exception:
+            pass
         await self.publish("module.stopped", {"name": self.name})
         logger.info("MediaPlayer module stopped")
 
     # ── EventBus handler ──────────────────────────────────────────────────────
 
-    async def _on_event(self, event: dict) -> None:
-        etype = event.get("type", "")
-        payload = event.get("payload", {})
+    async def _on_event(self, event: Any) -> None:
+        etype = event.type
+        payload = event.payload
 
         if etype == "voice.intent":
             intent = payload.get("intent", "")

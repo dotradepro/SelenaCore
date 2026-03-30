@@ -137,7 +137,7 @@ async def render_setup_screen() -> None:
     """
     First-run setup screen — split-panel layout matching browser SetupLanding.
 
-    Left panel:  QR code + "Отсканируйте для настройки"
+    Left panel:  QR code + "Scan to set up"
     Right panel: Status checklist + URL + instructions
     """
     hostname = os.uname().nodename
@@ -158,7 +158,8 @@ async def render_setup_screen() -> None:
         # ── Build left panel lines ──
         left: list[str] = []
         left.append("")
-        left.append(f"{_DIM}МОБИЛЬНАЯ НАСТРОЙКА{_RESET}")
+        from core.i18n import t
+        left.append(f"{_DIM}{t('tty.mobile_setup')}{_RESET}")
         left.append("")
 
         # Center QR block
@@ -166,29 +167,29 @@ async def render_setup_screen() -> None:
             left.append(ql)
 
         left.append("")
-        left.append(f"{_BOLD}{_WHITE}Отсканируйте для настройки{_RESET}")
+        left.append(f"{_BOLD}{_WHITE}{t('tty.scan_to_setup')}{_RESET}")
         left.append(f"{_DIM}{ui_url}{_RESET}")
         left.append("")
 
         # ── Build right panel lines ──
         right: list[str] = []
         right.append("")
-        right.append(f"{_DIM}SELENACORE{_RESET}")
+        right.append(f"{_DIM}{t('tty.selenacore')}{_RESET}")
         right.append("")
-        right.append(f"{_BOLD}{_WHITE}Продолжить настройку{_RESET}")
-        right.append(f"{_BOLD}{_WHITE}на устройстве{_RESET}")
+        for line in t("tty.continue_setup").split("\n"):
+            right.append(f"{_BOLD}{_WHITE}{line}{_RESET}")
         right.append("")
-        right.append(f"{_DIM}Откройте браузер или отсканируйте QR{_RESET}")
+        right.append(f"{_DIM}{t('tty.open_browser_or_scan')}{_RESET}")
         right.append("")
-        right.append(f"{_DIM}── СТАТУС НАСТРОЙКИ ──{_RESET}")
+        right.append(f"{_DIM}{t('tty.setup_status')}{_RESET}")
         right.append("")
 
         # Checklist
         step_icons = {
-            "internet": "◉ Сеть",
-            "admin_user": "◉ Администратор",
-            "device_name": "◉ Имя устройства",
-            "platform": "◉ Платформа",
+            "internet": "◉ " + t("tty.step_network"),
+            "admin_user": "◉ " + t("tty.step_admin"),
+            "device_name": "◉ " + t("tty.step_device_name"),
+            "platform": "◉ " + t("tty.step_platform"),
         }
         for sid, info in steps.items():
             label = step_icons.get(sid, f"◉ {info.get('label', sid)}")
@@ -199,7 +200,7 @@ async def render_setup_screen() -> None:
                 text = f"{_WHITE}{label}{_RESET}"
             elif required:
                 icon = f"{_RED}✘{_RESET}"
-                text = f"{_RED}{label}{_RESET}  {_DIM}{_RED}← обязательно{_RESET}"
+                text = f"{_RED}{label}{_RESET}  {_DIM}{_RED}← {t('tty.required')}{_RESET}"
             else:
                 icon = f"{_DIM}○{_RESET}"
                 text = f"{_DIM}{label}{_RESET}"
@@ -211,8 +212,8 @@ async def render_setup_screen() -> None:
         right.append(f"  {_CYAN}▸{_RESET} {_WHITE}{ui_url}{_RESET}")
         right.append(f"  {_DIM}IP: {local_ip}{_RESET}")
         right.append("")
-        right.append(f"{_DIM}Экран обновится автоматически{_RESET}")
-        right.append(f"{_DIM}после завершения настройки.{_RESET}")
+        for line in t("tty.screen_auto_refresh").split("\n"):
+            right.append(f"{_DIM}{line}{_RESET}")
         right.append("")
 
         # ── Equalize heights ──
@@ -229,7 +230,7 @@ async def render_setup_screen() -> None:
         total_w = LEFT_W + RIGHT_W + 3  # 3 = "│" separators
         top = f"{'─' * total_w}"
         print(f"{_DIM}{top}{_RESET}")
-        title = f"  SelenaCore  •  {hostname}  •  Первый запуск"
+        title = f"  SelenaCore  •  {hostname}  •  {t('tty.first_run')}"
         print(f"{_BOLD}{_WHITE}{_pad(title, total_w)}{_RESET}")
         print(f"{_DIM}{top}{_RESET}")
 
@@ -243,7 +244,7 @@ async def render_setup_screen() -> None:
         # Bottom bar
         print(f"{_DIM}{top}{_RESET}")
         ts = time.strftime("%H:%M:%S")
-        print(f"{_DIM}  Обновлено: {ts}{_RESET}")
+        print(f"{_DIM}  {t('tty.updated_at', time=ts)}{_RESET}")
 
         await asyncio.sleep(REFRESH_SEC)
 
