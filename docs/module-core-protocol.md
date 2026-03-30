@@ -1,79 +1,215 @@
-# docs/module-core-protocol.md — Протокол взаимодействия модулей и ядра
+# docs/module-core-protocol.md — Module-Core Interaction Protocol
 
-**Версия:** 1.0  
-**Статус:** Нормативный документ — реализовывать строго по нему  
-**Область:** `core/`, `core/module_loader/`, `sdk/base_module.py`, `sdk/mock_core.py`
-
----
-
-## Обзор
-
-Модуль и ядро общаются **только через HTTP на localhost**. Никаких других каналов нет и быть не должно. Прямой доступ модуля к SQLite, файловой системе `/secure/`, или к другим модулям — запрещён и заблокирован на уровне Docker network.
-
-```
-MODULE (:810X)                        CORE (:7070)
-   │                                      │
-   │──── HTTP Bearer token ─────────────►│  запросы к Core API
-   │                                      │
-   │◄─── POST /webhook/events ────────────│  доставка событий (HMAC)
-   │◄─── POST /webhook/commands ──────────│  команды платформы (HMAC)
-   │                                      │
-   UI Core (:80) ──iframe──► GET /widget.html от модуля
-```
+**Version:** 2.0 (Module Bus)
+**Status:** Normative document — implement strictly according to it
+**Scope:** `core/module_bus.py`, `core/api/routes/bus.py`, `sdk/base_module.py`
 
 ---
 
-## 1. Жизненный цикл модуля и выдача токена
+## Overview
 
-### 1.1 Полный цикл установки
+Modules and the core communicate through the **WebSocket Module Bus** (`ws://core:7070/api/v1/bus`). Each module is a WebSocket client, the core is the server (master node, CAN-bus architecture). Direct module access to SQLite, the `/secure/` filesystem, or other modules is prohibited.
 
 ```
-Пользователь загружает ZIP
+MODULE (Docker bridge)                CORE (:7070, host network)
+   │                                      │
+   │──── WebSocket + token ─────────────► │  ws://core:7070/api/v1/bus?token=XXX
+   │                                      │
+   │──── announce ────────────────────► │  capabilities registration
+   │◄─── announce_ack ────────────────── │  confirmation + bus_id
+   │                                      │
+   │◄─── intent ──────────────────────── │  voice command
+   │──── intent_response ─────────────► │  processing result
+   │                                      │
+   │◄─── event ───────────────────────── │  EventBus events
+   │──── event ───────────────────────► │  event publishing
+   │                                      │
+   │◄─── ping ────────────────────────── │  health check (15s)
+   │──── pong ────────────────────────► │
+   │                                      │
+   │──── api_request ─────────────────► │  Core API proxy
+   │◄─── api_response ───────────────── │
+   │                                      │
+   │◄─── shutdown ────────────────────── │  graceful shutdown (drain)
+```
+
+---
+
+## Module Bus — WebSocket Protocol
+
+### Connection Lifecycle
+
+```
+1. Module connects: ws://core:7070/api/v1/bus?token=MODULE_TOKEN
+2. Token validated BEFORE WebSocket accept()
+3. Module sends: {"type": "announce", "module": "name", "capabilities": {...}}
+4. Core responds: {"type": "announce_ack", "status": "ok", "bus_id": "uuid", "warnings": [...]}
+5. Message loop (bidirectional JSON messages)
+6. On disconnect: core cleans up, module reconnects with exponential backoff
+```
+
+### Message Types
+
+#### announce (module → core)
+```json
+{
+  "type": "announce",
+  "module": "weather-module",
+  "capabilities": {
+    "intents": [
+      {
+        "patterns": {"en": ["weather", "forecast"], "uk": ["погода", "прогноз"]},
+        "priority": 50,
+        "description": "Weather queries"
+      }
+    ],
+    "subscriptions": ["device.state_changed", "device.*"],
+    "publishes": ["weather.module_started"]
+  }
+}
+```
+
+#### intent (core → module)
+```json
+{"type": "intent", "id": "req-uuid", "payload": {"text": "яка погода?", "lang": "uk", "context": {"user_id": "u1"}}}
+```
+
+#### intent_response (module → core)
+```json
+{"type": "intent_response", "id": "req-uuid", "payload": {"handled": true, "tts_text": "Зараз +12°С", "data": {...}}}
+```
+
+#### event (bidirectional)
+```json
+{"type": "event", "payload": {"event_type": "device.state_changed", "data": {"device_id": "d1", "state": {...}}}}
+```
+
+Core enriches events with `event_id`, `source`, `timestamp` when delivering to subscribers.
+
+#### ping/pong (core → module → core)
+```json
+{"type": "ping", "ts": 1711800000.0}
+{"type": "pong", "ts": 1711800000.0}
+```
+
+Core disconnects after 3 missed pongs (45s).
+
+#### api_request / api_response (bidirectional)
+```json
+{"type": "api_request", "id": "req-uuid", "method": "GET", "path": "/devices", "body": null}
+{"type": "api_response", "id": "req-uuid", "status": 200, "body": {"devices": [...]}}
+```
+
+Module→core: proxy to Core API with ACL check.
+Core→module: UI proxy forwarding requests to module.
+
+#### re_announce (module → core)
+```json
+{"type": "re_announce", "capabilities": {...}}
+```
+
+Hot-reload capabilities without reconnect.
+
+#### shutdown (core → module)
+```json
+{"type": "shutdown", "reason": "core_restart", "drain_ms": 5000}
+```
+
+Module should save state and prepare for disconnect.
+
+### Intent Routing
+
+1. Core maintains a sorted intent index from all connected modules
+2. Priority: 0-29 system, 30-49 core, 50-99 user (lower = higher priority)
+3. Fallthrough: max 3 modules tried per intent
+4. Circuit breaker: 10s timeout → 30s open → half-open probe
+5. Concurrency: max 50 simultaneous intent requests
+
+### API ACL Table
+
+| Permission | Allowed Methods |
+|------------|----------------|
+| `devices.read` | GET /devices, GET /devices/* |
+| `devices.control` | POST /devices/*/control |
+| `secrets.read` | GET /secrets, GET /secrets/* |
+| `modules.list` | GET /modules |
+
+### Reconnection
+
+- Exponential backoff: 1s, 2s, 4s, ... max 60s
+- Random jitter: 0-30% of delay
+- Fatal close codes (no reconnect): `invalid_token`, `permission_denied`
+- Shutdown-aware: stops reconnecting when core sends shutdown
+
+### Dual Queue Architecture
+
+Core maintains two queues per connection:
+- **Critical queue** (backpressure, maxsize=100): intents, pings, shutdown, API responses
+- **Event queue** (drop-oldest, maxsize=1000): event delivery
+
+Critical messages always have priority over events.
+
+---
+
+> **LEGACY PROTOCOL (deprecated):** The sections below describe the old HTTP-based protocol.
+> New modules should use the WebSocket Module Bus described above.
+> HTTP intent registration (`POST /api/v1/intents/register`) and webhook event delivery are deprecated.
+
+---
+
+---
+
+## 1. Module Lifecycle and Token Issuance
+
+### 1.1 Full Installation Cycle
+
+```
+User uploads ZIP
         │
         ▼
 POST /api/v1/modules/install (multipart/form-data, file=module.zip)
         │
         ▼
 ModuleLoader.install():
-  1. Распаковать ZIP → /var/lib/selena/modules/<name>/
+  1. Extract ZIP → /var/lib/selena/modules/<name>/
   2. Validator.validate(manifest.json)
-     → имя, версия, порт, permissions — строгая проверка
-     → при ошибке: 422 + описание
+     → name, version, port, permissions — strict validation
+     → on error: 422 + description
   3. SandboxRunner.test()
      → docker run --rm smarthome-sandbox ...
      → timeout 60s
-     → при провале: 400 + sandbox_output
-  4. Сгенерировать module_token и сохранить:
+     → on failure: 400 + sandbox_output
+  4. Generate module_token and save:
        token_file = /secure/module_tokens/<name>.token
        Path(token_file).write_text(token)  # plaintext, chmod 600
-       webhook_secret = secrets.token_hex(32) # хранится в памяти модуля через env
-  5. Сформировать env-файл для контейнера:
+       webhook_secret = secrets.token_hex(32) # stored in module memory via env
+  5. Create env file for the container:
        /var/lib/selena/modules/<name>/.env.module
-       (содержимое — см. раздел 1.3)
-  6. Запустить контейнер через DockerSandbox (см. раздел 1.4)
-  7. Дождаться GET /health → 200 (timeout 30s)
-  8. SDK внутри модуля автоматически подписывается на события
-     из manifest.json при on_start (см. раздел 3.3)
-  9. Вернуть ответ:
+       (contents — see section 1.3)
+  6. Start container via DockerSandbox (see section 1.4)
+  7. Wait for GET /health → 200 (timeout 30s)
+  8. SDK inside the module automatically subscribes to events
+     from manifest.json during on_start (see section 3.3)
+  9. Return response:
        201 { "name": "...", "status": "RUNNING", "port": 8100 }
-     ⚠️ token НЕ возвращается в ответе — он уже внутри контейнера
+     ⚠️ token is NOT returned in the response — it is already inside the container
 ```
 
-### 1.2 Хранение токена
+### 1.2 Token Storage
 
-Токен хранится как plaintext файл `/secure/module_tokens/<name>.token` (chmod 600).
-При проверке запроса ядро считывает все файлы `*.token` из этой директории и сравнивает с предъявленным токеном напрямую.
-`DEV_MODULE_TOKEN` из `.env` принимается как дополнительный валидный токен в dev-режиме (`DEBUG=true`).
+The token is stored as a plaintext file `/secure/module_tokens/<name>.token` (chmod 600).
+When verifying a request, the core reads all `*.token` files from this directory and compares them directly with the presented token.
+`DEV_MODULE_TOKEN` from `.env` is accepted as an additional valid token in dev mode (`DEBUG=true`).
 
-> **Примечание по безопасности:** В production хранилище токенов `/secure/` должно быть смонтировано с правами `700` и доступно только пользователю ядра.
+> **Security note:** In production, the token storage `/secure/` should be mounted with `700` permissions and accessible only to the core user.
 
-### 1.3 Файл `.env.module` — передача секретов в контейнер
+### 1.3 `.env.module` File — Passing Secrets to the Container
 
-Ядро создаёт этот файл **до** запуска контейнера. Файл монтируется как `--env-file`. После старта контейнера — файл **удаляется** с диска (секреты живут только в памяти процесса).
+The core creates this file **before** starting the container. The file is mounted as `--env-file`. After the container starts — the file is **deleted** from disk (secrets live only in process memory).
 
 ```bash
 # /var/lib/selena/modules/<name>/.env.module
-# Создаётся ядром при установке. Удаляется сразу после docker run.
+# Created by the core during installation. Deleted immediately after docker run.
 
 SELENA_MODULE_TOKEN=<raw_token_64_chars>
 SELENA_WEBHOOK_SECRET=<webhook_secret_64_hex_chars>
@@ -82,9 +218,9 @@ SELENA_MODULE_NAME=<name>
 SELENA_MODULE_PORT=<port>
 ```
 
-**Почему удаляется:** файл на диске — потенциальная утечка. После передачи через `--env-file` переменные живут только в `/proc/<pid>/environ` контейнера, недоступном снаружи.
+**Why it is deleted:** a file on disk is a potential leak. After being passed via `--env-file`, the variables live only in `/proc/<pid>/environ` of the container, which is inaccessible from outside.
 
-**Реализация удаления:**
+**Deletion implementation:**
 ```python
 # core/module_loader/sandbox.py
 import os, subprocess, tempfile
@@ -96,10 +232,10 @@ try:
         "docker", "run", "--env-file", env_path, ...
     ])
 finally:
-    os.unlink(env_path)   # удалить сразу после вызова docker run
+    os.unlink(env_path)   # delete immediately after docker run call
 ```
 
-### 1.4 Docker run — параметры запуска
+### 1.4 Docker run — Startup Parameters
 
 ```python
 # core/module_loader/sandbox.py
@@ -108,66 +244,66 @@ subprocess.run([
     "docker", "run",
     "--detach",
     "--name",        f"selena-module-{module.name}",
-    "--network",     "selena_selena_internal",  # Docker Compose сеть selena_modules
+    "--network",     "selena_selena_internal",  # Docker Compose network selena_modules
     "--hostname",    module.name,
-    "--publish",     f"127.0.0.1:{module.port}:{module.port}",  # только localhost
-    "--env-file",    env_path,              # SELENA_* переменные
+    "--publish",     f"127.0.0.1:{module.port}:{module.port}",  # localhost only
+    "--env-file",    env_path,              # SELENA_* variables
     "--memory",      f"{manifest.resources.memory_mb}m",
     "--cpus",        str(manifest.resources.cpu),
     "--pids-limit",  "100",
     "--read-only",                          # readonly rootfs
-    "--tmpfs",       "/tmp:size=32m",       # только /tmp writable
+    "--tmpfs",       "/tmp:size=32m",       # only /tmp writable
     "--cap-drop",    "ALL",
     "--security-opt","no-new-privileges:true",
     "--restart",     restart_policy,        # always / no / on-failure
     "--label",       f"selena.module={module.name}",
     "--label",       f"selena.port={module.port}",
-    f"selena-module-{module.name}:latest",  # image тег
+    f"selena-module-{module.name}:latest",  # image tag
 ])
 ```
 
 `restart_policy`:
 - `always_on` → `"always"`
 - `on_demand` → `"no"`
-- `scheduled` → `"no"` (ядро само управляет запуском)
+- `scheduled` → `"no"` (core manages startup itself)
 
-### 1.5 Lifecycle при рестарте контейнера
+### 1.5 Lifecycle on Container Restart
 
-Если контейнер рестартует (crash, OOM, `always` policy):
+If the container restarts (crash, OOM, `always` policy):
 
 ```
-Контейнер рестартует
+Container restarts
         │
         ▼
-SDK.on_start() вызывается снова
+SDK.on_start() is called again
         │
         ▼
-SDK читает SELENA_MODULE_TOKEN из env (env живёт в памяти, не на диске)
+SDK reads SELENA_MODULE_TOKEN from env (env lives in memory, not on disk)
         │
         ▼
-SDK автоматически переподписывается на все события из manifest.json
-(подписки хранятся в Event Bus в памяти → при рестарте ядра — тоже
- переподписка, см. раздел 3.4)
+SDK automatically resubscribes to all events from manifest.json
+(subscriptions are stored in Event Bus in memory → on core restart —
+ resubscription also happens, see section 3.4)
         │
         ▼
-Модуль продолжает работу
+Module continues operation
 ```
 
-**Токен при рестарте не меняется** — он хранится в `.env.module` до удаления, а затем живёт в `environ` контейнера. При рестарте Docker контейнера env переменные сохраняются (Docker хранит их в слое контейнера, не в файле). Токен остаётся валидным до деинсталляции модуля.
+**Token does not change on restart** — it is stored in `.env.module` until deletion, then lives in the container's `environ`. On Docker container restart, env variables are preserved (Docker stores them in the container layer, not in a file). The token remains valid until module uninstallation.
 
 ---
 
-## 2. Аутентификация запросов: модуль → ядро
+## 2. Request Authentication: Module → Core
 
-### 2.1 Схема Bearer token
+### 2.1 Bearer Token Scheme
 
-Каждый HTTP запрос от модуля к Core API должен содержать заголовок:
+Every HTTP request from a module to the Core API must contain the header:
 
 ```
 Authorization: Bearer <module_token>
 ```
 
-**Проверка на стороне ядра (`core/api/auth.py`):**
+**Verification on the core side (`core/api/auth.py`):**
 
 ```python
 # core/api/auth.py
@@ -207,11 +343,11 @@ async def verify_module_token(
     return token
 ```
 
-> **Примечание:** В текущей реализации разрешения из manifest.json не проверяются
-> на уровне отдельных эндпоинтов — любой валидный токен имеет полный доступ к API.
-> Гранулярная проверка разрешений запланирована для v1.1.
+> **Note:** In the current implementation, permissions from manifest.json are not checked
+> at the individual endpoint level — any valid token has full API access.
+> Granular permission checks are planned for v1.1.
 
-**Использование в роутерах:**
+**Usage in routers:**
 
 ```python
 # core/api/routes/devices.py
@@ -230,13 +366,13 @@ async def register_device(
     ...
 ```
 
-### 2.2 Таблица: эндпоинты по типу модуля
+### 2.2 Table: Endpoints by Module Type
 
-> **Примечание:** В текущей реализации (v1.0) тип модуля не проверяется на уровне эндпоинтов.
-> Любой валидный токен имеет доступ ко всем эндпоинтам Public API.
-> Приведённая таблица отражает **плановую** архитектуру для v1.1.
+> **Note:** In the current implementation (v1.0), module type is not checked at the endpoint level.
+> Any valid token has access to all Public API endpoints.
+> The table below reflects the **planned** architecture for v1.1.
 
-| Эндпоинт | INTEGRATION | DRIVER | AUTOMATION | SYSTEM |
+| Endpoint | INTEGRATION | DRIVER | AUTOMATION | SYSTEM |
 |---|:---:|:---:|:---:|:---:|
 | `GET /health` | ✅ | ✅ | ✅ | ✅ |
 | `GET /devices` | ✅ | ✅ | ✅ | ✅ |
@@ -249,7 +385,7 @@ async def register_device(
 | `POST /secrets/proxy` | ✅ | — | — | ✅ |
 | `GET /modules` | — | — | — | ✅ |
 | `POST /modules/install` | — | — | — | ✅ |
-| `POST /modules/{name}/stop` | — | — | — | ✅ (не SYSTEM) |
+| `POST /modules/{name}/stop` | — | — | — | ✅ (not SYSTEM) |
 | `GET /system/info` | — | — | — | ✅ |
 | `GET /integrity/status` | — | — | — | ✅ |
 
@@ -259,41 +395,41 @@ async def register_device(
 # core/api/middleware.py
 # Sliding window per-IP
 
-LIMIT_LOCAL    = 600   # req/min для localhost и LAN (192.168.x, 10.x, 127.x)
-LIMIT_EXTERNAL = 120   # req/min для внешних IP
+LIMIT_LOCAL    = 600   # req/min for localhost and LAN (192.168.x, 10.x, 127.x)
+LIMIT_EXTERNAL = 120   # req/min for external IPs
 WINDOW_SEC     = 60
 
-# SSE-стрим и статические файлы — не учитываются
-# При превышении: 429 Too Many Requests
+# SSE streams and static files — not counted
+# On exceeding: 429 Too Many Requests
 # Header: Retry-After: <window_sec>
 ```
 
-### 2.4 Ротация токена (деинсталляция)
+### 2.4 Token Rotation (Uninstallation)
 
-Токен инвалидируется **только** при деинсталляции модуля:
+The token is invalidated **only** upon module uninstallation:
 
 ```
-DELETE /api/v1/modules/<name>   (только SYSTEM модуль или UI)
+DELETE /api/v1/modules/<name>   (only SYSTEM module or UI)
         │
         ▼
 1. Docker stop selena-module-<name>
 2. Docker rm selena-module-<name>
 3. UPDATE modules SET status='REMOVED' WHERE name=<name>
-   (token_hash остаётся в БД для аудита, но статус REMOVED → 401 при проверке)
-4. Удалить /var/lib/selena/modules/<name>/
-5. Event Bus: отписать все подписки этого модуля
+   (token_hash remains in DB for audit, but status REMOVED → 401 on verification)
+4. Delete /var/lib/selena/modules/<name>/
+5. Event Bus: unsubscribe all subscriptions for this module
 ```
 
-Смена токена без деинсталляции не предусмотрена. Если токен скомпрометирован — только деинсталляция и повторная установка.
+Token rotation without uninstallation is not supported. If a token is compromised — the only option is uninstallation and reinstallation.
 
 ---
 
-## 3. Доставка событий: ядро → модуль (Event Bus)
+## 3. Event Delivery: Core → Module (Event Bus)
 
-### 3.1 Схема Event Bus
+### 3.1 Event Bus Scheme
 
 ```
-Источник события                  Event Bus                  Подписчики
+Event source                      Event Bus                  Subscribers
       │                          (asyncio.Queue)                   │
       │                                │                           │
 PATCH /devices/{id}/state ──────► bus.publish(event) ────► delivery_worker
@@ -301,25 +437,25 @@ POST  /events/publish     ──────►       │                       
                                         │              ┌──────────┘
                                         │              │
                                         ▼              ▼
-                              фильтр по wildcard    POST http://localhost:810X/webhook/events
+                              wildcard filter        POST http://localhost:810X/webhook/events
                                                     X-Selena-Signature: sha256=<hmac>
                                                     Content-Type: application/json
 ```
 
-### 3.2 Формат события
+### 3.2 Event Format
 
 ```python
-# Структура события (TypedDict)
+# Event structure (TypedDict)
 
 class SelenaEvent(TypedDict):
-    id:         str        # UUID, уникален для дедупликации
+    id:         str        # UUID, unique for deduplication
     type:       str        # "device.state_changed", "climate.updated", etc.
-    source:     str        # имя модуля-издателя или "core"
+    source:     str        # publisher module name or "core"
     timestamp:  str        # ISO 8601, UTC
-    payload:    dict       # произвольные данные
+    payload:    dict       # arbitrary data
 
 
-# Пример:
+# Example:
 {
     "id":        "550e8400-e29b-41d4-a716-446655440000",
     "type":      "device.state_changed",
@@ -334,23 +470,23 @@ class SelenaEvent(TypedDict):
 }
 ```
 
-### 3.3 Подписка на события
+### 3.3 Event Subscription
 
-**Через API (модуль подписывается вручную):**
+**Via API (module subscribes manually):**
 
 ```python
-# Модуль вызывает при старте:
+# Module calls on startup:
 POST /api/v1/events/subscribe
 Authorization: Bearer <module_token>
 
 {
     "event_types": ["device.state_changed", "device.offline"],
     "webhook_url": "http://localhost:8100/webhook/events"
-    # wildcard: "device.*" — все события с префиксом device.
+    # wildcard: "device.*" — all events with prefix device.
 }
 ```
 
-**Ответ:**
+**Response:**
 ```json
 {
     "subscription_id": "sub_xyz",
@@ -359,20 +495,20 @@ Authorization: Bearer <module_token>
 }
 ```
 
-**Хранение подписок в памяти (Event Bus):**
+**Subscription storage in memory (Event Bus):**
 
 ```python
 # core/eventbus/bus.py
 
 class EventBus:
-    # Подписки хранятся ТОЛЬКО в памяти.
-    # При рестарте ядра — все модули переподписываются сами (см. 3.4)
+    # Subscriptions are stored ONLY in memory.
+    # On core restart — all modules resubscribe themselves (see 3.4)
     _subscriptions: dict[str, list[Subscription]] = {}
-    # ключ: event_type или wildcard-паттерн
-    # значение: список Subscription(module_name, webhook_url, webhook_secret)
+    # key: event_type or wildcard pattern
+    # value: list of Subscription(module_name, webhook_url, webhook_secret)
 ```
 
-**Запрет публикации `core.*` от модуля:**
+**Prohibition of `core.*` publishing from modules:**
 
 ```python
 @router.post("/events/publish")
@@ -393,44 +529,44 @@ async def publish_event(
     return {"published": True}
 ```
 
-### 3.4 Переподписка при рестарте ядра
+### 3.4 Resubscription on Core Restart
 
-Поскольку подписки хранятся только в памяти, при рестарте ядра все модули теряют подписки. Механизм восстановления:
+Since subscriptions are stored only in memory, on core restart all modules lose their subscriptions. Recovery mechanism:
 
-**Ядро при старте:**
+**Core on startup:**
 ```python
 # core/main.py → startup event
 
 async def on_startup():
-    # 1. Запустить все модули со статусом RUNNING в БД
+    # 1. Start all modules with RUNNING status in DB
     running_modules = await db.fetch(
         "SELECT * FROM modules WHERE status='RUNNING' AND runtime_mode='always_on'"
     )
     for mod in running_modules:
         await module_loader.restart_container(mod)
-    # Контейнеры сами вызовут on_start → переподпишутся
+    # Containers will call on_start themselves → resubscribe
 ```
 
-**SDK при старте модуля:**
+**SDK on module startup:**
 ```python
 # sdk/base_module.py → SmartHomeModule.start()
 
 async def start(self):
-    # Вызывается при запуске контейнера (FastAPI startup event)
+    # Called on container startup (FastAPI startup event)
     self._token = os.environ["SELENA_MODULE_TOKEN"]
     self._webhook_secret = os.environ["SELENA_WEBHOOK_SECRET"]
     self._core_url = os.environ["SELENA_CORE_URL"]
 
-    # Переподписаться на все события из manifest.json
-    # (декораторы @on_event собирают список при импорте класса)
+    # Resubscribe to all events from manifest.json
+    # (@on_event decorators collect the list during class import)
     await self._resubscribe_all()
 
-    # Вызвать пользовательский on_start
+    # Call user-defined on_start
     await self.on_start()
 
 
 async def _resubscribe_all(self):
-    """Регистрирует webhook для всех @on_event обработчиков."""
+    """Registers webhook for all @on_event handlers."""
     event_types = list(self._event_handlers.keys())
     if not event_types:
         return
@@ -441,9 +577,9 @@ async def _resubscribe_all(self):
     })
 ```
 
-### 3.5 Доставка webhook и верификация HMAC
+### 3.5 Webhook Delivery and HMAC Verification
 
-**Ядро отправляет:**
+**Core sends:**
 
 ```python
 # core/eventbus/delivery.py
@@ -474,13 +610,13 @@ async def deliver(subscription: Subscription, event: SelenaEvent):
             logger.warning(f"Webhook delivery failed: {resp.status_code}")
     except httpx.TimeoutException:
         logger.error(f"Webhook timeout for {subscription.webhook_url}")
-    # Retry не предусмотрен — модуль должен быть идемпотентен
+    # Retry is not provided — module must be idempotent
 ```
 
-**Модуль проверяет (SDK делает автоматически):**
+**Module verifies (SDK does this automatically):**
 
 ```python
-# sdk/base_module.py — webhook endpoint регистрируется автоматически
+# sdk/base_module.py — webhook endpoint is registered automatically
 
 @app.post("/webhook/events")
 async def _handle_webhook(request: Request):
@@ -499,10 +635,10 @@ async def _handle_webhook(request: Request):
     event = json.loads(body)
     event_type = event["type"]
 
-    # Диспетчеризация по обработчикам
+    # Dispatch to handlers
     handler = self._event_handlers.get(event_type)
     if handler is None:
-        # Попробовать wildcard
+        # Try wildcard
         for pattern, h in self._event_handlers.items():
             if pattern.endswith(".*") and event_type.startswith(pattern[:-2]):
                 handler = h
@@ -514,21 +650,21 @@ async def _handle_webhook(request: Request):
     return {"ok": True}
 ```
 
-**Декоратор `@on_event` — регистрация обработчиков:**
+**`@on_event` decorator — handler registration:**
 
 ```python
 # sdk/base_module.py
 
 def on_event(event_type: str):
-    """Декоратор. Регистрирует метод как обработчик события."""
+    """Decorator. Registers a method as an event handler."""
     def decorator(func):
-        func._on_event = event_type   # метка на функции
+        func._on_event = event_type   # label on the function
         return func
     return decorator
 
 
 class SmartHomeModuleMeta(type):
-    """Метакласс собирает все @on_event обработчики при создании класса."""
+    """Metaclass that collects all @on_event handlers during class creation."""
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
         cls._event_handlers: dict[str, Callable] = {}
@@ -544,40 +680,40 @@ class SmartHomeModule(metaclass=SmartHomeModuleMeta):
 
 ---
 
-## 4. UI-виджеты и settings.html
+## 4. UI Widgets and settings.html
 
-### 4.1 Как UI Core загружает виджет
+### 4.1 How UI Core Loads a Widget
 
-UI Core (:80) рендерит главный экран. Для каждого модуля с `ui_profile != HEADLESS`:
+UI Core (:80) renders the main screen. For each module with `ui_profile != HEADLESS`:
 
 ```
-UI Core получает список модулей:
+UI Core gets the module list:
 GET http://localhost:7070/api/v1/modules
 → [ { name, port, manifest.ui.widget.size, status, ... } ]
 
-Для каждого модуля со статусом RUNNING:
-  Создаёт <iframe src="http://localhost:{port}/widget.html"
+For each module with status RUNNING:
+  Creates <iframe src="http://localhost:{port}/widget.html"
                   sandbox="allow-scripts allow-same-origin"
                   scrolling="no">
 
-  Размер iframe определяется manifest.ui.widget.size:
-    "1x1" → 1 ячейка × 1 строка сетки
-    "2x1" → 2 ячейки × 1 строка
-    "2x2" → 2 ячейки × 2 строки
-    "4x1" → вся ширина × 1 строка
-    "1x2" → 1 ячейка × 2 строки
+  iframe size is determined by manifest.ui.widget.size:
+    "1x1" → 1 cell × 1 grid row
+    "2x1" → 2 cells × 1 row
+    "2x2" → 2 cells × 2 rows
+    "4x1" → full width × 1 row
+    "1x2" → 1 cell × 2 rows
 ```
 
-### 4.2 Эндпоинты которые обязан отдавать каждый модуль
+### 4.2 Endpoints That Every Module Must Serve
 
 ```
 GET  /health          → {"status": "ok", "name": "<name>", "version": "..."}
-GET  /widget.html     → HTML-файл виджета (manifest.ui.widget.file)
-GET  /settings.html   → HTML-файл настроек (manifest.ui.settings)
-GET  /icon.svg        → SVG иконка (manifest.ui.icon)
+GET  /widget.html     → Widget HTML file (manifest.ui.widget.file)
+GET  /settings.html   → Settings HTML file (manifest.ui.settings)
+GET  /icon.svg        → SVG icon (manifest.ui.icon)
 ```
 
-SDK регистрирует эти маршруты автоматически при старте:
+SDK registers these routes automatically on startup:
 
 ```python
 # sdk/base_module.py → register_static_routes()
@@ -605,30 +741,30 @@ def register_static_routes(self, app: FastAPI):
         return Response(content=path.read_bytes(), media_type="image/svg+xml")
 ```
 
-### 4.3 Аутентификация запросов из widget.html
+### 4.3 Authentication for Requests from widget.html
 
-Виджет работает в iframe браузера. Для запросов к Core API из виджета:
+The widget runs in a browser iframe. For requests to the Core API from the widget:
 
 ```javascript
-// Ядро передаёт read-only UI token в widget.html через query parameter при загрузке:
+// The core passes a read-only UI token to widget.html via query parameter on load:
 // GET /widget.html?ui_token=<ui_token>
 
-// UI token — отдельный токен с ограниченными правами:
-//   только: device.read, events.subscribe (read-only)
-//   выдаётся UI Core при загрузке страницы, TTL = 1 час
-//   НЕ является module_token
+// UI token — a separate token with limited permissions:
+//   only: device.read, events.subscribe (read-only)
+//   issued by UI Core on page load, TTL = 1 hour
+//   is NOT a module_token
 
-// widget.html получает его:
+// widget.html receives it:
 const params = new URLSearchParams(window.location.search)
 const uiToken = params.get('ui_token')
 
-// Запросы к Core API из виджета:
+// Requests to Core API from the widget:
 const resp = await fetch('http://localhost:7070/api/v1/devices', {
     headers: { 'Authorization': `Bearer ${uiToken}` }
 })
 ```
 
-**Выдача UI token — UI Core:**
+**UI token issuance — UI Core:**
 
 ```python
 # core/system_modules/ui_core/routes.py
@@ -639,7 +775,7 @@ async def widget_frame(module_name: str, user = Depends(require_user)):
     if not module or module.status != "RUNNING":
         raise HTTPException(404)
 
-    # Сгенерировать краткосрочный UI token
+    # Generate a short-lived UI token
     ui_token = await token_service.create_ui_token(
         scope=["device.read"],
         ttl_seconds=3600,
@@ -647,33 +783,33 @@ async def widget_frame(module_name: str, user = Depends(require_user)):
     )
 
     widget_url = f"http://localhost:{module.port}/widget.html?ui_token={ui_token}"
-    # Вернуть iframe src
+    # Return iframe src
     return {"iframe_src": widget_url}
 ```
 
-### 4.4 settings.html — механизм сохранения настроек
+### 4.4 settings.html — Settings Save Mechanism
 
 ```
-Пользователь открывает настройки модуля в UI:
+User opens module settings in the UI:
   → GET http://localhost:{port}/settings.html?ui_token=<ui_token>
 
-Настройки сохраняются через Core API (не напрямую в файл!):
+Settings are saved via Core API (not directly to a file!):
   POST /api/v1/modules/{name}/config
   Authorization: Bearer <ui_token>
   { "key": "temperature_unit", "value": "celsius" }
 
-Модуль читает свои настройки:
+Module reads its settings:
   GET /api/v1/modules/{name}/config
   Authorization: Bearer <module_token>
 ```
 
-**Хранение настроек модуля в SQLite:**
+**Module settings storage in SQLite:**
 
 ```sql
 CREATE TABLE module_config (
     module_name  TEXT NOT NULL,
     key          TEXT NOT NULL,
-    value        TEXT NOT NULL,   -- JSON-сериализованное значение
+    value        TEXT NOT NULL,   -- JSON-serialized value
     updated_at   DATETIME NOT NULL,
     PRIMARY KEY (module_name, key)
 );
@@ -681,12 +817,12 @@ CREATE TABLE module_config (
 
 ---
 
-## 5. Secrets Vault и OAuth proxy
+## 5. Secrets Vault and OAuth Proxy
 
-### 5.1 Запрос OAuth (только INTEGRATION + permission `secrets.oauth`)
+### 5.1 OAuth Request (INTEGRATION only + permission `secrets.oauth`)
 
 ```
-Шаг 1: Модуль инициирует OAuth flow
+Step 1: Module initiates OAuth flow
 
 POST /api/v1/secrets/oauth/start
 Authorization: Bearer <module_token>
@@ -695,34 +831,34 @@ Authorization: Bearer <module_token>
     "scopes": ["gmail.readonly", "gmail.send"]
 }
 
-Ответ:
+Response:
 {
     "device_code":  "AH-1Bx...",
     "user_code":    "ABCD-EFGH",
     "verification_url": "https://accounts.google.com/device",
     "expires_in":   1800,
-    "qr_data_url":  "data:image/png;base64,..."   # QR-код для UI
+    "qr_data_url":  "data:image/png;base64,..."   # QR code for UI
 }
 
-Шаг 2: UI Core показывает QR-код пользователю
+Step 2: UI Core shows QR code to the user
 
-Шаг 3: Ядро polling OAuth провайдера (background task)
-        При получении токена:
-          → шифровать AES-256-GCM
-          → сохранить в /secure/tokens/<module_name>/google.enc
+Step 3: Core polls OAuth provider (background task)
+        Upon receiving token:
+          → encrypt with AES-256-GCM
+          → save to /secure/tokens/<module_name>/google.enc
           → Event Bus: publish "core.oauth.completed" { module, provider }
 
-Шаг 4: Модуль получает событие "core.oauth.completed"
-        (SYSTEM модули могут подписаться на core.* события)
-        Обычные INTEGRATION модули — получают через:
+Step 4: Module receives "core.oauth.completed" event
+        (SYSTEM modules can subscribe to core.* events)
+        Regular INTEGRATION modules — receive via:
           GET /api/v1/secrets/oauth/status?provider=google
           → { "status": "completed" | "pending" | "expired" }
 ```
 
-### 5.2 API proxy (только INTEGRATION + permission `secrets.proxy`)
+### 5.2 API Proxy (INTEGRATION only + permission `secrets.proxy`)
 
 ```python
-# Модуль делает запрос через ядро — токен НИКОГДА не покидает ядро
+# Module makes request through the core — token NEVER leaves the core
 
 POST /api/v1/secrets/proxy
 Authorization: Bearer <module_token>
@@ -730,16 +866,16 @@ Authorization: Bearer <module_token>
     "provider": "google",
     "url":      "https://gmail.googleapis.com/gmail/v1/users/me/messages",
     "method":   "GET",
-    "headers":  { "Accept": "application/json" },  # опционально
-    "body":     null                                # опционально
+    "headers":  { "Accept": "application/json" },  # optional
+    "body":     null                                # optional
 }
 
-# Ядро:
-# 1. Проверяет url: только https://, блокирует private IP
-# 2. Расшифровывает токен из /secure/tokens/<module>/google.enc
-# 3. Добавляет Authorization: Bearer <decrypted_token> к запросу
-# 4. Выполняет запрос с follow_redirects=False
-# 5. Возвращает ответ провайдера:
+# Core:
+# 1. Validates url: only https://, blocks private IP
+# 2. Decrypts token from /secure/tokens/<module>/google.enc
+# 3. Adds Authorization: Bearer <decrypted_token> to the request
+# 4. Executes request with follow_redirects=False
+# 5. Returns provider response:
 
 {
     "status_code": 200,
@@ -748,7 +884,7 @@ Authorization: Bearer <module_token>
 }
 ```
 
-**SSRF защита:**
+**SSRF protection:**
 
 ```python
 # core/system_modules/secrets_vault/proxy.py
@@ -776,21 +912,21 @@ def validate_proxy_url(url: str) -> None:
             if addr in net:
                 raise ValueError(f"Private IP blocked: {host}")
     except ValueError:
-        pass  # hostname — резолвится позже, дополнительная проверка при запросе
+        pass  # hostname — resolved later, additional check during request
 ```
 
 ---
 
-## 6. Cloud Sync — взаимодействие с платформой SmartHome LK
+## 6. Cloud Sync — Interaction with the SmartHome LK Platform
 
 ### 6.1 Heartbeat
 
 ```
-Каждые 60 секунд:
+Every 60 seconds:
 
 POST https://smarthome-lk.com/api/v1/device/heartbeat
 Headers:
-  X-Device-Hash:  <PLATFORM_DEVICE_HASH из .env>
+  X-Device-Hash:  <PLATFORM_DEVICE_HASH from .env>
   X-Signature:    sha256=<hmac>
   Content-Type:   application/json
 
@@ -814,13 +950,13 @@ Body:
     }
 }
 
-HMAC вычисляется:
-  key     = содержимое /secure/platform.key (AES-256-GCM ключ, читается и расшифровывается)
-  message = json_body + "." + timestamp   (timestamp из заголовка запроса)
+HMAC is computed:
+  key     = contents of /secure/platform.key (AES-256-GCM key, read and decrypted)
+  message = json_body + "." + timestamp   (timestamp from request header)
   sig     = hmac-sha256(key, message)
 ```
 
-### 6.2 Long-poll команд
+### 6.2 Long-poll Commands
 
 ```
 GET https://smarthome-lk.com/api/v1/device/commands
@@ -829,16 +965,16 @@ GET https://smarthome-lk.com/api/v1/device/commands
 Headers:
   X-Signature: sha256=<hmac>
 
-# Платформа держит соединение до 30 сек или пока нет команд
+# Platform holds the connection for up to 30 sec or until there are commands
 
-Ответ при наличии команды:
+Response when a command is available:
 {
     "command_id": "cmd_abc123",
-    "type":       "INSTALL_MODULE",   # или STOP_MODULE, REBOOT, SYNC_STATE, FACTORY_RESET
+    "type":       "INSTALL_MODULE",   # or STOP_MODULE, REBOOT, SYNC_STATE, FACTORY_RESET
     "payload":    { ... }
 }
 
-После выполнения команды:
+After executing the command:
 POST https://smarthome-lk.com/api/v1/device/commands/{command_id}/ack
 {
     "success":   true,
@@ -846,7 +982,7 @@ POST https://smarthome-lk.com/api/v1/device/commands/{command_id}/ack
 }
 ```
 
-**Обработка команд:**
+**Command handling:**
 
 ```python
 # core/cloud_sync/command_handler.py
@@ -855,53 +991,53 @@ COMMAND_HANDLERS = {
     "INSTALL_MODULE": handle_install_module,    # payload: { zip_url, name }
     "STOP_MODULE":    handle_stop_module,       # payload: { name }
     "REBOOT":         handle_reboot,            # payload: {}
-    "SYNC_STATE":     handle_sync_state,        # payload: {} → отправить полный статус
+    "SYNC_STATE":     handle_sync_state,        # payload: {} → send full status
     "FACTORY_RESET":  handle_factory_reset,     # payload: { confirm_token }
 }
 ```
 
-### 6.3 Retry политика
+### 6.3 Retry Policy
 
 ```python
-# Экспоненциальный backoff при недоступности платформы
+# Exponential backoff when platform is unavailable
 
-delay = min(2 ** attempt, 300)  # максимум 5 минут
+delay = min(2 ** attempt, 300)  # maximum 5 minutes
 # attempt: 0→1s, 1→2s, 2→4s, ..., 8→256s, 9+→300s
 
-# При OFFLINE: ядро продолжает работать полностью локально
-# Платформа недоступна — не критично для локального функционала
+# When OFFLINE: core continues working fully locally
+# Platform unavailable — not critical for local functionality
 ```
 
 ---
 
-## 7. Integrity Agent — взаимодействие с ядром
+## 7. Integrity Agent — Interaction with Core
 
-### 7.1 Независимость процесса
+### 7.1 Process Independence
 
 ```
 smarthome-agent.service (systemd)
   ↓
 agent/integrity_agent.py
   ↓
-НИКОГДА не делает: import core.*
-НИКОГДА не делает: from core import ...
+NEVER does: import core.*
+NEVER does: from core import ...
 
-Взаимодействие ТОЛЬКО через:
-  1. Файловую систему (/secure/, /var/lib/selena/)
+Interaction ONLY through:
+  1. Filesystem (/secure/, /var/lib/selena/)
   2. Docker CLI (subprocess)
-  3. HTTP запрос к :7070 (для notify и status)
+  3. HTTP request to :7070 (for notify and status)
 ```
 
-### 7.2 Алгоритм проверки
+### 7.2 Verification Algorithm
 
 ```python
 # agent/integrity_agent.py
 
 async def check_once() -> IntegrityResult:
-    # 1. Прочитать master.hash
+    # 1. Read master.hash
     master_hash = Path("/secure/master.hash").read_text().strip()
 
-    # 2. Вычислить SHA256 от core.manifest
+    # 2. Compute SHA256 of core.manifest
     manifest_bytes = Path("/secure/core.manifest").read_bytes()
     manifest_hash = sha256(manifest_bytes).hexdigest()
 
@@ -909,7 +1045,7 @@ async def check_once() -> IntegrityResult:
         return IntegrityResult(status="MANIFEST_TAMPERED",
                                detail="core.manifest hash mismatch")
 
-    # 3. Разобрать manifest (JSON: { "file_path": "expected_hash", ... })
+    # 3. Parse manifest (JSON: { "file_path": "expected_hash", ... })
     manifest = json.loads(manifest_bytes)
     violations = []
 
@@ -929,7 +1065,7 @@ async def check_once() -> IntegrityResult:
     return IntegrityResult(status="OK", files_checked=len(manifest))
 ```
 
-### 7.3 Цепочка реакции при нарушении
+### 7.3 Reaction Chain on Violation
 
 ```python
 # agent/responder.py
@@ -937,7 +1073,7 @@ async def check_once() -> IntegrityResult:
 async def respond_to_violation(result: IntegrityResult):
     log.critical(f"INTEGRITY VIOLATION: {result}")
 
-    # Шаг 1: Остановить все модули через Docker CLI
+    # Step 1: Stop all modules via Docker CLI
     proc = subprocess.run(
         ["docker", "ps", "--filter", "label=selena.module", "-q"],
         capture_output=True, text=True
@@ -946,7 +1082,7 @@ async def respond_to_violation(result: IntegrityResult):
     for cid in container_ids:
         subprocess.run(["docker", "stop", "--time", "5", cid])
 
-    # Шаг 2: Уведомить платформу (не через импорт core!)
+    # Step 2: Notify platform (not through core import!)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
@@ -955,9 +1091,9 @@ async def respond_to_violation(result: IntegrityResult):
                 headers={"X-Agent-Secret": _read_agent_secret()}
             )
     except Exception:
-        pass  # ядро недоступно — продолжаем rollback
+        pass  # core unavailable — continue rollback
 
-    # Шаг 3: Попытка rollback (3 попытки с паузой 5 сек)
+    # Step 3: Attempt rollback (3 attempts with 5 sec pause)
     for attempt in range(3):
         success = await attempt_rollback()
         if success:
@@ -966,7 +1102,7 @@ async def respond_to_violation(result: IntegrityResult):
             return
         await asyncio.sleep(5)
 
-    # Шаг 4: SAFE MODE — если rollback не удался
+    # Step 4: SAFE MODE — if rollback failed
     await enter_safe_mode()
 
 
@@ -976,25 +1112,25 @@ async def attempt_rollback() -> bool:
     if not versions:
         return False
     latest_backup = versions[0]
-    # Копировать файлы из backup поверх текущих
-    # Пересчитать core.manifest и master.hash
+    # Copy files from backup over current ones
+    # Recalculate core.manifest and master.hash
     ...
 
 
 async def enter_safe_mode():
-    # Записать флаг в файл
+    # Write flag to file
     Path("/var/lib/selena/SAFE_MODE").write_text("1")
-    # Ядро при старте проверяет этот файл → ограничивает API
+    # Core checks this file on startup → restricts API
     subprocess.run(["systemctl", "restart", "smarthome-core"])
 ```
 
-### 7.4 `/api/v1/integrity/violation` — endpoint ядра для агента
+### 7.4 `/api/v1/integrity/violation` — Core Endpoint for Agent
 
 ```python
 # core/api/routes/integrity.py
-# Защищён отдельным секретом агента (не module_token)
+# Protected by a separate agent secret (not module_token)
 
-AGENT_SECRET = os.environ["INTEGRITY_AGENT_SECRET"]  # из .env
+AGENT_SECRET = os.environ["INTEGRITY_AGENT_SECRET"]  # from .env
 
 @router.post("/integrity/violation")
 async def report_violation(
@@ -1005,20 +1141,20 @@ async def report_violation(
     if not hmac.compare_digest(agent_secret, AGENT_SECRET):
         raise HTTPException(status_code=403)
 
-    # Активировать SAFE MODE в ядре немедленно
+    # Activate SAFE MODE in core immediately
     core_state.safe_mode = True
     logger.critical(f"SAFE MODE activated by Integrity Agent: {body.violations}")
     return {"acknowledged": True}
 ```
 
-**SAFE MODE в ядре:**
+**SAFE MODE in core:**
 
 ```python
 # core/api/middleware.py
 
 async def safe_mode_middleware(request: Request, call_next):
     if core_state.safe_mode:
-        # Разрешить только GET запросы и /health
+        # Allow only GET requests and /health
         if request.method != "GET" and request.url.path != "/api/v1/health":
             return JSONResponse(
                 status_code=503,
@@ -1030,11 +1166,11 @@ async def safe_mode_middleware(request: Request, call_next):
 
 ---
 
-## 8. Среда разработки — mock Core API
+## 8. Development Environment — Mock Core API
 
 ### 8.1 DEV_MODULE_TOKEN
 
-В режиме разработки (`smarthome dev`):
+In development mode (`smarthome dev`):
 
 ```bash
 # .env
@@ -1042,12 +1178,12 @@ DEV_MODULE_TOKEN=test-module-token-xyz
 MOCK_PLATFORM=true
 ```
 
-Mock Core API принимает `DEV_MODULE_TOKEN` как валидный токен с правами SYSTEM. Модуль не нужно устанавливать — токен передаётся вручную.
+Mock Core API accepts `DEV_MODULE_TOKEN` as a valid token with SYSTEM permissions. The module does not need to be installed — the token is passed manually.
 
-### 8.2 Переменные окружения в dev-режиме
+### 8.2 Environment Variables in Dev Mode
 
 ```bash
-# Разработчик задаёт вручную при запуске модуля локально:
+# Developer sets manually when running module locally:
 export SELENA_MODULE_TOKEN=test-module-token-xyz
 export SELENA_WEBHOOK_SECRET=dev-webhook-secret-hex
 export SELENA_CORE_URL=http://localhost:7070/api/v1
@@ -1058,26 +1194,26 @@ export SELENA_INSTALL_PATH=.
 python main.py
 ```
 
-### 8.3 mock_core.py — что имитирует
+### 8.3 mock_core.py — What It Simulates
 
 ```python
-# sdk/mock_core.py — минимальная реализация для тестов
+# sdk/mock_core.py — minimal implementation for tests
 
-# Принимает любой Bearer токен как валидный
-# Хранит устройства in-memory (dict)
-# Event Bus: синхронная доставка в тот же процесс
-# Secrets: токены не шифруются, хранятся in-memory
-# HMAC подписи: вычисляются с SELENA_WEBHOOK_SECRET из env
+# Accepts any Bearer token as valid
+# Stores devices in-memory (dict)
+# Event Bus: synchronous delivery in the same process
+# Secrets: tokens are not encrypted, stored in-memory
+# HMAC signatures: computed with SELENA_WEBHOOK_SECRET from env
 ```
 
 ---
 
-## 9. Полная схема переменных окружения
+## 9. Complete Environment Variables Reference
 
-### .env ядра
+### Core .env
 
 ```bash
-# Основные
+# Main
 CORE_PORT=7070
 UI_PORT=80
 CORE_DATA_DIR=/var/lib/selena
@@ -1085,19 +1221,19 @@ CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
 DEBUG=false
 
-# Платформа
+# Platform
 PLATFORM_API_URL=https://smarthome-lk.com/api/v1
-PLATFORM_DEVICE_HASH=                    # заполняется при регистрации
-MOCK_PLATFORM=false                      # true = не подключаться к платформе
+PLATFORM_DEVICE_HASH=                    # filled during registration
+MOCK_PLATFORM=false                      # true = do not connect to platform
 
-# Секреты (генерировать при установке)
-INTEGRITY_AGENT_SECRET=<32 random bytes hex>  # для X-Agent-Secret заголовка
+# Secrets (generate during installation)
+INTEGRITY_AGENT_SECRET=<32 random bytes hex>  # for X-Agent-Secret header
 
 # Dev
-DEV_MODULE_TOKEN=test-module-token-xyz   # только DEBUG=true
+DEV_MODULE_TOKEN=test-module-token-xyz   # only when DEBUG=true
 ```
 
-### .env.module (создаётся ядром, не редактируется вручную)
+### .env.module (created by core, not manually edited)
 
 ```bash
 SELENA_MODULE_TOKEN=<64 chars base64url>
@@ -1110,31 +1246,198 @@ SELENA_INSTALL_PATH=/var/lib/selena/modules/<name>
 
 ---
 
-## 10. Сводная таблица — кто что читает и пишет
+## 10. Intent Protocol — Voice and Text Commands
 
-| Компонент | Читает | Пишет | Запрещено |
-|---|---|---|---|
-| Модуль | `SELENA_*` env vars | — | `/secure/`, SQLite ядра, другие модули |
-| Core API | SQLite modules | SQLite modules | `/secure/` (только через Secrets Vault) |
-| Secrets Vault | `/secure/tokens/<name>/` | `/secure/tokens/<name>/` | — |
-| Integrity Agent | `/secure/core.manifest`, `/secure/master.hash` | `/var/lib/selena/SAFE_MODE` | `import core.*` |
-| Cloud Sync | `/secure/platform.key` | — | — |
-| Module Loader | `/var/lib/selena/modules/` | `/var/lib/selena/modules/`, `.env.module` (затем удаляет) | — |
-| SDK (widget.html) | `ui_token` из URL query | — | `module_token`, `/secure/` |
+### 10.1 Overview
+
+The Intent System allows any module to receive voice and text commands from the user. Routing is handled by IntentRouter with 4 priority levels (see `AGENTS.md` §20).
+
+```
+Voice/text → IntentRouter → voice.intent event → module
+```
+
+### 10.2 Intent Registration (User Module)
+
+**Endpoint:** `POST /api/v1/intents/register`
+
+```http
+POST /api/v1/intents/register
+Authorization: Bearer <module_token>
+Content-Type: application/json
+
+{
+  "module": "weather-module",
+  "port": 8100,
+  "intents": [
+    {
+      "patterns": {
+        "en": ["weather", "forecast"],
+        "uk": ["погода", "прогноз"]
+      },
+      "description": "Weather queries",
+      "endpoint": "/api/intent"
+    }
+  ]
+}
+```
+
+**Response 201:**
+```json
+{
+  "registered": true,
+  "module": "weather-module",
+  "intent_count": 1
+}
+```
+
+**SDK performs automatically** on module startup if `manifest.json` has an `intents` field or if the class has `@intent` decorators.
+
+### 10.3 Intent Dispatch to Module
+
+When IntentRouter (Tier 2) finds a match with a module's pattern, it sends:
+
+```http
+POST http://localhost:{port}{endpoint}
+Content-Type: application/json
+
+{
+  "text": "what's the weather",
+  "lang": "en",
+  "context": {
+    "user_id": null
+  }
+}
+```
+
+**Module response contract:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "handled": true,
+  "tts_text": "Currently 22°C, clear sky",
+  "data": {
+    "temp": 22,
+    "desc": "clear"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|------|-----|-------------|----------|
+| `handled` | `bool` | Yes | `true` = module handled the request |
+| `tts_text` | `str` | No | Text for speech synthesis (TTS). Empty = no voice |
+| `data` | `dict` | No | Arbitrary data |
+
+If `handled: false` — IntentRouter continues searching (Tier 3 LLM).
+
+### 10.4 Intent Deletion
+
+When a module is removed, the core calls:
+
+```http
+DELETE /api/v1/intents/{module_name}
+Authorization: Bearer <module_token>
+
+Response: 204 No Content
+```
+
+### 10.5 List of Registered Intents
+
+```http
+GET /api/v1/intents
+Authorization: Bearer <module_token>
+
+Response 200:
+{
+  "modules": [
+    {
+      "module": "weather-module",
+      "port": 8100,
+      "intents": [
+        {
+          "patterns": {"en": ["weather"], "uk": ["погода"]},
+          "description": "Weather queries",
+          "endpoint": "/api/intent"
+        }
+      ]
+    }
+  ],
+  "total": 1
+}
+```
+
+### 10.6 voice.intent Event (EventBus)
+
+After determining the intent, IntentRouter publishes a `voice.intent` event. System modules subscribe to it via `DirectSubscription` (without HTTP).
+
+```json
+{
+  "event_id": "uuid",
+  "type": "voice.intent",
+  "source": "core.intent_router",
+  "payload": {
+    "intent": "media.play_genre",
+    "response": "",
+    "action": null,
+    "params": {"genre": "jazz"},
+    "source": "system_module",
+    "user_id": null,
+    "latency_ms": 2
+  },
+  "timestamp": 1711814400.0
+}
+```
+
+### 10.7 System Modules — Direct Registration
+
+System modules (type: SYSTEM) register intents **in code**, without HTTP:
+
+```python
+from system_modules.llm_engine.intent_router import get_intent_router, SystemIntentEntry
+
+get_intent_router().register_system_intent(SystemIntentEntry(
+    module="media-player",
+    intent="media.play_radio",
+    priority=5,
+    patterns={
+        "uk": [r"(?:увімкни|включи)\s+радіо"],
+        "en": [r"(?:play|turn on)\s+radio"],
+    },
+))
+```
+
+System modules receive events via `self.subscribe(["voice.intent"], callback)` — the callback is called directly (asyncio.create_task), without HTTP/webhook.
 
 ---
 
-## 11. Критерии готовности реализации
+## 11. Summary Table — Who Reads and Writes What
 
-- [ ] `module_token` генерируется при установке, хранится как plaintext файл `/secure/module_tokens/<name>.token` (chmod 600)
-- [ ] `.env.module` удаляется с диска сразу после `docker run`
-- [ ] `webhook_secret` хранится в SQLite в plaintext, никогда не возвращается через API
-- [ ] HMAC-SHA256 проверяется на каждый входящий webhook в SDK
-- [ ] `core.*` события блокируются с 403 при попытке публикации от модуля
-- [ ] При рестарте ядра все `always_on` модули перезапускаются и переподписываются
-- [ ] UI token выдаётся UI Core, имеет TTL 1 час, права только `device.read`
-- [ ] `GET /widget.html`, `/settings.html`, `/icon.svg`, `/health` регистрируются SDK автоматически
-- [ ] SSRF protection: только `https://`, блокировка private IP ranges
-- [ ] Integrity Agent не импортирует `core.*`, использует только subprocess и HTTP
-- [ ] SAFE MODE: только GET запросы проходят при `core_state.safe_mode = True`
-- [ ] `/api/v1/integrity/violation` защищён `INTEGRITY_AGENT_SECRET`, не `module_token`
+| Component | Reads | Writes | Prohibited |
+|---|---|---|---|
+| Module | `SELENA_*` env vars | — | `/secure/`, core SQLite, other modules |
+| Core API | SQLite modules | SQLite modules | `/secure/` (only through Secrets Vault) |
+| Secrets Vault | `/secure/tokens/<name>/` | `/secure/tokens/<name>/` | — |
+| Integrity Agent | `/secure/core.manifest`, `/secure/master.hash` | `/var/lib/selena/SAFE_MODE` | `import core.*` |
+| Cloud Sync | `/secure/platform.key` | — | — |
+| Module Loader | `/var/lib/selena/modules/` | `/var/lib/selena/modules/`, `.env.module` (then deletes) | — |
+| SDK (widget.html) | `ui_token` from URL query | — | `module_token`, `/secure/` |
+
+---
+
+## 11. Implementation Readiness Criteria
+
+- [ ] `module_token` is generated during installation, stored as plaintext file `/secure/module_tokens/<name>.token` (chmod 600)
+- [ ] `.env.module` is deleted from disk immediately after `docker run`
+- [ ] `webhook_secret` is stored in SQLite in plaintext, never returned via API
+- [ ] HMAC-SHA256 is verified on every incoming webhook in SDK
+- [ ] `core.*` events are blocked with 403 when a module attempts to publish them
+- [ ] On core restart, all `always_on` modules are restarted and resubscribed
+- [ ] UI token is issued by UI Core, has TTL of 1 hour, permissions limited to `device.read`
+- [ ] `GET /widget.html`, `/settings.html`, `/icon.svg`, `/health` are registered by SDK automatically
+- [ ] SSRF protection: only `https://`, blocking private IP ranges
+- [ ] Integrity Agent does not import `core.*`, uses only subprocess and HTTP
+- [ ] SAFE MODE: only GET requests pass when `core_state.safe_mode = True`
+- [ ] `/api/v1/integrity/violation` is protected by `INTEGRITY_AGENT_SECRET`, not `module_token`

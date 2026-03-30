@@ -1,50 +1,50 @@
-# AGENTS.md — Контракт агента SelenaCore
-## SmartHome LK · Локальное ядро устройства · Читать ОБЯЗАТЕЛЬНО перед каждой сессией
+# AGENTS.md — SelenaCore Agent Contract
+## SmartHome LK · Local Device Core · MUST READ before every session
 
 ---
 
-## 0. ПЕРЕД НАЧАЛОМ — ОБЯЗАТЕЛЬНЫЙ ЧЕКЛИСТ
+## 0. BEFORE STARTING — MANDATORY CHECKLIST
 
 ```
-AGENTS.md          ← этот файл (прочитать полностью)
-docs/TZ.md         ← техническое задание v0.3 (источник правды)
-README.md          ← структура проекта, команды запуска
+AGENTS.md          ← this file (read completely)
+docs/TZ.md         ← technical specification v0.3 (source of truth)
+README.md          ← project structure, launch commands
 ```
 
-**Порядок работы — строго по шагам:**
+**Workflow — strictly step by step:**
 
 ```
-1. Прочитать AGENTS.md (этот файл)
-2. Прочитать docs/TZ.md — понять всю картину
-3. Разбить ТЗ на задачи → создать Issues на GitHub
-4. Взять одну задачу → реализовать → коммит → пуш
-5. Закрыть Issue → взять следующую
+1. Read AGENTS.md (this file)
+2. Read docs/TZ.md — understand the full picture
+3. Break down the spec into tasks → create GitHub Issues
+4. Take one task → implement → commit → push
+5. Close Issue → take next one
 ```
 
-> ⛔ Нельзя начинать писать код до создания Issue.
-> ⛔ Нельзя брать вторую задачу пока первая не закрыта.
-> ⛔ Нельзя пушить в main со сломанными тестами.
+> ⛔ Do not start writing code before creating an Issue.
+> ⛔ Do not take a second task until the first one is closed.
+> ⛔ Do not push to main with broken tests.
 
 ---
 
-## 1. СТРУКТУРА ПРОЕКТА
+## 1. PROJECT STRUCTURE
 
 ```
 selena-core/
   core/
-    main.py                    # точка входа FastAPI + asyncio
-    config.py                  # загрузка core.yaml + .env
+    main.py                    # FastAPI + asyncio entry point
+    config.py                  # core.yaml + .env loading
     registry/
       service.py               # DeviceRegistry
       models.py                # SQLAlchemy ORM
     eventbus/
       bus.py                   # EventBus (asyncio.Queue)
-      types.py                 # константы типов событий
+      types.py                 # event type constants
     module_loader/
       loader.py                # Plugin Manager + lifecycle
-      sandbox.py               # Docker-изоляция + in-process загрузка
-      system_module.py         # SystemModule ABC (базовый класс)
-      validator.py             # валидация manifest.json
+      sandbox.py               # Docker isolation + in-process loading
+      system_module.py         # SystemModule ABC (base class)
+      validator.py             # manifest.json validation
     api/
       routes/
         devices.py             # GET/POST /api/v1/devices
@@ -52,67 +52,67 @@ selena-core/
         modules.py             # /api/v1/modules/*
         integrity.py           # /api/v1/integrity/status
         system.py              # /api/v1/health, /api/v1/system/*
-      auth.py                  # проверка module_token
+      auth.py                  # module_token verification
       middleware.py            # CORS, X-Request-Id, rate limiting
     cloud_sync/
       sync.py                  # CloudSync (asyncio background task)
-      commands.py              # обработчики команд платформы
+      commands.py              # platform command handlers
   system_modules/
     voice_core/
       stt.py                   # Vosk STT wrapper (offline, ARM-optimized)
       tts.py                   # Piper wrapper
       wake_word.py             # Vosk grammar-based wake word
       speaker_id.py            # resemblyzer
-      privacy.py               # режим приватности (GPIO + команда)
+      privacy.py               # privacy mode (GPIO + command)
     llm_engine/
       ollama_client.py         # Ollama REST client
-      intent_router.py         # Fast Matcher + LLM уровни
-      fast_matcher.py          # keyword/regex правила
-      model_manager.py         # загрузка и выбор моделей
+      intent_router.py         # Fast Matcher + LLM tiers
+      fast_matcher.py          # keyword/regex rules
+      model_manager.py         # model loading and selection
     network_scanner/
       arp_scanner.py           # ARP sweep
       mdns_listener.py         # mDNS/Bonjour
       ssdp_listener.py         # SSDP/UPnP
-      zigbee_scanner.py        # Zigbee через USB донгл
-      classifier.py            # OUI lookup + автоклассификация
+      zigbee_scanner.py        # Zigbee via USB dongle
+      classifier.py            # OUI lookup + auto-classification
     user_manager/
-      profiles.py              # CRUD профилей пользователей
-      voice_biometric.py       # голосовые слепки (resemblyzer)
-      face_auth.py             # видеоавторизация (face_recognition)
-      audit_log.py             # аудит-лог действий
+      profiles.py              # User profile CRUD
+      voice_biometric.py       # voice prints (resemblyzer)
+      face_auth.py             # video authorization (face_recognition)
+      audit_log.py             # action audit log
     secrets_vault/
-      vault.py                 # AES-256-GCM хранилище
+      vault.py                 # AES-256-GCM storage
       oauth_flow.py            # Device Authorization Grant (RFC 8628)
-      proxy.py                 # API-прокси для модулей
+      proxy.py                 # API proxy for modules
     backup_manager/
-      local_backup.py          # USB/SD бэкап
-      cloud_backup.py          # E2E облачный бэкап
-      qr_transfer.py           # QR-перенос секретов
+      local_backup.py          # USB/SD backup
+      cloud_backup.py          # E2E cloud backup
+      qr_transfer.py           # QR secret transfer
     remote_access/
-      tailscale.py             # Tailscale VPN клиент
+      tailscale.py             # Tailscale VPN client
     hw_monitor/
-      monitor.py               # CPU температура, RAM, диск
-      throttle.py              # автоснижение нагрузки
+      monitor.py               # CPU temperature, RAM, disk
+      throttle.py              # automatic load reduction
     notify_push/
       vapid.py                 # Web Push VAPID
     ui_core/
-      server.py                # FastAPI сервер :80
+      server.py                # FastAPI server :80
       pwa.py                   # PWA manifest + service worker
       wizard.py                # Onboarding wizard endpoints
-      routes/                  # страницы ui-core
+      routes/                  # ui-core pages
   agent/
-    integrity_agent.py         # Integrity Agent (отдельный процесс)
+    integrity_agent.py         # Integrity Agent (separate process)
     manifest.py                # core.manifest + SHA256
-    responder.py               # цепочка реагирования + SAFE MODE
+    responder.py               # response chain + SAFE MODE
   sdk/
     smarthome_sdk/
-      base.py                  # SmartHomeModule базовый класс
+      base.py                  # SmartHomeModule base class
       decorators.py            # @on_event, @schedule
-      client.py                # Core API клиент
+      client.py                # Core API client
       cli.py                   # smarthome CLI (new-module, dev, test)
   config/
-    core.yaml                  # конфигурация ядра
-    logging.yaml               # конфигурация логирования
+    core.yaml                  # core configuration
+    logging.yaml               # logging configuration
   tests/
     test_registry.py
     test_eventbus.py
@@ -124,95 +124,95 @@ selena-core/
     test_wizard.py
   requirements.txt
   requirements-dev.txt
-  Dockerfile.core              # образ smarthome-core
-  Dockerfile.modules           # образ smarthome-modules
-  Dockerfile.sandbox           # образ smarthome-sandbox
+  Dockerfile.core              # smarthome-core image
+  Dockerfile.modules           # smarthome-modules image
+  Dockerfile.sandbox           # smarthome-sandbox image
   docker-compose.yml
-  smarthome-core.service       # systemd юнит ядра
-  smarthome-agent.service      # systemd юнит агента
-  smarthome-modules.service    # systemd юнит контейнера модулей
+  smarthome-core.service       # core systemd unit
+  smarthome-agent.service      # agent systemd unit
+  smarthome-modules.service    # module container systemd unit
   .env.example
   core.yaml.example
 ```
 
 ---
 
-## 2. СТЕК И ВЕРСИИ
+## 2. STACK AND VERSIONS
 
-### 2.1 Версионирование SelenaCore
+### 2.1 SelenaCore Versioning
 
-Формат: `MAJOR.MINOR.PATCH-LABEL+COMMIT`
+Format: `MAJOR.MINOR.PATCH-LABEL+COMMIT`
 
-| Часть | Источник | Пример | Описание |
-|-------|----------|--------|----------|
-| `MAJOR.MINOR` | Вручную в `core/version.py` | `0.3` | Номер релиза, повышается вручную |
-| `PATCH` | `git rev-list --count HEAD` | `142` | Кол-во коммитов — растёт автоматически с каждым коммитом |
-| `LABEL` | Вручную в `core/version.py` | `beta` | `beta` → `rc` → пусто (release) |
-| `COMMIT` | `git rev-parse --short HEAD` | `0644435` | 7-символьный SHA последнего коммита |
+| Part | Source | Example | Description |
+|------|--------|---------|-------------|
+| `MAJOR.MINOR` | Manually in `core/version.py` | `0.3` | Release number, bumped manually |
+| `PATCH` | `git rev-list --count HEAD` | `142` | Commit count — grows automatically with each commit |
+| `LABEL` | Manually in `core/version.py` | `beta` | `beta` → `rc` → empty (release) |
+| `COMMIT` | `git rev-parse --short HEAD` | `0644435` | 7-character SHA of latest commit |
 
-Пример полной версии: `0.3.142-beta+0644435`
+Full version example: `0.3.142-beta+0644435`
 
-**Единственный источник правды:** `core/version.py`
+**Single source of truth:** `core/version.py`
 
 ```python
 # core/version.py
 MAJOR = 0
 MINOR = 3
 LABEL = "beta"   # "beta" | "rc" | ""
-# PATCH и COMMIT вычисляются автоматически из git
+# PATCH and COMMIT are computed automatically from git
 ```
 
-**Правила:**
+**Rules:**
 
 ```
-✅ Версия вычисляется централизованно — `from core.version import VERSION`
-✅ PATCH растёт автоматически с каждым коммитом (не нужно менять вручную)
-✅ COMMIT привязан к текущему git HEAD — всегда можно найти точный коммит
+✅ Version is computed centrally — `from core.version import VERSION`
+✅ PATCH grows automatically with each commit (no need to change manually)
+✅ COMMIT is tied to the current git HEAD — you can always find the exact commit
 
-⛔ Нельзя хардкодить строку версии — только `from core.version import VERSION`
-⛔ Нельзя менять PATCH вручную — он вычисляется из git автоматически
-⛔ При повышении MAJOR/MINOR — менять только в core/version.py
+⛔ Do not hardcode the version string — only `from core.version import VERSION`
+⛔ Do not change PATCH manually — it is computed from git automatically
+⛔ When bumping MAJOR/MINOR — change only in core/version.py
 ```
 
-**Где используется:**
+**Where it is used:**
 
-| Место | Как получает |
-|-------|-------------|
+| Location | How it is obtained |
+|----------|--------------------|
 | `GET /api/v1/health` | `from core.version import VERSION` |
 | `GET /api/v1/system/info` | `from core.version import VERSION` |
 | FastAPI OpenAPI docs | `from core.version import VERSION` |
 | Event `core.startup` payload | `from core.version import VERSION` |
-| Фронтенд (SystemPage) | Из API → `health.version` / `stats.version` |
+| Frontend (SystemPage) | From API → `health.version` / `stats.version` |
 
-### 2.2 Стек технологий
+### 2.2 Technology Stack
 
-| Компонент | Версия | Назначение |
-|---|---|---|
-| Python | 3.11+ | Язык ядра |
-| FastAPI | 0.111+ | HTTP сервер (Core API + UI Core) |
-| SQLAlchemy | 2.0+ | ORM для SQLite |
-| SQLite | встроен | Хранилище Device Registry, аудит-лог |
-| Docker SDK (docker-py) | 7.0+ | Управление контейнерами |
-| Vosk | 0.3.45 | STT локально (offline, ARM/aarch64) |
-| Piper (piper-tts) | latest | TTS локально |
-| Vosk grammar | — | Wake-word (через основную STT модель) |
-| resemblyzer | latest | Speaker ID (голосовые слепки) |
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| Python | 3.11+ | Core language |
+| FastAPI | 0.111+ | HTTP server (Core API + UI Core) |
+| SQLAlchemy | 2.0+ | ORM for SQLite |
+| SQLite | built-in | Device Registry storage, audit log |
+| Docker SDK (docker-py) | 7.0+ | Container management |
+| Vosk | 0.3.45 | Local STT (offline, ARM/aarch64) |
+| Piper (piper-tts) | latest | Local TTS |
+| Vosk grammar | — | Wake-word (through the main STT model) |
+| resemblyzer | latest | Speaker ID (voice prints) |
 | face_recognition (dlib) | latest | Face ID |
 | Ollama | latest | LLM runner (phi-3-mini, gemma-2b) |
-| cryptography (Fernet/AES) | 46.0.5+ | Secrets vault шифрование |
-| qrcode | latest | QR-коды (wizard, перенос) |
-| bleak / bluez | latest | Bluetooth управление |
-| pyaudio + ALSA | latest | Аудио I/O |
-| pytest + httpx | latest | Тесты |
+| cryptography (Fernet/AES) | 46.0.5+ | Secrets vault encryption |
+| qrcode | latest | QR codes (wizard, transfer) |
+| bleak / bluez | latest | Bluetooth control |
+| pyaudio + ALSA | latest | Audio I/O |
+| pytest + httpx | latest | Tests |
 
 ---
 
-## 3. ПРАВИЛА НАПИСАНИЯ КОДА
+## 3. CODE WRITING RULES
 
-### Python — общие правила
+### Python — general rules
 
 ```python
-# ✅ Правильно
+# ✅ Correct
 class DeviceRegistry:
     async def get(self, device_id: str) -> Device | None:
         ...
@@ -220,23 +220,23 @@ class DeviceRegistry:
     async def update_state(self, device_id: str, state: dict) -> Device:
         ...
 
-# ❌ Неправильно — нет типов, нет async
+# ❌ Wrong — no types, no async
 class DeviceRegistry:
     def get(self, id):
         ...
 ```
 
-- Все публичные методы — async
-- Типизация обязательна (Python type hints)
-- Один файл = одна ответственность
-- Логирование через `logging.getLogger(__name__)` — никакого `print()`
-- Исключения — через кастомные классы, не голый `raise Exception("...")`
-- `X-Request-Id` пробрасывать через все сервисы через `contextvars`
+- All public methods — async
+- Type hints are mandatory (Python type hints)
+- One file = one responsibility
+- Logging through `logging.getLogger(__name__)` — no `print()`
+- Exceptions — through custom classes, no bare `raise Exception("...")`
+- `X-Request-Id` must be propagated through all services via `contextvars`
 
-### FastAPI — правила
+### FastAPI — rules
 
 ```python
-# ✅ Правильно — роутер только парсит и вызывает сервис
+# ✅ Correct — router only parses and calls service
 @router.get("/devices/{device_id}")
 async def get_device(
     device_id: str,
@@ -248,63 +248,63 @@ async def get_device(
         raise HTTPException(status_code=404, detail="Device not found")
     return DeviceResponse.from_orm(device)
 
-# ❌ Неправильно — бизнес-логика в роутере
+# ❌ Wrong — business logic in router
 @router.get("/devices/{device_id}")
 async def get_device(device_id: str):
-    db = sqlite3.connect("data.db")  # ← нельзя
+    db = sqlite3.connect("data.db")  # ← not allowed
     ...
 ```
 
-- Роутер = только HTTP (parse → service → response)
-- Вся логика в сервисах
-- Pydantic модели для всех request/response
-- Dependency Injection через `Depends()`
-- HTTPException для всех ошибок
+- Router = HTTP only (parse → service → response)
+- All logic in services
+- Pydantic models for all request/response
+- Dependency Injection via `Depends()`
+- HTTPException for all errors
 
-### Запрещённые паттерны
+### Forbidden patterns
 
 ```python
-# ⛔ Нельзя
-print("debug")                   # только logging
-import os; os.system("rm -rf")   # shell injection риск
-eval(user_input)                 # RCE риск
-open("/secure/platform.key")     # только через SecretVault API
-subprocess.run(shell=True)       # только с конкретным списком аргументов
-except:                          # только except Exception as e:
-    pass                         # никогда пустой catch
+# ⛔ Not allowed
+print("debug")                   # logging only
+import os; os.system("rm -rf")   # shell injection risk
+eval(user_input)                 # RCE risk
+open("/secure/platform.key")     # only through SecretVault API
+subprocess.run(shell=True)       # only with a specific argument list
+except:                          # only except Exception as e:
+    pass                         # never empty catch
 ```
 
 ---
 
-## 3.1. ЛОКАЛИЗАЦИЯ (i18n) — ПРАВИЛА
+## 3.1. LOCALIZATION (i18n) — RULES
 
-### Основные языки
+### Supported languages
 
-| Код | Язык | Статус |
-|-----|------|--------|
-| `en` | English | Основной (fallback) |
-| `uk` | Українська | Основной |
+| Code | Language | Status |
+|------|----------|--------|
+| `en` | English | Primary (fallback) |
+| `uk` | Українська | Primary |
 
-### Инфраструктура
+### Infrastructure
 
 ```
 src/i18n/
-  i18n.ts              # конфигурация i18next + changeLanguage()
+  i18n.ts              # i18next configuration + changeLanguage()
   locales/
     en.ts              # English translations
     uk.ts              # Ukrainian translations
 ```
 
-- Библиотека: `i18next` + `react-i18next`
-- Язык по умолчанию: `en`
+- Library: `i18next` + `react-i18next`
+- Default language: `en`
 - Fallback: `en`
-- Хранение выбранного языка: `localStorage('selena-lang')`
-- Переключение: через `changeLanguage()` из `src/i18n/i18n.ts`
+- Selected language storage: `localStorage('selena-lang')`
+- Switching: via `changeLanguage()` from `src/i18n/i18n.ts`
 
-### Правила для фронтенда
+### Frontend rules
 
 ```tsx
-// ✅ Правильно — все строки через t()
+// ✅ Correct — all strings through t()
 import { useTranslation } from 'react-i18next';
 
 function MyComponent() {
@@ -312,28 +312,28 @@ function MyComponent() {
   return <h1>{t('dashboard.welcomeHome')}</h1>;
 }
 
-// ❌ Неправильно — захардкоженный текст
+// ❌ Wrong — hardcoded text
 function MyComponent() {
-  return <h1>Добро пожаловать домой</h1>;
+  return <h1>Welcome home</h1>;
 }
 ```
 
-**Обязательные правила:**
+**Mandatory rules:**
 
-- ⛔ Нельзя хардкодить UI-текст на каком-либо языке — только через `t('key')`
-- Все ключи переводов хранятся в `src/i18n/locales/en.ts` и `src/i18n/locales/uk.ts`
-- Структура ключей: `section.key` (например `dashboard.welcomeHome`, `wizard.selectLanguage`)
-- При добавлении нового текста — добавлять перевод в ОБА файла (`en.ts` и `uk.ts`)
-- Интерполяция: `t('devices.registryInfo', { count: 5 })` → `"5 devices registered."`
-- Не использовать `t` как имя переменной в `map()` и циклах (конфликт с `useTranslation`)
+- ⛔ Do not hardcode UI text in any language — only through `t('key')`
+- All translation keys are stored in `src/i18n/locales/en.ts` and `src/i18n/locales/uk.ts`
+- Key structure: `section.key` (e.g. `dashboard.welcomeHome`, `wizard.selectLanguage`)
+- When adding new text — add translation to BOTH files (`en.ts` and `uk.ts`)
+- Interpolation: `t('devices.registryInfo', { count: 5 })` → `"5 devices registered."`
+- Do not use `t` as a variable name in `map()` and loops (conflicts with `useTranslation`)
 
-### Правила для системных HTML-виджетов (widget.html / settings.html)
+### Rules for system HTML widgets (widget.html / settings.html)
 
-Каждый файл `widget.html` и `settings.html` системного модуля **обязан** реализовывать
-встроенную локализацию EN/UK по следующему стандартному шаблону:
+Every `widget.html` and `settings.html` file of a system module **must** implement
+built-in EN/UK localization following this standard template:
 
 ```javascript
-// 1. В начале <script> (до любых других объявлений):
+// 1. At the start of <script> (before any other declarations):
 var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
 var L = {
     en: { key: 'English text', ... },
@@ -349,50 +349,102 @@ window.addEventListener('message', function (e) {
     if (e.data && e.data.type === 'lang_changed') {
         try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
         applyLang();
-        // Вызвать функции перезагрузки данных (refresh(), loadStatus(), load() и т.д.)
+        // Call data reload functions (refresh(), loadStatus(), load(), etc.)
     }
 });
 
-// 2. Статические HTML-элементы получают атрибут data-i18n="key":
+// 2. Static HTML elements get the data-i18n="key" attribute:
 // <h1 data-i18n="title"></h1>
 // <label data-i18n="lbl_name"></label>
 
-// 3. Динамические строки в JS используют t('key') вместо литералов:
+// 3. Dynamic strings in JS use t('key') instead of literals:
 // innerHTML = '<span>' + t('no_devices') + '</span>';
 // showToast(t('saved_ok'));
 
-// 4. applyLang() вызывается при инициализации (до первого refresh/load)
+// 4. applyLang() is called during initialization (before the first refresh/load)
 ```
 
-**Обязательные правила:**
+**Mandatory rules:**
 
-- ⛔ Нельзя хардкодить UI-текст на любом языке в HTML или JavaScript-коде виджетов/настроек
-- Язык читается из `localStorage('selena-lang')` — значения `'en'` | `'uk'`
-- Словари обоих языков (`en` и `uk`) должны содержать одинаковый набор ключей
-- `applyLang()` должна вызываться до первого вызова `refresh()` / `load()` / `loadStatus()`
-- При смене языка (`lang_changed` postMessage) — вызвать `applyLang()` и перегрузить данные
-- Аббревиатуры (MQTT, STT, TTS, LLM, ID) и технические имена переводить не нужно
-- В шаблонных литералах `${...}` использовать `t('key')` для локализуемых строк
+- ⛔ Do not hardcode UI text in any language in HTML or JavaScript code of widgets/settings
+- Language is read from `localStorage('selena-lang')` — values `'en'` | `'uk'`
+- Dictionaries for both languages (`en` and `uk`) must contain the same set of keys
+- `applyLang()` must be called before the first `refresh()` / `load()` / `loadStatus()` call
+- On language change (`lang_changed` postMessage) — call `applyLang()` and reload data
+- Abbreviations (MQTT, STT, TTS, LLM, ID) and technical names do not need translation
+- In template literals `${...}` use `t('key')` for localizable strings
 
-### Правила для документации
+### Rules for Python backend (system and user modules)
 
-- Вся документация (`docs/`, `README.md`, `CONTRIBUTING.md`) хранится на **двух языках**:
-  - Основной файл — на английском
-  - Украинская версия — в `docs/uk/` с суффиксом или в подпапке
-- Формат: `docs/architecture.md` (EN) + `docs/uk/architecture.md` (UK)
-- При изменении документации — обновлять ОБА языка
+Infrastructure:
 
-### Добавление нового языка
+```
+core/i18n.py                # t(key, lang, **kwargs) — central translation function
+config/locales/
+  en.json                   # English translations (fallback)
+  uk.json                   # Ukrainian translations
+```
 
-1. Создать файл `src/i18n/locales/<code>.ts` (скопировать структуру из `en.ts`)
-2. Зарегистрировать в `src/i18n/i18n.ts` в `resources`
-3. Добавить опцию в Wizard (шаг 1 — выбор языка)
-4. Перевести все ключи
-5. Добавить документацию в `docs/<code>/`
+```python
+from core.i18n import t
+
+# TTS responses
+await m.speak(t("media.playing_radio", station=name))
+
+# API errors
+raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+
+# Terminal UI
+print(t("tty.mobile_setup"))
+
+# Explicit language
+text = t("media.paused", lang="uk")
+```
+
+**Mandatory rules:**
+
+- ⛔ Do not hardcode user-facing strings in Python — only through `t('key')`
+- All keys are stored in `config/locales/en.json` and `config/locales/uk.json`
+- Key structure: `section.key` (e.g. `media.playing_radio`, `api.device_not_found`)
+- When adding new text — add translation to BOTH files (`en.json` and `uk.json`)
+- Interpolation: `t('media.volume_set', level=50)` → `"Volume set to 50"`
+- Fallback chain: requested language → `en` → raw key (never crashes)
+- Language source: `core.yaml system.language` (via `get_system_lang()`)
+- Logger messages (`logger.info/debug/warning/error`) are **NOT** translated
+- User modules: `locales/` in the module directory + `self.t('key')`
+
+**Key categories:**
+
+| Prefix | Description | Example |
+|--------|-------------|---------|
+| `media.*` | Media TTS responses | `media.playing_radio`, `media.paused` |
+| `fast_matcher.*` | Fast matcher responses | `fast_matcher.light_on` |
+| `intent.*` | IntentRouter messages | `intent.fallback` |
+| `tty.*` | Terminal UI | `tty.mobile_setup`, `tty.first_run` |
+| `wizard.*` | Onboarding wizard | `wizard.req_internet` |
+| `presence.*` | Presence detection | `presence.invite_not_found` |
+| `api.*` | API errors | `api.device_not_found`, `api.text_empty` |
+
+### Documentation rules
+
+- All documentation (`docs/`, `README.md`, `CONTRIBUTING.md`) is maintained in **two languages**:
+  - Primary file — in English
+  - Ukrainian version — in `docs/uk/` with suffix or in a subfolder
+- Format: `docs/architecture.md` (EN) + `docs/uk/architecture.md` (UK)
+- When changing documentation — update BOTH languages
+
+### Adding a new language
+
+1. Create file `src/i18n/locales/<code>.ts` (copy structure from `en.ts`)
+2. Register in `src/i18n/i18n.ts` in `resources`
+3. Create file `config/locales/<code>.json` (copy structure from `en.json`)
+4. Translate all keys (frontend + backend)
+5. Add option in Wizard (step 1 — language selection)
+6. Add documentation in `docs/<code>/`
 
 ---
 
-## 4. CORE API — ПОЛНАЯ СПЕЦИФИКАЦИЯ
+## 4. CORE API — FULL SPECIFICATION
 
 Base URL: `http://localhost:7070/api/v1`
 Auth: `Authorization: Bearer <module_token>`
@@ -401,7 +453,7 @@ Auth: `Authorization: Bearer <module_token>`
 
 ```http
 GET /api/v1/health
-Authorization: (не требуется)
+Authorization: (not required)
 
 Response 200:
 {
@@ -424,7 +476,7 @@ Response 200:
   "devices": [
     {
       "device_id": "uuid-...",
-      "name": "Термостат кухня",
+      "name": "Kitchen Thermostat",
       "type": "actuator",           // sensor | actuator | controller | virtual
       "protocol": "zigbee",
       "state": { "temperature": 22.5, "mode": "heat" },
@@ -443,7 +495,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "name": "Термостат кухня",
+  "name": "Kitchen Thermostat",
   "type": "actuator",
   "protocol": "zigbee",
   "capabilities": ["set_temperature", "set_mode"],
@@ -453,7 +505,7 @@ Content-Type: application/json
 Response 201:
 {
   "device_id": "uuid-generated",
-  "name": "Термостат кухня",
+  "name": "Kitchen Thermostat",
   "type": "actuator",
   "protocol": "zigbee",
   "state": {},
@@ -481,9 +533,9 @@ Content-Type: application/json
   "state": { "temperature": 23.0, "mode": "cool" }
 }
 
-Response 200: <Device object с обновлённым state>
+Response 200: <Device object with updated state>
 
-// Автоматически публикует событие device.state_changed в Event Bus
+// Automatically publishes device.state_changed event to Event Bus
 ```
 
 ```http
@@ -517,7 +569,7 @@ Response 201:
   "timestamp": 1710936000.0
 }
 
-// ⛔ Ошибка если type начинается с "core." — 403 Forbidden
+// ⛔ Error if type starts with "core." — 403 Forbidden
 Response 403:
 {
   "detail": "Publishing core.* events is forbidden for modules"
@@ -542,7 +594,7 @@ Response 201:
 }
 ```
 
-**Доставка события на webhook модуля:**
+**Event delivery to module webhook:**
 
 ```http
 POST http://localhost:8100/webhook/events
@@ -586,7 +638,7 @@ POST /api/v1/modules/install
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 
-module: <zip-архив>
+module: <zip-archive>
 
 Response 201:
 {
@@ -595,7 +647,7 @@ Response 201:
   "message": "Module uploaded, validation in progress"
 }
 
-// Статусы приходят через SSE: GET /api/v1/modules/{name}/status/stream
+// Statuses arrive via SSE: GET /api/v1/modules/{name}/status/stream
 ```
 
 ```http
@@ -615,7 +667,7 @@ DELETE /api/v1/modules/{name}
 Authorization: Bearer <token>
 
 Response 200: { "name": "climate-module", "status": "STOPPED" }
-Response 403: если модуль типа SYSTEM
+Response 403: if module type is SYSTEM
 ```
 
 ### 4.5 Integrity Status
@@ -629,13 +681,13 @@ Response 200:
   "status": "ok",              // "ok" | "violated" | "restoring" | "safe_mode"
   "last_check": 1710936000.0,
   "check_interval_sec": 30,
-  "changed_files": [],         // список если violation
+  "changed_files": [],         // list if violation
   "restore_attempts": 0,
   "safe_mode_since": null
 }
 ```
 
-### 4.6 Secrets (для интеграций)
+### 4.6 Secrets (for integrations)
 
 ```http
 POST /api/v1/secrets/oauth/start
@@ -669,12 +721,12 @@ Response 200:
   "module": "gmail-integration"
 }
 
-// При status == "authorized":
+// When status == "authorized":
 {
   "status": "authorized",
   "module": "gmail-integration",
   "connected": true
-  // токен НЕ возвращается — хранится в vault
+  // token is NOT returned — stored in vault
 }
 ```
 
@@ -695,18 +747,18 @@ Response 200:
 {
   "status_code": 200,
   "headers": { ... },
-  "body": { ... }     // ответ от внешнего API
+  "body": { ... }     // response from external API
 }
 
-// Ядро подставляет токен, выполняет запрос, возвращает результат
-// Модуль НИКОГДА не видит токен
+// Core injects the token, executes the request, returns the result
+// Module NEVER sees the token
 ```
 
 ### 4.7 System / Onboarding
 
 ```http
 GET /api/v1/system/info
-Authorization: (не требуется при первом запуске)
+Authorization: (not required on first launch)
 
 Response 200:
 {
@@ -752,19 +804,19 @@ Response 200:
   "message": "Connected to MyHomeNetwork. IP: 192.168.1.45"
 }
 
-// Доступные шаги: wifi | language | device_name | timezone |
+// Available steps: wifi | language | device_name | timezone |
 //                 stt_model | tts_voice | admin_user | platform | import
 ```
 
 ---
 
-## 5. MANIFEST.JSON — ПОЛНАЯ СХЕМА
+## 5. MANIFEST.JSON — FULL SCHEMA
 
 ```json
 {
   "name": "climate-module",
   "version": "1.0.0",
-  "description": "Управление климатом через Zigbee-термостаты",
+  "description": "Climate control via Zigbee thermostats",
   "type": "UI",
   "ui_profile": "FULL",
   "api_version": "1.0",
@@ -795,7 +847,7 @@ Response 200:
 }
 ```
 
-**Валидация manifest.json при установке:**
+**manifest.json validation on install:**
 
 ```python
 REQUIRED_FIELDS = ["name", "version", "type", "api_version", "port", "permissions"]
@@ -805,71 +857,78 @@ VALID_RUNTIME = ["always_on", "on_demand", "scheduled"]
 ALLOWED_PERMISSIONS = [
     "device.read", "device.write",
     "events.subscribe", "events.publish",
-    "secrets.oauth",     # только для INTEGRATION
-    "secrets.proxy",     # только для INTEGRATION
+    "secrets.oauth",     # only for INTEGRATION
+    "secrets.proxy",     # only for INTEGRATION
 ]
 VERSION_PATTERN = r"^\d+\.\d+\.\d+$"  # semver
 ```
 
 ---
 
-## 6. СОБЫТИЯ EVENT BUS — ПОЛНЫЙ СПИСОК
+## 6. EVENT BUS EVENTS — FULL LIST
 
 ```python
-# Встроенные типы событий (публикует только ядро — core.*)
+# Built-in event types (published only by core — core.*)
 CORE_EVENTS = {
-    "core.integrity_violation": "Агент обнаружил изменение файлов ядра",
-    "core.integrity_restored":  "Агент успешно откатил изменения",
-    "core.safe_mode_entered":   "Система перешла в SAFE MODE",
-    "core.safe_mode_exited":    "SAFE MODE снят",
-    "core.startup":             "Ядро запущено",
-    "core.shutdown":            "Ядро останавливается",
+    "core.integrity_violation": "Agent detected core file changes",
+    "core.integrity_restored":  "Agent successfully rolled back changes",
+    "core.safe_mode_entered":   "System entered SAFE MODE",
+    "core.safe_mode_exited":    "SAFE MODE lifted",
+    "core.startup":             "Core started",
+    "core.shutdown":            "Core shutting down",
 }
 
-# Устройства
+# Devices
 DEVICE_EVENTS = {
-    "device.state_changed":  "Изменилось состояние устройства в Registry",
-    "device.registered":     "Новое устройство добавлено в Registry",
-    "device.removed":        "Устройство удалено из Registry",
-    "device.offline":        "Нет heartbeat > 90 сек",
-    "device.online":         "Устройство снова доступно",
-    "device.discovered":     "Сканер нашёл новое устройство в сети",
+    "device.state_changed":  "Device state changed in Registry",
+    "device.registered":     "New device added to Registry",
+    "device.removed":        "Device removed from Registry",
+    "device.offline":        "No heartbeat > 90 sec",
+    "device.online":         "Device available again",
+    "device.discovered":     "Scanner found a new device on the network",
 }
 
-# Модули
+# Modules
 MODULE_EVENTS = {
-    "module.installed":  "Модуль установлен и запущен",
-    "module.stopped":    "Модуль остановлен штатно",
-    "module.started":    "Модуль запущен",
-    "module.error":      "Модуль вернул ошибку или упал",
-    "module.removed":    "Модуль удалён",
+    "module.installed":  "Module installed and started",
+    "module.stopped":    "Module stopped normally",
+    "module.started":    "Module started",
+    "module.error":      "Module returned an error or crashed",
+    "module.removed":    "Module removed",
 }
 
-# Синхронизация с платформой
+# Platform synchronization
 SYNC_EVENTS = {
-    "sync.command_received":   "Получена команда от платформы",
-    "sync.command_ack":        "Команда подтверждена",
-    "sync.connection_lost":    "Потеряно соединение с платформой",
-    "sync.connection_restored":"Соединение восстановлено",
+    "sync.command_received":   "Command received from platform",
+    "sync.command_ack":        "Command acknowledged",
+    "sync.connection_lost":    "Connection to platform lost",
+    "sync.connection_restored":"Connection restored",
 }
 
-# Голос
+# Voice
 VOICE_EVENTS = {
-    "voice.wake_word":      "Обнаружено wake-word",
-    "voice.recognized":     "STT распознал запрос",
-    "voice.intent":         "Intent Router определил намерение",
-    "voice.response":       "TTS произносит ответ",
-    "voice.privacy_on":     "Режим приватности включён",
-    "voice.privacy_off":    "Режим приватности выключён",
+    "voice.wake_word":      "Wake-word detected",
+    "voice.recognized":     "STT recognized query",
+    "voice.intent":         "Intent Router determined intent (see §20)",
+    "voice.response":       "LLM/fallback response ready (text for TTS)",
+    "voice.speak":          "TTS speech request (from any module)",
+    "voice.speak_done":     "TTS speech completed",
+    "voice.privacy_on":     "Privacy mode enabled",
+    "voice.privacy_off":    "Privacy mode disabled",
+}
+
+# Media (published by media-player)
+MEDIA_EVENTS = {
+    "media.state_changed":  "Playback state changed",
 }
 ```
 
 ---
 
-## 7. INTEGRITY AGENT — АЛГОРИТМ
+## 7. INTEGRITY AGENT — ALGORITHM
 
 ```python
-# agent/integrity_agent.py — ОТДЕЛЬНЫЙ ПРОЦЕСС, не импортирует ядро
+# agent/integrity_agent.py — SEPARATE PROCESS, does not import core
 
 CORE_FILES_GLOB = "/opt/selena-core/core/**/*.py"
 MANIFEST_PATH   = "/secure/core.manifest"
@@ -879,18 +938,18 @@ LOG_PATH        = "/var/log/selena/integrity.log"
 
 async def check_loop():
     while True:
-        await asyncio.sleep(CHECK_INTERVAL_SEC)  # 30 сек
+        await asyncio.sleep(CHECK_INTERVAL_SEC)  # 30 sec
         await run_check()
 
 async def run_check():
-    # 1. Верифицировать сам манифест
+    # 1. Verify the manifest itself
     manifest_hash = sha256_file(MANIFEST_PATH)
     stored_hash   = Path(MASTER_HASH).read_text().strip()
     if manifest_hash != stored_hash:
         await trigger_response("manifest_tampered", [MANIFEST_PATH])
         return
 
-    # 2. Проверить каждый файл ядра
+    # 2. Check each core file
     manifest = json.loads(Path(MANIFEST_PATH).read_text())
     changed  = []
     for path, expected_hash in manifest.items():
@@ -902,16 +961,16 @@ async def run_check():
         await trigger_response("files_changed", changed)
 
 async def trigger_response(reason: str, changed: list):
-    # Шаг 1: лог
+    # Step 1: log
     log_incident(reason, changed)
 
-    # Шаг 2: стоп модулей
+    # Step 2: stop modules
     await stop_all_modules()
 
-    # Шаг 3: уведомить платформу
+    # Step 3: notify platform
     await notify_platform(reason, changed)
 
-    # Шаг 4: откат (3 попытки)
+    # Step 4: rollback (3 attempts)
     for attempt in range(1, 4):
         success = await restore_from_backup(changed)
         if success:
@@ -920,16 +979,16 @@ async def trigger_response(reason: str, changed: list):
             return
         await asyncio.sleep(5)
 
-    # Шаг 5: SAFE MODE если откат не удался
+    # Step 5: SAFE MODE if rollback failed
     await enter_safe_mode()
     await notify_platform_safe_mode()
 ```
 
 ---
 
-## 8. АУДИО-ПОДСИСТЕМА — РЕАЛИЗАЦИЯ
+## 8. AUDIO SUBSYSTEM — IMPLEMENTATION
 
-### Автодетект устройств
+### Device auto-detection
 
 ```python
 # system_modules/voice_core/audio_manager.py
@@ -940,7 +999,7 @@ PRIORITY_OUTPUT = ["usb", "i2s_gpio", "bluetooth", "hdmi", "jack"]
 def detect_audio_devices() -> AudioDevices:
     devices = AudioDevices(inputs=[], outputs=[])
 
-    # ALSA — все карты из /proc/asound/cards
+    # ALSA — all cards from /proc/asound/cards
     for card in parse_alsa_cards():
         dtype = classify_card(card)  # usb | i2s_gpio | hdmi | jack | builtin
         if has_capture(card):
@@ -948,7 +1007,7 @@ def detect_audio_devices() -> AudioDevices:
         if has_playback(card):
             devices.outputs.append(AudioDevice(id=card.alsa_id, name=card.name, type=dtype))
 
-    # PulseAudio / PipeWire — BT устройства
+    # PulseAudio / PipeWire — BT devices
     if is_pulse_running():
         for sink in pactl_list_sinks():
             if "bluez" in sink.name:
@@ -961,32 +1020,32 @@ def detect_audio_devices() -> AudioDevices:
                     id=source.name, name=source.description, type="bluetooth"
                 ))
 
-    # Сортировать по приоритету
+    # Sort by priority
     devices.inputs.sort(key=lambda d: priority_score(d.type, PRIORITY_INPUT))
     devices.outputs.sort(key=lambda d: priority_score(d.type, PRIORITY_OUTPUT))
 
     return devices
 ```
 
-### I2S GPIO микрофон (INMP441 / SPH0645)
+### I2S GPIO microphone (INMP441 / SPH0645)
 
 ```bash
-# /boot/config.txt — добавить overlay
-dtoverlay=googlevoicehat-soundcard   # для INMP441 на GPIO 18-21
-# ИЛИ
+# /boot/config.txt — add overlay
+dtoverlay=googlevoicehat-soundcard   # for INMP441 on GPIO 18-21
+# OR
 dtoverlay=i2s-mmap
 
-# После reboot — проверить:
+# After reboot — verify:
 arecord -l
 # **** List of CAPTURE Hardware Devices ****
 # card 1: sndrpisimplecar [snd_rpi_simple_card], device 0: ...
 ```
 
-### Bluetooth pairing через API
+### Bluetooth pairing via API
 
 ```python
 # POST /api/v1/system/bluetooth/pair
-# Запускает bluetoothctl scan + pair + trust + connect
+# Launches bluetoothctl scan + pair + trust + connect
 
 async def pair_bluetooth_device(mac: str) -> bool:
     proc = await asyncio.create_subprocess_exec(
@@ -1008,7 +1067,7 @@ async def pair_bluetooth_device(mac: str) -> bool:
 
 ---
 
-## 9. OAUTH ЧЕРЕЗ QR — РЕАЛИЗАЦИЯ
+## 9. OAUTH VIA QR — IMPLEMENTATION
 
 ```python
 # system_modules/secrets_vault/oauth_flow.py
@@ -1032,7 +1091,7 @@ PROVIDERS = {
 async def start_oauth_flow(module: str, provider: str, scopes: list[str]) -> OAuthSession:
     cfg = PROVIDERS[provider]
 
-    # Шаг 1: запросить device_code
+    # Step 1: request device_code
     resp = await http.post(cfg["device_auth_url"], data={
         "client_id": cfg["client_id"],
         "scope": " ".join(scopes),
@@ -1040,11 +1099,11 @@ async def start_oauth_flow(module: str, provider: str, scopes: list[str]) -> OAu
     data = resp.json()
     # data: { device_code, user_code, verification_uri, interval, expires_in }
 
-    # Шаг 2: сгенерировать QR
+    # Step 2: generate QR
     qr_url = f"{data['verification_uri']}?user_code={data['user_code']}"
     qr_img = generate_qr(qr_url)
 
-    # Шаг 3: сохранить сессию + запустить polling
+    # Step 3: save session + start polling
     session = OAuthSession(module=module, provider=provider,
                            device_code=data["device_code"],
                            interval=data["interval"])
@@ -1063,7 +1122,7 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
         })
         if resp.status_code == 200:
             tokens = resp.json()
-            # Зашифровать и сохранить
+            # Encrypt and save
             await vault.store(session.module, tokens)
             session.status = "authorized"
             return
@@ -1076,24 +1135,24 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 
 ---
 
-## 10. РАЗБИВКА ТЗ НА ЗАДАЧИ И GITHUB ISSUES
+## 10. BREAKING DOWN THE SPEC INTO TASKS AND GITHUB ISSUES
 
-> Перед началом работы агент ОБЯЗАН создать все Issues на GitHub по этому плану.
-> Репозиторий: **https://github.com/dotradepro/SelenaCore**
+> Before starting work, the agent MUST create all Issues on GitHub following this plan.
+> Repository: **https://github.com/dotradepro/SelenaCore**
 
-### Фаза 1 — Инициализация проекта
+### Phase 1 — Project Initialization
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #1 | `chore: init project structure, Dockerfile, docker-compose` | `phase-1`, `chore`, `infra` |
 | #2 | `chore: setup SQLite + SQLAlchemy models (Device, AuditLog)` | `phase-1`, `chore`, `backend` |
 | #3 | `chore: setup FastAPI skeleton, health endpoint, middleware` | `phase-1`, `chore`, `backend` |
 | #4 | `chore: systemd units + watchdog configuration` | `phase-1`, `chore`, `infra` |
 
-### Фаза 2 — Ядро (Core API)
+### Phase 2 — Core (Core API)
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #5 | `feat(registry): Device Registry CRUD + state history` | `phase-2`, `feat`, `backend` |
 | #6 | `feat(eventbus): Event Bus asyncio.Queue + webhook delivery` | `phase-2`, `feat`, `backend` |
 | #7 | `feat(api): Core API /devices endpoints + module_token auth` | `phase-2`, `feat`, `backend` |
@@ -1102,28 +1161,28 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #10 | `feat(loader): Module install/start/stop via Docker sandbox` | `phase-2`, `feat`, `backend` |
 | #11 | `feat(api): Module Loader API /modules endpoints + SSE status` | `phase-2`, `feat`, `backend` |
 
-### Фаза 3 — Integrity Agent
+### Phase 3 — Integrity Agent
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #12 | `feat(agent): SHA256 manifest creation on first init` | `phase-3`, `feat`, `security` |
 | #13 | `feat(agent): periodic file check loop (30s interval)` | `phase-3`, `feat`, `security` |
 | #14 | `feat(agent): response chain: stop modules → notify → restore` | `phase-3`, `feat`, `security` |
 | #15 | `feat(agent): SAFE MODE — read-only Core API, no module start` | `phase-3`, `feat`, `security` |
 
-### Фаза 4 — Cloud Sync
+### Phase 4 — Cloud Sync
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #16 | `feat(sync): heartbeat ping to SmartHome LK platform` | `phase-4`, `feat`, `backend` |
 | #17 | `feat(sync): long-poll command receiver + ACK` | `phase-4`, `feat`, `backend` |
 | #18 | `feat(sync): handle INSTALL_MODULE, STOP_MODULE, REBOOT commands` | `phase-4`, `feat`, `backend` |
 | #19 | `feat(sync): integrity event reporting to platform` | `phase-4`, `feat`, `security` |
 
-### Фаза 5 — UI Core + Onboarding
+### Phase 5 — UI Core + Onboarding
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #20 | `feat(ui): FastAPI server :80 + static files + PWA manifest` | `phase-5`, `feat`, `frontend` |
 | #21 | `feat(ui): AP mode + QR code generation on first boot` | `phase-5`, `feat`, `frontend` |
 | #22 | `feat(ui): wizard endpoints (9 steps: wifi→import)` | `phase-5`, `feat`, `frontend` |
@@ -1132,10 +1191,10 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #25 | `feat(ui): TTY1 Textual TUI status display` | `phase-5`, `feat`, `frontend` |
 | #26 | `feat(ui): Service Worker + offline page (PWA)` | `phase-5`, `feat`, `frontend` |
 
-### Фаза 6 — Системные модули: Аудио и Голос
+### Phase 6 — System Modules: Audio and Voice
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #27 | `feat(voice): audio device autodetect (USB/I2S/BT/HDMI/jack)` | `phase-6`, `feat`, `voice` |
 | #28 | `feat(voice): Vosk STT wrapper + streaming` | `phase-6`, `feat`, `voice` |
 | #29 | `feat(voice): Piper TTS wrapper + voice selection` | `phase-6`, `feat`, `voice` |
@@ -1145,10 +1204,10 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #33 | `feat(voice): WebRTC audio stream from browser → Whisper` | `phase-6`, `feat`, `voice` |
 | #34 | `feat(voice): voice history storage in SQLite` | `phase-6`, `feat`, `voice` |
 
-### Фаза 7 — LLM и Intent Router
+### Phase 7 — LLM and Intent Router
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #35 | `feat(llm): Fast Matcher (keyword/regex rules YAML config)` | `phase-7`, `feat`, `llm` |
 | #36 | `feat(llm): Ollama client + phi-3-mini/gemma-2b support` | `phase-7`, `feat`, `llm` |
 | #37 | `feat(llm): dynamic system prompt with module registry` | `phase-7`, `feat`, `llm` |
@@ -1156,10 +1215,10 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #39 | `feat(llm): model manager (download/select/switch)` | `phase-7`, `feat`, `llm` |
 | #40 | `feat(llm): auto-disable LLM when RAM < 5GB` | `phase-7`, `feat`, `llm` |
 
-### Фаза 8 — Пользователи и безопасность
+### Phase 8 — Users and Security
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #41 | `feat(users): user profiles CRUD (admin/resident/guest roles)` | `phase-8`, `feat`, `security` |
 | #42 | `feat(users): PIN auth + rate limiting (5 attempts → 10 min lock)` | `phase-8`, `feat`, `security` |
 | #43 | `feat(users): Face ID enrollment + browser webcam auth flow` | `phase-8`, `feat`, `security` |
@@ -1168,19 +1227,19 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #46 | `feat(security): iptables rules setup script` | `phase-8`, `feat`, `security` |
 | #47 | `feat(security): Tailscale integration (remote-access module)` | `phase-8`, `feat`, `security` |
 
-### Фаза 9 — Secrets Vault и OAuth
+### Phase 9 — Secrets Vault and OAuth
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #48 | `feat(vault): AES-256-GCM secrets storage in /secure/tokens/` | `phase-9`, `feat`, `security` |
 | #49 | `feat(vault): OAuth Device Authorization Grant flow (RFC 8628)` | `phase-9`, `feat`, `backend` |
 | #50 | `feat(vault): API proxy endpoint (no token exposure to modules)` | `phase-9`, `feat`, `security` |
 | #51 | `feat(vault): token auto-refresh (5 min before expiry)` | `phase-9`, `feat`, `backend` |
 
-### Фаза 10 — Сканер сети и импорт
+### Phase 10 — Network Scanner and Import
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #52 | `feat(scanner): ARP sweep (passive + on-demand)` | `phase-10`, `feat`, `backend` |
 | #53 | `feat(scanner): mDNS/Bonjour listener` | `phase-10`, `feat`, `backend` |
 | #54 | `feat(scanner): SSDP/UPnP listener` | `phase-10`, `feat`, `backend` |
@@ -1189,10 +1248,10 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #57 | `feat(import): Tuya import adapter + tuya-bridge module` | `phase-10`, `feat`, `backend` |
 | #58 | `feat(import): Philips Hue local API adapter` | `phase-10`, `feat`, `backend` |
 
-### Фаза 11 — Мониторинг, уведомления, бэкап
+### Phase 11 — Monitoring, Notifications, Backup
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #59 | `feat(monitor): CPU temp + RAM + disk monitoring + alerts` | `phase-11`, `feat`, `infra` |
 | #60 | `feat(monitor): RAM degradation strategy (auto-stop by priority)` | `phase-11`, `feat`, `infra` |
 | #61 | `feat(notify): Web Push VAPID implementation` | `phase-11`, `feat`, `backend` |
@@ -1200,10 +1259,10 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 | #63 | `feat(backup): E2E cloud backup (PBKDF2 + AES-256-GCM)` | `phase-11`, `feat`, `security` |
 | #64 | `feat(backup): QR secrets transfer between devices` | `phase-11`, `feat`, `security` |
 
-### Фаза 12 — SDK и тесты
+### Phase 12 — SDK and Tests
 
-| Issue | Заголовок | Labels |
-|---|---|---|
+| Issue | Title | Labels |
+|-------|-------|--------|
 | #65 | `feat(sdk): SmartHomeModule base class + decorators` | `phase-12`, `feat`, `sdk` |
 | #66 | `feat(sdk): smarthome CLI (new-module / dev / test / publish)` | `phase-12`, `feat`, `sdk` |
 | #67 | `feat(sdk): mock Core API for local development` | `phase-12`, `feat`, `sdk` |
@@ -1216,83 +1275,83 @@ async def poll_for_token(session: OAuthSession, cfg: dict):
 
 ## 11. GIT WORKFLOW
 
-### Ветки
+### Branches
 
-- Работа в **`main`** для задач до 200 строк
-- Задача > 200 строк: ветка `feat/<issue-number>-<slug>`
+- Work in **`main`** for tasks under 200 lines
+- Task > 200 lines: branch `feat/<issue-number>-<slug>`
 
 ```bash
-git checkout -b feat/5-device-registry   # для Issue #5
-git checkout main                        # вернуться
-git merge feat/5-device-registry         # влить
+git checkout -b feat/5-device-registry   # for Issue #5
+git checkout main                        # return
+git merge feat/5-device-registry         # merge
 git push origin main
 ```
 
 ### Commit messages (Conventional Commits)
 
-Формат: `<type>(<scope>): <описание> [#<N>]`
+Format: `<type>(<scope>): <description> [#<N>]`
 
-| Type | Когда |
-|---|---|
-| `feat` | новый функционал |
-| `fix` | исправление бага |
-| `chore` | настройка, зависимости, конфиги |
-| `refactor` | рефакторинг без изменения поведения |
-| `test` | тесты |
-| `docs` | документация |
-| `security` | исправление уязвимости |
-| `perf` | оптимизация производительности |
+| Type | When |
+|------|------|
+| `feat` | new feature |
+| `fix` | bug fix |
+| `chore` | setup, dependencies, configs |
+| `refactor` | refactoring without behavior change |
+| `test` | tests |
+| `docs` | documentation |
+| `security` | vulnerability fix |
+| `perf` | performance optimization |
 
 ```bash
-# ✅ Правильно
+# ✅ Correct
 git commit -m "feat(registry): add Device Registry CRUD with state history [#5]"
 git commit -m "fix(agent): handle missing manifest file on first init [#12]"
 git commit -m "test(registry): add pytest for state_changed event emission [#68]"
 git commit -m "chore: add docker-compose.yml with core+modules+sandbox [#1]"
 
-# ❌ Неправильно
+# ❌ Wrong
 git commit -m "fix"
 git commit -m "update code"
 git commit -m "wip"
 git commit -m "."
 ```
 
-### Когда коммитить
+### When to commit
 
-Атомарные шаги — каждый коммит должен оставлять проект в рабочем состоянии:
+Atomic steps — each commit should leave the project in a working state:
 
 ```
-Создана модель данных          → коммит
-Написан сервис                 → коммит
-Добавлен роутер                → коммит
-Написан тест                   → коммит
-Тест прошёл                    → коммит + пуш
+Data model created             → commit
+Service written                → commit
+Router added                   → commit
+Test written                   → commit
+Test passed                    → commit + push
 ```
 
-### Push в main
+### Push to main
 
 ```bash
-# Перед каждым push — проверить:
-pytest tests/ -x -q                    # все тесты зелёные
-python -m mypy core/ --ignore-missing  # типизация
+# Before each push — verify:
+pytest tests/ -x -q                    # all tests green
+python -m mypy core/ --ignore-missing  # type checking
 
 git push origin main
 ```
 
-### Деплой в контейнер (ОБЯЗАТЕЛЬНО после каждого push)
+### Deploy to container (MANDATORY after every push)
 
-> Исходный код Python (core/, system_modules/, agent/, tests/) монтируется в контейнер через volume mounts.
-> После изменения Python-файлов достаточно перезапустить контейнер.
-> `docker cp` НЕ нужен для этих директорий.
+> Python source code (core/, system_modules/, agent/, tests/) is mounted into the container via volume mounts.
+> After changing Python files, restarting the container is sufficient.
+> `docker cp` is NOT needed for these directories.
 
 ```bash
-# 1. Пересобрать фронтенд
+# 1. Rebuild frontend
 npx vite build
 
-# 2. Скопировать собранные статические файлы в контейнер
+# 2. Copy built static files into container
 docker cp system_modules/ui_core/static/. selena-core:/opt/selena-core/system_modules/ui_core/static/
 
-# 3. Обновить .version (PATCH из количества коммитов, COMMIT из HEAD)
+# 3. Update .version (PATCH from commit count, COMMIT from HEAD)
 python3 -c "
 import subprocess, pathlib
 MAJOR, MINOR, LABEL = 0, 3, 'beta'
@@ -1306,104 +1365,104 @@ print(f'[version] {v}')
 "
 docker cp .version selena-core:/opt/selena-core/.version
 
-# 4. Перезапустить контейнер (Python-код подхватится через volume mounts)
+# 4. Restart container (Python code is picked up via volume mounts)
 docker restart selena-core
 
-# 5. Проверить что всё работает
+# 5. Verify everything works
 sleep 3
 curl -s http://localhost:7070/api/v1/health | python3 -m json.tool
 curl -s -o /dev/null -w "UI :80 → HTTP %{http_code}\n" http://localhost:80/
 
-# 6. Обновить экран устройства (kiosk Chromium)
+# 6. Refresh device screen (kiosk Chromium)
 sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
 ```
 
-> **Почему шаг 5 обязателен:** Экран устройства — это Chromium в kiosk-режиме
-> внутри Wayland-композитора `cage` (systemd: `smarthome-display.service`).
-> `docker restart` перезапускает бэкенд и UI-сервер, но НЕ перезагружает браузер.
-> Chromium с флагами `--disable-background-networking` кеширует старую страницу.
-> Команда `wtype -k F5` отправляет нажатие F5 через Wayland-протокол в Chromium.
+> **Why step 5 is mandatory:** The device screen is Chromium in kiosk mode
+> inside the Wayland compositor `cage` (systemd: `smarthome-display.service`).
+> `docker restart` restarts the backend and UI server, but does NOT reload the browser.
+> Chromium with `--disable-background-networking` flags caches the old page.
+> The `wtype -k F5` command sends an F5 keypress via the Wayland protocol to Chromium.
 >
-> Если `wtype` недоступен или не работает — альтернатива:
+> If `wtype` is unavailable or not working — alternative:
 > `sudo systemctl restart smarthome-display.service`
-> (перезапускает cage + chromium полностью, медленнее но надёжнее)
+> (restarts cage + chromium completely, slower but more reliable)
 
-**Что обновляется:**
+**What gets updated:**
 
-| Шаг | Что обновляется | Где видно |
-|-----|-----------------|-----------|
-| `npx vite build` | Фронтенд (React SPA) | — |
-| `docker cp static/` | UI в контейнере | Браузер `:80` |
-| `.version` + `docker cp` | Версия билда | API + UI |
-| `docker restart` | Перезагрузка FastAPI + UI | Сервер |
-| `wtype -k F5` | Обновление страницы в kiosk | Экран устройства |
+| Step | What is updated | Where visible |
+|------|-----------------|---------------|
+| `npx vite build` | Frontend (React SPA) | — |
+| `docker cp static/` | UI in container | Browser `:80` |
+| `.version` + `docker cp` | Build version | API + UI |
+| `docker restart` | FastAPI + UI restart | Server |
+| `wtype -k F5` | Page refresh in kiosk | Device screen |
 
-**Правила:**
+**Rules:**
 
-- Если изменения только в `src/` (фронтенд) — шаги 1, 2, 3, 4, 5, 6
-- Если изменения только в `core/` (бэкенд) — шаги 3, 4, 5, 6 (volume mount — автоматически)
-- Если изменения в обоих — все 6 шагов
-- ⛔ Нельзя считать задачу завершённой без проверки `curl` на шаге 5
-- ⛔ Нельзя считать задачу завершённой без обновления экрана устройства (шаг 6)
+- If changes are only in `src/` (frontend) — steps 1, 2, 3, 4, 5, 6
+- If changes are only in `core/` (backend) — steps 3, 4, 5, 6 (volume mount — automatic)
+- If changes are in both — all 6 steps
+- ⛔ A task cannot be considered complete without verifying `curl` on step 5
+- ⛔ A task cannot be considered complete without refreshing the device screen (step 6)
 
 ---
 
-## 12. РАБОТА С GITHUB ISSUES
+## 12. WORKING WITH GITHUB ISSUES
 
-### Алгоритм работы с задачей
+### Task workflow algorithm
 
 ```
-1. Проверить что Issue существует на GitHub
-   → Если нет — СОЗДАТЬ по плану из раздела 10
+1. Check that Issue exists on GitHub
+   → If not — CREATE per the plan from section 10
    → gh issue create --title "feat(registry): ..." --label "phase-2,feat,backend"
 
-2. Поставить label "in-progress"
+2. Add label "in-progress"
    → gh issue edit <N> --add-label "in-progress"
 
-3. Прочитать Issue полностью + связанные разделы TZ.md
+3. Read Issue completely + related TZ.md sections
 
-4. Запланировать шаги выполнения (написать список в Issue комментарии)
+4. Plan execution steps (write list in Issue comment)
 
-5. Выполнять шаги, коммитя каждый атомарный шаг с [#N]
+5. Execute steps, committing each atomic step with [#N]
 
-6. Написать итоговый комментарий:
+6. Write final comment:
    → "✅ Done. Commits: abc1234, def5678, ghi9012"
 
-7. Закрыть Issue:
+7. Close Issue:
    → gh issue close <N>
 
-8. Снять label "in-progress"
+8. Remove label "in-progress"
 ```
 
-### Создание Issue через gh CLI
+### Creating Issue via gh CLI
 
 ```bash
 gh issue create \
   --repo dotradepro/SelenaCore \
   --title "feat(registry): Device Registry CRUD + state history" \
-  --body "## Задача
-Реализовать Device Registry с полным CRUD и хранением истории состояний.
+  --body "## Task
+Implement Device Registry with full CRUD and state history storage.
 
-## Читать перед началом
-- docs/TZ.md раздел 2 (Device Registry)
-- AGENTS.md раздел 4.2 (API спецификация)
+## Read before starting
+- docs/TZ.md section 2 (Device Registry)
+- AGENTS.md section 4.2 (API specification)
 
-## Критерии готовности
-- [ ] POST /api/v1/devices — создание устройства
-- [ ] GET /api/v1/devices — список всех устройств
-- [ ] GET /api/v1/devices/{id} — конкретное устройство
-- [ ] PATCH /api/v1/devices/{id}/state — обновление state
-- [ ] DELETE /api/v1/devices/{id} — удаление
-- [ ] История: последние 1000 состояний в SQLite
-- [ ] Публикация device.state_changed в Event Bus
+## Acceptance criteria
+- [ ] POST /api/v1/devices — device creation
+- [ ] GET /api/v1/devices — list all devices
+- [ ] GET /api/v1/devices/{id} — specific device
+- [ ] PATCH /api/v1/devices/{id}/state — state update
+- [ ] DELETE /api/v1/devices/{id} — deletion
+- [ ] History: last 1000 states in SQLite
+- [ ] Publish device.state_changed to Event Bus
 - [ ] pytest test_registry.py → 0 failed" \
   --label "phase-2,feat,backend"
 ```
 
-### Labels для проекта
+### Project labels
 
 ```
-phase-1 … phase-12    фаза реализации
+phase-1 … phase-12    implementation phase
 feat / fix / chore / refactor / test / docs / security / perf
 backend / frontend / infra / voice / llm / sdk
 in-progress / blocked / needs-review
@@ -1411,37 +1470,37 @@ in-progress / blocked / needs-review
 
 ---
 
-## 13. КРИТИЧЕСКИЕ ЗАПРЕТЫ
+## 13. CRITICAL PROHIBITIONS
 
 ```
-⛔ Начинать код без создания Issue на GitHub
-⛔ Брать вторую задачу пока первая не закрыта
-⛔ Пушить в main с падающими тестами
-⛔ Пустой except: pass — всегда логировать ошибку
-⛔ print() — только logging.getLogger(__name__)
-⛔ Хранить секреты в .env в открытом виде (только .env.example)
-⛔ Читать /secure из модуля напрямую (только через secrets-vault API)
-⛔ Публиковать события core.* из модуля (403 на уровне API)
-⛔ Возвращать OAuth-токен модулю напрямую (только через proxy)
-⛔ Биометрию в любые исходящие HTTP запросы
-⛔ shell=True в subprocess без крайней необходимости
-⛔ eval() / exec() в любом коде
-⛔ Модифицировать файлы ядра без обновления core.manifest
-⛔ Коммит с сообщением "fix", "update", "wip", "."
-⛔ Создавать virtualenv / venv внутри Docker-контейнера (зависимости ставятся глобально через pip)
-⛔ Использовать docker cp для обновления core/ или system_modules/ (используются volume mounts)
-⛔ Запускать системные модули как отдельные процессы/контейнеры с портами (только in-process через importlib)
-⛔ Указывать "port" в manifest.json для SYSTEM-модулей (порты только для пользовательских модулей)
-⛔ Использовать httpx/HTTP для связи между системным модулем и ядром (только прямые вызовы Python)
-⛔ Хардкодить localhost:PORT в HTML-виджетах (использовать window.location.pathname для BASE URL)
-⛔ Хардкодить UI-текст в widget.html / settings.html без локализации через var L = {en:{...}, uk:{...}} / t('key') / data-i18n
+⛔ Starting code without creating a GitHub Issue
+⛔ Taking a second task while the first one is not closed
+⛔ Pushing to main with failing tests
+⛔ Empty except: pass — always log the error
+⛔ print() — only logging.getLogger(__name__)
+⛔ Storing secrets in .env in plain text (only .env.example)
+⛔ Reading /secure from a module directly (only through secrets-vault API)
+⛔ Publishing core.* events from a module (403 at API level)
+⛔ Returning OAuth token to a module directly (only through proxy)
+⛔ Biometrics in any outgoing HTTP requests
+⛔ shell=True in subprocess without absolute necessity
+⛔ eval() / exec() in any code
+⛔ Modifying core files without updating core.manifest
+⛔ Commit with message "fix", "update", "wip", "."
+⛔ Creating virtualenv / venv inside a Docker container (dependencies are installed globally via pip)
+⛔ Using docker cp to update core/ or system_modules/ (volume mounts are used)
+⛔ Running system modules as separate processes/containers with ports (only in-process via importlib)
+⛔ Specifying "port" in manifest.json for SYSTEM modules (ports are only for user modules)
+⛔ Using httpx/HTTP for communication between system module and core (only direct Python calls)
+⛔ Hardcoding localhost:PORT in HTML widgets (use window.location.pathname for BASE URL)
+⛔ Hardcoding UI text in widget.html / settings.html without localization via var L = {en:{...}, uk:{...}} / t('key') / data-i18n
 ```
 
 ---
 
-## 14. ТЕСТИРОВАНИЕ
+## 14. TESTING
 
-### Структура тестов
+### Test structure
 
 ```python
 # tests/test_registry.py
@@ -1457,7 +1516,7 @@ async def client():
 
 @pytest.fixture
 def module_token(client):
-    # Получить токен тестового модуля
+    # Get test module token
     return "test-module-token-xyz"
 
 async def test_create_device(client, module_token):
@@ -1476,17 +1535,17 @@ async def test_create_device(client, module_token):
     assert data["device_id"] is not None
 
 async def test_state_changed_event(client, module_token, event_bus):
-    # Создать устройство
+    # Create device
     resp = await client.post("/api/v1/devices", ...)
     device_id = resp.json()["device_id"]
 
-    # Обновить состояние
+    # Update state
     await client.patch(f"/api/v1/devices/{device_id}/state",
         headers={"Authorization": f"Bearer {module_token}"},
         json={"state": {"temperature": 22.5}}
     )
 
-    # Проверить что событие опубликовано
+    # Verify event was published
     event = await event_bus.get_last_event("device.state_changed")
     assert event["payload"]["device_id"] == device_id
     assert event["payload"]["new_state"]["temperature"] == 22.5
@@ -1495,7 +1554,7 @@ async def test_core_event_forbidden(client, module_token):
     resp = await client.post("/api/v1/events/publish",
         headers={"Authorization": f"Bearer {module_token}"},
         json={
-            "type": "core.integrity_violation",  # запрещено
+            "type": "core.integrity_violation",  # forbidden
             "source": "evil-module",
             "payload": {}
         }
@@ -1503,31 +1562,31 @@ async def test_core_event_forbidden(client, module_token):
     assert resp.status_code == 403
 ```
 
-### Запуск тестов
+### Running tests
 
 ```bash
-# Все тесты
+# All tests
 pytest tests/ -v
 
-# Конкретный файл
+# Specific file
 pytest tests/test_registry.py -v
 
-# С покрытием
+# With coverage
 pytest tests/ --cov=core --cov-report=term-missing
 
-# Остановиться на первой ошибке
+# Stop on first failure
 pytest tests/ -x
 ```
 
 ---
 
-## 15. ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ (.env.example)
+## 15. ENVIRONMENT VARIABLES (.env.example)
 
 ```bash
-# Платформа SmartHome LK
+# SmartHome LK Platform
 PLATFORM_API_URL=https://smarthome-lk.com/api/v1
-PLATFORM_DEVICE_HASH=                    # заполняется при регистрации
-# API ключ хранится в /secure/platform.key — не в .env!
+PLATFORM_DEVICE_HASH=                    # filled during registration
+# API key is stored in /secure/platform.key — not in .env!
 
 # Core API
 CORE_PORT=7070
@@ -1540,7 +1599,7 @@ UI_PORT=80
 UI_HTTPS=true
 
 # Integrity Agent
-AGENT_CHECK_INTERVAL=30                   # секунд
+AGENT_CHECK_INTERVAL=30                   # seconds
 AGENT_MAX_RESTORE_ATTEMPTS=3
 
 # Docker
@@ -1548,11 +1607,11 @@ DOCKER_SOCKET=/var/run/docker.sock
 MODULE_CONTAINER_IMAGE=smarthome-modules:latest
 SANDBOX_IMAGE=smarthome-sandbox:latest
 
-# Аудио (переопределение автодетекта)
-AUDIO_FORCE_INPUT=                        # или "hw:2,0"
-AUDIO_FORCE_OUTPUT=                       # или "bluez_sink.AA_BB_CC"
+# Audio (auto-detection override)
+AUDIO_FORCE_INPUT=                        # or "hw:2,0"
+AUDIO_FORCE_OUTPUT=                       # or "bluez_sink.AA_BB_CC"
 
-# OAuth провайдеры
+# OAuth providers
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 TUYA_CLIENT_ID=
@@ -1561,22 +1620,22 @@ TUYA_CLIENT_SECRET=
 # Tailscale
 TAILSCALE_AUTH_KEY=                       # tskey-auth-...
 
-# Режим разработки
+# Development mode
 DEBUG=false
-MOCK_PLATFORM=false                       # для локальной разработки без платформы
+MOCK_PLATFORM=false                       # for local development without platform
 ```
 
 ---
 
-## 16. БЕЗОПАСНОСТЬ СЕРВЕРА И DOCKER
+## 16. SERVER SECURITY AND DOCKER
 
-### 16.1 Изоляция портов (САМОЕ ВАЖНОЕ)
+### 16.1 Port Isolation (MOST IMPORTANT)
 
-Docker по умолчанию **игнорирует UFW** и напрямую открывает порты через iptables.
-Базы данных и внутренние сервисы **никогда** не должны быть доступны снаружи.
+Docker by default **ignores UFW** and directly opens ports via iptables.
+Databases and internal services **must never** be accessible from outside.
 
 ```yaml
-# ❌ Неправильно — открыто всему интернету
+# ❌ Wrong — open to the entire internet
 services:
   redis:
     ports:
@@ -1585,166 +1644,166 @@ services:
     ports:
       - "5432:5432"
 
-# ✅ Правильно — доступно только внутри сервера
+# ✅ Correct — accessible only within the server
 services:
   redis:
-    command: redis-server --requirepass СЛОЖНЫЙ_ПАРОЛЬ
+    command: redis-server --requirepass STRONG_PASSWORD
     ports:
       - "127.0.0.1:6379:6379"
   postgres:
     environment:
-      POSTGRES_PASSWORD: СЛОЖНЫЙ_ПАРОЛЬ
+      POSTGRES_PASSWORD: STRONG_PASSWORD
     ports:
       - "127.0.0.1:5432:5432"
 ```
 
-> Контейнеры внутри одного `docker-compose` всё равно общаются между собой по именам сервисов (`redis:6379`) — проброс наружу им не нужен.
+> Containers within the same `docker-compose` still communicate with each other by service names (`redis:6379`) — external port mapping is not needed for them.
 
-**Для SelenaCore** — в `docker-compose.yml` порты Core API (7070) и UI (80) должны быть привязаны к `127.0.0.1` если доступ снаружи не требуется.
+**For SelenaCore** — in `docker-compose.yml` Core API ports (7070) and UI (80) should be bound to `127.0.0.1` if external access is not required.
 
-### 16.2 Настройка UFW (системный Firewall)
+### 16.2 UFW Setup (System Firewall)
 
 ```bash
-sudo ufw default deny incoming   # запретить все входящие по умолчанию
-sudo ufw default allow outgoing  # разрешить серверу выходить в интернет
-sudo ufw allow 22/tcp            # SSH — обязательно, иначе потеряете доступ!
+sudo ufw default deny incoming   # deny all incoming by default
+sudo ufw default allow outgoing  # allow server to access the internet
+sudo ufw allow 22/tcp            # SSH — mandatory, otherwise you lose access!
 sudo ufw allow 80/tcp            # HTTP
 sudo ufw allow 443/tcp           # HTTPS
-sudo ufw enable                  # включить
-sudo ufw status verbose          # проверить статус
+sudo ufw enable                  # enable
+sudo ufw status verbose          # check status
 ```
 
-### 16.3 Никакого dev-режима в production
+### 16.3 No dev mode in production
 
-`npm run dev` небезопасен: много памяти, медленно, открывает отладочные порты (возможен RCE).
+`npm run dev` is insecure: high memory usage, slow, opens debug ports (RCE possible).
 
 ```bash
-# ✅ Правильно для Node.js / Next.js / Vite
+# ✅ Correct for Node.js / Next.js / Vite
 npm run build
 npm run start
 
-# ✅ В Dockerfile
+# ✅ In Dockerfile
 RUN npm run build
 CMD ["npm", "run", "start"]
 ```
 
-В SelenaCore `npx vite build` — только для сборки статики. Собранные файлы раздаются через FastAPI `StaticFiles`. В production контейнере `npm` вообще не запускается.
+In SelenaCore `npx vite build` — only for building static files. Built files are served through FastAPI `StaticFiles`. In the production container `npm` is never launched.
 
-### 16.4 Защита SSH
+### 16.4 SSH Protection
 
 ```bash
-# Проверить authorized_keys на посторонние ключи
+# Check authorized_keys for unauthorized keys
 cat ~/.ssh/authorized_keys
 
-# Если нашли чужие ключи — удалить их
+# If foreign keys are found — remove them
 nano ~/.ssh/authorized_keys
 
-# Сменить пароль root
+# Change root password
 passwd root
 ```
 
-### 16.5 Регулярная проверка
+### 16.5 Regular Checks
 
 ```bash
-# Нагрузка системы
+# System load
 htop
 
-# Статистика контейнеров (CPU / RAM)
+# Container stats (CPU / RAM)
 docker stats
 
-# Обновление системы (закрывает уязвимости)
+# System updates (closes vulnerabilities)
 sudo apt update && sudo apt upgrade -y
 
-# Проверить открытые порты
+# Check open ports
 ss -tlnp
 ```
 
-### 16.6 Правила для агента
+### 16.6 Rules for the agent
 
 ```
-⛔ Нельзя маппить DB-порты без 127.0.0.1: prefix
-⛔ Нельзя запускать npm run dev в production-контейнере
-⛔ Нельзя хранить пароли БД в открытом виде (только через .env / secrets)
-⛔ Нельзя добавлять SSH-ключи в authorized_keys без явного запроса пользователя
-✅ Все новые сервисы в docker-compose — проверять биндинг портов
-✅ После изменения docker-compose — проверять sudo ufw status
+⛔ Do not map DB ports without 127.0.0.1: prefix
+⛔ Do not run npm run dev in production container
+⛔ Do not store DB passwords in plain text (only through .env / secrets)
+⛔ Do not add SSH keys to authorized_keys without explicit user request
+✅ All new services in docker-compose — verify port bindings
+✅ After changing docker-compose — check sudo ufw status
 ```
 
 ---
 
-## 17. АРХИТЕКТУРА СИСТЕМНЫХ МОДУЛЕЙ (КРИТИЧЕСКИ ВАЖНО)
+## 17. SYSTEM MODULE ARCHITECTURE (CRITICALLY IMPORTANT)
 
-> **Системные модули (type: SYSTEM) запускаются IN-PROCESS внутри smarthome-core контейнера.**
-> **Отдельные Docker-контейнеры / subprocess / порты — ТОЛЬКО для пользовательских модулей.**
-> **Это экономит ~580 MB RAM на Raspberry Pi.**
+> **System modules (type: SYSTEM) run IN-PROCESS inside the smarthome-core container.**
+> **Separate Docker containers / subprocess / ports — ONLY for user modules.**
+> **This saves ~580 MB RAM on Raspberry Pi.**
 
-### 17.1 Разделение модулей
+### 17.1 Module Classification
 
-| Тип | Запуск | Порт | Связь с ядром | Контейнер |
-|-----|--------|------|---------------|-----------|
-| **SYSTEM** | importlib в процессе ядра | ❌ нет | Прямые Python-вызовы | smarthome-core (единый) |
+| Type | Execution | Port | Communication with core | Container |
+|------|-----------|------|-------------------------|-----------|
+| **SYSTEM** | importlib in core process | ❌ none | Direct Python calls | smarthome-core (single) |
 | **UI/INTEGRATION/DRIVER/AUTOMATION** | Docker sandbox | ✅ 8100-8200 | HTTP API + webhooks | smarthome-modules |
 
-### 17.2 Базовый класс SystemModule
+### 17.2 SystemModule Base Class
 
 ```python
-# core/module_loader/system_module.py — наследовать ВСЕ системные модули
+# core/module_loader/system_module.py — ALL system modules inherit from this
 
 class SystemModule(ABC):
-    name: str  # должен совпадать с manifest.json "name"
+    name: str  # must match manifest.json "name"
 
-    async def setup(bus, session_factory):  # вызывается loader-ом
-    async def start():                       # абстрактный — запуск
-    async def stop():                        # абстрактный — остановка
+    async def setup(bus, session_factory):  # called by loader
+    async def start():                       # abstract — startup
+    async def stop():                        # abstract — shutdown
     def get_router() -> APIRouter | None:    # REST endpoints
 
-    # Вместо httpx → прямой доступ:
-    self.publish(event_type, payload)        # → EventBus напрямую
-    self.subscribe(event_types, callback)    # → DirectSubscription (без webhook)
+    # Instead of httpx → direct access:
+    self.publish(event_type, payload)        # → EventBus directly
+    self.subscribe(event_types, callback)    # → DirectSubscription (without webhook)
     self.fetch_devices()                     # → SQLAlchemy session
     self.patch_device_state(device_id, state)
     self.register_device(...)
 ```
 
-### 17.3 Структура файлов системного модуля
+### 17.3 System Module File Structure
 
 ```
 system_modules/weather_service/
     __init__.py            # from .module import WeatherServiceModule as module_class
-    module.py              # WeatherServiceModule(SystemModule) — точка входа
-    weather.py             # WeatherService — бизнес-логика (существующий код)
-    manifest.json          # type: SYSTEM, БЕЗ поля "port"
-    widget.html            # виджет (iframe, BASE из pathname)
-    settings.html          # настройки (iframe, BASE из pathname)
+    module.py              # WeatherServiceModule(SystemModule) — entry point
+    weather.py             # WeatherService — business logic (existing code)
+    manifest.json          # type: SYSTEM, WITHOUT "port" field
+    widget.html            # widget (iframe, BASE from pathname)
+    settings.html          # settings (iframe, BASE from pathname)
 ```
 
-### 17.4 manifest.json — правила для SYSTEM модулей
+### 17.4 manifest.json — rules for SYSTEM modules
 
 ```json
 {
     "name": "weather-service",
     "type": "SYSTEM",
     "runtime_mode": "always_on",
-    // ⛔ НЕТ поля "port" — SYSTEM модули не слушают порт
+    // ⛔ NO "port" field — SYSTEM modules do not listen on a port
     "permissions": ["events.publish"]
 }
 ```
 
-### 17.5 EventBus — два способа доставки
+### 17.5 EventBus — two delivery methods
 
 ```python
-# 1. DirectSubscription (для SYSTEM модулей — in-process)
+# 1. DirectSubscription (for SYSTEM modules — in-process)
 self.subscribe(["device.state_changed"], self._on_event)
-# → EventBus вызывает callback напрямую через asyncio.create_task()
+# → EventBus calls callback directly via asyncio.create_task()
 
-# 2. Webhook (для пользовательских модулей — через HTTP)
+# 2. Webhook (for user modules — via HTTP)
 POST /api/v1/events/subscribe { webhook_url: "http://localhost:8100/webhook" }
-# → EventBus делает HTTP POST на webhook_url
+# → EventBus makes HTTP POST to webhook_url
 ```
 
-### 17.6 Роутинг API системных модулей
+### 17.6 System Module API Routing
 
-Роутеры системных модулей монтируются в core FastAPI app:
+System module routers are mounted in the core FastAPI app:
 
 ```
 GET /api/ui/modules/weather-service/weather/current
@@ -1752,94 +1811,94 @@ GET /api/ui/modules/automation-engine/rules
 POST /api/ui/modules/scheduler/jobs
 ```
 
-Виджеты загружаются через iframe:
+Widgets are loaded via iframe:
 ```html
 <iframe src="/api/ui/modules/weather-service/widget.html" />
 ```
 
-### 17.7 BASE URL в HTML виджетах
+### 17.7 BASE URL in HTML widgets
 
 ```javascript
-// ✅ Правильно — вычисляется из URL iframe
+// ✅ Correct — computed from iframe URL
 const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 fetch(BASE + '/weather/current')
 
-// ❌ Неправильно
-const BASE = "http://localhost:8115";    // хардкод порта
-const base = window.location.origin;     // не учитывает prefix
-fetch('/status');                         // без prefix
+// ❌ Wrong
+const BASE = "http://localhost:8115";    // hardcoded port
+const base = window.location.origin;     // doesn't account for prefix
+fetch('/status');                         // without prefix
 ```
 
-### 17.8 Загрузка модулей (sandbox.py)
+### 17.8 Module Loading (sandbox.py)
 
 ```python
 # sandbox.py → _start_in_process()
 import importlib
 mod = importlib.import_module(f"system_modules.{dir_name}")
-cls = mod.module_class           # экспортируется из __init__.py
+cls = mod.module_class           # exported from __init__.py
 instance = cls()
 await instance.setup(bus, session_factory)
 await instance.start()
-router = instance.get_router()   # монтируется в app
+router = instance.get_router()   # mounted in app
 ```
 
 ---
 
-## 18. PRESENCE DETECTION — АЛГОРИТМ ОБНАРУЖЕНИЯ
+## 18. PRESENCE DETECTION — DETECTION ALGORITHM
 
-> Правильное присутствие = Layer 2 ARP, а не ping!
-> Роутер хранит DHCP-аренды ещё долго после ухода. Таблица ARP имеет статус STALE даже после выключения телефона. ICMP/TCP ping блокируется файрволом и режимом сна.
+> Proper presence = Layer 2 ARP, not ping!
+> Router keeps DHCP leases long after departure. ARP table has STALE status even after phone is turned off. ICMP/TCP ping is blocked by firewalls and sleep mode.
 
-### 18.1 Принцип работы
+### 18.1 How It Works
 
-**Почему ARP (Layer 2):**
-- Любое устройство на Wi-Fi **обязано** отвечать на ARP-запросы — иначе оно выпадет из сети
-- Работает даже когда экран заблокирован, телефон в кармане
-- Мгновенный результат: ≈1.9 сек на весь сегмент /24
+**Why ARP (Layer 2):**
+- Any device on Wi-Fi **must** respond to ARP requests — otherwise it drops off the network
+- Works even when the screen is locked, phone is in pocket
+- Instant result: ~1.9 sec for the entire /24 segment
 
-**Почему НЕ надо использовать:**
-- `ping` — телефоны блокируют ICMP, файрволы блокируют TCP
-- пассивный `/proc/net/arp` — содержит STALE записи (устройства ушли, но запись осталась)
-- DHCP-аренды — хранятся часами после ухода устройства
+**Why NOT to use:**
+- `ping` — phones block ICMP, firewalls block TCP
+- passive `/proc/net/arp` — contains STALE entries (devices left, but entry remains)
+- DHCP leases — stored for hours after device departure
 
-### 18.2 Стратегия детектора (priority order)
-
-```
-1. arp-scan --localnet (L2, активный)  ← ПРЕДПОЧТИТЕЛЬНЫЙ
-   → Отправляет Ethernet ARP broadcast, слушает ответы
-   → Запускается ОДИН РАЗ на цикл сканирования (не per-device)
-   → Возвращает множество активных MAC за 1.9 сек
-
-2. ip neigh + ping (L3 fallback)       ← если arp-scan недоступен
-   → ping -c 1 -W 1 <ip>  (триггер ARP-резолюция ядра)
-   → ip neigh show <ip>    (проверить статус)
-   → Принять:   REACHABLE | DELAY | PROBE
-   → Отклонить: STALE | FAILED | пустая строка
-
-3. Bluetooth BLE                       ← для BT-устройств
-```
-
-### 18.3 Таймаут «отсутствия» (Consider Away — 5 минут)
-
-Современные iPhone/Android уходят в **Deep Sleep** и могут отключить Wi-Fi на 2–4 минуты для экономии батареи. Если сканировать каждые 60 секунд — система ложно посчитает хозяина «ушедшим».
-
-**Правило:** не переходить в `away` мгновенно — ждать `away_threshold_sec` (по умолчанию **300 с**).
+### 18.2 Detector Strategy (priority order)
 
 ```
-Устройство появилось  → сразу "home"   (без задержки)
-Устройство пропало    → ждём 5 минут → если не вернулось → "away"
+1. arp-scan --localnet (L2, active)  ← PREFERRED
+   → Sends Ethernet ARP broadcast, listens for responses
+   → Runs ONCE per scan cycle (not per-device)
+   → Returns set of active MACs in 1.9 sec
+
+2. ip neigh + ping (L3 fallback)       ← if arp-scan unavailable
+   → ping -c 1 -W 1 <ip>  (triggers kernel ARP resolution)
+   → ip neigh show <ip>    (check status)
+   → Accept:   REACHABLE | DELAY | PROBE
+   → Reject:   STALE | FAILED | empty string
+
+3. Bluetooth BLE                       ← for BT devices
+```
+
+### 18.3 "Away" Timeout (Consider Away — 5 minutes)
+
+Modern iPhone/Android devices enter **Deep Sleep** and can disable Wi-Fi for 2-4 minutes to save battery. If scanning every 60 seconds — the system will falsely consider the owner "away".
+
+**Rule:** do not transition to `away` instantly — wait `away_threshold_sec` (default **300 s**).
+
+```
+Device appeared  → immediately "home"   (no delay)
+Device vanished  → wait 5 minutes → if not returned → "away"
 ```
 
 ```python
 # PresenceDetector defaults
-scan_interval_sec  = 60    # сканировать каждые 60 секунд
-away_threshold_sec = 300   # 5 минут ожидания перед "away"
-# Переопределить через env:
+scan_interval_sec  = 60    # scan every 60 seconds
+away_threshold_sec = 300   # 5 minutes wait before "away"
+# Override via env:
 # PRESENCE_SCAN_INTERVAL=60
 # PRESENCE_AWAY_THRESHOLD=300
 ```
 
-### 18.4 Установка arp-scan (Dockerfile.core)
+### 18.4 Installing arp-scan (Dockerfile.core)
 
 ```dockerfile
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -1848,10 +1907,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ...
 ```
 
-Проверить в контейнере:
+Verify in container:
 ```bash
 docker exec selena-core arp-scan --localnet -q
-# → список живых устройств за ~2 сек
+# → list of live devices in ~2 sec
 ```
 
 ### 18.5 Status API
@@ -1861,7 +1920,7 @@ GET /api/ui/modules/presence-detection/status
 
 Response 200:
 {
-  "detection_method": "arp-scan (L2)",   // или "ip-neigh (L3)"
+  "detection_method": "arp-scan (L2)",   // or "ip-neigh (L3)"
   "arp_scan_available": true,
   "scan_interval_sec": 60,
   "away_threshold_sec": 300,
@@ -1869,80 +1928,80 @@ Response 200:
 }
 ```
 
-### 18.6 Критические правила
+### 18.6 Critical Rules
 
 ```
-✅ arp-scan запускается ОДИН РАЗ за цикл (_scan_all), результат кешируется в _arp_scan_cache
-✅ Каждый MAC проверяется через O(1) lookup в set — не N×arp-scan вызовов
-✅ away_threshold_sec = 300 (5 мин) — защита от фазы Deep Sleep телефонов
-⛔ Нельзя использовать ping_ip() для определения присутствия — телефоны его блокируют
-⛔ Нельзя опираться только на /proc/net/arp — там STALE записи мёртвых устройств
-⛔ STALE статус ip neigh НЕ является подтверждением присутствия — только REACHABLE/DELAY/PROBE
+✅ arp-scan runs ONCE per cycle (_scan_all), result is cached in _arp_scan_cache
+✅ Each MAC is checked via O(1) lookup in set — not N×arp-scan calls
+✅ away_threshold_sec = 300 (5 min) — protection against phone Deep Sleep phase
+⛔ Do not use ping_ip() for presence detection — phones block it
+⛔ Do not rely solely on /proc/net/arp — it contains STALE entries of dead devices
+⛔ STALE status in ip neigh is NOT confirmation of presence — only REACHABLE/DELAY/PROBE
 ```
 
 ---
 
-## 19. СБОРКА И ЗАПУСК
+## 19. BUILD AND RUN
 
-### Docker Compose — контейнеры
+### Docker Compose — containers
 
-Проект запускается через `docker compose` из корня репозитория.
-Два контейнера: `selena-core` (ядро + UI) и `selena-agent` (Integrity Agent).
+The project is launched via `docker compose` from the repository root.
+Two containers: `selena-core` (core + UI) and `selena-agent` (Integrity Agent).
 
 ```bash
-# Статус контейнеров
+# Container status
 docker compose ps
 
-# Перезапуск всех контейнеров (после изменений в Python/config/system_modules)
+# Restart all containers (after changes in Python/config/system_modules)
 docker compose restart
 
-# Перезапуск только ядра
+# Restart core only
 docker compose restart core
 
-# Остановка
+# Stop
 docker compose down
 
-# Запуск (с пересборкой образа если менялись Dockerfile/requirements.txt)
+# Launch (with image rebuild if Dockerfile/requirements.txt changed)
 docker compose up -d --build
 
-# Запуск без пересборки
+# Launch without rebuild
 docker compose up -d
 
-# Логи (live)
+# Logs (live)
 docker compose logs -f core
 docker compose logs -f agent
 
-# Логи последних 100 строк
+# Last 100 log lines
 docker compose logs --tail=100 core
 ```
 
-### Фронтенд (React/Vite)
+### Frontend (React/Vite)
 
-UI собирается Vite и раздаётся из `system_modules/ui_core/static/`.
-Исходники: `src/`, конфиг: `vite.config.ts`.
+UI is built by Vite and served from `system_modules/ui_core/static/`.
+Source files: `src/`, config: `vite.config.ts`.
 
 ```bash
-# Сборка фронтенда (обязательно после изменений в src/)
+# Build frontend (mandatory after changes in src/)
 npx vite build
 
-# После сборки — перезапуск контейнера чтобы подхватил новый бандл
+# After build — restart container to pick up new bundle
 docker compose restart core
 ```
 
-⛔ **Важно:** изменения в `src/` (React-компоненты, i18n, store) **не применяются**
-до пересборки `npx vite build`. Перезапуск контейнера без пересборки
-покажет старый фронтенд.
+⛔ **Important:** changes in `src/` (React components, i18n, store) **are not applied**
+until rebuild with `npx vite build`. Restarting the container without rebuild
+will show the old frontend.
 
-✅ Изменения в `system_modules/` (Python, HTML виджеты/настройки) подхватываются
-при перезапуске контейнера — volume-mount обеспечивает live-sync.
+✅ Changes in `system_modules/` (Python, HTML widgets/settings) are picked up
+on container restart — volume-mount provides live-sync.
 
-### Типичные сценарии
+### Typical Scenarios
 
-| Что изменилось | Что делать |
+| What changed | What to do |
 |---|---|
-| Python-код в `core/` или `system_modules/` | `docker compose restart core` |
-| HTML виджеты/настройки модулей | `docker compose restart core` |
-| React-компоненты (`src/`) | `npx vite build && docker compose restart core` |
+| Python code in `core/` or `system_modules/` | `docker compose restart core` |
+| HTML widgets/settings of modules | `docker compose restart core` |
+| React components (`src/`) | `npx vite build && docker compose restart core` |
 | `requirements.txt` / `Dockerfile.core` | `docker compose up -d --build` |
 | `docker-compose.yml` / `.env` | `docker compose up -d` |
 | `config/core.yaml` | `docker compose restart core` |
@@ -1950,5 +2009,439 @@ docker compose restart core
 
 ---
 
+## 20. INTENT SYSTEM — ARCHITECTURE AND PROTOCOL
+
+> **Intent System** — the mechanism through which user voice and text commands
+> are routed to the appropriate module. Any module (system or user)
+> can register its intents and receive commands through EventBus.
+
+### 20.1 Multi-tier Router (IntentRouter)
+
+```
+User → STT → text
+    │
+    ▼
+Tier 1:   FastMatcher — keyword/regex rules from YAML (~0 ms)
+    │ [no match]
+    ▼
+Tier 1.5: System Module Intents — in-process regex (microseconds)
+    │ [no match]
+    ▼
+Tier 2:   User Module Intents — HTTP to container (milliseconds)
+    │ [no match]
+    ▼
+Tier 3:   LLM fallback — Ollama/Cloud (seconds, disabled when RAM < 5 GB)
+    │ [no match]
+    ▼
+Fallback: "Sorry, I didn't understand" (in STT model language)
+```
+
+**File:** `system_modules/llm_engine/intent_router.py`
+
+### 20.2 IntentResult — Router Response Structure
+
+```python
+@dataclass
+class IntentResult:
+    intent: str                          # "media.play_genre", "turn_on_light", "llm.response"
+    response: str                        # text for TTS (empty for system_module)
+    action: dict[str, Any] | None        # structured action
+    source: str                          # "fast_matcher" | "system_module" | "module_intent" | "llm" | "fallback"
+    latency_ms: int                      # processing time
+    user_id: str | None = None           # speaker ID (speaker_id)
+    params: dict[str, Any] | None = None # extracted parameters from regex named groups
+```
+
+### 20.3 Tier 1 — FastMatcher (YAML rules)
+
+**File:** `system_modules/llm_engine/fast_matcher.py`
+**Config:** `/opt/selena-core/config/intent_rules.yaml`
+
+Rules — simple keyword/regex matches. No LLM, no HTTP. Works in microseconds.
+
+```yaml
+# /opt/selena-core/config/intent_rules.yaml
+intents:
+  - name: "turn_on_light"
+    keywords: ["turn on light", "switch on light", "увімкни світло"]
+    regex: ["turn on .*(light|lamp)", "увімкни .*(світло|лампу)"]
+    response: "fast_matcher.light_on"
+    action:
+      type: "device.update_state"
+      state: { on: true }
+
+  - name: "media.pause"
+    keywords: ["pause", "пауза", "на паузу"]
+    response: ""  # empty — module will respond via TTS itself
+```
+
+**Parameter extraction:** regex with named groups automatically populate `params`:
+
+```yaml
+  - name: "media.volume_set"
+    regex: ["volume\\s+(?:to\\s+)?(?P<level>\\d+)"]
+    response: ""
+```
+
+On match "volume 50" → `params = {"level": "50"}`
+
+**When file is missing**, built-in rules are used: lights, temperature, privacy, basic media commands.
+
+### 20.4 Tier 1.5 — System Module Intents (in-process)
+
+System modules (type: SYSTEM) register intents **directly** in IntentRouter. No HTTP — regex matching happens in the same process.
+
+**Registration:**
+
+```python
+@dataclass
+class SystemIntentEntry:
+    module: str                          # "media-player"
+    intent: str                          # "media.play_genre"
+    patterns: dict[str, list[str]]       # {"uk": [...], "en": [...]}
+    description: str = ""
+    priority: int = 0                    # higher = checked first
+```
+
+```python
+# In start() of system module:
+from system_modules.llm_engine.intent_router import get_intent_router, SystemIntentEntry
+
+router = get_intent_router()
+router.register_system_intent(SystemIntentEntry(
+    module="media-player",
+    intent="media.play_genre",
+    priority=10,
+    patterns={
+        "uk": [r"(?:увімкни|включи)\s+(?P<genre>рок|джаз)\s*(?:музику)?"],
+        "en": [r"play\s+(?P<genre>rock|jazz)\s*(?:music)?"],
+    },
+))
+```
+
+**Priority:** `priority=10` is checked before `priority=5`. Use:
+- `priority=10` — intents with parameter extraction (genre, station_name, query)
+- `priority=5` — simple commands (pause, stop, next)
+
+**Cleanup on stop:**
+```python
+async def stop(self):
+    get_intent_router().unregister_system_intents(self.name)
+```
+
+**Language:** Patterns for the current language are checked first, fallback to `en`.
+
+### 20.5 Tier 2 — User Module Intents (HTTP)
+
+**File:** `core/api/routes/intents.py`
+
+User modules register patterns through Core API. On match, core forwards the request to the module's HTTP endpoint.
+
+**Registration (SDK does it automatically on startup):**
+
+```http
+POST /api/v1/intents/register
+Authorization: Bearer <module_token>
+Content-Type: application/json
+
+{
+  "module": "weather-module",
+  "port": 8100,
+  "intents": [
+    {
+      "patterns": {
+        "en": ["weather", "forecast", "temperature outside"],
+        "uk": ["погода", "прогноз", "температура надворі"]
+      },
+      "description": "Weather queries",
+      "endpoint": "/api/intent"
+    }
+  ]
+}
+```
+
+**Handling in module (endpoint `/api/intent`):**
+
+```python
+# main.py of the module
+@app.post("/api/intent")
+async def handle_intent(body: dict):
+    text = body["text"]
+    lang = body["lang"]
+    context = body.get("context", {})
+
+    # Business logic
+    weather = await get_weather()
+
+    return {
+        "handled": True,
+        "tts_text": f"Currently {weather['temp']}°C, {weather['desc']}",
+        "data": weather
+    }
+```
+
+**Module response contract:**
+
+```json
+{
+  "handled": true,           // mandatory — whether request was handled
+  "tts_text": "...",          // text for speech (TTS)
+  "data": { ... }             // arbitrary data (optional)
+}
+```
+
+**SDK `@intent` decorator (for user modules):**
+
+```python
+from sdk.base_module import SmartHomeModule, intent
+
+class WeatherModule(SmartHomeModule):
+    name = "weather-module"
+
+    @intent(r"weather|forecast|погода|прогноз")
+    async def handle_weather(self, text: str, context: dict) -> dict:
+        weather = await self._fetch_weather()
+        return {
+            "tts_text": f"Temperature {weather['temp']}°C",
+            "data": weather
+        }
+```
+
+### 20.6 Tier 3 — LLM fallback
+
+If no tier recognized the command — the text goes to LLM (Ollama/Cloud). The prompt is built automatically from `build_system_prompt(compact=True)` for local models.
+
+**Auto-disable:** when RAM < 5 GB, LLM is not called → fallback message.
+
+### 20.7 Delivery via EventBus
+
+After determining the intent, IntentRouter publishes a `voice.intent` event:
+
+```python
+# Published automatically by IntentRouter
+await bus.publish(
+    type="voice.intent",
+    source="core.intent_router",
+    payload={
+        "intent": "media.play_genre",       # intent name
+        "response": "",                       # TTS text (empty for system_module)
+        "action": null,                       # structured action
+        "params": {"genre": "jazz"},           # extracted parameters
+        "source": "system_module",            # where response came from
+        "user_id": null,                      # speaker ID
+        "latency_ms": 2                       # processing time
+    }
+)
+```
+
+**Module subscription to `voice.intent`:**
+
+```python
+# SYSTEM module
+self.subscribe(["voice.intent"], self._on_event)
+
+async def _on_event(self, event: Any) -> None:
+    if event.type == "voice.intent":
+        intent = event.payload.get("intent", "")
+        params = event.payload.get("params", {})
+        if intent.startswith("media."):
+            await self._voice_handler.handle(intent, params)
+```
+
+### 20.8 Voice Pipeline — Full Cycle
+
+```
+Audio → parecord → Vosk STT → VoiceCoreModule._process_command(text)
+  │
+  ├─ publish("voice.recognized", {text})
+  │
+  ├─ IntentRouter.route(text, lang) → IntentResult
+  │     ├─ Tier 1:   FastMatcher → media.pause
+  │     ├─ Tier 1.5: System Intent → media.play_genre {genre: "jazz"}
+  │     ├─ Tier 2:   Module Intent → module.weather-module
+  │     ├─ Tier 3:   LLM → llm.response
+  │     └─ Fallback  → unknown
+  │
+  ├─ IntentRouter → publish("voice.intent", {...})
+  │
+  ├─ if source == "system_module":
+  │     # Module handles TTS itself via voice.speak
+  │     MediaPlayer._on_event() → voice_handler.handle()
+  │       → play radio → publish("voice.speak", {text: "Playing jazz"})
+  │         → VoiceCore._on_voice_event() → TTS → audio
+  │
+  ├─ if source != "system_module" && response:
+  │     # VoiceCore speaks the response itself
+  │     publish("voice.response", {text, query})
+  │     → TTS → audio → publish("voice.speak_done", {text})
+  │
+  └─ Save to voice_history (SQLite)
+```
+
+### 20.9 Intent Categories
+
+Intents are grouped by namespace (prefix before the dot):
+
+| Namespace | Example | Module | Description |
+|-----------|---------|--------|-------------|
+| `media.*` | `media.play_radio`, `media.pause`, `media.volume_up` | media-player | Playback control |
+| `device.*` | `turn_on_light`, `turn_off_light`, `temperature_query` | FastMatcher / core | Device control |
+| `privacy.*` | `privacy_on`, `privacy_off` | voice-core | Privacy mode |
+| `module.*` | `module.weather-module` | User modules | Tier 2 HTTP modules |
+| `llm.*` | `llm.response` | LLM Engine | Free conversation |
+| `automation.*` | `automation.run_scene` | automation-engine | Scenes |
+| `unknown` | `unknown` | fallback | Not recognized |
+
+### 20.10 How to Add a Voice Command to Your Module
+
+#### System module (type: SYSTEM)
+
+1. Create file `intent_patterns.py` in the module directory
+2. Define patterns with named groups for parameter extraction
+3. Register in `start()`, remove in `stop()`
+4. Subscribe to `voice.intent` via EventBus
+5. Use `self.publish("voice.speak", {"text": "..."})` for TTS
+
+```python
+# system_modules/my_module/intent_patterns.py
+from system_modules.llm_engine.intent_router import SystemIntentEntry
+
+MY_INTENTS = [
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.do_action",
+        priority=5,
+        patterns={
+            "uk": [r"зроби\s+(?P<what>.+)"],
+            "en": [r"do\s+(?P<what>.+)"],
+        },
+    ),
+]
+```
+
+```python
+# system_modules/my_module/module.py
+class MyModule(SystemModule):
+    name = "my-module"
+
+    async def start(self):
+        self.subscribe(["voice.intent"], self._on_event)
+
+        from system_modules.llm_engine.intent_router import get_intent_router
+        from .intent_patterns import MY_INTENTS
+        for entry in MY_INTENTS:
+            get_intent_router().register_system_intent(entry)
+
+    async def stop(self):
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().unregister_system_intents(self.name)
+        self._cleanup_subscriptions()
+
+    async def _on_event(self, event):
+        if event.type == "voice.intent":
+            intent = event.payload.get("intent", "")
+            params = event.payload.get("params", {})
+            if intent == "mymodule.do_action":
+                what = params.get("what", "")
+                # ... execute action ...
+                await self.publish("voice.speak", {"text": f"Executing: {what}"})
+```
+
+#### User module (type: UI/INTEGRATION/DRIVER/AUTOMATION)
+
+1. Add `intents` to `manifest.json`
+2. Use `@intent` decorator or implement `POST /api/intent`
+3. Return `{"handled": true, "tts_text": "..."}`
+
+```json
+// manifest.json
+{
+  "name": "my-module",
+  "type": "UI",
+  "port": 8100,
+  "intents": [
+    {
+      "patterns": {
+        "en": ["do something", "action"]
+      },
+      "description": "Execute custom action",
+      "endpoint": "/api/intent"
+    }
+  ]
+}
+```
+
+```python
+# main.py
+from sdk.base_module import SmartHomeModule, intent
+
+class MyModule(SmartHomeModule):
+    name = "my-module"
+
+    @intent(r"do\s+(?P<what>.+)")
+    async def handle_action(self, text: str, context: dict) -> dict:
+        return {"tts_text": f"Executing action", "data": {"action": "done"}}
+```
+
+### 20.11 Dependencies Between Modules
+
+Modules **do not depend** on each other directly. All communication — through EventBus:
+
+```
+┌──────────────┐     voice.intent      ┌──────────────┐
+│  voice-core  │ ──── EventBus ────── │ media-player  │
+│  (STT/TTS)   │                       │  (VLC/Radio)  │
+└──────────────┘                       └──────────────┘
+        │                                      │
+        │  voice.speak                         │  voice.speak
+        ▼                                      ▼
+  ┌──────────┐                         ┌──────────────┐
+  │  Piper   │                         │   EventBus   │
+  │  TTS     │ ◄──────────────────────│              │
+  └──────────┘                         └──────────────┘
+```
+
+**Dependency rules:**
+
+| Rule | Description |
+|------|-------------|
+| No direct imports | Modules do NOT import each other |
+| EventBus — the only channel | Communication only through `publish()` / `subscribe()` |
+| Graceful degradation | If module is not running — commands are silently ignored |
+| Startup order does not matter | Modules register intents on `start()` |
+| No blocking dependencies | If media-player is not running → `media.*` intents → LLM fallback |
+
+**Exceptions (only for system modules):**
+
+```python
+# IntentRouter — a utility, not a module. Allowed import:
+from system_modules.llm_engine.intent_router import get_intent_router, SystemIntentEntry
+
+# EventBus — core. Available through self.publish() / self.subscribe()
+# NO NEED to import directly — use SystemModule methods
+```
+
+### 20.12 Supported Languages
+
+IntentRouter determines the language from the STT model (`vosk-model-small-uk` → `uk`).
+
+| Code | Language | STT model |
+|------|----------|-----------|
+| `uk` | Українська | `vosk-model-small-uk` |
+| `en` | English | `vosk-model-small-en-us` |
+
+Intent patterns must contain variants for all supported languages:
+
+```python
+patterns={
+    "uk": [r"увімкни\s+радіо"],
+    "en": [r"(?:play|turn on)\s+radio"],
+}
+```
+
+When patterns for the current language are missing — fallback to `en`.
+
+---
+
 *SelenaCore · AGENTS.md · SmartHome LK · Open Source MIT*
-*Репозиторий: https://github.com/dotradepro/SelenaCore*
+*Repository: https://github.com/dotradepro/SelenaCore*

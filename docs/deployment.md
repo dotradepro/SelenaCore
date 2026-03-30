@@ -290,16 +290,16 @@ curl http://localhost:80/api/ui/modules/hw-monitor/stats | python3 -m json.tool
 **Q: Module won't start after installation**
 A: Check status: `GET /api/v1/modules/{name}`. Status `ERROR` → check Docker logs: `docker logs selena-module-{name}`.
 
-**Q: Голосовой ассистент не слышит wake-word**
-A: Проверь аудио вход: `arecord -d 5 test.wav && aplay test.wav`. Если запись тихая — убедись, что усиление микрофона включено: `alsamixer`.
+**Q: Voice assistant doesn't hear the wake-word**
+A: Check audio input: `arecord -d 5 test.wav && aplay test.wav`. If the recording is quiet — make sure microphone gain is enabled: `alsamixer`.
 
-**Q: SAFE MODE — как выйти**
-A: Причина — изменение файлов ядра. Автоматический откат из резервной копии должен сработать. Если нет:
+**Q: SAFE MODE — how to exit**
+A: Cause — core files were modified. Automatic rollback from backup should work. If not:
 ```bash
 sudo systemctl stop smarthome-core
 python3 agent/manifest.py --restore
 sudo systemctl start smarthome-core
 ```
 
-**Q: Занят ли порт 7070**
-A: `sudo lsof -i :7070` — найти и завершить конфликтующий процесс.
+**Q: Is port 7070 occupied?**
+A: `sudo lsof -i :7070` — find and terminate the conflicting process.

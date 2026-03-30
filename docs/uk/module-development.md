@@ -5,13 +5,13 @@
 ## Що таке модуль
 
 > **Примітка:** Цей посібник описує **користувацькі модулі** (типи: UI, INTEGRATION, DRIVER, AUTOMATION), які працюють у Docker-контейнерах.
-> **Системні модулі** (тип: SYSTEM) працюють in-process всередині ядра. Вони наслідують `SystemModule` (`core/module_loader/system_module.py`) та спілкуються з ядром через прямі Python-виклики, не HTTP. Див. `AGENTS.md` §17.
+> **Системні модулі** (тип: SYSTEM) працюють in-process всередині ядра. Вони наслідують `SystemModule` (`core/module_loader/system_module.py`) та спілкуються з ядром через прямі Python-виклики, не WebSocket. Див. `AGENTS.md` §17.
 
-Користувацький модуль — ізольований мікросервіс, який запускається в Docker-контейнері та спілкується з ядром **лише** через Core API (`http://localhost:7070/api/v1`).
+Користувацький модуль — ізольований мікросервіс, який запускається в Docker-контейнері та спілкується з ядром через **Module Bus** (WebSocket з'єднання до `ws://core:7070/api/v1/bus`).
 
 Модуль може:
-- Реєструвати пристрої в Device Registry
-- Підписуватися на події Event Bus через webhook
+- Реєструвати голосові інтенти через bus announce
+- Підписуватися на події Event Bus через bus
 - Публікувати події (крім `core.*`)
 - Зберігати OAuth-токени через Secrets Vault
 
@@ -215,6 +215,122 @@ self._core_token   # module_token для заголовка Authorization (= SEL
 
 ---
 
+## Голосові інтенти — додавання голосових команд до модуля
+
+Будь-який модуль може отримувати голосові/текстові команди, зареєструвавши **шаблони інтентів**. Коли користувач вимовляє відповідну фразу, IntentRouter перенаправляє команду до модуля.
+
+> **Повна архітектура:** див. `AGENTS.md` §20
+
+### Користувацький модуль — декоратор `@intent`
+
+SDK автоматично реєструє і маршрутизує інтенти.
+
+```python
+from sdk.base_module import SmartHomeModule, intent
+
+class MyModule(SmartHomeModule):
+    name = "my-module"
+
+    @intent(r"погода|прогноз|weather|forecast")
+    async def handle_weather(self, text: str, context: dict) -> dict:
+        forecast = await self._get_forecast()
+        return {
+            "tts_text": f"Температура {forecast['temp']}°C, {forecast['desc']}",
+            "data": forecast
+        }
+```
+
+**Додайте шаблони до `manifest.json`:**
+
+```json
+{
+  "intents": [
+    {
+      "patterns": {
+        "uk": ["погода", "прогноз", "температура надворі"],
+        "en": ["weather", "forecast"]
+      },
+      "description": "Запити про погоду",
+      "endpoint": "/api/intent"
+    }
+  ]
+}
+```
+
+**Контракт відповіді:**
+
+| Поле | Обов'язково | Опис |
+|------|-------------|------|
+| `handled` | Так | `true` = модуль обробив команду |
+| `tts_text` | Ні | Текст для озвучування (TTS) |
+| `data` | Ні | Довільні дані |
+
+### Системний модуль — пряма реєстрація
+
+Системні модулі реєструють інтенти напряму в IntentRouter (без HTTP).
+
+**1. Визначте шаблони** (`intent_patterns.py`):
+
+```python
+from system_modules.llm_engine.intent_router import SystemIntentEntry
+
+MY_INTENTS = [
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.do_action",
+        priority=5,
+        patterns={
+            "uk": [r"зроби\s+(?P<what>.+)"],
+            "en": [r"do\s+(?P<what>.+)"],
+        },
+    ),
+]
+```
+
+**2. Зареєструйте в `start()`, видаліть у `stop()`:**
+
+```python
+async def start(self):
+    self.subscribe(["voice.intent"], self._on_event)
+    from system_modules.llm_engine.intent_router import get_intent_router
+    from .intent_patterns import MY_INTENTS
+    for entry in MY_INTENTS:
+        get_intent_router().register_system_intent(entry)
+
+async def stop(self):
+    from system_modules.llm_engine.intent_router import get_intent_router
+    get_intent_router().unregister_system_intents(self.name)
+    self._cleanup_subscriptions()
+```
+
+**3. Обробіть подію:**
+
+```python
+async def _on_event(self, event):
+    if event.type == "voice.intent":
+        intent = event.payload.get("intent", "")
+        params = event.payload.get("params", {})
+        if intent == "mymodule.do_action":
+            what = params.get("what", "")
+            await self.publish("voice.speak", {"text": f"Виконую: {what}"})
+```
+
+### Витяг параметрів через named groups
+
+Використовуйте `(?P<name>...)` в regex для витягу параметрів:
+
+```python
+# Шаблон: r"гучність\s+(?P<level>\d+)"
+# Вхід:   "гучність 50"
+# Результат: params = {"level": "50"}
+```
+
+### Багатомовні шаблони
+
+Завжди додавайте шаблони для всіх підтримуваних мов (`uk`, `ru`, `en`). При відсутності шаблонів для поточної мови — fallback на `en`.
+
+---
+
 ## Локальна розробка
 
 ### Крок 1 — Створити модуль
@@ -373,6 +489,58 @@ resp = await core_client.post("/api/v1/secrets/proxy",
     })
 # Токен НІКОЛИ не покидає ядро
 ```
+
+---
+
+## Локалізація (i18n) для Python-модулів
+
+> **Повні правила:** див. `AGENTS.md` §3.1 "Правила для Python-бекенду"
+
+Усі user-facing рядки (TTS-відповіді, повідомлення про помилки) повинні використовувати функцію `t()` з `core/i18n.py`. Жодного захардкодженого тексту.
+
+### Системний модуль
+
+```python
+from core.i18n import t
+
+await self.publish("voice.speak", {"text": t("mymodule.greeting")})
+text = t("mymodule.status", count=5, name="sensor")  # інтерполяція
+text = t("mymodule.greeting", lang="uk")              # явна мова
+```
+
+Ключі зберігаються в `config/locales/en.json` та `config/locales/uk.json`.
+
+### Користувацький модуль (Docker)
+
+Модулі зберігають свої locale файли:
+
+```
+my-module/
+  locales/
+    en.json
+    uk.json
+  main.py
+```
+
+Використовуйте `self.t()` — автоматично додає префікс модуля:
+
+```python
+class MyModule(SmartHomeModule):
+    name = "my-module"
+
+    @intent(r"погода|прогноз")
+    async def handle(self, text: str, context: dict) -> dict:
+        return {"tts_text": self.t("forecast", temp=22)}
+```
+
+SDK автоматично реєструє locale файли з `locales/` при запуску.
+
+### Правила
+
+- Завжди додавайте переклади в **обидва** файли (`en.json` та `uk.json`)
+- Fallback: мова → `en` → raw key (ніколи не падає)
+- Logger-повідомлення НЕ перекладаються
+- Формат ключів: `section.key` (наприклад `media.paused`, `api.device_not_found`)
 
 ---
 

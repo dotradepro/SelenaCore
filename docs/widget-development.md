@@ -1,31 +1,31 @@
 # Widget & Settings UI Development Guide
 **SelenaCore · UI Module Reference**
 
-Этот документ описывает как правильно писать `widget.html` и `settings.html` для модулей SelenaCore. Прочитай **целиком** перед тем как верстать любой UI модуля.
+This document describes how to properly write `widget.html` and `settings.html` for SelenaCore modules. Read it **in full** before building any module UI.
 
 ---
 
-## Оглавление
+## Table of Contents
 
-1. [Как работает сетка дашборда](#1-как-работает-сетка-дашборда)
-2. [Ключевое правило: виджет живёт в iframe](#2-ключевое-правило-виджет-живёт-в-iframe)
-3. [Обязательный CSS-шаблон](#3-обязательный-css-шаблон)
-4. [BASE URL — единственный правильный способ](#4-base-url--единственный-правильный-способ)
-5. [Размеры ячеек и адаптация](#5-размеры-ячеек-и-адаптация)
-6. [Получение данных из модуля](#6-получение-данных-из-модуля)
-7. [Запросы к Core API из виджета](#7-запросы-к-core-api-из-виджета)
-8. [Realtime: SSE и postMessage](#8-realtime-sse-и-postmessage)
-9. [settings.html — правила](#9-settingshtml--правила)
-10. [Полный шаблон widget.html](#10-полный-шаблон-widgethtml)
-11. [Полный шаблон settings.html](#11-полный-шаблон-settingshtml)
-12. [Чеклист перед сдачей](#12-чеклист-перед-сдачей)
-13. [Типичные ошибки](#13-типичные-ошибки)
+1. [How the dashboard grid works](#1-how-the-dashboard-grid-works)
+2. [Key rule: the widget lives in an iframe](#2-key-rule-the-widget-lives-in-an-iframe)
+3. [Required CSS template](#3-required-css-template)
+4. [BASE URL — the only correct approach](#4-base-url--the-only-correct-approach)
+5. [Cell sizes and adaptation](#5-cell-sizes-and-adaptation)
+6. [Fetching data from the module](#6-fetching-data-from-the-module)
+7. [Requests to Core API from the widget](#7-requests-to-core-api-from-the-widget)
+8. [Realtime: SSE and postMessage](#8-realtime-sse-and-postmessage)
+9. [settings.html — rules](#9-settingshtml--rules)
+10. [Full widget.html template](#10-full-widgethtml-template)
+11. [Full settings.html template](#11-full-settingshtml-template)
+12. [Pre-submission checklist](#12-pre-submission-checklist)
+13. [Common mistakes](#13-common-mistakes)
 
 ---
 
-## 1. Как работает сетка дашборда
+## 1. How the dashboard grid works
 
-UI Core (:80) строит дашборд как CSS grid. Каждый модуль со статусом `RUNNING` и `ui_profile != HEADLESS` получает ячейку в этой сетке. Размер ячейки задаётся в `manifest.json`:
+UI Core (:80) builds the dashboard as a CSS grid. Every module with status `RUNNING` and `ui_profile != HEADLESS` gets a cell in this grid. The cell size is defined in `manifest.json`:
 
 ```json
 "ui": {
@@ -36,15 +36,15 @@ UI Core (:80) строит дашборд как CSS grid. Каждый моду
 }
 ```
 
-| Значение `size` | Ширина | Высота | Типичное использование |
+| `size` value | Width | Height | Typical use |
 |---|---|---|---|
-| `1x1` | 1 колонка | 1 строка | Простой индикатор, счётчик |
-| `2x1` | 2 колонки | 1 строка | Компактный статус с деталями |
-| `1x2` | 1 колонка | 2 строки | Узкий вертикальный список |
-| `2x2` | 2 колонки | 2 строки | Полноценный виджет с графиком/прогнозом |
-| `4x1` | вся ширина | 1 строка | Горизонтальная панель |
+| `1x1` | 1 column | 1 row | Simple indicator, counter |
+| `2x1` | 2 columns | 1 row | Compact status with details |
+| `1x2` | 1 column | 2 rows | Narrow vertical list |
+| `2x2` | 2 columns | 2 rows | Full-featured widget with chart/forecast |
+| `4x1` | full width | 1 row | Horizontal panel |
 
-UI Core создаёт для каждого модуля:
+UI Core creates the following for each module:
 
 ```html
 <iframe
@@ -55,31 +55,31 @@ UI Core создаёт для каждого модуля:
 />
 ```
 
-Конкретные пиксельные размеры зависят от конфигурации UI Core (разрешение экрана, количество колонок). **Виджет не знает и не должен знать точные пиксели** — он просто заполняет 100% выделенного iframe.
+The exact pixel dimensions depend on the UI Core configuration (screen resolution, number of columns). **The widget does not know and should not know the exact pixels** — it simply fills 100% of the allocated iframe.
 
 ---
 
-## 2. Ключевое правило: виджет живёт в iframe
+## 2. Key rule: the widget lives in an iframe
 
-iframe — это изолированный документ фиксированного размера. Внутри него:
+An iframe is an isolated document of fixed size. Inside it:
 
-- **нет `100vh`** — `vh` считается от высоты самого iframe, который уже имеет фиксированную высоту. Это приводит к переполнению.
-- **нет скролла** — `scrolling="no"` задан родителем. Контент, который не влез — обрезается.
-- **нет доступа к parent DOM** — `sandbox` запрещает `window.parent`, `window.top`, `document.cookie`.
-- **нет `alert()`, `confirm()`, `prompt()`** — заблокированы sandbox.
-- **нет localStorage/sessionStorage** — `allow-same-origin` есть, но полагаться на storage между перезагрузками не стоит; данные должны приходить из API модуля.
+- **no `100vh`** — `vh` is calculated from the height of the iframe itself, which already has a fixed height. This leads to overflow.
+- **no scrolling** — `scrolling="no"` is set by the parent. Content that does not fit is clipped.
+- **no access to parent DOM** — `sandbox` forbids `window.parent`, `window.top`, `document.cookie`.
+- **no `alert()`, `confirm()`, `prompt()`** — blocked by sandbox.
+- **no localStorage/sessionStorage** — `allow-same-origin` is present, but relying on storage across reloads is not recommended; data should come from the module API.
 
 ```
 ┌─────────────────────────────────┐
-│  UI Core dashboard (браузер)    │
+│  UI Core dashboard (browser)    │
 │                                  │
 │  ┌──────────┐  ┌──────────────┐ │
 │  │ iframe   │  │ iframe 2x2   │ │
 │  │ 1x1      │  │              │ │
 │  │ widget   │  │  widget.html │ │
-│  └──────────┘  │  занимает    │ │
+│  └──────────┘  │  fills       │ │
 │                │  100%x100%   │ │
-│  ┌─────────────┤  ячейки      │ │
+│  ┌─────────────┤  of cell     │ │
 │  │ iframe 4x1  └──────────────┘ │
 │  └─────────────────────────────┘│
 └─────────────────────────────────┘
@@ -87,114 +87,114 @@ iframe — это изолированный документ фиксирова
 
 ---
 
-## 3. Обязательный CSS-шаблон
+## 3. Required CSS template
 
-Это единственный правильный способ начать `widget.html`. Отклонение от него — причина #1 багов отображения.
+This is the only correct way to start `widget.html`. Deviating from it is the #1 cause of rendering bugs.
 
 ```css
-/* ── Сброс — виджет в iframe заполняет ячейку сетки ── */
+/* ── Reset — widget in iframe fills the grid cell ── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-/* html и body — ровно 100% iframe */
+/* html and body — exactly 100% of iframe */
 html, body {
   width: 100%;
   height: 100%;
-  overflow: hidden;       /* ← обязательно, scrolling="no" у родителя */
-  background: transparent; /* или свой цвет */
+  overflow: hidden;       /* ← required, scrolling="no" on the parent */
+  background: transparent; /* or your own color */
 }
 
-/* Корневой контейнер — заполняет всё */
+/* Root container — fills everything */
 .root {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* padding по вкусу */
+  /* padding to taste */
   padding: 14px 16px;
   gap: 10px;
-  overflow: hidden;       /* ← контент не выходит за рамки */
+  overflow: hidden;       /* ← content does not escape the bounds */
 }
 ```
 
-**Запрещено:**
+**Forbidden:**
 
 ```css
-/* ❌ ломает отображение */
+/* ❌ breaks rendering */
 body { min-height: 100vh; }
 body { height: 100vh; }
 .container { min-height: 100vh; }
 
-/* ❌ вызывает скролл внутри iframe */
+/* ❌ causes scroll inside the iframe */
 body { overflow: auto; }
 body { overflow-y: scroll; }
 
-/* ❌ контент выходит за рамки ячейки */
+/* ❌ content escapes the cell bounds */
 .widget { position: fixed; }
 .popup  { position: fixed; }
 ```
 
 ---
 
-## 4. BASE URL — единственный правильный способ
+## 4. BASE URL — the only correct approach
 
-Виджет и настройки загружаются по пути вида:
+The widget and settings are loaded at a path like:
 
 ```
-# Пользовательский модуль (Docker контейнер)
+# User module (Docker container)
 http://localhost:8115/widget.html?ui_token=...
 
-# Системный модуль (in-process, монтируется в core FastAPI)
+# System module (in-process, mounted in core FastAPI)
 http://localhost:7070/api/ui/modules/weather-service/widget.html?ui_token=...
 ```
 
-Путь к API модуля всегда совпадает с директорией, где лежит виджет. Получить его надо из текущего URL:
+The path to the module API always matches the directory where the widget resides. You need to derive it from the current URL:
 
 ```javascript
-// ✅ Правильно — работает для обоих типов модулей
+// ✅ Correct — works for both module types
 const BASE = window.location.pathname
   .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
 
-// Примеры:
+// Examples:
 // /widget.html                           → ''
 // /api/ui/modules/weather-service/widget → '/api/ui/modules/weather-service'
 
-// Использование:
+// Usage:
 fetch(BASE + '/weather/current')
 fetch(BASE + '/status')
 ```
 
 ```javascript
-// ❌ Неправильно — хардкод порта
+// ❌ Wrong — hardcoded port
 const BASE = 'http://localhost:8115';
 
-// ❌ Неправильно — не учитывает префикс пути системного модуля
+// ❌ Wrong — does not account for system module path prefix
 const BASE = window.location.origin;
 
-// ❌ Неправильно — относительный путь без BASE
+// ❌ Wrong — relative path without BASE
 fetch('/weather/current');
 ```
 
 ---
 
-## 5. Размеры ячеек и адаптация
+## 5. Cell sizes and adaptation
 
-Виджет не знает свой точный размер в пикселях, но может его получить в runtime и адаптироваться:
+The widget does not know its exact size in pixels, but it can obtain it at runtime and adapt:
 
 ```javascript
-// Определить размер при старте и при изменении (родитель может изменить iframe)
+// Determine size at startup and on change (the parent may resize the iframe)
 function checkLayout() {
   const root = document.getElementById('root');
   const w = root.offsetWidth;
   const h = root.offsetHeight;
 
-  // Компактный режим для маленьких ячеек (1x1, 2x1)
+  // Compact mode for small cells (1x1, 2x1)
   root.classList.toggle('compact', h < 160);
 
-  // Широкий режим для 4x1
+  // Wide mode for 4x1
   root.classList.toggle('wide', w > 600 && h < 160);
 }
 
@@ -202,37 +202,37 @@ checkLayout();
 window.addEventListener('resize', checkLayout);
 ```
 
-**Рекомендуемые пороги:**
+**Recommended thresholds:**
 
-| Условие | Класс | Поведение |
+| Condition | Class | Behavior |
 |---|---|---|
-| `height < 160px` | `.compact` | Скрыть второстепенные детали, уменьшить шрифт |
-| `height > 300px` | `.expanded` | Показать расширенный контент, графики |
-| `width > 500px` | `.wide` | Горизонтальный layout вместо вертикального |
+| `height < 160px` | `.compact` | Hide secondary details, reduce font size |
+| `height > 300px` | `.expanded` | Show extended content, charts |
+| `width > 500px` | `.wide` | Horizontal layout instead of vertical |
 
-**Пример CSS адаптации:**
+**CSS adaptation example:**
 
 ```css
-/* Базовый вид (2x1, 2x2) */
+/* Base view (2x1, 2x2) */
 .detail-text   { display: block; }
 .main-temp     { font-size: 2.2rem; }
 .forecast-cond { display: block; }
 
-/* Компактный (1x1, узкие ячейки) */
+/* Compact (1x1, narrow cells) */
 .compact .detail-text   { display: none; }
 .compact .main-temp     { font-size: 1.6rem; }
 .compact .forecast-cond { display: none; }
 
-/* Широкий (4x1) */
+/* Wide (4x1) */
 .wide .layout   { flex-direction: row; }
 .wide .forecast { grid-template-columns: repeat(5, 1fr); }
 ```
 
 ---
 
-## 6. Получение данных из модуля
+## 6. Fetching data from the module
 
-Виджет получает данные **только** от своего модуля через HTTP-запросы к его API:
+The widget fetches data **only** from its own module via HTTP requests to its API:
 
 ```javascript
 const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
@@ -249,51 +249,51 @@ async function load() {
   }
 }
 
-// Первая загрузка
+// Initial load
 load();
 
-// Автообновление (выбрать подходящий интервал)
-setInterval(load, 30_000); // каждые 30 секунд
+// Auto-refresh (choose an appropriate interval)
+setInterval(load, 30_000); // every 30 seconds
 ```
 
-**Рекомендации по интервалу опроса:**
+**Recommended polling intervals:**
 
-| Тип данных | Интервал |
+| Data type | Interval |
 |---|---|
-| Температура, влажность | 30–60 сек |
-| Статус устройства | 10–30 сек |
-| Счётчики, статистика | 60–300 сек |
-| Критические алерты | SSE (см. раздел 8) |
+| Temperature, humidity | 30–60 sec |
+| Device status | 10–30 sec |
+| Counters, statistics | 60–300 sec |
+| Critical alerts | SSE (see section 8) |
 
 ---
 
-## 7. Запросы к Core API из виджета
+## 7. Requests to Core API from the widget
 
-Если виджету нужны данные напрямую из Core API (список устройств и т.д.), UI Core передаёт `ui_token` через query параметр:
+If the widget needs data directly from the Core API (device list, etc.), UI Core passes `ui_token` via a query parameter:
 
 ```javascript
-// Получить ui_token из URL
+// Get ui_token from URL
 const uiToken = new URLSearchParams(window.location.search).get('ui_token');
 
-// Запрос к Core API
+// Request to Core API
 const devices = await fetch('http://localhost:7070/api/v1/devices', {
   headers: { 'Authorization': `Bearer ${uiToken}` }
 }).then(r => r.json());
 ```
 
-**Ограничения `ui_token`:**
-- Только чтение: `device.read`, `events.subscribe`
-- TTL: 1 час (виджет сам обновит страницу при 401)
-- Нельзя писать устройства, публиковать события, управлять модулями
+**`ui_token` limitations:**
+- Read-only: `device.read`, `events.subscribe`
+- TTL: 1 hour (the widget will reload the page on 401)
+- Cannot write devices, publish events, or manage modules
 
 ```javascript
-// Обработка истёкшего токена
+// Handling an expired token
 async function coreRequest(url) {
   const res = await fetch(url, {
     headers: { 'Authorization': `Bearer ${uiToken}` }
   });
   if (res.status === 401) {
-    // Токен истёк — тихо перезагрузить iframe
+    // Token expired — silently reload the iframe
     window.location.reload();
     return null;
   }
@@ -304,9 +304,9 @@ async function coreRequest(url) {
 
 ---
 
-## 8. Realtime: SSE и postMessage
+## 8. Realtime: SSE and postMessage
 
-### SSE от модуля (рекомендуется для realtime данных)
+### SSE from the module (recommended for realtime data)
 
 ```javascript
 const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
@@ -319,18 +319,18 @@ es.addEventListener('state_changed', (e) => {
 });
 
 es.onerror = () => {
-  // Переподключение — EventSource делает это автоматически
+  // Reconnection — EventSource handles this automatically
   console.warn('SSE reconnecting...');
 };
 ```
 
-### postMessage с parent (только UI Core → виджет)
+### postMessage with parent (UI Core → widget only)
 
-Sandbox разрешает `allow-scripts allow-same-origin` — `postMessage` работает в одну сторону: от parent к iframe. Виджет может слушать сообщения от UI Core:
+Sandbox allows `allow-scripts allow-same-origin` — `postMessage` works in one direction: from parent to iframe. The widget can listen for messages from UI Core:
 
 ```javascript
 window.addEventListener('message', (e) => {
-  // Проверить источник — только от того же origin
+  // Verify the source — only from the same origin
   if (e.origin !== window.location.origin) return;
 
   if (e.data?.type === 'theme_changed') {
@@ -342,25 +342,25 @@ window.addEventListener('message', (e) => {
 });
 ```
 
-**Нельзя:** отправлять сообщения из iframe в parent (заблокировано sandbox без `allow-same-origin` + явного `targetOrigin`).
+**Not allowed:** sending messages from the iframe to the parent (blocked by sandbox without `allow-same-origin` + explicit `targetOrigin`).
 
 ---
 
-## 9. settings.html — правила
+## 9. settings.html — rules
 
-Страница настроек открывается в **отдельном модальном окне** UI Core, не в сетке дашборда. Правила:
+The settings page opens in a **separate modal window** of UI Core, not in the dashboard grid. Rules:
 
-- Размер **не фиксирован** — страница показывается в прокручиваемом модальном окне.
-- `overflow: auto` на body **разрешён** — здесь скролл нужен.
-- `100vh` **запрещён** по той же причине — используй `min-height: 100%`.
-- Формы сохраняют данные **через API модуля**, не через `localStorage`.
+- Size is **not fixed** — the page is displayed in a scrollable modal window.
+- `overflow: auto` on body is **allowed** — scrolling is needed here.
+- `100vh` is **forbidden** for the same reason — use `min-height: 100%`.
+- Forms save data **via the module API**, not via `localStorage`.
 
 ```css
 /* settings.html — body */
 html, body {
   width: 100%;
-  min-height: 100%;  /* ← не 100vh */
-  overflow-y: auto;  /* ← здесь скролл разрешён */
+  min-height: 100%;  /* ← not 100vh */
+  overflow-y: auto;  /* ← scrolling is allowed here */
   background: #0e1220;
   color: #e8eaf0;
   font-family: 'Segoe UI', system-ui, sans-serif;
@@ -373,7 +373,7 @@ html, body {
 }
 ```
 
-**Сохранение настроек:**
+**Saving settings:**
 
 ```javascript
 async function save() {
@@ -382,10 +382,10 @@ async function save() {
     units: document.getElementById('units').value,
   };
 
-  // ❌ Неправильно — напрямую в файл нельзя
+  // ❌ Wrong — cannot write directly to a file
   // localStorage.setItem('config', JSON.stringify(body));
 
-  // ✅ Правильно — через API модуля
+  // ✅ Correct — via the module API
   const r = await fetch(BASE + '/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -399,9 +399,9 @@ async function save() {
 
 ---
 
-## 10. Полный шаблон widget.html
+## 10. Full widget.html template
 
-Готовый минимальный шаблон для копирования:
+A ready-made minimal template for copying:
 
 ```html
 <!DOCTYPE html>
@@ -413,7 +413,7 @@ async function save() {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* Обязательно: заполнить iframe без overflow */
+    /* Required: fill iframe without overflow */
     html, body {
       width: 100%;
       height: 100%;
@@ -432,7 +432,7 @@ async function save() {
       gap: 10px;
     }
 
-    /* ── Состояния загрузки / ошибки ── */
+    /* ── Loading / error states ── */
     .state {
       display: flex;
       flex-direction: column;
@@ -453,7 +453,7 @@ async function save() {
     /* ── Compact mode (height < 160px) ── */
     .compact .secondary { display: none; }
 
-    /* ── Твои стили ── */
+    /* ── Your styles ── */
 
   </style>
 </head>
@@ -468,30 +468,30 @@ async function save() {
 
 <script>
 (function () {
-  // ── BASE URL — единственный правильный способ ──────────────────────────
+  // ── BASE URL — the only correct approach ──────────────────────────────
   const BASE = window.location.pathname
     .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
 
-  // ── ui_token для запросов к Core API ──────────────────────────────────
+  // ── ui_token for requests to Core API ─────────────────────────────────
   const uiToken = new URLSearchParams(window.location.search).get('ui_token');
 
-  // ── Адаптация под размер ячейки ────────────────────────────────────────
+  // ── Adaptation to cell size ───────────────────────────────────────────
   function checkLayout() {
     const root = document.getElementById('root');
     if (!root) return;
     root.classList.toggle('compact', root.offsetHeight < 160);
   }
 
-  // ── Рендер (твой код) ──────────────────────────────────────────────────
+  // ── Render (your code) ────────────────────────────────────────────────
   function render(data) {
     const root = document.getElementById('root');
     root.innerHTML = `
-      <div>Данные: ${JSON.stringify(data)}</div>
+      <div>Data: ${JSON.stringify(data)}</div>
     `;
     checkLayout();
   }
 
-  // ── Загрузка данных ────────────────────────────────────────────────────
+  // ── Data loading ──────────────────────────────────────────────────────
   async function load() {
     try {
       const data = await fetch(BASE + '/status').then(r => {
@@ -508,7 +508,7 @@ async function save() {
     }
   }
 
-  // ── Инициализация ──────────────────────────────────────────────────────
+  // ── Initialization ────────────────────────────────────────────────────
   checkLayout();
   load();
   setInterval(load, 30_000);
@@ -521,7 +521,7 @@ async function save() {
 
 ---
 
-## 11. Полный шаблон settings.html
+## 11. Full settings.html template
 
 ```html
 <!DOCTYPE html>
@@ -533,11 +533,11 @@ async function save() {
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* settings — прокручиваемое модальное окно, не фиксированная ячейка */
+    /* settings — scrollable modal window, not a fixed cell */
     html, body {
       width: 100%;
-      min-height: 100%;     /* ← не 100vh */
-      overflow-y: auto;     /* ← скролл разрешён */
+      min-height: 100%;     /* ← not 100vh */
+      overflow-y: auto;     /* ← scrolling is allowed */
       background: #0e1220;
       color: #e0e4f0;
       font-family: 'Segoe UI', system-ui, sans-serif;
@@ -641,7 +641,7 @@ async function save() {
   const BASE = window.location.pathname
     .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
 
-  // ── Загрузить текущие настройки ────────────────────────────────────────
+  // ── Load current settings ─────────────────────────────────────────────
   async function loadStatus() {
     try {
       const s = await fetch(BASE + '/status').then(r => r.json());
@@ -652,7 +652,7 @@ async function save() {
     }
   }
 
-  // ── Сохранить ──────────────────────────────────────────────────────────
+  // ── Save ──────────────────────────────────────────────────────────────
   async function save() {
     const body = {
       param1: document.getElementById('param1').value,
@@ -686,98 +686,98 @@ async function save() {
 
 ---
 
-## 12. Чеклист перед сдачей
+## 12. Pre-submission checklist
 
 **CSS:**
-- [ ] `html, body { width: 100%; height: 100%; overflow: hidden; }` — в widget.html
-- [ ] Нет `100vh`, `min-height: 100vh` в widget.html
+- [ ] `html, body { width: 100%; height: 100%; overflow: hidden; }` — in widget.html
+- [ ] No `100vh`, `min-height: 100vh` in widget.html
 - [ ] `.root { width: 100%; height: 100%; display: flex; overflow: hidden; }`
-- [ ] Нет `position: fixed` элементов в widget.html
-- [ ] settings.html использует `min-height: 100%` и `overflow-y: auto`
+- [ ] No `position: fixed` elements in widget.html
+- [ ] settings.html uses `min-height: 100%` and `overflow-y: auto`
 
 **JavaScript:**
-- [ ] `BASE` вычисляется через `window.location.pathname.replace(...)`
-- [ ] Нет хардкода `localhost:PORT` или IP-адресов
-- [ ] Нет `fetch('/endpoint')` без BASE префикса
-- [ ] Есть обработка ошибок fetch (try/catch + показ состояния ошибки)
-- [ ] Есть автообновление данных через `setInterval` (или SSE)
-- [ ] Есть `window.addEventListener('resize', checkLayout)` для адаптации
+- [ ] `BASE` is computed via `window.location.pathname.replace(...)`
+- [ ] No hardcoded `localhost:PORT` or IP addresses
+- [ ] No `fetch('/endpoint')` without BASE prefix
+- [ ] Fetch error handling present (try/catch + error state display)
+- [ ] Auto-refresh of data via `setInterval` (or SSE) is present
+- [ ] `window.addEventListener('resize', checkLayout)` for adaptation is present
 
-**Функциональность:**
-- [ ] Виджет показывает состояние загрузки (`Loading...`) пока нет данных
-- [ ] Виджет показывает состояние ошибки если API недоступен
-- [ ] При пустых данных (`null`, `undefined`) нет падения — показывается `'—'`
-- [ ] Компактный режим при `height < 160px` скрывает второстепенный контент
+**Functionality:**
+- [ ] Widget shows loading state (`Loading...`) while there is no data
+- [ ] Widget shows error state if the API is unavailable
+- [ ] With empty data (`null`, `undefined`) there is no crash — `'—'` is displayed
+- [ ] Compact mode at `height < 160px` hides secondary content
 
-**Соответствие размеру:**
-- [ ] Контент помещается в ячейку без скролла при базовом размере
-- [ ] При уменьшении iframe (compact) ничего не обрезается некрасиво
+**Size compliance:**
+- [ ] Content fits in the cell without scrolling at the base size
+- [ ] When the iframe shrinks (compact), nothing is clipped awkwardly
 
 ---
 
-## 13. Типичные ошибки
+## 13. Common mistakes
 
-### ❌ Белая полоса снизу / контент не заполняет ячейку
+### ❌ White bar at the bottom / content does not fill the cell
 
-**Причина:** `body` имеет стандартный отступ или `height` не задан.
+**Cause:** `body` has default margin or `height` is not set.
 
 ```css
-/* Исправление */
+/* Fix */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; }
 ```
 
 ---
 
-### ❌ Полоса прокрутки появляется в ячейке дашборда
+### ❌ Scrollbar appears in the dashboard cell
 
-**Причина:** контент выходит за `height: 100%`, а `overflow: hidden` не задан.
+**Cause:** content exceeds `height: 100%`, and `overflow: hidden` is not set.
 
 ```css
-/* Исправление */
+/* Fix */
 html, body { overflow: hidden; }
 .root      { overflow: hidden; }
 ```
 
 ---
 
-### ❌ Прогноз / список обрезается сверху или снизу
+### ❌ Forecast / list is clipped at the top or bottom
 
-**Причина:** flex-дочерний элемент не может сжаться меньше своего содержимого.
+**Cause:** a flex child cannot shrink below its content size.
 
 ```css
-/* Исправление */
+/* Fix */
 .forecast {
   flex: 1;
-  min-height: 0;  /* ← ключевое свойство, позволяет flex-item сжиматься */
+  min-height: 0;  /* ← key property, allows the flex item to shrink */
   overflow: hidden;
 }
 ```
 
 ---
 
-### ❌ Запросы к API падают с CORS или 404
+### ❌ API requests fail with CORS or 404
 
-**Причина:** неправильно вычислен BASE URL (хардкод порта или origin без пути).
+**Cause:** BASE URL computed incorrectly (hardcoded port or origin without path).
 
 ```javascript
-// Исправление
+// Fix
 const BASE = window.location.pathname
   .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
 ```
 
 ---
 
-### ❌ Модуль показывает старые данные после изменения настроек
+### ❌ Module shows stale data after changing settings
 
-**Причина:** нет перезагрузки данных после сохранения в settings.
+**Cause:** data is not reloaded after saving in settings.
 
 ```javascript
-// В settings.html — после успешного save():
+// In settings.html — after a successful save():
 async function save() {
   // ... POST /config ...
   showMsg('Saved!', 'ok');
-  // Перезагрузить статус чтобы отразить изменения
+  // Reload status to reflect changes
   await loadStatus();
 }
 ```
@@ -786,13 +786,13 @@ async function save() {
 
 ### ❌ TypeError: Cannot read properties of null / undefined
 
-**Причина:** данные пришли, но поле отсутствует — нет защиты от null.
+**Cause:** data arrived, but a field is missing — no null guard.
 
 ```javascript
-// ❌ Падает если temperature == null
+// ❌ Crashes if temperature == null
 document.getElementById('temp').textContent = Math.round(data.temperature) + '°';
 
-// ✅ Безопасно
+// ✅ Safe
 const t = data.temperature;
 document.getElementById('temp').textContent =
   t != null ? Math.round(t) + '°' : '—';

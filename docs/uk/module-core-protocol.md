@@ -1,25 +1,161 @@
 # docs/uk/module-core-protocol.md — Протокол взаємодії модулів і ядра
 
-**Версія:** 1.0
+**Версія:** 2.0 (Module Bus)
 **Статус:** Нормативний документ — реалізовувати строго за ним
-**Область:** `core/`, `core/module_loader/`, `sdk/base_module.py`, `sdk/mock_core.py`
+**Область:** `core/module_bus.py`, `core/api/routes/bus.py`, `sdk/base_module.py`
 
 ---
 
 ## Огляд
 
-Модуль і ядро спілкуються **виключно через HTTP на localhost**. Жодних інших каналів немає і бути не повинно. Прямий доступ модуля до SQLite, файлової системи `/secure/`, або до інших модулів — заборонено і заблоковано на рівні Docker network.
+Модулі та ядро спілкуються через **WebSocket Module Bus** (`ws://core:7070/api/v1/bus`). Кожен модуль — WebSocket клієнт, ядро — сервер (майстер-нода, CAN-bus архітектура). Прямий доступ модуля до SQLite, файлової системи `/secure/`, або до інших модулів — заборонено.
 
 ```
-MODULE (:810X)                        CORE (:7070)
+MODULE (Docker bridge)                CORE (:7070, host network)
    │                                      │
-   │──── HTTP Bearer token ─────────────►│  запити до Core API
+   │──── WebSocket + token ─────────────► │  ws://core:7070/api/v1/bus?token=XXX
    │                                      │
-   │◄─── POST /webhook/events ────────────│  доставка подій (HMAC)
-   │◄─── POST /webhook/commands ──────────│  команди платформи (HMAC)
+   │──── announce ────────────────────► │  реєстрація capabilities
+   │◄─── announce_ack ────────────────── │  підтвердження + bus_id
    │                                      │
-   UI Core (:80) ──iframe──► GET /widget.html від модуля
+   │◄─── intent ──────────────────────── │  голосова команда
+   │──── intent_response ─────────────► │  результат обробки
+   │                                      │
+   │◄─── event ───────────────────────── │  події EventBus
+   │──── event ───────────────────────► │  публікація подій
+   │                                      │
+   │◄─── ping ────────────────────────── │  health check (15с)
+   │──── pong ────────────────────────► │
+   │                                      │
+   │──── api_request ─────────────────► │  Core API proxy
+   │◄─── api_response ───────────────── │
+   │                                      │
+   │◄─── shutdown ────────────────────── │  graceful shutdown (drain)
 ```
+
+---
+
+## Module Bus — WebSocket протокол
+
+### Життєвий цикл з'єднання
+
+```
+1. Модуль підключається: ws://core:7070/api/v1/bus?token=MODULE_TOKEN
+2. Токен перевіряється ДО WebSocket accept()
+3. Модуль надсилає: {"type": "announce", "module": "name", "capabilities": {...}}
+4. Ядро відповідає: {"type": "announce_ack", "status": "ok", "bus_id": "uuid", "warnings": [...]}
+5. Цикл повідомлень (двонаправлений JSON)
+6. При відключенні: ядро очищує, модуль перепідключається з експоненційним backoff
+```
+
+### Типи повідомлень
+
+#### announce (модуль → ядро)
+```json
+{
+  "type": "announce",
+  "module": "weather-module",
+  "capabilities": {
+    "intents": [
+      {
+        "patterns": {"en": ["weather", "forecast"], "uk": ["погода", "прогноз"]},
+        "priority": 50,
+        "description": "Запити про погоду"
+      }
+    ],
+    "subscriptions": ["device.state_changed", "device.*"],
+    "publishes": ["weather.module_started"]
+  }
+}
+```
+
+#### intent (ядро → модуль)
+```json
+{"type": "intent", "id": "req-uuid", "payload": {"text": "яка погода?", "lang": "uk", "context": {"user_id": "u1"}}}
+```
+
+#### intent_response (модуль → ядро)
+```json
+{"type": "intent_response", "id": "req-uuid", "payload": {"handled": true, "tts_text": "Зараз +12°С", "data": {...}}}
+```
+
+#### event (двонаправлений)
+```json
+{"type": "event", "payload": {"event_type": "device.state_changed", "data": {"device_id": "d1", "state": {...}}}}
+```
+
+Ядро збагачує події полями `event_id`, `source`, `timestamp` при доставці підписникам.
+
+#### ping/pong (ядро → модуль → ядро)
+```json
+{"type": "ping", "ts": 1711800000.0}
+{"type": "pong", "ts": 1711800000.0}
+```
+
+Ядро відключає після 3 пропущених pong (45с).
+
+#### api_request / api_response (двонаправлений)
+```json
+{"type": "api_request", "id": "req-uuid", "method": "GET", "path": "/devices", "body": null}
+{"type": "api_response", "id": "req-uuid", "status": 200, "body": {"devices": [...]}}
+```
+
+Модуль→ядро: проксі до Core API з перевіркою ACL.
+Ядро→модуль: UI проксі для перенаправлення запитів до модуля.
+
+#### re_announce (модуль → ядро)
+```json
+{"type": "re_announce", "capabilities": {...}}
+```
+
+Гаряче оновлення capabilities без перепідключення.
+
+#### shutdown (ядро → модуль)
+```json
+{"type": "shutdown", "reason": "core_restart", "drain_ms": 5000}
+```
+
+Модуль повинен зберегти стан і підготуватися до відключення.
+
+### Маршрутизація інтентів
+
+1. Ядро підтримує відсортований індекс інтентів від усіх підключених модулів
+2. Пріоритет: 0-29 системні, 30-49 ядро, 50-99 користувацькі (менше = вищий)
+3. Fallthrough: максимум 3 модулі на один інтент
+4. Circuit breaker: 10с timeout → 30с open → half-open probe
+5. Одночасність: максимум 50 одночасних запитів інтентів
+
+### Таблиця ACL для API
+
+| Дозвіл | Дозволені методи |
+|--------|-----------------|
+| `devices.read` | GET /devices, GET /devices/* |
+| `devices.control` | POST /devices/*/control |
+| `secrets.read` | GET /secrets, GET /secrets/* |
+| `modules.list` | GET /modules |
+
+### Перепідключення
+
+- Експоненційний backoff: 1с, 2с, 4с, ... макс 60с
+- Випадковий jitter: 0-30% від затримки
+- Фатальні коди закриття (без перепідключення): `invalid_token`, `permission_denied`
+- Shutdown-aware: припиняє перепідключення коли ядро надсилає shutdown
+
+### Архітектура двох черг
+
+Ядро підтримує дві черги на з'єднання:
+- **Критична черга** (backpressure, maxsize=100): інтенти, ping, shutdown, API відповіді
+- **Черга подій** (drop-oldest, maxsize=1000): доставка подій
+
+Критичні повідомлення завжди мають пріоритет над подіями.
+
+---
+
+> **LEGACY ПРОТОКОЛ (deprecated):** Розділи нижче описують старий HTTP-протокол.
+> Нові модулі повинні використовувати WebSocket Module Bus описаний вище.
+> HTTP реєстрація інтентів (`POST /api/v1/intents/register`) та webhook доставка подій — deprecated.
+
+---
 
 ---
 
@@ -1120,7 +1256,117 @@ SELENA_INSTALL_PATH=/var/lib/selena/modules/<name>
 
 ---
 
-## 10. Зведена таблиця — хто що читає і пише
+## 10. Протокол Intent — голосові та текстові команди
+
+### 10.1 Огляд
+
+Intent System дозволяє будь-якому модулю отримувати голосові та текстові команди. Маршрутизація відбувається через IntentRouter з 4 рівнями пріоритету (див. `AGENTS.md` §20).
+
+```
+Голос/текст → IntentRouter → voice.intent event → модуль
+```
+
+### 10.2 Реєстрація інтентів (користувацький модуль)
+
+```http
+POST /api/v1/intents/register
+Authorization: Bearer <module_token>
+
+{
+  "module": "weather-module",
+  "port": 8100,
+  "intents": [
+    {
+      "patterns": {
+        "uk": ["погода", "прогноз"],
+        "en": ["weather", "forecast"]
+      },
+      "description": "Запити про погоду",
+      "endpoint": "/api/intent"
+    }
+  ]
+}
+```
+
+**Відповідь 201:**
+```json
+{ "registered": true, "module": "weather-module", "intent_count": 1 }
+```
+
+### 10.3 Диспатч інтенту до модуля
+
+Коли IntentRouter (Tier 2) знаходить збіг з паттерном модуля:
+
+```http
+POST http://localhost:{port}{endpoint}
+Content-Type: application/json
+
+{
+  "text": "яка погода",
+  "lang": "uk",
+  "context": { "user_id": null }
+}
+```
+
+**Контракт відповіді:**
+
+```json
+{
+  "handled": true,
+  "tts_text": "Зараз 22°C, ясно",
+  "data": { "temp": 22, "desc": "ясно" }
+}
+```
+
+| Поле | Тип | Обов'язково | Опис |
+|------|-----|-------------|------|
+| `handled` | `bool` | Так | `true` = модуль обробив запит |
+| `tts_text` | `str` | Ні | Текст для озвучування (TTS) |
+| `data` | `dict` | Ні | Довільні дані |
+
+### 10.4 Подія voice.intent (EventBus)
+
+Після визначення наміру IntentRouter публікує подію `voice.intent`:
+
+```json
+{
+  "type": "voice.intent",
+  "source": "core.intent_router",
+  "payload": {
+    "intent": "media.play_genre",
+    "response": "",
+    "action": null,
+    "params": {"genre": "джаз"},
+    "source": "system_module",
+    "user_id": null,
+    "latency_ms": 2
+  }
+}
+```
+
+### 10.5 Системні модулі — пряма реєстрація
+
+Системні модулі реєструють інтенти в коді, без HTTP:
+
+```python
+from system_modules.llm_engine.intent_router import get_intent_router, SystemIntentEntry
+
+get_intent_router().register_system_intent(SystemIntentEntry(
+    module="media-player",
+    intent="media.play_radio",
+    priority=5,
+    patterns={
+        "uk": [r"(?:увімкни|включи)\s+радіо"],
+        "en": [r"(?:play|turn on)\s+radio"],
+    },
+))
+```
+
+Отримання подій — через `self.subscribe(["voice.intent"], callback)`.
+
+---
+
+## 11. Зведена таблиця — хто що читає і пише
 
 | Компонент | Читає | Пише | Заборонено |
 |---|---|---|---|
