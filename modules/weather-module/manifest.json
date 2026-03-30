@@ -6,19 +6,10 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "port": 8100,
     "permissions": [
-        "device.read",
+        "devices.read",
         "events.publish"
     ],
-    "ui": {
-        "icon": "icon.svg",
-        "widget": {
-            "file": "widget.html",
-            "size": "2x2"
-        },
-        "settings": "settings.html"
-    },
     "intents": [
         {
             "patterns": {
@@ -42,10 +33,21 @@
                     "is it raining"
                 ]
             },
-            "description": "Answer questions about current weather and forecast",
-            "endpoint": "/api/intent"
+            "priority": 50,
+            "description": "Answer questions about current weather and forecast"
         }
     ],
+    "publishes": [
+        "weather.module_started"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2"
+        },
+        "settings": "settings.html"
+    },
     "resources": {
         "memory_mb": 128,
         "cpu": 0.25

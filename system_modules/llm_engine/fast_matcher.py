@@ -7,9 +7,9 @@ This is the first tier of the Intent Router — zero-latency, no LLM.
 Config file format (YAML):
   intents:
     - name: "turn_on_light"
-      keywords: ["включи свет", "turn on light"]
-      regex: ["включи .+ свет", "зажги .+"]
-      response: "Включаю {device}"
+      keywords: ["turn on light", "switch on light"]
+      regex: ["turn on .+ light", "switch on .+"]
+      response: "Turning on {device}"
       action:
         type: "device.update_state"
         state: {"on": true}
@@ -30,11 +30,19 @@ RULES_FILE = os.environ.get("FAST_MATCHER_RULES", "/opt/selena-core/config/inten
 
 
 class MatchResult:
-    def __init__(self, intent: str, response: str | None, action: dict | None, score: float) -> None:
+    def __init__(
+        self,
+        intent: str,
+        response: str | None,
+        action: dict | None,
+        score: float,
+        params: dict[str, str] | None = None,
+    ) -> None:
         self.intent = intent
         self.response = response
         self.action = action
         self.score = score
+        self.params = params or {}
 
     def __bool__(self) -> bool:
         return self.intent != ""
@@ -68,7 +76,7 @@ class FastMatcher:
         """Reload rules from disk."""
         self._load_rules()
 
-    def match(self, text: str) -> MatchResult | None:
+    def match(self, text: str, lang: str | None = None) -> MatchResult | None:
         """Match text against all rules. Returns best MatchResult or None."""
         text_lower = text.lower().strip()
         if not text_lower:
@@ -83,23 +91,36 @@ class FastMatcher:
                     logger.debug("Fast Matcher: keyword match '%s' → '%s'", kw, intent_name)
                     return MatchResult(
                         intent=intent_name,
-                        response=rule.get("response"),
+                        response=self._resolve_response(rule.get("response"), lang),
                         action=rule.get("action"),
                         score=1.0,
                     )
 
             # Regex match
             for pattern in rule.get("regex", []):
-                if re.search(pattern, text_lower, re.IGNORECASE):
+                m = re.search(pattern, text_lower, re.IGNORECASE)
+                if m:
                     logger.debug("Fast Matcher: regex match '%s' → '%s'", pattern, intent_name)
                     return MatchResult(
                         intent=intent_name,
-                        response=rule.get("response"),
+                        response=self._resolve_response(rule.get("response"), lang),
                         action=rule.get("action"),
                         score=0.9,
+                        params=m.groupdict() or {},
                     )
 
         return None
+
+    @staticmethod
+    def _resolve_response(response: str | None, lang: str | None) -> str | None:
+        """Resolve response through i18n if it looks like a translation key."""
+        if not response:
+            return response
+        # Translation keys use dot-notation (e.g. "fast_matcher.light_on")
+        if "." in response and " " not in response:
+            from core.i18n import t
+            return t(response, lang=lang)
+        return response
 
     @staticmethod
     def _default_rules() -> list[dict]:
@@ -107,38 +128,83 @@ class FastMatcher:
         return [
             {
                 "name": "turn_on_light",
-                "keywords": ["включи свет", "turn on light", "свет включи"],
-                "regex": [r"включи .*(свет|лампу|освещение)", r"зажги .+"],
-                "response": "Включаю свет",
+                "keywords": ["turn on light", "switch on light",
+                             "увімкни світло", "світло увімкни"],
+                "regex": [r"turn on .*(light|lamp)",
+                          r"увімкни .*(світло|лампу)"],
+                "response": "fast_matcher.light_on",
                 "action": {"type": "device.update_state", "state": {"on": True}},
             },
             {
                 "name": "turn_off_light",
-                "keywords": ["выключи свет", "turn off light", "свет выключи"],
-                "regex": [r"выключи .*(свет|лампу|освещение)", r"погаси .+"],
-                "response": "Выключаю свет",
+                "keywords": ["turn off light", "switch off light",
+                             "вимкни світло", "світло вимкни"],
+                "regex": [r"turn off .*(light|lamp)",
+                          r"вимкни .*(світло|лампу)"],
+                "response": "fast_matcher.light_off",
                 "action": {"type": "device.update_state", "state": {"on": False}},
             },
             {
                 "name": "temperature_query",
-                "keywords": ["температура", "сколько градусов", "how hot", "temperature"],
-                "regex": [r"какая .* температура", r"сколько .* градусов"],
-                "response": "Запрашиваю показания температуры",
+                "keywords": ["temperature", "how hot",
+                             "температура", "скільки градусів"],
+                "regex": [r"what.* temperature", r"how .* degrees",
+                          r"яка .* температура"],
+                "response": "fast_matcher.temperature_query",
                 "action": {"type": "device.read_state", "capability": "temperature"},
             },
             {
                 "name": "privacy_on",
-                "keywords": ["режим приватности", "не слушай", "privacy on", "stop listening"],
-                "regex": [r"включи.*(приват|не слушай)"],
-                "response": "Режим приватности включён",
+                "keywords": ["privacy on", "stop listening",
+                             "не слухай", "режим приватності"],
+                "regex": [r"enable.*(privac)", r"увімкни.*(приват|не слухай)"],
+                "response": "fast_matcher.privacy_on",
                 "action": {"type": "privacy.enable"},
             },
             {
                 "name": "privacy_off",
-                "keywords": ["выйди из приватного", "privacy off", "start listening"],
-                "regex": [r"выключи.*(приват)"],
-                "response": "Режим приватности выключен",
+                "keywords": ["privacy off", "start listening",
+                             "вийди з приватного"],
+                "regex": [r"disable.*(privac)", r"вимкни.*(приват)"],
+                "response": "fast_matcher.privacy_off",
                 "action": {"type": "privacy.disable"},
+            },
+            # ── Media controls (zero-param, keyword-only for speed) ──
+            {
+                "name": "media.pause",
+                "keywords": ["pause", "пауза", "на паузу"],
+                "regex": [],
+                "response": "",
+            },
+            {
+                "name": "media.stop",
+                "keywords": ["stop", "стоп", "досить"],
+                "regex": [r"(?:stop|вимкни)\s*(?:music|музику)"],
+                "response": "",
+            },
+            {
+                "name": "media.next",
+                "keywords": ["next track", "skip", "наступний трек"],
+                "regex": [],
+                "response": "",
+            },
+            {
+                "name": "media.previous",
+                "keywords": ["previous track", "попередній трек"],
+                "regex": [],
+                "response": "",
+            },
+            {
+                "name": "media.volume_up",
+                "keywords": ["louder", "volume up", "гучніше", "погучніше"],
+                "regex": [],
+                "response": "",
+            },
+            {
+                "name": "media.volume_down",
+                "keywords": ["quieter", "volume down", "тихіше", "потихіше"],
+                "regex": [],
+                "response": "",
             },
         ]
 

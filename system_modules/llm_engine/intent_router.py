@@ -1,19 +1,24 @@
 """
-system_modules/llm_engine/intent_router.py — Two-tier Intent Router
+system_modules/llm_engine/intent_router.py — Multi-tier Intent Router
 
-Tier 1: Fast Matcher (keyword/regex) — zero latency
-Tier 2: Ollama LLM fallback — dynamic understanding
+Tier 1:   Fast Matcher (keyword/regex YAML rules) — zero latency
+Tier 1.5: System Module Intents (in-process regex) — microseconds
+Tier 2:   Module Bus (WebSocket intent routing) — milliseconds
+Tier 3:   Ollama LLM fallback — dynamic understanding
 
 Orchestration:
   1. Try Fast Matcher first
-  2. If no match → route to Ollama with dynamic system prompt
-  3. If RAM < 5GB → Ollama disabled, return "not understood"
-  4. Publish voice.intent event to EventBus
+  2. Try system module registered intents (in-process, no HTTP)
+  3. Try user module intents via Module Bus (WebSocket)
+  4. If no match → route to Ollama with dynamic system prompt
+  5. If RAM < 5GB → Ollama disabled, return "not understood"
+  6. Publish voice.intent event to EventBus
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -26,16 +31,76 @@ class IntentResult:
     intent: str
     response: str
     action: dict[str, Any] | None
-    source: str          # "fast_matcher" | "llm" | "fallback"
+    source: str          # "fast_matcher" | "system_module" | "module_bus" | "llm" | "fallback"
     latency_ms: int
     user_id: str | None = None
+    params: dict[str, Any] | None = None
+
+
+@dataclass
+class SystemIntentEntry:
+    """In-process intent registration for SYSTEM modules."""
+    module: str                                    # e.g. "media-player"
+    intent: str                                    # e.g. "media.play_radio"
+    patterns: dict[str, list[str]]                 # {"uk": [...], "en": [...]}
+    description: str = ""
+    priority: int = 0                              # higher = checked first
 
 
 class IntentRouter:
-    """Orchestrates Fast Matcher + LLM for intent resolution."""
+    """Orchestrates Fast Matcher + System Intents + Module Intents + LLM."""
 
     def __init__(self) -> None:
         self._system_prompt: str | None = None
+        self._system_intents: list[SystemIntentEntry] = []
+
+    # ── System module intent registration ──────────────────────────────
+
+    def register_system_intent(self, entry: SystemIntentEntry) -> None:
+        """Register an in-process intent from a SYSTEM module."""
+        self._system_intents.append(entry)
+        self._system_intents.sort(key=lambda e: e.priority, reverse=True)
+        logger.info(
+            "IntentRouter: registered system intent '%s' from '%s'",
+            entry.intent, entry.module,
+        )
+
+    def unregister_system_intents(self, module: str) -> None:
+        """Remove all intent registrations for a system module."""
+        before = len(self._system_intents)
+        self._system_intents = [e for e in self._system_intents if e.module != module]
+        removed = before - len(self._system_intents)
+        if removed:
+            logger.info("IntentRouter: unregistered %d intents from '%s'", removed, module)
+
+    def _match_system_intents(
+        self, text: str, lang: str,
+    ) -> tuple[SystemIntentEntry, dict[str, str]] | None:
+        """Try matching text against system module intent patterns.
+
+        Returns (entry, params) on match, None otherwise.
+        Tries requested language first, falls back to 'en'.
+        """
+        text_lower = text.lower().strip()
+        for entry in self._system_intents:
+            lang_patterns = entry.patterns.get(lang) or entry.patterns.get("en", [])
+            for pattern in lang_patterns:
+                try:
+                    m = re.search(pattern, text_lower, re.IGNORECASE)
+                    if m:
+                        logger.debug(
+                            "System intent match: '%s' → '%s' (module=%s)",
+                            pattern, entry.intent, entry.module,
+                        )
+                        return entry, m.groupdict() or {}
+                except re.error:
+                    logger.warning(
+                        "Invalid regex '%s' in system intent '%s'",
+                        pattern, entry.intent,
+                    )
+        return None
+
+    # ── Main routing ────────────────────────────────────────────────────
 
     async def route(
         self,
@@ -46,9 +111,10 @@ class IntentRouter:
         """Route user text to the appropriate intent handler.
 
         Resolution order:
-          Tier 1: Fast Matcher (keyword/regex YAML rules) — zero latency
-          Tier 2: Module Intents (registered via /api/v1/intents) — no LLM cost
-          Tier 3: Ollama LLM — dynamic understanding, disabled when RAM < 5GB
+          Tier 1:   Fast Matcher (keyword/regex YAML rules) — zero latency
+          Tier 1.5: System Module Intents (in-process regex) — microseconds
+          Tier 2:   Module Bus (WebSocket intent routing) — milliseconds
+          Tier 3:   LLM fallback — dynamic understanding, disabled when RAM < 5GB
 
         Returns IntentResult with the resolved intent, response, and action.
         """
@@ -56,7 +122,7 @@ class IntentRouter:
 
         # Tier 1: Fast Matcher
         from system_modules.llm_engine.fast_matcher import get_fast_matcher
-        match = get_fast_matcher().match(text)
+        match = get_fast_matcher().match(text, lang=lang)
 
         if match:
             result = IntentResult(
@@ -66,37 +132,65 @@ class IntentRouter:
                 source="fast_matcher",
                 latency_ms=int(time.time() * 1000) - start_ms,
                 user_id=user_id,
+                params=match.params or {},
             )
             await self._publish_event(result)
             return result
 
-        # Tier 2: Module Intents — ask registered modules before hitting LLM
+        # Tier 1.5: System Module Intents — in-process, no HTTP
+        sys_match = self._match_system_intents(text, lang)
+        if sys_match is not None:
+            entry, params = sys_match
+            result = IntentResult(
+                intent=entry.intent,
+                response="",
+                action=None,
+                source="system_module",
+                latency_ms=int(time.time() * 1000) - start_ms,
+                user_id=user_id,
+                params=params,
+            )
+            await self._publish_event(result)
+            return result
+
+        # Tier 2: Module Bus — route intent via WebSocket bus
         try:
-            from core.api.routes.intents import find_module_for_text
-            module_match = find_module_for_text(text, lang)
-            if module_match is not None:
-                module_name, port, endpoint = module_match
-                import httpx
-                async with httpx.AsyncClient(timeout=8.0) as client:
-                    resp = await client.post(
-                        f"http://localhost:{port}{endpoint}",
-                        json={"text": text, "lang": lang, "context": {"user_id": user_id}},
+            from core.module_bus import get_module_bus
+            bus_result = await get_module_bus().route_intent(
+                text, lang, context={"user_id": user_id},
+            )
+            if bus_result is not None:
+                if bus_result.get("handled"):
+                    result = IntentResult(
+                        intent=f"module.{bus_result.get('module', '?')}",
+                        response=bus_result.get("tts_text", ""),
+                        action=bus_result.get("data"),
+                        source="module_bus",
+                        latency_ms=int(time.time() * 1000) - start_ms,
+                        user_id=user_id,
                     )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("handled"):
-                        result = IntentResult(
-                            intent=f"module.{module_name}",
-                            response=data.get("tts_text", ""),
-                            action=data.get("data"),
-                            source="module_intent",
-                            latency_ms=int(time.time() * 1000) - start_ms,
-                            user_id=user_id,
-                        )
-                        await self._publish_event(result)
-                        return result
+                    await self._publish_event(result)
+                    return result
+                # Bus matched but module unavailable (circuit_open/timeout/disconnected)
+                reason = bus_result.get("reason", "")
+                module_name = bus_result.get("module", "?")
+                if reason in ("circuit_open", "timeout", "disconnected"):
+                    logger.warning(
+                        "Module bus: %s unavailable (reason=%s)", module_name, reason,
+                    )
+                    from core.i18n import t
+                    result = IntentResult(
+                        intent=f"module.{module_name}",
+                        response=t("intent.module_unavailable", lang=lang),
+                        action=None,
+                        source="module_bus",
+                        latency_ms=int(time.time() * 1000) - start_ms,
+                        user_id=user_id,
+                    )
+                    await self._publish_event(result)
+                    return result
         except Exception as exc:
-            logger.warning("Module intent Tier 2 error: %s", exc)
+            logger.warning("Module bus Tier 2 error: %s", exc)
 
         # Tier 3: LLM
         from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
@@ -124,20 +218,9 @@ class IntentRouter:
             except Exception as e:
                 logger.error("LLM error: %s", e)
 
-        # Fallback — use language-aware message
-        _fallbacks = {
-            "uk": "Вибачте, я не зрозумів запит. Спробуйте ще раз.",
-            "ru": "Извините, я не понял запрос. Попробуйте ещё раз.",
-            "en": "Sorry, I didn't understand. Please try again.",
-        }
-        try:
-            from core.config_writer import get_value as _gv
-            import os as _os
-            _stt = _gv("voice", "stt_model", _os.environ.get("VOSK_MODEL", "vosk-model-small-en-us"))
-            _code = _stt.lower().replace("vosk-model-small-", "").replace("vosk-model-big-", "").replace("vosk-model-", "").split("-")[0]
-        except Exception:
-            _code = "en"
-        fallback_msg = _fallbacks.get(_code, _fallbacks["en"])
+        # Fallback — language-aware "not understood" via i18n
+        from core.i18n import t
+        fallback_msg = t("intent.fallback", lang=lang)
 
         result = IntentResult(
             intent="unknown",
@@ -178,6 +261,7 @@ class IntentRouter:
                     "intent": result.intent,
                     "response": result.response,
                     "action": result.action,
+                    "params": result.params or {},
                     "source": result.source,
                     "user_id": result.user_id,
                     "latency_ms": result.latency_ms,
