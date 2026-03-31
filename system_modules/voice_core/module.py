@@ -551,11 +551,15 @@ class VoiceCoreModule(SystemModule):
             lang_names = {"uk": "Ukrainian", "en": "English"}
             lang_name = lang_names.get(lang, "English")
 
-            # Load custom rephrase prompt or default
+            # Load custom rephrase prompt or localized default
             rephrase_rules = voice_cfg.get("rephrase_prompt", "")
             if not rephrase_rules:
-                from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
-                rephrase_rules = DEFAULT_REPHRASE_PROMPT
+                try:
+                    from core.api.routes.voice_engines import _get_default_rephrase
+                    rephrase_rules = _get_default_rephrase(lang)
+                except Exception:
+                    from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
+                    rephrase_rules = DEFAULT_REPHRASE_PROMPT
 
             system = (
                 f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"

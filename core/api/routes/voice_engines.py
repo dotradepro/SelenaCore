@@ -372,6 +372,14 @@ def _get_default_compact_user(ui_lang: str) -> str:
     return _load_prompt_locale(ui_lang).get("compact_user", "Short answers, plain text.")
 
 
+def _get_default_classification(ui_lang: str) -> str:
+    return _load_prompt_locale(ui_lang).get("classification_prompt", DEFAULT_CLASSIFICATION_PROMPT)
+
+
+def _get_default_rephrase(ui_lang: str) -> str:
+    return _load_prompt_locale(ui_lang).get("rephrase_prompt", DEFAULT_REPHRASE_PROMPT)
+
+
 def build_system_prompt(compact: bool = False) -> str:
     """Build the full prompt: hidden system part + user part.
 
@@ -406,6 +414,8 @@ async def get_system_prompt() -> dict[str, Any]:
 
     saved_classification = voice_cfg.get("classification_prompt", "")
     saved_rephrase = voice_cfg.get("rephrase_prompt", "")
+    default_classification = _get_default_classification(ui_lang)
+    default_rephrase = _get_default_rephrase(ui_lang)
 
     return {
         "name": name,
@@ -419,12 +429,12 @@ async def get_system_prompt() -> dict[str, Any]:
         "compact_user": saved_compact or default_compact,
         "is_custom_compact": bool(saved_compact),
         "default_compact": default_compact,
-        "classification_prompt": saved_classification or DEFAULT_CLASSIFICATION_PROMPT,
+        "classification_prompt": saved_classification or default_classification,
         "is_custom_classification": bool(saved_classification),
-        "default_classification": DEFAULT_CLASSIFICATION_PROMPT,
-        "rephrase_prompt": saved_rephrase or DEFAULT_REPHRASE_PROMPT,
+        "default_classification": default_classification,
+        "rephrase_prompt": saved_rephrase or default_rephrase,
         "is_custom_rephrase": bool(saved_rephrase),
-        "default_rephrase": DEFAULT_REPHRASE_PROMPT,
+        "default_rephrase": default_rephrase,
         "limits": {
             "user_prompt": MAX_USER_PROMPT,
             "compact_user": MAX_COMPACT_USER,
@@ -462,7 +472,8 @@ async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
 async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     """Save custom intent classification prompt."""
     prompt = req.prompt.strip()[:MAX_CLASSIFICATION_PROMPT]
-    if prompt == DEFAULT_CLASSIFICATION_PROMPT:
+    _, _, ui_lang = _get_prompt_context()
+    if prompt == _get_default_classification(ui_lang):
         prompt = ""
     update_config("voice", "classification_prompt", prompt)
     # Clear intent router cached prompt
@@ -478,7 +489,8 @@ async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]
 async def save_rephrase_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     """Save custom rephrase prompt."""
     prompt = req.prompt.strip()[:MAX_REPHRASE_PROMPT]
-    if prompt == DEFAULT_REPHRASE_PROMPT:
+    _, _, ui_lang = _get_prompt_context()
+    if prompt == _get_default_rephrase(ui_lang):
         prompt = ""
     update_config("voice", "rephrase_prompt", prompt)
     return {"status": "ok"}

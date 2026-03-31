@@ -385,7 +385,7 @@ class IntentRouter:
         lang_name = lang_names.get(lang, "English")
         catalog = self._build_intent_catalog(lang)
 
-        # Load custom classification prompt from config, or use default
+        # Load custom classification prompt from config, or use localized default
         rules_block = ""
         try:
             from core.config_writer import read_config
@@ -393,8 +393,12 @@ class IntentRouter:
         except Exception:
             pass
         if not rules_block:
-            from core.api.routes.voice_engines import DEFAULT_CLASSIFICATION_PROMPT
-            rules_block = DEFAULT_CLASSIFICATION_PROMPT
+            try:
+                from core.api.routes.voice_engines import _get_default_classification
+                rules_block = _get_default_classification(lang)
+            except Exception:
+                from core.api.routes.voice_engines import DEFAULT_CLASSIFICATION_PROMPT
+                rules_block = DEFAULT_CLASSIFICATION_PROMPT
 
         system_prompt = (
             f"User language: {lang_name} ({lang}).\n\n"
