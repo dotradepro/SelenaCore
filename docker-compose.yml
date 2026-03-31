@@ -12,6 +12,7 @@ services:
       - selena_data:/var/lib/selena
       - selena_secure:/secure
       - ${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:ro
+      - ${PIPER_MODELS_DIR:-${HOME}/.local/share/piper/models}:/var/lib/selena/models/piper
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/bin/docker:/usr/bin/docker:ro
       - /usr/bin/systemctl:/usr/bin/systemctl:ro
@@ -37,6 +38,7 @@ services:
       - PULSE_SERVER=unix:/run/user/${HOST_UID:-1000}/pulse/native
       - HOST_USER=${USER:-root}
       - OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}
+      - PIPER_MODELS_DIR=/var/lib/selena/models/piper
       - LLAMACPP_START_SCRIPT=${PWD}/scripts/llamacpp-start.sh
       - MALLOC_ARENA_MAX=2
       - SELENA_GPU_AVAILABLE=1

@@ -25,7 +25,11 @@ from aiohttp import web
 logging.basicConfig(level=logging.INFO, format="[piper-server] %(message)s")
 logger = logging.getLogger("piper-server")
 
-MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")
+_default_models = os.path.join(
+    os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")),
+    "piper", "models",
+)
+MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", _default_models)
 DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
 
 # Device mode: "cpu", "gpu", or "auto"
