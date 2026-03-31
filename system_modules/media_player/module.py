@@ -153,6 +153,7 @@ class MediaPlayerModule(SystemModule):
         if self._state_task:
             self._state_task.cancel()
         await self._player.stop()
+        self._player.release()
         self._cleanup_subscriptions()
         try:
             from system_modules.llm_engine.intent_router import get_intent_router

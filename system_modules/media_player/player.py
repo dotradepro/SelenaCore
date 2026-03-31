@@ -84,8 +84,12 @@ class MediaPlayer:
             self._stub_state = "playing"
             logger.info("[stub] play_url: %s [%s]", url, source_type)
             return
+        # Release previous media to prevent memory leak
+        old_media = self._player.get_media()
         media = self._instance.media_new(play_url)
         self._player.set_media(media)
+        if old_media is not None:
+            old_media.release()
         rc = self._player.play()
         if rc == -1:
             self._stub_state = "error"
@@ -118,8 +122,11 @@ class MediaPlayer:
                     play_url = url
                     if url.startswith("https://"):
                         play_url = "http://" + url[8:]
+                    old_media = self._player.get_media()
                     media = self._instance.media_new(play_url)
                     self._player.set_media(media)
+                    if old_media is not None:
+                        old_media.release()
                     self._player.play()
                     await asyncio.sleep(5)
                 else:
@@ -162,6 +169,10 @@ class MediaPlayer:
             self._stub_track = None
             return
         self._player.stop()
+        # Release current media to free memory
+        media = self._player.get_media()
+        if media is not None:
+            media.release()
 
     async def set_volume(self, volume: int) -> None:
         self._volume = max(0, min(100, volume))
@@ -232,6 +243,23 @@ class MediaPlayer:
                 else self._vlc.PlaybackMode.loop
             )
             self._list_player.set_playback_mode(mode)
+
+    def release(self) -> None:
+        """Release all VLC resources to free memory."""
+        if self._player is not None:
+            self._player.stop()
+            media = self._player.get_media()
+            if media is not None:
+                media.release()
+            self._player.release()
+            self._player = None
+        if self._list_player is not None:
+            self._list_player.release()
+            self._list_player = None
+        if self._instance is not None:
+            self._instance.release()
+            self._instance = None
+        self._vlc = None
 
     def get_status(self) -> dict:
         track = self.get_current_track()
