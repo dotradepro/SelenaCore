@@ -167,16 +167,44 @@ modules:
 voice:
   wake_word_sensitivity: 0.5
   stt_model: "base"
+  stt_silence_timeout: 1.0
   tts_voice: "uk_UA-lada-x_low"
+  rephrase_enabled: false
+  tts_settings:
+    length_scale: 1.0
+    noise_scale: 0.667
+    noise_w_scale: 0.8
+    sentence_silence: 0.2
+    volume: 1.0
+    speaker: 0
   privacy_gpio_pin: null
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0 to 1.0). Higher values reduce false positives. |
-| `stt_model` | `str` | `base` | Vosk speech-to-text model size. Options: `tiny`, `base`, `small`, `medium`. Larger models are more accurate but require more RAM. |
+| `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0 to 1.0). |
+| `stt_model` | `str` | `base` | Vosk STT model size: `tiny`, `base`, `small`, `medium`. |
+| `stt_silence_timeout` | `float` | `1.0` | Seconds of silence before processing command (0.5-5.0). |
 | `tts_voice` | `str` | `uk_UA-lada-x_low` | Piper TTS voice identifier. |
-| `privacy_gpio_pin` | `int` or `null` | `null` | GPIO pin number for a physical microphone kill switch. Set to `null` to disable. |
+| `rephrase_enabled` | `bool` | `false` | LLM rephrase for module responses. Adds 3-10s latency on local LLM. |
+| `tts_settings.length_scale` | `float` | `1.0` | Speech speed (0.5=fast, 2.0=slow). |
+| `tts_settings.noise_scale` | `float` | `0.667` | Intonation variability (0.0-1.0). |
+| `tts_settings.noise_w_scale` | `float` | `0.8` | Phoneme width variability (0.0-1.0). |
+| `tts_settings.sentence_silence` | `float` | `0.2` | Pause between sentences (seconds). |
+| `tts_settings.volume` | `float` | `1.0` | Volume multiplier (0.1-3.0). |
+| `tts_settings.speaker` | `int` | `0` | Speaker ID for multi-speaker models. |
+| `privacy_gpio_pin` | `int\|null` | `null` | GPIO pin for physical mic kill switch. |
+
+### Environment variables (voice/TTS/LLM)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PIPER_MODELS_DIR` | `/var/lib/selena/models/piper` | Piper voice model directory |
+| `PIPER_VOICE` | `uk_UA-ukrainian_tts-medium` | Default TTS voice |
+| `PIPER_GPU_URL` | `http://localhost:5100` | Native Piper server URL |
+| `PIPER_DEVICE` | `auto` | Piper device mode: `auto`, `cpu`, `gpu` |
+| `LLAMACPP_GPU_LAYERS` | `999` | GPU layers for llama.cpp (0=CPU only) |
+| `LLAMACPP_N_CTX` | `512` | Context window size for llama.cpp |
 
 ### llm
 

@@ -87,7 +87,8 @@ docker compose up -d
   - PulseAudio-сокет — аудіо вхід/вихід
   - Директорія моделей Ollama (якщо налаштовано)
 - **Перевірка стану:** `GET /api/v1/health` кожні 30 секунд
-- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk, Piper, Ollama
+- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk
+- **Зовнішні сервіси (нативно на хості):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
 
 ### selena-agent (агент цілісності)
 
@@ -98,13 +99,49 @@ docker compose up -d
 
 ### Підтримка GPU (NVIDIA Jetson)
 
-Для увімкнення TTS з GPU-прискоренням (Piper ONNX + CUDA) запустіть з файлом перевизначення GPU:
+Для GPU-прискорення контейнера:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-Це додає NVIDIA container runtime до сервісу selena-core.
+### Нативний сервіс Piper TTS
+
+Piper TTS працює нативно на хості (не в Docker) для прямого доступу до GPU.
+
+```bash
+# Встановити Piper TTS
+pip3 install --user piper-tts aiohttp
+
+# Для GPU на Jetson (JetPack 6, CUDA 12.x):
+pip3 install --user onnxruntime-gpu --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126
+pip3 install --user "numpy<2"
+sudo ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 /usr/lib/aarch64-linux-gnu/libcudnn.so
+# Або автоматично: bash scripts/build-onnxruntime-gpu.sh
+
+# Розгорнути systemd-сервіс
+sudo cp scripts/piper-tts.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now piper-tts
+
+# Перевірити
+curl http://localhost:5100/health
+# → "device": "gpu", "cuda_available": true
+```
+
+> **Примітка:** PyPI `onnxruntime-gpu` НЕ має aarch64 wheels. Використовуйте індекс NVIDIA Jetson AI Lab.
+
+### llama.cpp / Ollama
+
+LLM працює нативно на хості для GPU offload.
+
+```bash
+# З GPU (за замовч.)
+bash scripts/llamacpp-start.sh /path/to/model.gguf 8081 999
+
+# Тільки CPU
+LLAMACPP_GPU_LAYERS=0 bash scripts/llamacpp-start.sh /path/to/model.gguf
+```
 
 ---
 

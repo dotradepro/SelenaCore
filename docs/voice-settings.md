@@ -26,7 +26,7 @@ Microphone (parecord)
   Cloud LLM Rephrase (variative TTS)
      │
      ▼
-  Piper TTS → Speaker
+  Piper TTS (native host server, CPU/GPU) → Speaker
 ```
 
 ## STT - Vosk
@@ -38,10 +38,57 @@ Microphone (parecord)
 
 ## TTS - Piper
 
-- ONNX-based text-to-speech
-- CUDA support on Jetson
+- ONNX-based text-to-speech via native host server (`piper-server.py`)
+- Models loaded once and kept warm in memory (~100-400ms CPU, ~30-80ms GPU)
+- CPU/GPU mode: `--device auto|cpu|gpu` (auto-detects CUDAExecutionProvider)
 - Models in `/var/lib/selena/models/piper/`
-- Configured in core.yaml: `voice.tts_voice`
+- Configured in core.yaml: `voice.tts_voice`, `voice.tts_settings`
+
+### Piper TTS Server
+
+Runs natively on host (not in Docker) as a systemd service on port 5100.
+
+```bash
+# Start manually
+python3 scripts/piper-server.py --port 5100 --device auto
+
+# systemd service
+sudo systemctl enable --now piper-tts
+```
+
+**Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/synthesize` | Text → WAV audio |
+| POST | `/synthesize/raw` | Text → raw PCM s16le (for streaming to paplay) |
+| GET | `/health` | Status, device (cpu/gpu), loaded voices |
+| GET | `/voices` | List installed voice models |
+
+**GPU acceleration:** Requires `onnxruntime-gpu` with CUDAExecutionProvider.
+
+On Jetson (JetPack 6, CUDA 12.x):
+
+```bash
+# Automated install (recommended)
+bash scripts/build-onnxruntime-gpu.sh
+
+# Or manual steps:
+pip3 install --user onnxruntime-gpu --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126
+pip3 install --user "numpy<2"                    # NumPy 2.x is incompatible
+sudo ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 /usr/lib/aarch64-linux-gnu/libcudnn.so
+sudo systemctl restart piper-tts
+```
+
+> **Note:** PyPI `onnxruntime-gpu` does NOT support aarch64. Use the NVIDIA Jetson AI Lab index.
+
+### TTS Performance (Jetson Orin Nano)
+
+| Text | CPU (warm) | GPU (est.) | Cold start |
+|------|-----------|-----------|------------|
+| Short (1 word) | ~420 ms | ~280 ms | ~2500 ms |
+| Medium (4 words) | ~780 ms | ~500 ms | ~2500 ms |
+| Long (15 words) | ~2280 ms | ~740 ms | ~2500 ms |
 
 ## Wake Word
 
@@ -128,17 +175,15 @@ Configure via UI: **Settings → System Modules → Voice Core → LLM Router**
 
 ---
 
-## LLM Response Rephrase
+## LLM Response Rephrase (optional)
 
-When a system module executes a voice command, it generates a hardcoded response (e.g., "Playing radio station Kiss FM"). Before TTS playback, voice-core sends this text to the Cloud LLM for rephrasing.
+When enabled (`voice.rephrase_enabled: true`), system module responses are rephrased via LLM before TTS playback. **Disabled by default** to reduce latency (saves 3-10s per response on local LLM).
 
-**Purpose:** variative, natural-sounding responses instead of repetitive templates.
-
-**How it works:**
+**How it works (when enabled):**
 
 1. Module calls `m.speak("Playing radio station Kiss FM")`
 2. `voice.speak` event reaches voice-core
-3. voice-core sends the default text + conversation context to Cloud LLM
+3. voice-core sends the default text + conversation context to LLM
 4. LLM rephrases it naturally (temperature=0.9 for variety)
 5. Rephrased text is spoken via Piper TTS
 6. Falls back to original text if LLM is unavailable
@@ -278,7 +323,16 @@ Features:
 voice:
   wake_word_sensitivity: 0.5
   stt_model: "vosk-model-small-uk-v3-nano"
+  stt_silence_timeout: 1.0            # seconds of silence before processing (0.5-5.0)
   tts_voice: "uk_UA-ukrainian_tts-medium"
+  rephrase_enabled: false              # LLM rephrase for module responses (adds latency)
+  tts_settings:
+    length_scale: 1.0                  # speech speed (0.5=fast, 2.0=slow)
+    noise_scale: 0.667                 # intonation variability (0.0-1.0)
+    noise_w_scale: 0.8                 # phoneme width variability (0.0-1.0)
+    sentence_silence: 0.2             # pause between sentences (seconds)
+    volume: 1.0                        # volume (0.1-3.0)
+    speaker: 0                         # speaker ID for multi-speaker models
   privacy_gpio_pin: null
   llm_provider: "google"
   providers:

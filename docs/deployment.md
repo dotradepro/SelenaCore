@@ -87,7 +87,8 @@ The primary container running the SelenaCore application.
   - PulseAudio socket — Audio input/output
   - Ollama models directory (if configured)
 - **Health check:** `GET /api/v1/health` every 30 seconds
-- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk, Piper, Ollama
+- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk
+- **External services (native on host):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
 
 ### selena-agent (integrity agent)
 
@@ -98,13 +99,51 @@ A separate container that continuously monitors core integrity.
 
 ### GPU Support (NVIDIA Jetson)
 
-To enable GPU-accelerated TTS (Piper ONNX + CUDA), start with the GPU override file:
+For GPU-accelerated container features, start with the GPU override file:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-This adds the NVIDIA container runtime to the selena-core service.
+### Piper TTS Native Service
+
+Piper TTS runs natively on the host (not in Docker) for direct GPU access and lower memory usage.
+
+```bash
+# Install Piper TTS
+pip3 install --user piper-tts aiohttp
+
+# For GPU on Jetson (JetPack 6, CUDA 12.x):
+pip3 install --user onnxruntime-gpu --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126
+pip3 install --user "numpy<2"
+sudo ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 /usr/lib/aarch64-linux-gnu/libcudnn.so
+# Or use the automated script: bash scripts/build-onnxruntime-gpu.sh
+
+# Deploy systemd service
+sudo cp scripts/piper-tts.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now piper-tts
+
+# Verify
+curl http://localhost:5100/health
+# → "device": "gpu", "cuda_available": true
+```
+
+> **Note:** PyPI `onnxruntime-gpu` does NOT have aarch64 wheels. Must use NVIDIA Jetson AI Lab index.
+
+**Device modes:** `--device auto` (default, detect GPU), `--device cpu`, `--device gpu`
+
+### llama.cpp / Ollama
+
+LLM inference runs natively on host for GPU layer offloading.
+
+```bash
+# Start with GPU (default)
+bash scripts/llamacpp-start.sh /path/to/model.gguf 8081 999
+
+# CPU only
+LLAMACPP_GPU_LAYERS=0 bash scripts/llamacpp-start.sh /path/to/model.gguf
+```
 
 ---
 

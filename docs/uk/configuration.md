@@ -167,16 +167,44 @@ modules:
 voice:
   wake_word_sensitivity: 0.5
   stt_model: "base"
+  stt_silence_timeout: 1.0
   tts_voice: "uk_UA-lada-x_low"
+  rephrase_enabled: false
+  tts_settings:
+    length_scale: 1.0
+    noise_scale: 0.667
+    noise_w_scale: 0.8
+    sentence_silence: 0.2
+    volume: 1.0
+    speaker: 0
   privacy_gpio_pin: null
 ```
 
 | Ключ | Тип | За замовчуванням | Опис |
 |------|-----|-----------------|------|
-| `wake_word_sensitivity` | `float` | `0.5` | Поріг чутливості для виявлення слова активації (від 0.0 до 1.0). Вищі значення зменшують хибні спрацьовування. |
-| `stt_model` | `str` | `base` | Розмір моделі Vosk для розпізнавання мовлення. Варіанти: `tiny`, `base`, `small`, `medium`. Більші моделі точніші, але потребують більше RAM. |
+| `wake_word_sensitivity` | `float` | `0.5` | Поріг чутливості для слова активації (0.0-1.0). |
+| `stt_model` | `str` | `base` | Розмір моделі Vosk STT: `tiny`, `base`, `small`, `medium`. |
+| `stt_silence_timeout` | `float` | `1.0` | Секунди тиші перед обробкою команди (0.5-5.0). |
 | `tts_voice` | `str` | `uk_UA-lada-x_low` | Ідентифікатор голосу Piper TTS. |
-| `privacy_gpio_pin` | `int` або `null` | `null` | Номер GPIO-піна для фізичного вимикача мікрофона. Встановіть `null` для вимкнення. |
+| `rephrase_enabled` | `bool` | `false` | LLM перефразування відповідей модулів. Додає 3-10 сек при локальному LLM. |
+| `tts_settings.length_scale` | `float` | `1.0` | Швидкість мовлення (0.5=швидко, 2.0=повільно). |
+| `tts_settings.noise_scale` | `float` | `0.667` | Варіативність інтонації (0.0-1.0). |
+| `tts_settings.noise_w_scale` | `float` | `0.8` | Варіативність ширини фонем (0.0-1.0). |
+| `tts_settings.sentence_silence` | `float` | `0.2` | Пауза між реченнями (секунди). |
+| `tts_settings.volume` | `float` | `1.0` | Гучність (0.1-3.0). |
+| `tts_settings.speaker` | `int` | `0` | ID мовця для багатомовцевих моделей. |
+| `privacy_gpio_pin` | `int\|null` | `null` | GPIO-пін для фізичного вимикача мікрофона. |
+
+### Змінні оточення (голос/TTS/LLM)
+
+| Змінна | За замовчуванням | Опис |
+|--------|-----------------|------|
+| `PIPER_MODELS_DIR` | `/var/lib/selena/models/piper` | Каталог голосових моделей Piper |
+| `PIPER_VOICE` | `uk_UA-ukrainian_tts-medium` | Голос TTS за замовчуванням |
+| `PIPER_GPU_URL` | `http://localhost:5100` | URL нативного сервера Piper |
+| `PIPER_DEVICE` | `auto` | Режим пристрою Piper: `auto`, `cpu`, `gpu` |
+| `LLAMACPP_GPU_LAYERS` | `999` | Кількість GPU-шарів для llama.cpp (0=тільки CPU) |
+| `LLAMACPP_N_CTX` | `512` | Розмір контекстного вікна для llama.cpp |
 
 ### llm
 

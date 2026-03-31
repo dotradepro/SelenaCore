@@ -26,7 +26,7 @@ Wake word → Запис аудіо → Vosk STT → Ідентифікація 
   Cloud LLM Rephrase (варіативний TTS)
      │
      ▼
-  Piper TTS → Динамік
+  Piper TTS (нативний сервер хоста, CPU/GPU) → Динамік
 ```
 
 ## STT - Vosk
@@ -38,10 +38,57 @@ Wake word → Запис аудіо → Vosk STT → Ідентифікація 
 
 ## TTS - Piper
 
-- Синтез мовлення на основі ONNX
-- Підтримка CUDA на Jetson
+- Синтез мовлення на основі ONNX через нативний сервер хоста (`piper-server.py`)
+- Моделі завантажуються один раз та зберігаються у пам'яті (~100-400 мс CPU, ~30-80 мс GPU)
+- Режим CPU/GPU: `--device auto|cpu|gpu` (автовизначення CUDAExecutionProvider)
 - Моделі в `/var/lib/selena/models/piper/`
-- Налаштовується в core.yaml: `voice.tts_voice`
+- Налаштовується в core.yaml: `voice.tts_voice`, `voice.tts_settings`
+
+### Сервер Piper TTS
+
+Працює нативно на хості (не в Docker) як systemd-сервіс на порту 5100.
+
+```bash
+# Запуск вручну
+python3 scripts/piper-server.py --port 5100 --device auto
+
+# systemd-сервіс
+sudo systemctl enable --now piper-tts
+```
+
+**Ендпоінти:**
+
+| Метод | Шлях | Опис |
+|-------|------|------|
+| POST | `/synthesize` | Текст → WAV-аудіо |
+| POST | `/synthesize/raw` | Текст → сирий PCM s16le (для потокового відтворення через paplay) |
+| GET | `/health` | Статус, пристрій (cpu/gpu), завантажені голоси |
+| GET | `/voices` | Список встановлених голосових моделей |
+
+**GPU-прискорення:** Потребує `onnxruntime-gpu` з CUDAExecutionProvider.
+
+На Jetson (JetPack 6, CUDA 12.x):
+
+```bash
+# Автоматичне встановлення (рекомендовано)
+bash scripts/build-onnxruntime-gpu.sh
+
+# Або вручну:
+pip3 install --user onnxruntime-gpu --extra-index-url https://pypi.jetson-ai-lab.io/jp6/cu126
+pip3 install --user "numpy<2"                    # NumPy 2.x несумісний
+sudo ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 /usr/lib/aarch64-linux-gnu/libcudnn.so
+sudo systemctl restart piper-tts
+```
+
+> **Примітка:** PyPI `onnxruntime-gpu` НЕ підтримує aarch64. Використовуйте індекс NVIDIA Jetson AI Lab.
+
+### Продуктивність TTS (Jetson Orin Nano)
+
+| Текст | CPU (прогрітий) | GPU (оцінка) | Холодний старт |
+|-------|----------------|-------------|----------------|
+| Короткий (1 слово) | ~420 мс | ~280 мс | ~2500 мс |
+| Середній (4 слова) | ~780 мс | ~500 мс | ~2500 мс |
+| Довгий (15 слів) | ~2280 мс | ~740 мс | ~2500 мс |
 
 ## Wake Word
 
@@ -128,17 +175,15 @@ voice:
 
 ---
 
-## LLM Rephrase відповідей
+## LLM Rephrase відповідей (опціонально)
 
-Коли системний модуль виконує голосову команду, він генерує стандартну відповідь (напр. "Граю радіо станцію Kiss FM"). Перед відтворенням TTS voice-core відправляє цей текст до Cloud LLM для перефразування.
+Коли увімкнено (`voice.rephrase_enabled: true`), відповіді системних модулів перефразовуються через LLM перед відтворенням TTS. **Вимкнено за замовчуванням** для зменшення затримки (економить 3-10 сек на відповідь при локальному LLM).
 
-**Мета:** варіативні, природні відповіді замість одноманітних шаблонів.
-
-**Як це працює:**
+**Як це працює (коли увімкнено):**
 
 1. Модуль викликає `m.speak("Граю радіо станцію Kiss FM")`
 2. Подія `voice.speak` надходить до voice-core
-3. voice-core відправляє стандартний текст + контекст діалогу до Cloud LLM
+3. voice-core відправляє стандартний текст + контекст діалогу до LLM
 4. LLM перефразовує текст природно (temperature=0.9 для варіативності)
 5. Перефразований текст озвучується через Piper TTS
 6. У разі недоступності LLM використовується оригінальний текст
@@ -275,7 +320,16 @@ UI для дебагу голосових команд без необхідно
 voice:
   wake_word_sensitivity: 0.5
   stt_model: "vosk-model-small-uk-v3-nano"
+  stt_silence_timeout: 1.0            # секунди тиші перед обробкою (0.5-5.0)
   tts_voice: "uk_UA-ukrainian_tts-medium"
+  rephrase_enabled: false              # LLM rephrase для відповідей модулів (додає затримку)
+  tts_settings:
+    length_scale: 1.0                  # швидкість мовлення (0.5=швидко, 2.0=повільно)
+    noise_scale: 0.667                 # варіативність інтонації (0.0-1.0)
+    noise_w_scale: 0.8                 # варіативність ширини фонем (0.0-1.0)
+    sentence_silence: 0.2             # пауза між реченнями (секунди)
+    volume: 1.0                        # гучність (0.1-3.0)
+    speaker: 0                         # ID мовця для багатоголосних моделей
   privacy_gpio_pin: null
   llm_provider: "google"
   providers:
