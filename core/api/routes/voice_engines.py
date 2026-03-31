@@ -661,6 +661,132 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
         return {"status": "error", "response": "", "error": str(exc), "provider": provider}
 
 
+@router.post("/tts/test")
+async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
+    """Stream TTS: piper → paplay directly, no intermediate file."""
+    import time as _time
+    from system_modules.voice_core.tts import sanitize_for_tts, _load_tts_settings
+
+    if not req.text.strip():
+        raise HTTPException(status_code=422, detail=t("api.text_empty"))
+
+    voice = req.voice or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"))
+    device = req.output_device or "default"
+    # Resolve "default" to the configured output device
+    if device == "default":
+        device = get_value("voice", "audio_force_output", "") or "default"
+    clean = sanitize_for_tts(req.text[:500])
+    if not clean:
+        raise HTTPException(status_code=422, detail="empty after sanitize")
+
+    settings = _load_tts_settings()
+    t0 = _time.monotonic()
+    loop = asyncio.get_event_loop()
+
+    # Try native piper-server first (streams raw PCM), then fallback to local binary
+    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    pcm_data = None
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{gpu_url}/synthesize/raw", json={
+                "text": clean, "voice": voice,
+                "length_scale": settings.length_scale,
+                "noise_scale": settings.noise_scale,
+                "noise_w_scale": settings.noise_w_scale,
+                "sentence_silence": settings.sentence_silence,
+                "speaker": settings.speaker,
+            })
+            if resp.status_code == 200 and resp.content:
+                pcm_data = resp.content
+    except Exception:
+        pass
+
+    synth_ms = int((_time.monotonic() - t0) * 1000)
+
+    if pcm_data:
+        size_kb = round(len(pcm_data) / 1024, 1)
+        t1 = _time.monotonic()
+        await loop.run_in_executor(None, _play_raw_pcm, pcm_data, device)
+        play_ms = int((_time.monotonic() - t1) * 1000)
+    else:
+        # Fallback: local piper binary pipe → paplay (streaming)
+        from system_modules.voice_core.tts import PIPER_BIN, MODELS_DIR
+        model_path = str(Path(MODELS_DIR) / f"{voice}.onnx")
+        t1 = _time.monotonic()
+        size_kb = await loop.run_in_executor(
+            None, _stream_piper_to_paplay, clean, model_path, settings, device,
+        )
+        synth_ms = 0  # can't separate synth/play in pipe mode
+        play_ms = int((_time.monotonic() - t1) * 1000)
+
+    total_ms = int((_time.monotonic() - t0) * 1000)
+    return {
+        "status": "ok",
+        "synth_ms": synth_ms,
+        "play_ms": play_ms,
+        "total_ms": total_ms,
+        "size_kb": size_kb,
+        "voice": voice,
+    }
+
+
+def _play_raw_pcm(pcm_data: bytes, device: str) -> None:
+    """Play raw PCM s16le 22050Hz mono via paplay."""
+    cmd = ["paplay", "--raw", "--format=s16le", "--rate=22050", "--channels=1"]
+    if device and device != "none" and device != "default":
+        cmd.append("--device=" + device)
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc.stdin.write(pcm_data)
+        proc.stdin.close()
+        proc.wait(timeout=120)
+    except Exception as e:
+        logger.warning("PCM playback error: %s", e)
+    finally:
+        try:
+            proc.kill()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
+
+def _stream_piper_to_paplay(text: str, model_path: str, settings, device: str) -> float:
+    """Stream piper --output-raw | paplay --raw. Returns size in KB."""
+    from system_modules.voice_core.tts import PIPER_BIN
+    piper_cmd = [
+        PIPER_BIN, "--model", model_path, "--output-raw",
+        "--length-scale", str(settings.length_scale),
+        "--noise-scale", str(settings.noise_scale),
+        "--noise-w-scale", str(settings.noise_w_scale),
+        "--sentence-silence", str(settings.sentence_silence),
+        "--speaker", str(settings.speaker),
+    ]
+    play_cmd = ["paplay", "--raw", "--format=s16le", "--rate=22050", "--channels=1"]
+    if device and device != "none" and device != "default":
+        play_cmd.append("--device=" + device)
+
+    piper_proc = play_proc = None
+    try:
+        piper_proc = subprocess.Popen(piper_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        play_proc = subprocess.Popen(play_cmd, stdin=piper_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        piper_proc.stdout.close()
+        piper_proc.stdin.write(text.encode("utf-8"))
+        piper_proc.stdin.close()
+        play_proc.wait(timeout=120)
+        piper_proc.wait(timeout=5)
+    except Exception as e:
+        logger.warning("Stream piper error: %s", e)
+    finally:
+        for p in [piper_proc, play_proc]:
+            if p:
+                try:
+                    p.kill()
+                    p.wait(timeout=2)
+                except Exception:
+                    pass
+    return 0
+
+
 async def _play_wav_on_device(wav_bytes: bytes, device: str) -> None:
     """Play WAV bytes on output device (best-effort)."""
     import tempfile
@@ -882,11 +1008,27 @@ async def vosk_install_progress() -> dict[str, Any]:
 
 @router.get("/piper/status")
 async def piper_status() -> dict[str, Any]:
-    """Check if Piper TTS is installed."""
+    """Check if Piper TTS is available (native server on host or local binary)."""
+    # Primary: check native Piper HTTP server on host
+    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(f"{gpu_url}/health")
+            if resp.status_code == 200:
+                data = resp.json()
+                cuda = data.get("cuda", False)
+                mode = "GPU" if cuda else "CPU"
+                return {
+                    "installed": True,
+                    "version": f"native ({mode})",
+                    "path": gpu_url,
+                }
+    except Exception:
+        pass
+
+    # Fallback: check local piper binary in container
     piper_bin = shutil.which("piper")
     version = None
-
-    # Get version from pip
     try:
         result = subprocess.run(
             ["pip", "show", "piper-tts"], capture_output=True, text=True, timeout=10
@@ -907,7 +1049,17 @@ async def piper_status() -> dict[str, Any]:
 
 @router.post("/piper/install")
 async def piper_install() -> dict[str, Any]:
-    """Install Piper TTS via pip."""
+    """Install Piper TTS — native server on host, no container install needed."""
+    # Check if native server is already running
+    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(f"{gpu_url}/health")
+            if resp.status_code == 200:
+                return {"status": "ok", "done": True, "message": "Piper TTS server is already running natively on host"}
+    except Exception:
+        pass
+    # Fallback: pip install inside container
     if _piper_install.running:
         return {"status": "already_running", **_piper_install.to_dict()}
     _piper_install.reset()
