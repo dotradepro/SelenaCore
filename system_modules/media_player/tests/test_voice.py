@@ -10,6 +10,7 @@ def module():
     m._player = MagicMock()
     m._player._volume = 70
     m._player._shuffle = False
+    m._player._current_source_type = "unknown"
     m._player.get_state = MagicMock(return_value="playing")
     m._player.get_current_track = MagicMock(return_value=None)
     m._player.set_volume = AsyncMock()
@@ -18,10 +19,8 @@ def module():
     m._player.stop = AsyncMock()
     m._player.pause = AsyncMock()
     m._player.play_url = AsyncMock()
-    m._radio = MagicMock()
-    m._radio.search = AsyncMock(return_value=[])
-    m._radio.get_by_name = AsyncMock(return_value=None)
-    m._radio.click = AsyncMock()
+    m._library = MagicMock()
+    m._library.search = MagicMock(return_value=[])
     m._usb = MagicMock()
     m._usb.scan = AsyncMock(return_value=[])
     m.speak = AsyncMock()
@@ -172,21 +171,42 @@ async def test_shuffle_toggle_off(handler, module):
 
 @pytest.mark.asyncio
 async def test_play_radio_when_stations_found(handler, module):
-    module._radio.search = AsyncMock(return_value=[
-        {"name": "Test FM", "url": "https://stream.test/radio", "uuid": "u1"}
+    module._player.get_state.return_value = "stopped"
+    module._library.search = MagicMock(return_value=[
+        {"name": "Test FM", "url": "https://stream.test/radio"}
     ])
     await handler.handle("media.play_radio", {})
     module._player.play_url.assert_called_once_with(
         "https://stream.test/radio", "radio"
     )
-    module._radio.click.assert_called_once_with("u1")
     call_text = module.speak.call_args[0][0]
     assert "Test FM" in call_text
 
 
 @pytest.mark.asyncio
+async def test_play_radio_already_playing(handler, module):
+    module._player.get_state.return_value = "playing"
+    module._player._current_source_type = "radio"
+    module._player.get_current_track.return_value = MagicMock(title="Jazz FM")
+    await handler.handle("media.play_radio", {})
+    module._player.play_url.assert_not_called()
+    call_text = module.speak.call_args[0][0]
+    assert "Jazz FM" in call_text
+
+
+@pytest.mark.asyncio
+async def test_play_radio_no_stations(handler, module):
+    module._player.get_state.return_value = "stopped"
+    module._library.search = MagicMock(return_value=[])
+    await handler.handle("media.play_radio", {})
+    module._player.play_url.assert_not_called()
+    call_text = module.speak.call_args[0][0]
+    assert "station" in call_text.lower() or "no" in call_text.lower()
+
+
+@pytest.mark.asyncio
 async def test_play_radio_name_not_found(handler, module):
-    module._radio.get_by_name = AsyncMock(return_value=None)
+    module._library.search = MagicMock(return_value=[])
     await handler.handle("media.play_radio_name", {"station_name": "Unknown FM"})
     module._player.play_url.assert_not_called()
     call_text = module.speak.call_args[0][0]

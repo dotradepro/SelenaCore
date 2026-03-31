@@ -17,6 +17,8 @@
   "media.now_playing_album": ", album {album}",
   "media.shuffle_on": "Shuffle enabled",
   "media.shuffle_off": "Shuffle disabled",
+  "media.already_playing_radio": "Radio is already playing. Station {station}",
+  "media.no_stations": "No radio stations available. Add stations in settings.",
 
   "intent.fallback": "Sorry, I didn't understand. Please try again.",
   "intent.module_unavailable": "The module is temporarily unavailable. Please try again later.",

@@ -78,6 +78,7 @@ class VoiceCoreModule(SystemModule):
         self._listen_task: asyncio.Task | None = None
         self._state = STATE_IDLE
         self._privacy_mode = False
+        self._system_speak_done = asyncio.Event()
 
         # Defaults from env, overridden by core.yaml
         defaults = {
@@ -318,8 +319,15 @@ class VoiceCoreModule(SystemModule):
             )
 
             # System modules handle their own TTS via EventBus (voice.speak).
-            # For all other sources (fast_matcher, llm, fallback) we speak here.
-            if result.source != "system_module" and result.response:
+            # For system_module intents, stay in PROCESSING until TTS completes
+            # to prevent mic from picking up speaker audio or accepting new commands.
+            if result.source == "system_module":
+                self._system_speak_done.clear()
+                try:
+                    await asyncio.wait_for(self._system_speak_done.wait(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Voice pipeline: system module TTS timeout (15s)")
+            elif result.response:
                 await self.publish("voice.response", {"text": result.response, "query": text})
                 logger.info("Voice pipeline: speaking...")
                 await self._stream_speak(result.response)
@@ -484,6 +492,7 @@ class VoiceCoreModule(SystemModule):
             if text:
                 await self._stream_speak(text)
                 await self.publish("voice.speak_done", {"text": text})
+                self._system_speak_done.set()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 

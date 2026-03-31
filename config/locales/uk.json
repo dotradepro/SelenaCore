@@ -17,6 +17,8 @@
   "media.now_playing_album": ", альбом {album}",
   "media.shuffle_on": "Перемішування увімкнено",
   "media.shuffle_off": "Перемішування вимкнено",
+  "media.already_playing_radio": "Радіо вже грає. Станція {station}",
+  "media.no_stations": "Немає доступних радіостанцій. Додайте станції в налаштуваннях.",
 
   "intent.fallback": "Вибачте, я не зрозумів запит. Спробуйте ще раз.",
   "intent.module_unavailable": "Модуль тимчасово недоступний. Спробуйте пізніше.",

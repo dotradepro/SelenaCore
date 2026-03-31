@@ -42,10 +42,17 @@ class MediaVoiceHandler:
 
         match intent:
             case "media.play_radio":
+                if player.get_state() == "playing" and player._current_source_type == "radio":
+                    track = player.get_current_track()
+                    name = track.title if track else ""
+                    await m.speak(t("media.already_playing_radio", station=name))
+                    return
                 stations = lib.search(limit=1)
                 if stations:
                     await player.play_url(stations[0]["url"], "radio")
                     await m.speak(t("media.playing_radio", station=stations[0]["name"]))
+                else:
+                    await m.speak(t("media.no_stations"))
 
             case "media.play_genre":
                 genre_raw = params.get("genre", "")
