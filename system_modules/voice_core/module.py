@@ -551,12 +551,15 @@ class VoiceCoreModule(SystemModule):
             lang_names = {"uk": "Ukrainian", "en": "English"}
             lang_name = lang_names.get(lang, "English")
 
+            # Load custom rephrase prompt or default
+            rephrase_rules = voice_cfg.get("rephrase_prompt", "")
+            if not rephrase_rules:
+                from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
+                rephrase_rules = DEFAULT_REPHRASE_PROMPT
+
             system = (
                 f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-                "The system performed an action and generated a default response.\n"
-                "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"
-                "Vary your phrasing — don't repeat the same structure.\n"
-                "Keep it short for TTS. Plain text only."
+                f"{rephrase_rules}"
             )
 
             # Build context from session

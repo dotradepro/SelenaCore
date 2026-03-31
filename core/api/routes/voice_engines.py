@@ -226,6 +226,30 @@ HIDDEN_COMPACT = (
     "Never say you are AI or mention model names."
 )
 
+# ── Default intent classification prompt ─────────────────────────────
+DEFAULT_CLASSIFICATION_PROMPT = (
+    "You are a voice command classifier for a smart home assistant.\n"
+    "Classify the user's voice command into one of the known intents.\n\n"
+    "Rules:\n"
+    '1. If the command matches a known intent, respond: {{"intent": "<name>", "params": {{<extracted params>}}}}\n'
+    "2. Extract parameters when applicable (genre, station_name, query, level, etc.).\n"
+    '3. If the command is a general question or conversation, respond: {{"intent": "llm.response", "params": {{}}, '
+    '"response": "<helpful answer>"}}\n'
+    "4. Output ONLY valid JSON. No markdown, no code fences, no explanation."
+)
+
+MAX_CLASSIFICATION_PROMPT = 600
+
+# ── Default rephrase prompt ──────────────────────────────────────────
+DEFAULT_REPHRASE_PROMPT = (
+    "The system performed an action and generated a default response.\n"
+    "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"
+    "Vary your phrasing — don't repeat the same structure.\n"
+    "Keep it short for TTS. Plain text only."
+)
+
+MAX_REPHRASE_PROMPT = 400
+
 # ── Default USER prompts loaded from config/prompts/{lang}.json ───────
 _PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
 _prompts_cache: dict[str, dict[str, str]] = {}
@@ -380,6 +404,9 @@ async def get_system_prompt() -> dict[str, Any]:
     default_user = _get_default_user_prompt(ui_lang)
     default_compact = _get_default_compact_user(ui_lang)
 
+    saved_classification = voice_cfg.get("classification_prompt", "")
+    saved_rephrase = voice_cfg.get("rephrase_prompt", "")
+
     return {
         "name": name,
         "lang": lang,
@@ -392,7 +419,18 @@ async def get_system_prompt() -> dict[str, Any]:
         "compact_user": saved_compact or default_compact,
         "is_custom_compact": bool(saved_compact),
         "default_compact": default_compact,
-        "limits": {"user_prompt": MAX_USER_PROMPT, "compact_user": MAX_COMPACT_USER},
+        "classification_prompt": saved_classification or DEFAULT_CLASSIFICATION_PROMPT,
+        "is_custom_classification": bool(saved_classification),
+        "default_classification": DEFAULT_CLASSIFICATION_PROMPT,
+        "rephrase_prompt": saved_rephrase or DEFAULT_REPHRASE_PROMPT,
+        "is_custom_rephrase": bool(saved_rephrase),
+        "default_rephrase": DEFAULT_REPHRASE_PROMPT,
+        "limits": {
+            "user_prompt": MAX_USER_PROMPT,
+            "compact_user": MAX_COMPACT_USER,
+            "classification_prompt": MAX_CLASSIFICATION_PROMPT,
+            "rephrase_prompt": MAX_REPHRASE_PROMPT,
+        },
         "full_preview": build_system_prompt(compact=False),
         "compact_preview": build_system_prompt(compact=True),
     }
@@ -420,12 +458,40 @@ async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     return {"status": "ok"}
 
 
+@router.post("/llm/classification-prompt")
+async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom intent classification prompt."""
+    prompt = req.prompt.strip()[:MAX_CLASSIFICATION_PROMPT]
+    if prompt == DEFAULT_CLASSIFICATION_PROMPT:
+        prompt = ""
+    update_config("voice", "classification_prompt", prompt)
+    # Clear intent router cached prompt
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().refresh_system_prompt()
+    except Exception:
+        pass
+    return {"status": "ok"}
+
+
+@router.post("/llm/rephrase-prompt")
+async def save_rephrase_prompt(req: SystemPromptRequest) -> dict[str, Any]:
+    """Save custom rephrase prompt."""
+    prompt = req.prompt.strip()[:MAX_REPHRASE_PROMPT]
+    if prompt == DEFAULT_REPHRASE_PROMPT:
+        prompt = ""
+    update_config("voice", "rephrase_prompt", prompt)
+    return {"status": "ok"}
+
+
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
     """Reset user prompts to i18n defaults."""
     update_many([
         ("voice", "user_prompt", ""),
         ("voice", "compact_user_prompt", ""),
+        ("voice", "classification_prompt", ""),
+        ("voice", "rephrase_prompt", ""),
         ("voice", "system_prompt", ""),       # clean up old config keys
         ("voice", "compact_prompt", ""),
         ("voice", "tts_rules", ""),

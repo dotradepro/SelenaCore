@@ -352,6 +352,7 @@
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="settings-tabs" id="settingsTabs">
     <button class="settings-tab active" data-tab="engines" data-i18n="tab_engines"></button>
+    <button class="settings-tab" data-tab="prompts" data-i18n="tab_prompts"></button>
     <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
     <button class="settings-tab" data-tab="test" data-i18n="tab_test"></button>
 </div>
@@ -615,57 +616,6 @@
     <!-- Switch progress -->
     <div id="switchSteps" class="card-inner hidden steps-list"></div>
 
-    <!-- AI Prompts -->
-    <div class="mb16">
-        <button id="promptToggle" class="btn-link flex gap6">
-            <span data-i18n="prompt_section"></span>
-            <span id="customPromptBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-            <span id="detectedLangBadge" class="badge badge-ok" style="margin-left:auto"></span>
-        </button>
-        <div id="promptEditor" class="card-inner hidden mt8">
-
-            <!-- User prompt (cloud models) -->
-            <div class="mb12">
-                <div class="flex gap6 mb4">
-                    <span class="label-xs" data-i18n="user_prompt_label"></span>
-                    <span id="customUserBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-                </div>
-                <div class="label-xs mb4" style="opacity:.6" data-i18n="user_prompt_desc"></div>
-                <textarea id="userPromptText" rows="3" style="width:100%"></textarea>
-                <div class="flex gap8 mt4" style="align-items:center">
-                    <button id="saveUserBtn" class="btn btn-green" data-i18n="save"></button>
-                    <span id="userCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
-                </div>
-            </div>
-
-            <!-- Compact user prompt (local models) -->
-            <div style="padding-top:14px;border-top:1px solid var(--b)">
-                <div class="flex gap6 mb4">
-                    <span class="label-xs" data-i18n="compact_user_label"></span>
-                    <span id="customCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-                </div>
-                <div class="label-xs mb4" style="opacity:.6" data-i18n="compact_user_desc"></div>
-                <textarea id="compactUserText" rows="2" style="width:100%"></textarea>
-                <div class="flex gap8 mt4" style="align-items:center">
-                    <button id="saveCompactBtn" class="btn btn-green" data-i18n="save"></button>
-                    <span id="compactCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
-                </div>
-            </div>
-
-            <!-- Reset + hidden preview -->
-            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--b)">
-                <div class="flex gap8 mb8">
-                    <button id="resetPromptsBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
-                    <button id="previewToggle" class="btn-link" style="margin-left:auto;font-size:12px" data-i18n="show_hidden"></button>
-                </div>
-                <div id="hiddenPreview" class="hidden" style="background:var(--bg);padding:8px;border-radius:6px;font-size:11px;opacity:.7;white-space:pre-wrap;word-break:break-word">
-                    <div class="label-xs mb4" style="opacity:.5" data-i18n="hidden_system_label"></div>
-                    <div id="hiddenPreviewText"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Ollama panel -->
     <div id="ollamaPanel" class="hidden">
         <div class="flex gap8 mb12">
@@ -745,6 +695,92 @@
 </div>
 
 </div><!-- /tabEngines -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Prompts                                                     -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabPrompts">
+
+<div class="card">
+    <div class="mb12">
+        <div class="flex gap8">
+            <span class="section-title" data-i18n="prompt_section"></span>
+            <span id="detectedLangBadge" class="badge badge-ok"></span>
+            <span id="customPromptBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="section-sub" data-i18n="prompts_tab_desc"></div>
+    </div>
+
+    <!-- 1. Conversation prompt (cloud models) -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="user_prompt_label"></span>
+            <span id="customUserBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="user_prompt_desc"></div>
+        <textarea id="userPromptText" rows="3" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveUserBtn" class="btn btn-green" data-i18n="save"></button>
+            <span id="userCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+        </div>
+    </div>
+
+    <!-- 2. Conversation prompt (local models) -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="compact_user_label"></span>
+            <span id="customCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="compact_user_desc"></div>
+        <textarea id="compactUserText" rows="2" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveCompactBtn" class="btn btn-green" data-i18n="save"></button>
+            <span id="compactCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+        </div>
+    </div>
+
+    <!-- 3. Intent classification prompt -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="classification_prompt_label"></span>
+            <span id="customClassBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="classification_prompt_desc"></div>
+        <textarea id="classificationPromptText" rows="5" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveClassBtn" class="btn btn-green" data-i18n="save"></button>
+            <span id="classCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+        </div>
+    </div>
+
+    <!-- 4. Rephrase prompt -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="rephrase_prompt_label"></span>
+            <span id="customRephraseBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="rephrase_prompt_desc"></div>
+        <textarea id="rephrasePromptText" rows="4" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveRephraseBtn" class="btn btn-green" data-i18n="save"></button>
+            <span id="rephraseCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
+        </div>
+    </div>
+
+    <!-- Reset + hidden preview -->
+    <div style="padding-top:14px;border-top:1px solid var(--b)">
+        <div class="flex gap8 mb8">
+            <button id="resetPromptsBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
+            <button id="previewToggle" class="btn-link" style="margin-left:auto;font-size:12px" data-i18n="show_hidden"></button>
+        </div>
+        <div id="hiddenPreview" class="hidden" style="background:var(--bg);padding:8px;border-radius:6px;font-size:11px;opacity:.7;white-space:pre-wrap;word-break:break-word">
+            <div class="label-xs mb4" style="opacity:.5" data-i18n="hidden_system_label"></div>
+            <div id="hiddenPreviewText"></div>
+        </div>
+    </div>
+</div>
+
+</div><!-- /tabPrompts -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  TAB: Intents                                                     -->
@@ -973,8 +1009,14 @@
             privacy_off: 'Privacy OFF',
 
             tab_engines: 'Engines',
+            tab_prompts: 'AI Prompts',
             tab_intents: 'Voice Commands',
             tab_test: 'Test Console',
+            prompts_tab_desc: 'Customize prompts for conversation, intent classification, and response rephrase',
+            classification_prompt_label: 'Intent classification rules',
+            classification_prompt_desc: 'Instructions for LLM to classify voice commands into intents (JSON output). The intent catalog is injected automatically.',
+            rephrase_prompt_label: 'Response rephrase rules',
+            rephrase_prompt_desc: 'Instructions for LLM to rephrase module responses naturally for TTS output.',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1103,8 +1145,14 @@
             privacy_off: 'Приватнiсть ВИМК',
 
             tab_engines: 'Движки',
+            tab_prompts: 'Промпти AI',
             tab_intents: 'Голосові команди',
             tab_test: 'Тест консоль',
+            prompts_tab_desc: 'Налаштування промптів для діалогу, класифікації інтентів та перефразування відповідей',
+            classification_prompt_label: 'Правила класифікації інтентів',
+            classification_prompt_desc: 'Інструкції для LLM щодо класифікації голосових команд у інтенти (JSON). Каталог інтентів додається автоматично.',
+            rephrase_prompt_label: 'Правила перефразування відповідей',
+            rephrase_prompt_desc: 'Інструкції для LLM щодо природного перефразування відповідей модулів для TTS.',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -2051,15 +2099,24 @@
         $(countId).style.color = len > limit ? '#e53' : '';
     }
 
+    state.promptsLoaded = false;
+
     async function loadSystemPrompt() {
         try {
             var res = await api('/setup/llm/system-prompt');
+            state.promptsLoaded = true;
             state.userPrompt = res.user_prompt || '';
             state.defaultUser = res.default_user || '';
             state.isCustomUser = res.is_custom_user || false;
             state.compactUser = res.compact_user || '';
             state.defaultCompact = res.default_compact || '';
             state.isCustomCompact = res.is_custom_compact || false;
+            state.classPrompt = res.classification_prompt || '';
+            state.defaultClass = res.default_classification || '';
+            state.isCustomClass = res.is_custom_classification || false;
+            state.rephrasePrompt = res.rephrase_prompt || '';
+            state.defaultRephrase = res.default_rephrase || '';
+            state.isCustomRephrase = res.is_custom_rephrase || false;
             state.detectedLang = res.lang || '';
             state.assistantName = res.name || '';
             if (res.limits) state.limits = res.limits;
@@ -2068,68 +2125,63 @@
             $('userPromptText').maxLength = state.limits.user_prompt;
             $('compactUserText').value = state.compactUser;
             $('compactUserText').maxLength = state.limits.compact_user;
+            $('classificationPromptText').value = state.classPrompt;
+            $('classificationPromptText').maxLength = state.limits.classification_prompt;
+            $('rephrasePromptText').value = state.rephrasePrompt;
+            $('rephrasePromptText').maxLength = state.limits.rephrase_prompt;
 
-            var hasCustom = state.isCustomUser || state.isCustomCompact;
-            if (hasCustom) show('customPromptBadge'); else hide('customPromptBadge');
-            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
-            if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
+            function updateBadges() {
+                var any = state.isCustomUser || state.isCustomCompact || state.isCustomClass || state.isCustomRephrase;
+                if (any) show('customPromptBadge'); else hide('customPromptBadge');
+                if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
+                if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
+                if (state.isCustomClass) show('customClassBadge'); else hide('customClassBadge');
+                if (state.isCustomRephrase) show('customRephraseBadge'); else hide('customRephraseBadge');
+            }
+            state._updatePromptBadges = updateBadges;
+            updateBadges();
+
             $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
             $('hiddenPreviewText').textContent = res.hidden_full || '';
 
             charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
             charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
+            charCount('classificationPromptText', 'classCharCount', state.limits.classification_prompt);
+            charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt);
         } catch(e) { /* ignore */ }
     }
 
-    $('promptToggle').onclick = function() { $('promptEditor').classList.toggle('hidden'); };
     $('previewToggle').onclick = function() { $('hiddenPreview').classList.toggle('hidden'); };
 
     $('userPromptText').oninput = function() { charCount('userPromptText', 'userCharCount', state.limits.user_prompt); };
     $('compactUserText').oninput = function() { charCount('compactUserText', 'compactCharCount', state.limits.compact_user); };
+    $('classificationPromptText').oninput = function() { charCount('classificationPromptText', 'classCharCount', state.limits.classification_prompt); };
+    $('rephrasePromptText').oninput = function() { charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt); };
 
-    // Save user prompt (cloud)
-    $('saveUserBtn').onclick = async function() {
-        this.disabled = true;
-        try {
-            await postJson('/setup/llm/user-prompt', { prompt: $('userPromptText').value });
-            state.userPrompt = $('userPromptText').value;
-            state.isCustomUser = state.userPrompt !== state.defaultUser;
-            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
-            if (state.isCustomUser || state.isCustomCompact) show('customPromptBadge'); else hide('customPromptBadge');
-            rebuildPrompts();
-            showToast(t('saved'));
-        } catch(e) { /* ignore */ }
-        this.disabled = false;
-    };
+    function _savePrompt(btnId, endpoint, textId, stateKey, defaultKey, customKey) {
+        $(btnId).onclick = async function() {
+            this.disabled = true;
+            try {
+                await postJson(endpoint, { prompt: $(textId).value });
+                state[stateKey] = $(textId).value;
+                state[customKey] = state[stateKey] !== state[defaultKey];
+                if (state._updatePromptBadges) state._updatePromptBadges();
+                rebuildPrompts();
+                showToast(t('saved'));
+            } catch(e) { /* ignore */ }
+            this.disabled = false;
+        };
+    }
 
-    // Save compact prompt (local)
-    $('saveCompactBtn').onclick = async function() {
-        this.disabled = true;
-        try {
-            await postJson('/setup/llm/compact-prompt', { prompt: $('compactUserText').value });
-            state.compactUser = $('compactUserText').value;
-            state.isCustomCompact = state.compactUser !== state.defaultCompact;
-            if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
-            if (state.isCustomUser || state.isCustomCompact) show('customPromptBadge'); else hide('customPromptBadge');
-            rebuildPrompts();
-            showToast(t('saved'));
-        } catch(e) { /* ignore */ }
-        this.disabled = false;
-    };
+    _savePrompt('saveUserBtn', '/setup/llm/user-prompt', 'userPromptText', 'userPrompt', 'defaultUser', 'isCustomUser');
+    _savePrompt('saveCompactBtn', '/setup/llm/compact-prompt', 'compactUserText', 'compactUser', 'defaultCompact', 'isCustomCompact');
+    _savePrompt('saveClassBtn', '/setup/llm/classification-prompt', 'classificationPromptText', 'classPrompt', 'defaultClass', 'isCustomClass');
+    _savePrompt('saveRephraseBtn', '/setup/llm/rephrase-prompt', 'rephrasePromptText', 'rephrasePrompt', 'defaultRephrase', 'isCustomRephrase');
 
     // Reset all
     $('resetPromptsBtn').onclick = async function() {
         try {
-            var res = await api('/setup/llm/system-prompt/reset', { method: 'POST' });
-            $('userPromptText').value = res.user_prompt || state.defaultUser;
-            state.userPrompt = $('userPromptText').value;
-            state.isCustomUser = false;
-            $('compactUserText').value = res.compact_user || state.defaultCompact;
-            state.compactUser = $('compactUserText').value;
-            state.isCustomCompact = false;
-            hide('customPromptBadge'); hide('customUserBadge'); hide('customCompactBadge');
-            charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
-            charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
+            await api('/setup/llm/system-prompt/reset', { method: 'POST' });
             rebuildPrompts().then(loadSystemPrompt);
             showToast(t('saved'));
         } catch(e) { /* ignore */ }
@@ -2483,7 +2535,7 @@
     // ══════════════════════════════════════════════════════════════
     //  Tab Navigation
     // ══════════════════════════════════════════════════════════════
-    var tabMap = { engines: 'tabEngines', intents: 'tabIntents', test: 'tabTest' };
+    var tabMap = { engines: 'tabEngines', prompts: 'tabPrompts', intents: 'tabIntents', test: 'tabTest' };
     document.querySelectorAll('.settings-tab').forEach(function(btn) {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.settings-tab').forEach(function(b) { b.classList.remove('active'); });
@@ -2492,6 +2544,7 @@
             var panel = $(tabMap[btn.getAttribute('data-tab')]);
             if (panel) panel.classList.add('active');
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
+            if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadSystemPrompt();
         });
     });
 
@@ -2673,7 +2726,6 @@
             loadOllamaStatus(),
             loadOllamaModels(),
             loadLlamacppStatus(),
-            loadSystemPrompt(),
         ]);
         renderVoskActions();
         renderPiperActions();

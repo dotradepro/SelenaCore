@@ -380,22 +380,26 @@ class IntentRouter:
         return "\n".join(lines)
 
     def _build_classification_prompt(self, text: str, lang: str) -> tuple[str, str]:
-        """Build (system_prompt, user_prompt) for cloud LLM intent classification."""
+        """Build (system_prompt, user_prompt) for LLM intent classification."""
         lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish"}
         lang_name = lang_names.get(lang, "English")
         catalog = self._build_intent_catalog(lang)
 
+        # Load custom classification prompt from config, or use default
+        rules_block = ""
+        try:
+            from core.config_writer import read_config
+            rules_block = read_config().get("voice", {}).get("classification_prompt", "")
+        except Exception:
+            pass
+        if not rules_block:
+            from core.api.routes.voice_engines import DEFAULT_CLASSIFICATION_PROMPT
+            rules_block = DEFAULT_CLASSIFICATION_PROMPT
+
         system_prompt = (
-            "You are a voice command classifier for a smart home assistant.\n"
-            "Classify the user's voice command into one of the known intents.\n\n"
             f"User language: {lang_name} ({lang}).\n\n"
             f"Known intents:\n{catalog}\n\n"
-            "Rules:\n"
-            '1. If the command matches a known intent, respond: {"intent": "<name>", "params": {<extracted params>}}\n'
-            "2. Extract parameters when applicable (genre, station_name, query, level, etc.).\n"
-            '3. If the command is a general question or conversation, respond: {"intent": "llm.response", "params": {}, '
-            f'"response": "<helpful answer in {lang_name}>"}}\n'
-            "4. Output ONLY valid JSON. No markdown, no code fences, no explanation.\n"
+            f"{rules_block}\n"
         )
         return system_prompt, text
 
