@@ -11,7 +11,12 @@ import httpx
 
 def make_router(publish=None):
     from system_modules.notification_router.router import NotificationRouter
-    return NotificationRouter(publish_event_cb=publish or AsyncMock())
+    rt = NotificationRouter(publish_event_cb=publish or AsyncMock())
+    # Isolate from disk state: clear loaded channels/rules, disable persistence
+    rt._channels.clear()
+    rt._rules.clear()
+    rt._save_config = lambda: None
+    return rt
 
 
 def add_tg_channel(rt, name="telegram"):
