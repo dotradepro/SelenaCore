@@ -1,0 +1,24 @@
+[Unit]
+Description=Piper TTS HTTP Server (persistent models, CPU/GPU)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=dotradepro
+Environment=PIPER_MODELS_DIR=/var/lib/selena/models/piper
+Environment=PIPER_VOICE=uk_UA-ukrainian_tts-medium
+Environment=PATH=/home/dotradepro/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PIPER_DEVICE=auto
+ExecStart=/usr/bin/python3 /home/dotradepro/Downloads/SelenaCore/scripts/piper-server.py --port 5100 --device auto
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

@@ -30,11 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install voice engines: Vosk STT, Piper TTS
-RUN pip install --no-cache-dir vosk piper-tts pathvalidate
+# Install voice engines: Vosk STT (Piper TTS runs natively on host via piper-server.py)
+RUN pip install --no-cache-dir vosk pathvalidate
 
-# Install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh || true
+# Ollama runs natively on host (not in container)
 
 # Create model directories
 RUN mkdir -p /var/lib/selena/models/vosk \

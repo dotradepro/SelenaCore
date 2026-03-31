@@ -40,9 +40,6 @@ export SELENA_GPU_TYPE=$GPU_TYPE
 
 if [ "$GPU_FOUND" = "1" ]; then
   echo "[start.sh] GPU detected: $GPU_TYPE"
-  pip install --no-cache-dir onnxruntime-gpu 2>/dev/null \
-    && echo "[start.sh] onnxruntime-gpu installed" \
-    || echo "[start.sh] onnxruntime-gpu install failed, using CPU for Piper"
 else
   echo "[start.sh] No GPU detected, CPU-only mode"
 fi
