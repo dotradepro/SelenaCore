@@ -4,17 +4,15 @@ system_modules/llm_engine/intent_router.py — Multi-tier Intent Router
 Tier 1:   Fast Matcher (keyword/regex YAML rules) — zero latency
 Tier 1.5: System Module Intents (in-process regex) — microseconds
 Tier 2:   Module Bus (WebSocket intent routing) — milliseconds
-Tier 3a:  Cloud LLM Intent Classification (Gemini/OpenAI/etc.) — seconds
-Tier 3b:  Ollama LLM fallback — dynamic understanding (RAM >= 5GB)
+Tier 3:   LLM Intent Classification — any provider (Cloud/Ollama/llama.cpp)
 
 Orchestration:
   1. Try Fast Matcher first
   2. Try system module registered intents (in-process, no HTTP)
   3. Try user module intents via Module Bus (WebSocket)
-  4. Try cloud LLM intent classification (if cloud provider configured)
-  5. Try local Ollama LLM (if RAM >= 5GB)
-  6. Fallback → "not understood"
-  7. Publish voice.intent event to EventBus
+  4. Try LLM intent classification (active provider: cloud, ollama, or llamacpp)
+  5. Fallback → "not understood"
+  6. Publish voice.intent event to EventBus
 """
 from __future__ import annotations
 
@@ -34,7 +32,7 @@ class IntentResult:
     intent: str
     response: str
     action: dict[str, Any] | None
-    source: str          # "fast_matcher" | "system_module" | "module_bus" | "cloud_llm" | "llm" | "fallback"
+    source: str          # "fast_matcher" | "system_module" | "module_bus" | "llm" | "fallback"
     latency_ms: int
     user_id: str | None = None
     params: dict[str, Any] | None = None
@@ -246,88 +244,41 @@ class IntentRouter:
                 "detail": bus_error,
             })
 
-        # Tier 3a: Cloud LLM Intent Classification
-        cloud_result = None
-        cloud_error = None
-        cloud_skipped = False
+        # Tier 3: LLM Intent Classification (any provider)
+        llm_result = None
+        llm_provider = ""
+        llm_error = None
         try:
-            cloud_result = await self._try_cloud_classification(text, lang)
-            if cloud_result is None:
-                cloud_skipped = True
+            llm_result, llm_provider = await self._try_llm_classification(text, lang)
         except asyncio.TimeoutError:
-            cloud_error = "timeout (15s)"
-            logger.warning("Cloud LLM classification timeout for: %s", text[:50])
+            llm_error = "timeout"
+            logger.warning("LLM classification timeout for: %s", text[:50])
         except Exception as exc:
-            cloud_error = str(exc)
-            logger.warning("Cloud LLM classification error: %s", exc)
+            llm_error = str(exc)
+            logger.warning("LLM classification error: %s", exc)
 
         if trace:
-            if cloud_result:
+            tier_name = f"LLM ({llm_provider})" if llm_provider else "LLM"
+            if llm_result:
                 steps.append({
-                    "tier": "3a", "name": "Cloud LLM",
+                    "tier": "3", "name": tier_name,
                     "status": "hit",
                     "ms": _elapsed(),
-                    "detail": cloud_result.intent,
+                    "detail": llm_result.intent,
                 })
             else:
                 steps.append({
-                    "tier": "3a", "name": "Cloud LLM",
-                    "status": "error" if cloud_error else ("skip" if cloud_skipped else "miss"),
+                    "tier": "3", "name": tier_name,
+                    "status": "error" if llm_error else "skip",
                     "ms": _elapsed(),
-                    "detail": cloud_error or ("no cloud provider" if cloud_skipped else None),
+                    "detail": llm_error or llm_provider or None,
                 })
 
-        if cloud_result is not None:
-            cloud_result.latency_ms = _elapsed()
-            cloud_result.user_id = user_id
-            await self._publish_event(cloud_result)
-            return (cloud_result, steps) if trace else cloud_result
-
-        # Tier 3b: Ollama LLM (local)
-        from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
-        llm_available = _should_use_llm()
-        llm_error = None
-
-        if llm_available:
-            try:
-                system_prompt = self._get_system_prompt()
-                client = get_ollama_client()
-                llm_response = await asyncio.wait_for(
-                    client.generate(prompt=text, system=system_prompt),
-                    timeout=25.0,
-                )
-                if llm_response:
-                    if trace:
-                        steps.append({
-                            "tier": "3b", "name": "Ollama LLM",
-                            "status": "hit",
-                            "ms": _elapsed(),
-                            "detail": None,
-                        })
-                    result = IntentResult(
-                        intent="llm.response",
-                        response=llm_response,
-                        action=None,
-                        source="llm",
-                        latency_ms=_elapsed(),
-                        user_id=user_id,
-                    )
-                    await self._publish_event(result)
-                    return (result, steps) if trace else result
-            except asyncio.TimeoutError:
-                logger.warning("LLM timeout for input: %s", text[:50])
-                llm_error = "timeout (25s)"
-            except Exception as e:
-                logger.error("LLM error: %s", e)
-                llm_error = str(e)
-
-        if trace:
-            steps.append({
-                "tier": "3b", "name": "Ollama LLM",
-                "status": "skip" if not llm_available else ("error" if llm_error else "miss"),
-                "ms": _elapsed(),
-                "detail": "RAM < 5GB" if not llm_available else llm_error,
-            })
+        if llm_result is not None:
+            llm_result.latency_ms = _elapsed()
+            llm_result.user_id = user_id
+            await self._publish_event(llm_result)
+            return (llm_result, steps) if trace else llm_result
 
         # Fallback — language-aware "not understood" via i18n
         from core.i18n import t
@@ -447,39 +398,64 @@ class IntentRouter:
         )
         return system_prompt, text
 
-    async def _try_cloud_classification(self, text: str, lang: str) -> IntentResult | None:
-        """Attempt intent classification via configured cloud LLM provider."""
+    async def _try_llm_classification(self, text: str, lang: str) -> tuple[IntentResult | None, str]:
+        """Attempt intent classification via the active LLM provider (cloud, ollama, or llamacpp).
+
+        Returns (IntentResult | None, provider_name).
+        """
         try:
             from core.config_writer import read_config
         except ImportError:
-            return None
+            return None, ""
 
         config = read_config()
         voice_cfg = config.get("voice", {})
         provider = voice_cfg.get("llm_provider", "ollama")
 
-        # Skip if no cloud provider active
-        if provider in ("ollama", "llamacpp"):
-            return None
-
-        providers_cfg = voice_cfg.get("providers", {})
-        p_cfg = providers_cfg.get(provider, {})
-        api_key = p_cfg.get("api_key", "")
-        model = p_cfg.get("model", "")
-
-        if not api_key or not model:
-            return None
-
         system_prompt, user_prompt = self._build_classification_prompt(text, lang)
+        raw = ""
 
-        from system_modules.llm_engine.cloud_providers import generate
-        raw = await asyncio.wait_for(
-            generate(provider, api_key, model, user_prompt, system_prompt, temperature=0.0),
-            timeout=15.0,
-        )
+        if provider == "ollama":
+            from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
+            if not _should_use_llm():
+                return None, "ollama (RAM < 5GB)"
+            client = get_ollama_client()
+            raw = await asyncio.wait_for(
+                client.generate(prompt=user_prompt, system=system_prompt),
+                timeout=25.0,
+            )
+
+        elif provider == "llamacpp":
+            import httpx
+            llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            async with httpx.AsyncClient(timeout=25) as http:
+                resp = await http.post(
+                    f"{llamacpp_url}/v1/chat/completions",
+                    json={"messages": messages, "temperature": 0.0, "max_tokens": 512},
+                )
+                resp.raise_for_status()
+                raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        else:
+            # Cloud provider (openai, anthropic, google, groq)
+            providers_cfg = voice_cfg.get("providers", {})
+            p_cfg = providers_cfg.get(provider, {})
+            api_key = p_cfg.get("api_key", "")
+            model = p_cfg.get("model", "")
+            if not api_key or not model:
+                return None, provider
+            from system_modules.llm_engine.cloud_providers import generate
+            raw = await asyncio.wait_for(
+                generate(provider, api_key, model, user_prompt, system_prompt, temperature=0.0),
+                timeout=15.0,
+            )
 
         if not raw:
-            return None
+            return None, provider
 
         # Parse JSON — strip code fences if present
         cleaned = raw.strip()
@@ -487,16 +463,23 @@ class IntentRouter:
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
         # Find JSON object
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start == -1 or end == -1:
+        start_idx = cleaned.find("{")
+        end_idx = cleaned.rfind("}")
+        if start_idx == -1 or end_idx == -1:
             # Not JSON — use raw text as conversational response
             return IntentResult(
                 intent="llm.response", response=cleaned, action=None,
-                source="cloud_llm", latency_ms=0,
-            )
+                source="llm", latency_ms=0,
+            ), provider
 
-        data = json.loads(cleaned[start:end + 1])
+        try:
+            data = json.loads(cleaned[start_idx:end_idx + 1])
+        except json.JSONDecodeError:
+            return IntentResult(
+                intent="llm.response", response=cleaned, action=None,
+                source="llm", latency_ms=0,
+            ), provider
+
         intent_name = data.get("intent", "")
         params = data.get("params") or {}
         response = data.get("response", "")
@@ -505,15 +488,15 @@ class IntentRouter:
         if intent_name and intent_name in known:
             return IntentResult(
                 intent=intent_name, response=response, action=None,
-                source="cloud_llm", latency_ms=0, params=params,
-            )
+                source="llm", latency_ms=0, params=params,
+            ), provider
         elif intent_name == "llm.response" or response:
             return IntentResult(
                 intent="llm.response", response=response, action=None,
-                source="cloud_llm", latency_ms=0, params=params,
-            )
+                source="llm", latency_ms=0, params=params,
+            ), provider
 
-        return None
+        return None, provider
 
     def _get_system_prompt(self) -> str:
         """Build system prompt — compact for local Ollama, via build_system_prompt()."""

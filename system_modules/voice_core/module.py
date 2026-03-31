@@ -349,12 +349,12 @@ class VoiceCoreModule(SystemModule):
             self._session.append({"role": "user", "content": text})
 
             # System modules handle their own TTS via EventBus (voice.speak).
-            # For system_module intents (or cloud_llm-classified intents that map
+            # For system_module intents (or LLM-classified intents that map
             # to a system module), stay in PROCESSING until TTS completes
             # to prevent mic from picking up speaker audio or accepting new commands.
             _is_system_handled = (
                 result.source == "system_module"
-                or (result.source == "cloud_llm" and self._is_system_module_intent(result.intent))
+                or (result.source == "llm" and self._is_system_module_intent(result.intent))
             )
             if _is_system_handled:
                 self._system_speak_done.clear()
@@ -836,7 +836,7 @@ class VoiceCoreModule(SystemModule):
             # by the module itself via EventBus (voice.intent → module.handle → module.speak)
             _sys_handled = (
                 result.source == "system_module"
-                or (result.source == "cloud_llm" and svc._is_system_module_intent(result.intent))
+                or (result.source == "llm" and svc._is_system_module_intent(result.intent))
             )
             if req.speak and _sys_handled:
                 svc._system_speak_done.clear()
