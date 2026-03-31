@@ -41,7 +41,7 @@ class ModuleResponse(BaseModel):
     type: str
     status: str
     runtime_mode: str
-    port: int
+    port: int  # Deprecated: always 0 — modules use WebSocket bus
     installed_at: float
     ui: dict | None = None   # from manifest.json "ui" section (widget, settings, icon)
 
@@ -120,7 +120,7 @@ async def _install_and_notify(sandbox, zip_path: Path, manifest: dict, name: str
     try:
         info = await sandbox.install(zip_path, manifest)
         _emit_status(name, ModuleStatus.READY, "Validation passed, starting...")
-        _emit_status(name, info.status, f"Module started on port {info.port}")
+        _emit_status(name, info.status, "Module started (bus-connected)")
         bus = get_event_bus()
         await bus.publish(
             type=MODULE_INSTALLED,

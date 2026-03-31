@@ -1,6 +1,6 @@
 # Spec: system_modules/ — SelenaCore System Modules
 **Executor:** AI coding agent
-**Priority:** 🔴 High
+**Priority:** High
 **Branch:** `feat/<N>-system-modules`
 **Depends on:** core/ fully implemented and running (Core API :7070, Event Bus, Device Registry, Module Loader)
 
@@ -9,11 +9,11 @@
 ## Required reading before starting
 
 ```
-AGENTS.md (SelenaCore)              ← agent rules, git workflow
-docs/architecture.md                ← core architecture
-docs/module-core-protocol.md        ← module↔core protocol, tokens, HMAC
-docs/module-development.md          ← SDK, manifest.json, permissions
-README.md                           ← project structure, env vars
+AGENTS.md (SelenaCore)              <- agent rules, git workflow
+docs/architecture.md                <- core architecture
+docs/module-bus-protocol.md         <- module<>core protocol, tokens, HMAC
+docs/module-development.md          <- SDK, manifest.json, permissions
+README.md                           <- project structure, env vars
 ```
 
 ---
@@ -21,16 +21,16 @@ README.md                           ← project structure, env vars
 ## Critical rules (violation = broken code)
 
 ```
-❌ print() — only logging.getLogger(__name__)
-❌ bare except: pass — always except Exception as e:
-❌ missing type hints on public methods
-❌ synchronous def instead of async def in public methods
-❌ eval(), exec() in any code
-❌ shell=True without absolute necessity
-❌ direct reading of /secure/ from any system module
-❌ publishing core.* events from modules (only from the core)
-❌ storing secrets in .env (only templates in .env.example)
-❌ one file = multiple responsibilities
+NO print() — only logging.getLogger(__name__)
+NO bare except: pass — always except Exception as e:
+NO missing type hints on public methods
+NO synchronous def instead of async def in public methods
+NO eval(), exec() in any code
+NO shell=True without absolute necessity
+NO direct reading of /secure/ from any system module
+NO publishing core.* events from modules (only from the core)
+NO storing secrets in .env (only templates in .env.example)
+NO one file = multiple responsibilities
 ```
 
 ---
@@ -41,43 +41,48 @@ README.md                           ← project structure, env vars
 
 ```
 system_modules/<name>/
-  manifest.json          ← required
-  main.py                ← entry point, FastAPI + SDK
-  <name>.py              ← business logic (separate file)
-  Dockerfile             ← how to build the image
-  requirements.txt       ← dependencies
-  widget.html            ← UI widget (if ui_profile != HEADLESS)
-  settings.html          ← settings page (if applicable)
-  icon.svg               ← icon for UI
+  manifest.json          <- required
+  __init__.py            <- exports module_class
+  module.py              <- entry point, SystemModule subclass
+  <name>.py              <- business logic (separate file)
+  widget.html            <- UI widget (if ui_profile != HEADLESS)
+  settings.html          <- settings page (if applicable)
+  icon.svg               <- icon for UI
   tests/
-    test_<name>.py       ← pytest tests
-  README.md              ← module description
+    test_<name>.py       <- pytest tests
+  README.md              <- module description
 ```
 
-### main.py template
+### module.py template
 
 ```python
-# system_modules/<name>/main.py
+# system_modules/<name>/module.py
 import logging
-import os
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from sdk.base_module import SmartHomeModule
-from .<name> import <NameModule>
+from core.module_loader.system_module import SystemModule
 
 logger = logging.getLogger(__name__)
 
-module = <NameModule>()
-app = FastAPI(title=module.name)
+class <Name>Module(SystemModule):
+    name = "<name>"
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await module.start(app)
-    yield
-    await module.stop()
+    async def start(self) -> None:
+        # Subscribe to events, initialize service
+        await self.publish("module.started", {"name": self.name})
+        logger.info("%s started", self.name)
 
-app = FastAPI(title=module.name, lifespan=lifespan)
-module.register_static_routes(app)
+    async def stop(self) -> None:
+        self._cleanup_subscriptions()
+        logger.info("%s stopped", self.name)
+
+    def get_router(self):
+        # Optional: return FastAPI APIRouter for UI endpoints
+        return None
+```
+
+### `__init__.py`
+
+```python
+from .module import <Name>Module as module_class
 ```
 
 ### manifest.json — required fields
@@ -91,7 +96,6 @@ module.register_static_routes(app)
   "ui_profile": "FULL | HEADLESS | SETTINGS_ONLY | ICON_SETTINGS",
   "api_version": "1.0",
   "runtime_mode": "always_on",
-  "port": <8100-8200>,
   "permissions": [...],
   "ui": {
     "icon": "icon.svg",
@@ -102,32 +106,6 @@ module.register_static_routes(app)
 }
 ```
 
-### Ports — allocation
-
-| Module | Port |
-|---|---|
-| voice_core | 8100 |
-| llm_engine | 8101 |
-| ui_core | 80 (separate) |
-| secrets_vault | 8102 |
-| user_manager | — (in-process, no port) |
-| hw_monitor | 8104 |
-| backup_manager | 8105 |
-| remote_access | 8106 |
-| network_scanner | 8107 |
-| **automation_engine** | **8108** |
-| **protocol_bridge** | **8109** |
-| **device_watchdog** | **8110** |
-| **scheduler** | **8111** |
-| **presence_detection** | **8112** |
-| **update_manager** | **8113** |
-| **energy_monitor** | **8114** |
-| **weather_service** | **8115** |
-| **notification_router** | **8116** |
-| **import_adapters** | **8117** |
-| notify_push | 8118 |
-| **media_player** | **8119** |
-
 ---
 
 ## Implementation order
@@ -135,17 +113,17 @@ module.register_static_routes(app)
 Commit after each step. Each commit = a working module.
 
 ```
-Step 1:  scheduler           ← all others depend on it
-Step 2:  device_watchdog     ← needed for automation_engine
-Step 3:  protocol_bridge     ← needed for real devices
-Step 4:  automation_engine   ← key module
-Step 5:  presence_detection  ← used in automation_engine
-Step 6:  weather_service     ← used in automation_engine
+Step 1:  scheduler           <- all others depend on it
+Step 2:  device_watchdog     <- needed for automation_engine
+Step 3:  protocol_bridge     <- needed for real devices
+Step 4:  automation_engine   <- key module
+Step 5:  presence_detection  <- used in automation_engine
+Step 6:  weather_service     <- used in automation_engine
 Step 7:  energy_monitor
-Step 8:  notification_router ← used in automation_engine
+Step 8:  notification_router <- used in automation_engine
 Step 9:  update_manager
-Step 10: import_adapters     ← refactoring of existing code
-Step 9.5: media_player      ← depends on scheduler (sleep timer), voice_core (TTS)
+Step 10: import_adapters     <- refactoring of existing code
+Step 9.5: media_player      <- depends on scheduler (sleep timer), voice_core (TTS)
 Step 11: pytest for all modules
 ```
 
@@ -153,14 +131,13 @@ Step 11: pytest for all modules
 
 ## Module 1: `scheduler`
 
-**Port:** 8111
 **Type:** SYSTEM
 **ui_profile:** SETTINGS_ONLY
 **Memory:** 64 MB
 
 ### Purpose
 
-Central scheduler for all of SelenaCore. All modules that need to "run at time X" communicate with it through Core API events. Supports cron, interval, and astronomical triggers (sunrise/sunset).
+Central scheduler for all of SelenaCore. All modules that need to "run at time X" communicate with it through EventBus events (EventBus.subscribe, EventBus.publish). Supports cron, interval, and astronomical triggers (sunrise/sunset).
 
 ### Functionality
 
@@ -200,7 +177,7 @@ sunrise = s["sunrise"]
 sunset  = s["sunset"]
 ```
 
-**API for task registration (other modules call via Core API events):**
+**API for task registration (other modules call via EventBus.publish):**
 
 Scheduler listens to the `scheduler.register` event:
 ```json
@@ -223,7 +200,7 @@ Scheduler listens to the `scheduler.unregister` event:
 **Task persistence:**
 
 ```python
-# Tasks are stored in SQLite via Core API /modules/{name}/config
+# Tasks are stored in SQLite via DeviceRegistry / module config
 # On restart — all tasks are reloaded from config
 # Astral recalculates sunrise/sunset every day automatically
 ```
@@ -241,7 +218,7 @@ scheduler.job_removed    { job_id }
 ```
 scheduler.register
 scheduler.unregister
-scheduler.list_jobs      → publishes scheduler.jobs_list in response
+scheduler.list_jobs      -> publishes scheduler.jobs_list in response
 ```
 
 **widget.html (SETTINGS_ONLY — settings only):**
@@ -263,22 +240,30 @@ astral>=3.2
 apscheduler>=3.10
 ```
 
+**REST endpoints (mounted at `/api/ui/modules/scheduler/` via `get_router()`):**
+
+```
+GET  /jobs                → list active jobs
+POST /jobs                -> register job
+DELETE /jobs/{job_id}     -> unregister job
+GET  /health              -> {"status": "ok"}
+```
+
 **Tests (tests/test_scheduler.py):**
 
 ```python
 # test: cron trigger fires at correct time (mock time)
 # test: interval trigger fires N times in period (mock)
 # test: sunrise/sunset computed correctly for known location
-# test: job persists across restart (save → reload)
-# test: scheduler.register event → job created
-# test: scheduler.unregister event → job removed
+# test: job persists across restart (save -> reload)
+# test: scheduler.register event -> job created
+# test: scheduler.unregister event -> job removed
 ```
 
 ---
 
 ## Module 2: `device_watchdog`
 
-**Port:** 8110
 **Type:** SYSTEM
 **ui_profile:** ICON_SETTINGS
 **Memory:** 64 MB
@@ -294,7 +279,7 @@ Monitors the availability of all devices in the Device Registry. Periodically ch
 ```python
 # Every 60 seconds (configurable):
 async def check_all_devices():
-    devices = await self.list_devices()   # GET /devices via SDK
+    devices = await self.list_devices()   # DeviceRegistry.list_devices() in-process
     for device in devices:
         was_online = device["meta"].get("watchdog_online", True)
         is_online  = await self._ping(device)
@@ -307,7 +292,7 @@ async def check_all_devices():
                  "watchdog_last_seen": datetime.utcnow().isoformat()}
             )
             event = "device.online" if is_online else "device.offline"
-            await self.publish_event(event, {
+            await self.publish("event", {
                 "device_id":   device["id"],
                 "device_name": device["name"],
                 "protocol":    device["protocol"],
@@ -386,7 +371,15 @@ device.watchdog_scan { checked: N, online: N, offline: N, duration_ms: N }
 **Listened events:**
 
 ```
-device.protocol_heartbeat   { device_id, timestamp }  ← from protocol_bridge
+device.protocol_heartbeat   { device_id, timestamp }  <- from protocol_bridge
+```
+
+**REST endpoints (mounted at `/api/ui/modules/device_watchdog/` via `get_router()`):**
+
+```
+GET  /status              -> device online/offline summary
+POST /scan                -> trigger manual scan
+GET  /health              -> {"status": "ok"}
 ```
 
 **widget.html (ICON_SETTINGS):**
@@ -421,22 +414,21 @@ icmplib>=3.0
 
 ## Module 3: `protocol_bridge`
 
-**Port:** 8109
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 256 MB
 
 ### Purpose
 
-Gateway between physical smart home protocols (MQTT, Zigbee, Z-Wave) and the core's Device Registry. Devices on these protocols are registered in the Registry and controlled through the standard Core API. Other modules are unaware of protocols — they only work with abstract devices.
+Gateway between physical smart home protocols (MQTT, Zigbee, Z-Wave) and the core's Device Registry. Devices on these protocols are registered in the Registry and controlled through the standard EventBus and DeviceRegistry methods. Other modules are unaware of protocols — they only work with abstract devices. This module runs in-process alongside the core.
 
 ### 3.1 MQTT
 
-**Built-in MQTT broker (Mosquitto via Docker):**
+**MQTT broker connection:**
 
 ```python
-# On module start — launch Mosquitto in the same container
-# or connect to an external broker (configurable)
+# Connect to an external MQTT broker (e.g. Mosquitto running on the host)
+# or a locally installed broker (configurable)
 
 MQTT_BROKER_HOST = config.get("mqtt_host", "localhost")
 MQTT_BROKER_PORT = int(config.get("mqtt_port", 1883))
@@ -467,11 +459,10 @@ async def on_mqtt_discovery(topic: str, payload: bytes):
 **Controlling a device via MQTT:**
 
 ```python
-# When PATCH /devices/{id}/state arrives from any module
-# Core API publishes device.state_changed
-# protocol_bridge intercepts and sends an MQTT command
+# When device state is changed via DeviceRegistry
+# Core publishes device.state_changed via EventBus
+# protocol_bridge intercepts (EventBus.subscribe) and sends an MQTT command
 
-@on_event("device.state_changed")
 async def on_state_changed(self, payload: dict):
     device = await self.get_device(payload["device_id"])
     if device["protocol"] != "mqtt":
@@ -487,20 +478,20 @@ async def on_state_changed(self, payload: dict):
 
 ### 3.2 Zigbee
 
-**Via zigbee2mqtt (separate process):**
+**Via zigbee2mqtt (separate process on the host):**
 
 ```python
-# zigbee2mqtt runs as a subprocess or separate Docker service
+# zigbee2mqtt runs as a systemd service or separate process on the host
 # protocol_bridge connects to it via MQTT
 
 # zigbee2mqtt publishes:
-#   zigbee2mqtt/<friendly_name>        → state messages
-#   zigbee2mqtt/<friendly_name>/set   ← commands
+#   zigbee2mqtt/<friendly_name>        -> state messages
+#   zigbee2mqtt/<friendly_name>/set   <- commands
 
 # protocol_bridge:
-# 1. Subscribes to zigbee2mqtt/bridge/devices → device list
+# 1. Subscribes to zigbee2mqtt/bridge/devices -> device list
 # 2. Registers each in the Device Registry with protocol="zigbee"
-# 3. Translates state changes ↔ Core API
+# 3. Translates state changes <> EventBus
 ```
 
 **Supported Zigbee adapters:**
@@ -517,7 +508,7 @@ Texas Instruments CC2652R/CC2652P
 **Via zwave-js-ui (optional, if USB adapter is available):**
 
 ```python
-# Similar to Zigbee — through an intermediary service
+# Similar to Zigbee — through an intermediary service on the host
 # Configured if Z_WAVE_ENABLED=true in module settings
 # Disabled by default (not all users have a USB adapter)
 ```
@@ -547,7 +538,7 @@ async def _poll_http_device(self, device: dict):
 
 ```
 device.protocol_heartbeat    { device_id, protocol, timestamp }
-device.protocol_discovered   { name, protocol, meta }  ← new device found
+device.protocol_discovered   { name, protocol, meta }  <- new device found
 device.protocol_lost         { device_id, protocol }
 protocol_bridge.mqtt_connected    { host, port }
 protocol_bridge.mqtt_disconnected { reason }
@@ -557,7 +548,7 @@ protocol_bridge.zigbee_devices    { count }
 **Listens to:**
 
 ```
-device.state_changed    → send command to physical device
+device.state_changed    -> send command to physical device
 ```
 
 ### Settings (settings.html)
@@ -582,11 +573,20 @@ HTTP polling:
   Poll interval: 30s
 ```
 
+**REST endpoints (mounted at `/api/ui/modules/protocol_bridge/` via `get_router()`):**
+
+```
+GET  /protocols           -> status of all protocols (MQTT, Zigbee, Z-Wave)
+GET  /devices             -> devices discovered via protocols
+POST /mqtt/test           -> test MQTT connection
+GET  /health              -> {"status": "ok"}
+```
+
 **widget.html (FULL, size 2x1):**
 
 ```
 Left half:
-  MQTT: ● Connected / ○ Offline
+  MQTT: * Connected / o Offline
   Zigbee: N devices
   Z-Wave: N devices / Disabled
 
@@ -599,38 +599,38 @@ Right half:
 ```
 aiomqtt>=1.2
 httpx>=0.27
-# zigbee2mqtt and zwave-js-ui run as Docker services, not pip
+# zigbee2mqtt and zwave-js-ui run as host services, not pip packages
 ```
 
-**System dependencies (in Dockerfile):**
+**System dependencies:**
 
-```dockerfile
-# For Zigbee USB adapter — pass device to Docker:
-# docker run --device /dev/ttyUSB0:/dev/ttyUSB0 ...
+```
+# For Zigbee USB adapter — ensure /dev/ttyUSB0 is accessible to the process
+# zigbee2mqtt: install and run as a systemd service on the host
+# zwave-js-ui: install and run as a systemd service on the host (optional)
 ```
 
 **Tests:**
 
 ```python
-# test: MQTT discovery message → device registered in Registry (mock)
-# test: device.state_changed → MQTT command published
+# test: MQTT discovery message -> device registered in Registry (mock)
+# test: device.state_changed -> MQTT command published
 # test: device.protocol_heartbeat published on MQTT message
-# test: HTTP poll → device state updated
-# test: MQTT disconnect → reconnect after timeout
+# test: HTTP poll -> device state updated
+# test: MQTT disconnect -> reconnect after timeout
 ```
 
 ---
 
 ## Module 4: `automation_engine`
 
-**Port:** 8108
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 128 MB
 
 ### Purpose
 
-Automation engine. The user describes rules "if X → then Y". The engine subscribes to core events, checks conditions, and executes actions. This is the key module — without it, the smart home requires manual control.
+Automation engine. The user describes rules "if X -> then Y". The engine subscribes to EventBus events, checks conditions, and executes actions via direct Python calls (EventBus.publish, DeviceRegistry methods). This is the key module — without it, the smart home requires manual control.
 
 ### 4.1 Automation format (YAML)
 
@@ -684,7 +684,7 @@ trigger:
   type: time
   at: "07:00" | "sunrise" | "sunset+30m" | "every:5m" | "cron:0 8 * * 1-5"
 
-# Core API event
+# EventBus event
 trigger:
   type: event
   event_type: "device.state_changed"
@@ -751,14 +751,14 @@ condition:
 ### 4.4 Action types
 
 ```yaml
-# Change device state
+# Change device state (via DeviceRegistry.update_device_state)
 action:
   type: device_state
   device_id: "dev_abc"
   state: { power: true, brightness: 80 }
   delay_ms: 0               # delay before execution
 
-# Publish event
+# Publish event (via EventBus.publish)
 action:
   type: event
   event_type: "any.event"
@@ -827,8 +827,8 @@ async def on_start(self):
 async def _register_triggers(self, automation: Automation):
     for trigger in automation.triggers:
         if trigger.type == "time":
-            # Register task in scheduler
-            await self.publish_event("scheduler.register", {
+            # Register task in scheduler via EventBus.publish
+            await self.publish("scheduler.register", {
                 "job_id":     f"automation:{automation.id}:{trigger.at}",
                 "trigger":    trigger.at,
                 "event_type": "automation.time_trigger",
@@ -836,8 +836,7 @@ async def _register_triggers(self, automation: Automation):
                 "owner":      "automation-engine"
             })
         else:
-            # Event-based triggers — subscribe via Core API
-            # (SDK does this through @on_event decorator)
+            # Event-based triggers — subscribe via EventBus.subscribe
             pass
 ```
 
@@ -864,27 +863,29 @@ device.offline
 presence.home
 presence.away
 weather.updated
-automation.time_trigger    ← from scheduler
+automation.time_trigger    <- from scheduler
 ```
 
 ### 4.9 Module API endpoints
 
+REST endpoints mounted at `/api/ui/modules/automation_engine/` via `get_router()`:
+
 ```
-GET  /automations              → list all automations
-POST /automations              → create (body: YAML text or JSON)
-GET  /automations/{id}         → single automation
-PUT  /automations/{id}         → update
-DELETE /automations/{id}       → delete
-PATCH /automations/{id}/toggle → enable/disable
+GET  /automations              -> list all automations
+POST /automations              -> create (body: YAML text or JSON)
+GET  /automations/{id}         -> single automation
+PUT  /automations/{id}         -> update
+DELETE /automations/{id}       -> delete
+PATCH /automations/{id}/toggle -> enable/disable
 
-GET  /scenes                   → list scenes
-POST /scenes                   → create scene
-PUT  /scenes/{id}              → update
-DELETE /scenes/{id}            → delete
-POST /scenes/{id}/activate     → activate immediately
+GET  /scenes                   -> list scenes
+POST /scenes                   -> create scene
+PUT  /scenes/{id}              -> update
+DELETE /scenes/{id}            -> delete
+POST /scenes/{id}/activate     -> activate immediately
 
-GET  /history?limit=50         → trigger history
-GET  /health                   → {"status": "ok"}
+GET  /history?limit=50         -> trigger history
+GET  /health                   -> {"status": "ok"}
 ```
 
 ### widget.html (FULL, size 2x2)
@@ -892,7 +893,7 @@ GET  /health                   → {"status": "ok"}
 ```
 Top half:
   List of active automations (toggle enable/disable)
-  Counter: "7 automations · 12 triggers today"
+  Counter: "7 automations * 12 triggers today"
 
 Bottom half:
   Last 5 triggers with time and status
@@ -937,14 +938,13 @@ jsonpath-ng>=1.6       # for dot-notation filters in triggers
 
 ## Module 5: `presence_detection`
 
-**Port:** 8112
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 64 MB
 
 ### Purpose
 
-Determines which users are currently at home. Uses multiple methods in parallel: ARP ping of phone MAC addresses, Bluetooth beacon, GPS geofencing (via mobile app). Publishes events on arrival/departure.
+Determines which users are currently at home. Uses multiple methods in parallel: ARP ping of phone MAC addresses, Bluetooth beacon, GPS geofencing (via mobile app). Publishes events on arrival/departure via EventBus.publish.
 
 ### 5.1 Detection methods
 
@@ -953,7 +953,7 @@ Determines which users are currently at home. Uses multiple methods in parallel:
 ```python
 # For each tracked device (phone MAC address):
 # ARP ping every 30 seconds
-# If MAC responds → user is home
+# If MAC responds -> user is home
 
 import subprocess
 
@@ -975,7 +975,7 @@ async def _arp_check(self, mac: str) -> bool:
 
 ```python
 # Scan BLE advertisements
-# If device with known UUID/MAC is visible → user is home
+# If device with known UUID/MAC is visible -> user is home
 
 import asyncio
 from bleak import BleakScanner
@@ -993,8 +993,8 @@ async def _bluetooth_scan(self) -> set[str]:
 **GPS geofencing (via webhook from mobile app):**
 
 ```python
-# Mobile app sends POST when entering/leaving a zone:
-@app.post("/webhook/location")
+# Mobile app sends POST when entering/leaving a zone.
+# Endpoint mounted at /api/ui/modules/presence_detection/webhook/location via get_router():
 async def location_webhook(request: Request):
     body = await request.json()
     # body: { user_id, event: "enter"|"leave", zone: "home" }
@@ -1028,7 +1028,7 @@ async def _update_presence(
     if was_home != is_home:
         user.is_home = is_home
         event = "presence.home" if is_home else "presence.away"
-        await self.publish_event(event, {
+        await self.publish(event, {
             "user_id":   user_id,
             "user_name": user.name,
             "method":    method,
@@ -1036,14 +1036,14 @@ async def _update_presence(
         })
         # Also update global status "anyone home"
         anyone_home = any(u.is_home for u in self._users.values())
-        await self.publish_event("presence.anyone_home" if anyone_home
+        await self.publish("presence.anyone_home" if anyone_home
                                  else "presence.everyone_away", {})
 ```
 
 ### 5.3 User settings
 
 ```python
-# Configuration via settings.html → POST /modules/presence-detection/config
+# Configuration via settings.html -> module config
 
 {
   "users": [
@@ -1077,7 +1077,15 @@ presence.status            { users: [{user_id, name, is_home, last_seen}] }
 **Listens to:**
 
 ```
-presence.request_status    → publishes presence.status
+presence.request_status    -> publishes presence.status
+```
+
+### REST endpoints (mounted at `/api/ui/modules/presence_detection/` via `get_router()`)
+
+```
+GET  /status               -> current presence for all users
+POST /webhook/location     -> GPS geofence webhook
+GET  /health               -> {"status": "ok"}
 ```
 
 ### widget.html (FULL, size 1x2)
@@ -1085,7 +1093,7 @@ presence.request_status    → publishes presence.status
 ```
 For each user:
   Avatar (initials) + name
-  ● Home (green) / ○ Away (gray)
+  * Home (green) / o Away (gray)
   Last visit: "14:32"
   Method: wifi / bt / gps
 
@@ -1104,10 +1112,10 @@ bleak>=0.21          # Bluetooth (optional)
 ```python
 # test: ARP check returns True when MAC in /proc/net/arp
 # test: grace_period prevents immediate away after not seen
-# test: presence.home event on transition away→home
-# test: presence.away event on transition home→away (after grace period)
+# test: presence.home event on transition away->home
+# test: presence.away event on transition home->away (after grace period)
 # test: anyone_home/everyone_away published correctly
-# test: multiple methods: any=True → home
+# test: multiple methods: any=True -> home
 # test: GPS webhook updates presence
 ```
 
@@ -1115,14 +1123,13 @@ bleak>=0.21          # Bluetooth (optional)
 
 ## Module 6: `weather_service`
 
-**Port:** 8115
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 64 MB
 
 ### Purpose
 
-Retrieves weather data from the open-meteo API (free, no API key required, works offline in the sense of no registration needed). Caches locally. Provides data to other modules via events and API.
+Retrieves weather data from the open-meteo API (free, no API key required, works offline in the sense of no registration needed). Caches locally. Provides data to other modules via EventBus events and REST API.
 
 ### 6.1 Data source
 
@@ -1144,7 +1151,7 @@ PARAMS = {
 }
 ```
 
-**WMO weather codes → human-readable:**
+**WMO weather codes -> human-readable:**
 
 ```python
 WMO_CODES = {
@@ -1186,7 +1193,7 @@ async def _fetch_weather(self):
         self._cache = self._parse(raw)
         self._last_updated = datetime.utcnow()
 
-        await self.publish_event("weather.updated", self._cache["current"])
+        await self.publish("weather.updated", self._cache["current"])
         logger.info(f"Weather updated: {self._cache['current']['condition']}")
 
     except Exception as e:
@@ -1200,7 +1207,7 @@ async def _fetch_weather(self):
 # weather.updated payload and GET /weather response:
 {
   "current": {
-    "temperature":  22.4,          # °C
+    "temperature":  22.4,          # C
     "humidity":     58,            # %
     "precipitation": 0.0,          # mm
     "condition":    "partly_cloudy",
@@ -1228,11 +1235,14 @@ async def _fetch_weather(self):
 
 ### 6.4 Module API
 
+REST endpoints mounted at `/api/ui/modules/weather_service/` via `get_router()`:
+
 ```
-GET /weather              → current data (from cache)
-GET /weather/forecast     → 3-day forecast
-GET /weather/hourly       → hourly forecast
-POST /weather/refresh     → force update
+GET /weather              -> current data (from cache)
+GET /weather/forecast     -> 3-day forecast
+GET /weather/hourly       -> hourly forecast
+POST /weather/refresh     -> force update
+GET /health               -> {"status": "ok"}
 ```
 
 ### 6.5 Events
@@ -1261,8 +1271,8 @@ ALERTS = [
 
 ```
 Weather icon (SVG, depends on condition)
-Temperature: 22°
-Humidity: 58% · Wind: 3.2 m/s
+Temperature: 22 C
+Humidity: 58% * Wind: 3.2 m/s
 "Partly cloudy"
 Mini forecast: 3 day icons with min/max temperatures
 ```
@@ -1280,7 +1290,7 @@ httpx>=0.27
 # test: WMO code mapped to condition string
 # test: cache returned when API unavailable
 # test: weather.updated event published after fetch
-# test: frost alert when temperature < 2°C
+# test: frost alert when temperature < 2 C
 # test: no duplicate alerts in same hour
 ```
 
@@ -1288,7 +1298,6 @@ httpx>=0.27
 
 ## Module 7: `energy_monitor`
 
-**Port:** 8114
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 64 MB
@@ -1300,10 +1309,9 @@ Aggregates electricity consumption data from all smart plugs and devices with po
 ### 7.1 Data collection
 
 ```python
-# Listens to device.state_changed events
+# Listens to device.state_changed events via EventBus.subscribe
 # If device has power_w, energy_kwh attributes — records them
 
-@on_event("device.state_changed")
 async def on_state_changed(self, payload: dict):
     new_state = payload.get("new_state", {})
 
@@ -1355,7 +1363,7 @@ async def get_total_power_now(self) -> float:
 async def check_anomalies(self):
     for device_id, stats in self._device_stats.items():
         if stats.consecutive_on_minutes > stats.avg_on_minutes * 2:
-            await self.publish_event("energy.anomaly", {
+            await self.publish("energy.anomaly", {
                 "device_id":       device_id,
                 "type":            "unusually_long_on",
                 "duration_minutes": stats.consecutive_on_minutes,
@@ -1366,12 +1374,15 @@ async def check_anomalies(self):
 
 ### 7.4 Module API
 
+REST endpoints mounted at `/api/ui/modules/energy_monitor/` via `get_router()`:
+
 ```
-GET /energy/now              → current whole-house power (W)
-GET /energy/today            → today's consumption (kWh, cost)
-GET /energy/devices          → consumption by device
-GET /energy/history?days=7   → history by day
-GET /energy/forecast         → monthly forecast (based on history)
+GET /energy/now              -> current whole-house power (W)
+GET /energy/today            -> today's consumption (kWh, cost)
+GET /energy/devices          -> consumption by device
+GET /energy/history?days=7   -> history by day
+GET /energy/forecast         -> monthly forecast (based on history)
+GET /health                  -> {"status": "ok"}
 ```
 
 ### 7.5 Events
@@ -1379,7 +1390,7 @@ GET /energy/forecast         → monthly forecast (based on history)
 **Published:**
 
 ```
-energy.total_power     { watts: 1840.5, timestamp }   ← every 60 sec
+energy.total_power     { watts: 1840.5, timestamp }   <- every 60 sec
 energy.anomaly         { device_id, type, message }
 energy.daily_summary   { date, kwh_total, cost, by_device: [...] }
 ```
@@ -1387,7 +1398,7 @@ energy.daily_summary   { date, kwh_total, cost, by_device: [...] }
 **Listens to:**
 
 ```
-device.state_changed   → record readings if power_w/energy_kwh present
+device.state_changed   -> record readings if power_w/energy_kwh present
 ```
 
 ### Settings (settings.html)
@@ -1403,7 +1414,7 @@ Data retention period (days)
 
 ```
 Large number: "1840 W" (now)
-Today: 14.2 kWh · ≈ $1.84
+Today: 14.2 kWh * ~$1.84
 Mini chart: consumption over 24 hours (SVG sparkline)
 Top 3 consumers right now
 ```
@@ -1429,20 +1440,19 @@ aiosqlite>=0.19
 
 ## Module 8: `notification_router`
 
-**Port:** 8116
 **Type:** SYSTEM
 **ui_profile:** SETTINGS_ONLY
 **Memory:** 64 MB
 
 ### Purpose
 
-Notification router. Other modules publish a `notification.send` event — the router decides where to deliver it: TTS voice, Telegram, Web Push, or all at once. The user configures routing rules.
+Notification router. Other modules publish a `notification.send` event via EventBus — the router decides where to deliver it: TTS voice, Telegram, Web Push, or all at once. The user configures routing rules.
 
 ### 8.1 Sending a notification (input interface)
 
 ```python
-# Any module can publish:
-await self.publish_event("notification.send", {
+# Any module can publish via EventBus.publish:
+await self.publish("notification.send", {
     "message":   "Motion detected at the front door",
     "title":     "Security",              # optional
     "priority":  "high",                  # low | normal | high | critical
@@ -1458,7 +1468,7 @@ await self.publish_event("notification.send", {
 
 ```python
 async def _send_tts(self, notification: Notification):
-    await self.publish_event("voice.speak", {
+    await self.publish("voice.speak", {
         "text":   notification.message,
         "lang":   self._config.get("tts_lang", "en"),
         "volume": self._config.get("tts_volume", 0.8),
@@ -1485,7 +1495,7 @@ async def _send_telegram(self, notification: Notification):
 
 ```python
 async def _send_push(self, notification: Notification):
-    await self.publish_event("push.send", {
+    await self.publish("push.send", {
         "title":   notification.title or "SelenaCore",
         "body":    notification.message,
         "icon":    notification.icon,
@@ -1521,18 +1531,18 @@ async def _send_email(self, notification: Notification):
 
 ROUTING_RULES = [
     {
-        "name":     "critical → all channels",
+        "name":     "critical -> all channels",
         "filter":   { "priority": "critical" },
         "channels": ["tts", "telegram", "push"]
     },
     {
-        "name":     "at night → push only, no TTS",
+        "name":     "at night -> push only, no TTS",
         "filter":   { "priority": ["high", "normal"] },
         "time_range": { "from": "22:00", "to": "08:00" },
         "channels": ["push"]     # NOT tts to avoid waking people
     },
     {
-        "name":     "everything else → TTS + push",
+        "name":     "everything else -> TTS + push",
         "filter":   {},           # matches everything
         "channels": ["tts", "push"]
     }
@@ -1545,7 +1555,7 @@ ROUTING_RULES = [
 
 ```
 notification.send      { message, title?, priority?, channel?, icon?, data? }
-voice.speak_done       { text }    ← confirmation from voice_core
+voice.speak_done       { text }    <- confirmation from voice_core
 ```
 
 **Published:**
@@ -1583,19 +1593,18 @@ aiosmtplib>=3.0
 **Tests:**
 
 ```python
-# test: notification.send → TTS event published (mock)
-# test: notification.send → Telegram POST called (mock httpx)
-# test: routing rule priority=critical → all channels
+# test: notification.send -> TTS event published (mock)
+# test: notification.send -> Telegram POST called (mock httpx)
+# test: routing rule priority=critical -> all channels
 # test: time_range rule blocks TTS during night hours
-# test: channel="tts" explicitly → only TTS sent
-# test: failed delivery → notification.failed event
+# test: channel="tts" explicitly -> only TTS sent
+# test: failed delivery -> notification.failed event
 ```
 
 ---
 
 ## Module 9: `update_manager`
 
-**Port:** 8113
 **Type:** SYSTEM
 **ui_profile:** FULL
 **Memory:** 64 MB
@@ -1648,7 +1657,7 @@ async def apply_update(self, update: UpdateInfo) -> bool:
 
     if actual_hash != expected_hash:
         logger.error(f"SHA256 mismatch! Expected {expected_hash}, got {actual_hash}")
-        await self.publish_event("update.failed", {
+        await self.publish("update.failed", {
             "version": update.version,
             "reason":  "sha256_mismatch"
         })
@@ -1673,7 +1682,7 @@ async def apply_update(self, update: UpdateInfo) -> bool:
     subprocess.run(["systemctl", "restart", "smarthome-core"],
                    check=True)
 
-    await self.publish_event("update.applied", {
+    await self.publish("update.applied", {
         "version":    update.version,
         "from":       self._current_version(),
         "applied_at": datetime.utcnow().isoformat()
@@ -1685,8 +1694,8 @@ async def apply_update(self, update: UpdateInfo) -> bool:
 
 ```python
 # Check for updates once daily at 03:00
-# Via scheduler:
-await self.publish_event("scheduler.register", {
+# Via scheduler (EventBus.publish):
+await self.publish("scheduler.register", {
     "job_id":     "update_manager:daily_check",
     "trigger":    "cron:0 3 * * *",
     "event_type": "update.check_requested",
@@ -1711,15 +1720,24 @@ update.no_updates   { current_version }
 **Listens to:**
 
 ```
-update.check_requested    → run check
-update.apply_requested    → { version } → apply
+update.check_requested    -> run check
+update.apply_requested    -> { version } -> apply
+```
+
+### REST endpoints (mounted at `/api/ui/modules/update_manager/` via `get_router()`)
+
+```
+GET  /status              -> current version and update availability
+POST /check               -> trigger update check
+POST /apply               -> apply available update
+GET  /health              -> {"status": "ok"}
 ```
 
 ### widget.html (FULL, size 2x1)
 
 ```
 Current version: v0.3.0-beta
-Status: ✓ Up to date / ⚠ v0.4.0 available
+Status: Up to date / v0.4.0 available
 
 If update available:
   Version, date, first 200 characters of changelog
@@ -1737,9 +1755,9 @@ httpx>=0.27
 **Tests:**
 
 ```python
-# test: GitHub API returns newer version → update.available published
-# test: same version → update.no_updates
-# test: SHA256 mismatch → update.failed, no files changed
+# test: GitHub API returns newer version -> update.available published
+# test: same version -> update.no_updates
+# test: SHA256 mismatch -> update.failed, no files changed
 # test: download progress emitted (mock)
 # test: backup created before applying update
 # test: manifest updated after applying update
@@ -1749,7 +1767,6 @@ httpx>=0.27
 
 ## Module 10: `import_adapters`
 
-**Port:** 8117
 **Type:** SYSTEM
 **ui_profile:** SETTINGS_ONLY
 **Memory:** 128 MB
@@ -1778,7 +1795,7 @@ async def import_from_ha(self, ha_url: str, token: str):
         entity_id = state["entity_id"]
         domain    = entity_id.split(".")[0]
 
-        # Mapping HA domain → SelenaCore type
+        # Mapping HA domain -> SelenaCore type
         device_type = HA_DOMAIN_MAP.get(domain)
         if not device_type:
             continue   # skip unknown domains
@@ -1796,7 +1813,7 @@ async def import_from_ha(self, ha_url: str, token: str):
         )
         imported += 1
 
-    await self.publish_event("import.completed", {
+    await self.publish("import.completed", {
         "source":   "home_assistant",
         "imported": imported,
         "total":    len(states)
@@ -1860,7 +1877,7 @@ async def import_from_tuya(self, region: str):
 
 ```python
 # Via local Hue Bridge API (no cloud)
-# Authorization: press button on Bridge → get username
+# Authorization: press button on Bridge -> get username
 
 async def import_from_hue(self, bridge_ip: str, username: str):
     async with httpx.AsyncClient(
@@ -1896,6 +1913,16 @@ import.completed    { source, imported, skipped, total }
 import.failed       { source, error }
 ```
 
+### REST endpoints (mounted at `/api/ui/modules/import_adapters/` via `get_router()`)
+
+```
+POST /import/ha            -> import from Home Assistant
+POST /import/tuya          -> import from Tuya
+POST /import/hue           -> import from Philips Hue
+GET  /import/history       -> import history
+GET  /health               -> {"status": "ok"}
+```
+
 ### Settings (settings.html)
 
 ```
@@ -1907,11 +1934,11 @@ import.failed       { source, error }
 "Tuya" tab:
   Client ID, Client Secret
   Region: EU / US / CN / IN
-  [Authorize via OAuth] → [Import]
+  [Authorize via OAuth] -> [Import]
 
 "Philips Hue" tab:
   Bridge IP address
-  [Press button on Bridge] → [Get token] → [Import]
+  [Press button on Bridge] -> [Get token] -> [Import]
 
 Import history:
   Date | Source | Imported | Status
@@ -1941,17 +1968,16 @@ httpx>=0.27
 ### Each module must:
 
 - [ ] Have a `manifest.json` with correct fields
-- [ ] Respond to `GET /health → 200 { status: "ok" }`
+- [ ] Respond to `GET /health -> 200 { status: "ok" }` (via `get_router()` mounted at `/api/ui/modules/{name}/`)
 - [ ] Serve `GET /widget.html` (if `ui_profile != HEADLESS`)
 - [ ] Serve `GET /settings.html` (if it has settings)
-- [ ] Read `SELENA_MODULE_TOKEN`, `SELENA_WEBHOOK_SECRET`, `SELENA_CORE_URL` from env
-- [ ] Verify HMAC signature of incoming webhooks (SDK does this automatically)
+- [ ] Subclass `SystemModule` with proper `start()` and `stop()` methods
+- [ ] Export `module_class` from `__init__.py`
 - [ ] Have all `async def` on public methods
 - [ ] Have type hints on all public methods
 - [ ] Have tests covering the main logic
 - [ ] Pass `pytest tests/ -x -q`
 - [ ] Pass `python -m mypy <module_dir>/`
-- [ ] Have a `Dockerfile` and `requirements.txt`
 - [ ] Not use `print()`, `eval()`, `exec()`
 - [ ] Not access `/secure/` directly
 - [ ] Not publish `core.*` events
@@ -1979,10 +2005,10 @@ httpx>=0.27
 # 3. presence_detection says "Alice is home"
 # 4. automation_engine sends device_state for the light
 # 5. protocol_bridge receives state_changed and publishes MQTT command
-# 6. notification_router receives notification.send → TTS
+# 6. notification_router receives notification.send -> TTS
 # 7. voice_core receives voice.speak
 
-# All through mock SDK without real Core API
+# All through mock SystemModule without real Core API
 ```
 
 ---
@@ -2078,39 +2104,42 @@ SUPPORTED_EXTENSIONS = {".mp3", ".ogg", ".flac", ".wav", ".opus", ".m3u", ".pls"
 ### 11.4 Voice control
 
 ```python
-# MediaVoiceHandler — listens to voice.intent events
+# MediaVoiceHandler — listens to voice.intent events via EventBus.subscribe
 # Intents: media.play_artist, media.pause, media.stop, media.next, media.previous
 # Trigger: "play music", "pause", "next track"
 ```
 
 ### 11.5 Module API
 
+REST endpoints mounted at `/api/ui/modules/media_player/` via `get_router()`:
+
 ```
-GET  /player/state              → current state (track, position, volume)
-POST /player/play               → start playback
-POST /player/pause              → pause
-POST /player/stop               → stop
-POST /player/next               → next track
-POST /player/previous           → previous track
-POST /player/volume             → { volume: 0-100 }
-POST /player/seek               → { position: <seconds> }
+GET  /player/state              -> current state (track, position, volume)
+POST /player/play               -> start playback
+POST /player/pause              -> pause
+POST /player/stop               -> stop
+POST /player/next               -> next track
+POST /player/previous           -> previous track
+POST /player/volume             -> { volume: 0-100 }
+POST /player/seek               -> { position: <seconds> }
 
-GET  /radio/stations            → station list
-POST /radio/add-station         → add station
-POST /radio/import-m3u          → import M3U playlist
-POST /import/radiobrowser       → import from RadioBrowser
-POST /import/smb                → import from SMB share
-POST /import/archive            → import from Internet Archive
-GET  /import/usb/scan           → scan USB drives
+GET  /radio/stations            -> station list
+POST /radio/add-station         -> add station
+POST /radio/import-m3u          -> import M3U playlist
+POST /import/radiobrowser       -> import from RadioBrowser
+POST /import/smb                -> import from SMB share
+POST /import/archive            -> import from Internet Archive
+GET  /import/usb/scan           -> scan USB drives
 
-POST /config                    → update settings
+POST /config                    -> update settings
+GET  /health                    -> {"status": "ok"}
 ```
 
 ### 11.6 State broadcasting
 
 ```python
-# Every 3 seconds during playback:
-await self.publish_event("media.state_changed", {
+# Every 3 seconds during playback (via EventBus.publish):
+await self.publish("media.state_changed", {
     "state":    "playing",      # "playing" | "paused" | "stopped"
     "track":    "Song Name",
     "artist":   "Artist",
@@ -2132,7 +2161,7 @@ media.state_changed    { state, track, artist, album, cover_url, position, durat
 **Listens to:**
 
 ```
-voice.intent           → handle media.* intents
+voice.intent           -> handle media.* intents
 ```
 
 ### 11.8 Settings
@@ -2148,9 +2177,9 @@ MEDIA_NORMALIZE=false           # volume normalization
 
 ```
 Album cover (if available)
-Track name · Artist
+Track name * Artist
 Progress bar with timer
-Buttons: ⏮ ▶/⏸ ⏭ 🔊
+Buttons: prev play/pause next volume
 Mini playlist: 3-5 tracks
 ```
 
@@ -2193,9 +2222,9 @@ SelenaCore voice subsystem. Includes: speech recognition (STT, Vosk), speech syn
 # Engine: Vosk (offline, supports Ukrainian and Russian)
 # Model: configurable via VOSK_MODEL (default: vosk-model-small-uk)
 # Sample rate: 16 kHz, mono
-# WebSocket streaming: WS /api/ui/modules/voice-core/stream
+# WebSocket streaming: WS /api/ui/modules/voice_core/stream
 
-# Real-time: audio from microphone → Vosk → text → Intent Router
+# Real-time: audio from microphone -> Vosk -> text -> Intent Router
 ```
 
 ### 12.2 Speech synthesis (TTS)
@@ -2212,9 +2241,9 @@ VOICES = {
     "en_US-ryan-high":            "English Ryan (HQ)",
 }
 
-# Endpoints:
-# GET  /tts/voices     → voice list
-# POST /tts/test       → test synthesis (returns WAV)
+# Endpoints (mounted at /api/ui/modules/voice_core/ via get_router()):
+# GET  /tts/voices     -> voice list
+# POST /tts/test       -> test synthesis (returns WAV)
 ```
 
 ### 12.3 Wake-word detector
@@ -2222,11 +2251,11 @@ VOICES = {
 ```python
 # Engine: openWakeWord (ONNX inference)
 # Default wake-word: "hey_selena"
-# Threshold: 0.1–1.0 (default 0.5, configurable)
+# Threshold: 0.1-1.0 (default 0.5, configurable)
 # Background loop: continuous microphone listening via asyncio
 
-# On detection → publishes voice.wake_word event
-# → starts STT recording → text → Intent Router
+# On detection -> publishes voice.wake_word event via EventBus.publish
+# -> starts STT recording -> text -> Intent Router
 ```
 
 ### 12.4 Speaker identification (Speaker ID)
@@ -2236,9 +2265,9 @@ VOICES = {
 # Storage: numpy arrays in /var/lib/selena/speaker_embeddings/
 # Similarity threshold: 0.75 (configurable)
 
-# Endpoints:
-# GET    /speakers                → list of registered speakers
-# DELETE /speakers/{user_id}      → delete voice print
+# Endpoints (mounted at /api/ui/modules/voice_core/ via get_router()):
+# GET    /speakers                -> list of registered speakers
+# DELETE /speakers/{user_id}      -> delete voice print
 ```
 
 ### 12.5 Privacy mode
@@ -2248,11 +2277,11 @@ VOICES = {
 # On activation:
 #   - Full stop of STT/wake-word listening
 #   - LED indicator (if connected)
-#   - Publish voice.privacy_on event
+#   - Publish voice.privacy_on event via EventBus.publish
 
-# Endpoints:
-# GET  /privacy                → current status
-# POST /privacy/toggle         → toggle
+# Endpoints (mounted at /api/ui/modules/voice_core/ via get_router()):
+# GET  /privacy                -> current status
+# POST /privacy/toggle         -> toggle
 ```
 
 ### 12.6 Voice query history
@@ -2273,25 +2302,28 @@ VOICES = {
 # Input priority:  USB > I2S GPIO > Bluetooth > HDMI > built-in
 # Output priority: USB > I2S GPIO > Bluetooth > HDMI > jack
 
-# Endpoint: GET /audio/devices → list of inputs and outputs
+# Endpoint: GET /audio/devices -> list of inputs and outputs
 ```
 
 ### 12.8 Module API
 
+REST endpoints mounted at `/api/ui/modules/voice_core/` via `get_router()`:
+
 ```
-GET  /config               → STT/TTS/wake-word settings
-POST /config               → update settings
-GET  /privacy              → privacy mode status
-POST /privacy/toggle       → toggle privacy
-GET  /audio/devices        → audio device list
-GET  /stt/status           → STT status
-WS   /stream               → WebSocket audio streaming
-GET  /tts/voices           → TTS voice list
-POST /tts/test             → test synthesis
-GET  /wakeword/status      → wake-word detector status
-GET  /speakers             → list of registered voices
-DELETE /speakers/{user_id} → delete voice print
-GET  /history?limit=50     → query history
+GET  /config               -> STT/TTS/wake-word settings
+POST /config               -> update settings
+GET  /privacy              -> privacy mode status
+POST /privacy/toggle       -> toggle privacy
+GET  /audio/devices        -> audio device list
+GET  /stt/status           -> STT status
+WS   /stream               -> WebSocket audio streaming
+GET  /tts/voices           -> TTS voice list
+POST /tts/test             -> test synthesis
+GET  /wakeword/status      -> wake-word detector status
+GET  /speakers             -> list of registered voices
+DELETE /speakers/{user_id} -> delete voice print
+GET  /history?limit=50     -> query history
+GET  /health               -> {"status": "ok"}
 ```
 
 ### 12.9 Events
@@ -2309,7 +2341,7 @@ voice.speak_done       { text }
 **Listens to:**
 
 ```
-voice.speak            { text, lang?, volume? }  → TTS synthesis and playback
+voice.speak            { text, lang?, volume? }  -> TTS synthesis and playback
 ```
 
 ### widget.html (FULL, size 2x2)
@@ -2341,7 +2373,7 @@ RPi.GPIO>=0.7        # optional, Raspberry Pi only
 # test: wake-word detected when score > threshold (mock)
 # test: speaker ID matches registered speaker (mock resemblyzer)
 # test: privacy toggle publishes voice.privacy_on/off
-# test: voice.speak event → TTS → playback
+# test: voice.speak event -> TTS -> playback
 # test: history rotation at > 10,000 records
 # test: audio devices endpoint returns correct structure
 ```
@@ -2352,14 +2384,14 @@ RPi.GPIO>=0.7        # optional, Raspberry Pi only
 
 **Type:** SYSTEM
 **ui_profile:** SETTINGS_ONLY
-**Memory:** 512 MB – 2 GB (depends on model)
-**CPU:** 1.0 – 2.0
+**Memory:** 512 MB - 2 GB (depends on model)
+**CPU:** 1.0 - 2.0
 
 ### Purpose
 
-LLM engine and intent router. Three-tier architecture: Fast Matcher (keywords/regex, 0 ms) → Module Intents (HTTP to modules, <1 s) → Ollama LLM (2–10 s). Automatic LLM disable when RAM is low.
+LLM engine and intent router. Four-tier architecture: Fast Matcher (YAML keywords/regex, 0 ms) -> System Module Intents (in-process regex, microseconds) -> Module Bus Intents (user modules via WebSocket, ms) -> Ollama LLM (3-8 s). Automatic LLM disable when RAM is low.
 
-### 13.1 Fast Matcher (tier 1)
+### 13.1 Fast Matcher (Tier 1)
 
 ```python
 # Config: /opt/selena-core/config/intent_rules.yaml
@@ -2376,16 +2408,26 @@ LLM engine and intent router. Three-tier architecture: Fast Matcher (keywords/re
 # Reload: reload() updates rules from file on the fly
 ```
 
-### 13.2 Module Intents (tier 2)
+### 13.2 System Module Intents (Tier 1.5)
 
 ```python
-# Registered modules can declare their intents
-# Intent Router queries each module via HTTP POST /intent
-# If module understands the request — returns result
-# Response time: < 1 s
+# System modules running in-process can register regex-based intents
+# Intent Router checks all registered system module intents after Fast Matcher
+# Response time: microseconds (in-process Python regex matching)
+# Registration: system modules call self.register_intent() during start()
+# Example: media_player registers "play music", "pause", "next track"
 ```
 
-### 13.3 Ollama LLM (tier 3)
+### 13.3 Module Bus Intents (Tier 2)
+
+```python
+# User modules connected via WebSocket Module Bus can declare intents
+# Intent Router queries matching modules via the WebSocket bus
+# If module understands the request — returns result
+# Response time: milliseconds (WebSocket round-trip)
+```
+
+### 13.4 Ollama LLM (Tier 3)
 
 ```python
 # Endpoint: http://localhost:11434 (configurable via OLLAMA_URL)
@@ -2405,7 +2447,7 @@ MODELS = {
 # API: /api/generate (streaming and non-streaming)
 ```
 
-### 13.4 Model Manager
+### 13.5 Model Manager
 
 ```python
 # Ollama model management:
@@ -2415,7 +2457,7 @@ MODELS = {
 # - Auto-detect invalid selection
 ```
 
-### 13.5 Dynamic system prompt
+### 13.6 Dynamic system prompt
 
 ```python
 # When calling LLM — system prompt is automatically generated:
@@ -2426,24 +2468,37 @@ MODELS = {
 # - Context of last 5 voice queries
 ```
 
-### 13.6 Module API
+### 13.7 Intent Router tier summary
 
 ```
-POST /intent               → { text: "turn on lights" } → IntentResult
-GET  /models               → model list with statuses
-POST /models/pull          → { model: "phi3:mini" } → start download
-POST /models/switch        → { model: "gemma2:2b" } → switch
-GET  /rules                → current Fast Matcher rules
-POST /rules/reload         → reload rules from YAML
-GET  /health               → LLM status (available / disabled due to RAM)
+Tier 1:   Fast Matcher           — YAML keywords/regex, 0 ms
+Tier 1.5: System Module Intents  — in-process regex, microseconds
+Tier 2:   Module Bus Intents     — user modules via WebSocket, ms
+Tier 3:   Ollama LLM             — full LLM inference, 3-8 sec
 ```
 
-### 13.7 Events
+Each tier is tried in order. If a tier returns a match, subsequent tiers are skipped.
+
+### 13.8 Module API
+
+REST endpoints mounted at `/api/ui/modules/llm_engine/` via `get_router()`:
+
+```
+POST /intent               -> { text: "turn on lights" } -> IntentResult
+GET  /models               -> model list with statuses
+POST /models/pull          -> { model: "phi3:mini" } -> start download
+POST /models/switch        -> { model: "gemma2:2b" } -> switch
+GET  /rules                -> current Fast Matcher rules
+POST /rules/reload         -> reload rules from YAML
+GET  /health               -> LLM status (available / disabled due to RAM)
+```
+
+### 13.9 Events
 
 **Published:**
 
 ```
-voice.intent           { intent, response, action, source, latency_ms }
+voice.intent           { intent, response, action, source, tier, latency_ms }
 llm.model_switched     { model, previous }
 llm.disabled           { reason: "low_ram", available_gb }
 llm.enabled            { model }
@@ -2452,7 +2507,7 @@ llm.enabled            { model }
 **Listens to:**
 
 ```
-voice.recognized       { text, user_id }  → start Intent Router
+voice.recognized       { text, user_id }  -> start Intent Router
 ```
 
 ### Settings
@@ -2476,13 +2531,15 @@ psutil>=5.9
 **Tests:**
 
 ```python
-# test: Fast Matcher finds intent by keyword
-# test: Fast Matcher finds intent by regex
-# test: Fast Matcher miss → fallback to Ollama (mock)
+# test: Fast Matcher finds intent by keyword (Tier 1)
+# test: Fast Matcher finds intent by regex (Tier 1)
+# test: System Module Intent matched by regex (Tier 1.5)
+# test: Module Bus Intent matched via WebSocket (Tier 2, mock)
+# test: Fast Matcher miss -> fallback to Ollama (Tier 3, mock)
 # test: Ollama disabled when RAM < 5 GB (mock psutil)
 # test: model switch persists between restarts
 # test: rules reload picks up changes from YAML
-# test: IntentResult contains source, latency
+# test: IntentResult contains source, tier, latency
 # test: dynamic system prompt contains device list
 ```
 
@@ -2522,10 +2579,10 @@ class SecretRecord:
 ```python
 # Providers: Google, GitHub (extensible via KNOWN_PROVIDERS)
 # Flow:
-# 1. POST /api/v1/secrets/oauth/start → session_id, user_code, verification_uri, QR
+# 1. POST /api/v1/secrets/oauth/start -> session_id, user_code, verification_uri, QR
 # 2. User scans QR or enters code on provider's website
 # 3. Module polls GET /api/v1/secrets/oauth/status/{session_id}
-# 4. On authorization → tokens are encrypted and saved in vault
+# 4. On authorization -> tokens are encrypted and saved in vault
 # QR code: generated on the fly (qrcode library)
 # Session expiration: 30 minutes (configurable)
 ```
@@ -2559,13 +2616,16 @@ class SecretRecord:
 
 ### 14.5 Module API
 
+REST endpoints mounted at `/api/ui/modules/secrets_vault/` via `get_router()`:
+
 ```
-POST /api/v1/secrets/oauth/start          → start OAuth flow
-GET  /api/v1/secrets/oauth/status/{id}    → session status
-GET  /api/v1/secrets/oauth/qr/{id}        → QR code (PNG)
-POST /api/v1/secrets/proxy                → API proxy request
-GET  /api/v1/secrets/services             → list of connected services
-DELETE /api/v1/secrets/services/{name}    → disconnect service
+POST /api/v1/secrets/oauth/start          -> start OAuth flow
+GET  /api/v1/secrets/oauth/status/{id}    -> session status
+GET  /api/v1/secrets/oauth/qr/{id}        -> QR code (PNG)
+POST /api/v1/secrets/proxy                -> API proxy request
+GET  /api/v1/secrets/services             -> list of connected services
+DELETE /api/v1/secrets/services/{name}    -> disconnect service
+GET  /health                              -> {"status": "ok"}
 ```
 
 ### 14.6 Events
@@ -2600,10 +2660,10 @@ qrcode>=7.4
 **Tests:**
 
 ```python
-# test: store/retrieve secret → decryption is correct
+# test: store/retrieve secret -> decryption is correct
 # test: AES-256-GCM nonce is unique per secret
 # test: OAuth start returns session_id and user_code
-# test: OAuth status polling → authorized after mock authorization
+# test: OAuth status polling -> authorized after mock authorization
 # test: proxy blocks HTTP URL (HTTPS only)
 # test: proxy blocks private IPs (SSRF protection)
 # test: auto-refresh 5 minutes before expiration (mock time)
@@ -2643,7 +2703,7 @@ SelenaCore user management. Flat model: first user = admin, others = resident (h
 # Algorithm: SHA-256 with salt "selena-pin-salt-v1"
 # Brute-force protection:
 #   - Maximum 5 failed attempts per user
-#   - After 5 attempts → lockout for 10 minutes (LOCK_DURATION_SEC = 600)
+#   - After 5 attempts -> lockout for 10 minutes (LOCK_DURATION_SEC = 600)
 #   - Lock state: in memory (resets on restart)
 ```
 
@@ -2651,22 +2711,22 @@ SelenaCore user management. Flat model: first user = admin, others = resident (h
 
 ```python
 # Engine: face_recognition (dlib backend)
-# Registration: JPEG from browser webcam → 128-dimensional face encoding
+# Registration: JPEG from browser webcam -> 128-dimensional face encoding
 # Storage: numpy arrays in /var/lib/selena/face_encodings/
 # Verification: comparison with all registered encodings
 # Threshold: 0.5 (default, configurable via FACE_TOLERANCE, lower = stricter)
 
 # Functions:
-# enroll(user_id, jpeg_bytes) → bool
-# identify(jpeg_bytes) → user_id | None
-# list_enrolled() → list[user_id]
+# enroll(user_id, jpeg_bytes) -> bool
+# identify(jpeg_bytes) -> user_id | None
+# list_enrolled() -> list[user_id]
 ```
 
 ### 15.4 Voice biometrics
 
 ```python
 # Engine: resemblyzer (via voice_core)
-# Registration: voice recording → compute embedding → save
+# Registration: voice recording -> compute embedding -> save
 # Identification: comparison with registered embeddings
 # Threshold: 0.75 (default)
 ```
@@ -2682,19 +2742,22 @@ SelenaCore user management. Flat model: first user = admin, others = resident (h
 
 ### 15.6 Module API
 
+REST endpoints mounted at `/api/ui/modules/user_manager/` via `get_router()`:
+
 ```
-GET    /users                      → user list
-POST   /users                      → create user
-GET    /users/{user_id}            → profile
-PUT    /users/{user_id}            → update
-DELETE /users/{user_id}            → delete
-POST   /auth/pin                   → { user_id, pin } → authentication
-POST   /auth/face                  → multipart JPEG → identification
-POST   /users/{id}/face/enroll     → multipart JPEG → Face ID registration
-DELETE /users/{id}/face            → delete Face ID
-POST   /users/{id}/voice/enroll    → audio → voice registration
-DELETE /users/{id}/voice           → delete voice print
-GET    /audit?limit=100            → audit log
+GET    /users                      -> user list
+POST   /users                      -> create user
+GET    /users/{user_id}            -> profile
+PUT    /users/{user_id}            -> update
+DELETE /users/{user_id}            -> delete
+POST   /auth/pin                   -> { user_id, pin } -> authentication
+POST   /auth/face                  -> multipart JPEG -> identification
+POST   /users/{id}/face/enroll     -> multipart JPEG -> Face ID registration
+DELETE /users/{id}/face            -> delete Face ID
+POST   /users/{id}/voice/enroll    -> audio -> voice registration
+DELETE /users/{id}/voice           -> delete voice print
+GET    /audit?limit=100            -> audit log
+GET    /health                     -> {"status": "ok"}
 ```
 
 ### 15.7 Events
@@ -2713,8 +2776,8 @@ user.deleted           { user_id }
 
 ```
 User list:
-  Avatar · Name · Presence · Last login
-  Badges: 🔐 PIN | 👤 Face ID | 🎤 Voice ID
+  Avatar * Name * Presence * Last login
+  Badges: PIN | Face ID | Voice ID
 "Add resident" button
 ```
 
@@ -2730,12 +2793,12 @@ numpy>=1.24
 **Tests:**
 
 ```python
-# test: user creation → saved to DB
-# test: PIN authentication → success with correct PIN
-# test: PIN authentication → rejection with incorrect PIN
-# test: 5 failed attempts → 10-minute lockout
-# test: Face ID enroll → face_enrolled = 1
-# test: Face ID identify → correct user_id
+# test: user creation -> saved to DB
+# test: PIN authentication -> success with correct PIN
+# test: PIN authentication -> rejection with incorrect PIN
+# test: 5 failed attempts -> 10-minute lockout
+# test: Face ID enroll -> face_enrolled = 1
+# test: Face ID identify -> correct user_id
 # test: audit log records all actions
 # test: audit log rotation at > 10,000 records
 ```
@@ -2763,7 +2826,7 @@ Hardware resource monitoring: CPU temperature, RAM and disk usage. Alerts when t
 
 @dataclass
 class SystemMetrics:
-    cpu_temp_c: float | None     # °C
+    cpu_temp_c: float | None     # C
     ram_used_pct: float          # %
     ram_used_mb: float
     ram_total_mb: float
@@ -2774,8 +2837,8 @@ class SystemMetrics:
 ### 16.2 Alert thresholds
 
 ```python
-CPU_TEMP_WARN  = 70.0   # °C
-CPU_TEMP_CRIT  = 85.0   # °C
+CPU_TEMP_WARN  = 70.0   # C
+CPU_TEMP_CRIT  = 85.0   # C
 RAM_WARN_PCT   = 80     # %
 RAM_CRIT_PCT   = 92     # %
 DISK_WARN_PCT  = 85     # %
@@ -2787,19 +2850,22 @@ MONITOR_INTERVAL = 30   # seconds
 
 ```python
 # When RAM > 92%:
-# 1. Send hw.ram_crit event
-# 2. Stop optional modules in priority order (low → high)
+# 1. Send hw.ram_crit event via EventBus.publish
+# 2. Stop optional modules in priority order (low -> high)
 # 3. System modules (voice_core, llm_engine) — last
 # throttle.py module manages the stop order
 ```
 
 ### 16.4 Module API
 
+REST endpoints mounted at `/api/ui/modules/hw_monitor/` via `get_router()`:
+
 ```
-GET /metrics              → current metrics (CPU, RAM, disk)
-GET /metrics/history      → history for the last hour
-GET /thresholds           → current thresholds
-POST /thresholds          → update thresholds
+GET /metrics              -> current metrics (CPU, RAM, disk)
+GET /metrics/history      -> history for the last hour
+GET /thresholds           -> current thresholds
+POST /thresholds          -> update thresholds
+GET /health               -> {"status": "ok"}
 ```
 
 ### 16.5 Events
@@ -2811,7 +2877,7 @@ hw.metrics_collected   { cpu_temp_c, ram_used_pct, ram_used_mb, ram_total_mb, di
 hw.cpu_temp_warn       { cpu_temp_c, threshold }
 hw.cpu_temp_crit       { cpu_temp_c, threshold }
 hw.ram_warn            { ram_used_pct, threshold }
-hw.ram_crit            { ram_used_pct, threshold } → may trigger degradation
+hw.ram_crit            { ram_used_pct, threshold } -> may trigger degradation
 hw.disk_warn           { disk_used_pct, threshold }
 hw.disk_crit           { disk_used_pct, threshold }
 ```
@@ -2819,8 +2885,8 @@ hw.disk_crit           { disk_used_pct, threshold }
 ### widget.html (ICON_SETTINGS)
 
 ```
-Icon: thermometer (green < 70°, yellow < 85°, red > 85°)
-Badge: "62°C · 74% RAM"
+Icon: thermometer (green < 70 C, yellow < 85 C, red > 85 C)
+Badge: "62 C * 74% RAM"
 ```
 
 **Dependencies:**
@@ -2834,7 +2900,7 @@ psutil>=5.9              # fallback for /proc/meminfo
 ```python
 # test: CPU temperature read from /sys/class/thermal (mock)
 # test: RAM usage from /proc/meminfo (mock)
-# test: hw.cpu_temp_warn when temperature > 70°C
+# test: hw.cpu_temp_warn when temperature > 70 C
 # test: hw.ram_crit when usage > 92%
 # test: metrics published every 30 seconds
 # test: degradation stops modules in correct order
@@ -2851,7 +2917,7 @@ psutil>=5.9              # fallback for /proc/meminfo
 
 ### Purpose
 
-Network scanner. Discovers devices via ARP sweep (Layer 2), mDNS/Bonjour, SSDP/UPnP. Auto-classification by OUI (manufacturer by MAC address). Results → Device Registry.
+Network scanner. Discovers devices via ARP sweep (Layer 2), mDNS/Bonjour, SSDP/UPnP. Auto-classification by OUI (manufacturer by MAC address). Results -> Device Registry (via DeviceRegistry methods).
 
 ### 17.1 ARP Scanner (Layer 2)
 
@@ -2899,20 +2965,23 @@ MDNS_SERVICES = [
 ### 17.4 OUI Lookup
 
 ```python
-# IEEE OUI database: MAC prefix → manufacturer
-# Example: AA:BB:CC → "Apple, Inc."
+# IEEE OUI database: MAC prefix -> manufacturer
+# Example: AA:BB:CC -> "Apple, Inc."
 # Goal: auto-classify devices by type
 ```
 
 ### 17.5 Module API
 
+REST endpoints mounted at `/api/ui/modules/network_scanner/` via `get_router()`:
+
 ```
-GET  /scan/arp              → run ARP scan, return results
-GET  /scan/mdns             → list of discovered mDNS services
-GET  /scan/ssdp             → list of discovered UPnP devices
-POST /scan/full             → full scan using all methods
-GET  /devices               → all discovered devices with classification
-GET  /oui/{mac}             → manufacturer by MAC address
+GET  /scan/arp              -> run ARP scan, return results
+GET  /scan/mdns             -> list of discovered mDNS services
+GET  /scan/ssdp             -> list of discovered UPnP devices
+POST /scan/full             -> full scan using all methods
+GET  /devices               -> all discovered devices with classification
+GET  /oui/{mac}             -> manufacturer by MAC address
+GET  /health                -> {"status": "ok"}
 ```
 
 ### 17.6 Events
@@ -2929,9 +2998,9 @@ network.scan_complete      { method, found: N, new: N, duration_ms }
 ### widget.html (FULL, size 2x1)
 
 ```
-Network: 14 devices · Last scan: 2 min ago
+Network: 14 devices * Last scan: 2 min ago
 New: 2 (show)
-List: IP · MAC · Manufacturer · Type
+List: IP * MAC * Manufacturer * Type
 "Scan Now" button
 ```
 
@@ -2939,7 +3008,7 @@ List: IP · MAC · Manufacturer · Type
 
 ```
 zeroconf>=0.131
-arp-scan               # system package, installed in Dockerfile
+arp-scan               # system package
 arping                 # system package
 ```
 
@@ -2973,7 +3042,7 @@ User interface web server. Serves PWA (React SPA) on port :80. Reverse proxy to 
 ```python
 # Port: 80 (UI_PORT)
 # Content: PWA static files from /static/ (built via npx vite build)
-# Proxy: /api/* → Core API :7070 (CoreApiProxyMiddleware)
+# Proxy: /api/* -> Core API :7070 (CoreApiProxyMiddleware)
 # SSE: streaming support via pure ASGI (not BaseHTTPMiddleware)
 ```
 
@@ -3017,18 +3086,18 @@ WIZARD_STEPS = [
 # Validation: each step is validated before proceeding to the next
 
 # Endpoints:
-# GET  /api/ui/wizard/status    → current step and progress
-# POST /api/ui/wizard/step      → { step, data } → proceed to next
+# GET  /api/ui/wizard/status    -> current step and progress
+# POST /api/ui/wizard/step      -> { step, data } -> proceed to next
 ```
 
 ### 18.5 Display auto-detection
 
 ```python
 # Possible modes:
-# headless     → no display (server-only)
-# tty          → text terminal (Textual TUI on TTY1)
-# kiosk        → Chromium in kiosk mode (Wayland cage)
-# framebuffer  → direct framebuffer output
+# headless     -> no display (server-only)
+# tty          -> text terminal (Textual TUI on TTY1)
+# kiosk        -> Chromium in kiosk mode (Wayland cage)
+# framebuffer  -> direct framebuffer output
 ```
 
 ### 18.6 AP Mode (first run)
@@ -3037,20 +3106,20 @@ WIZARD_STEPS = [
 # When no Wi-Fi available — creates an access point:
 # SSID: Selena-<hash>
 # No password (open)
-# Captive portal → redirect to wizard
+# Captive portal -> redirect to wizard
 # QR code for connection (generated via qrcode)
 ```
 
 ### 18.7 Routing
 
 ```
-/                    → index.html (PWA entrypoint)
-/manifest.json       → PWA manifest
-/sw.js               → Service Worker
-/icons/*             → icons
-/api/*               → reverse proxy to :7070 (Core API)
-/api/ui/wizard/*     → Wizard endpoints
-/api/ui/modules/*    → system module endpoints
+/                    -> index.html (PWA entrypoint)
+/manifest.json       -> PWA manifest
+/sw.js               -> Service Worker
+/icons/*             -> icons
+/api/*               -> reverse proxy to :7070 (Core API)
+/api/ui/wizard/*     -> Wizard endpoints
+/api/ui/modules/*    -> system module endpoints (mounted via get_router())
 ```
 
 ### Settings
@@ -3133,13 +3202,16 @@ Local and cloud backup. Local backups to USB/SD in .tar.gz. Cloud backups with E
 
 ### 19.4 Module API
 
+REST endpoints mounted at `/api/ui/modules/backup_manager/` via `get_router()`:
+
 ```
-POST /api/backup/local/create        → create local backup
-GET  /api/backup/local/list          → list local backups
-POST /api/backup/cloud/create        → create and upload cloud backup
-GET  /api/backup/cloud/list          → list cloud backups
-POST /api/backup/restore             → restore from backup
-GET  /api/backup/status              → current operation status
+POST /api/backup/local/create        -> create local backup
+GET  /api/backup/local/list          -> list local backups
+POST /api/backup/cloud/create        -> create and upload cloud backup
+GET  /api/backup/cloud/list          -> list cloud backups
+POST /api/backup/restore             -> restore from backup
+GET  /api/backup/status              -> current operation status
+GET  /health                         -> {"status": "ok"}
 ```
 
 ### 19.5 Events
@@ -3221,7 +3293,7 @@ Web Push notifications (RFC 8292, VAPID). VAPID key generation, browser subscrip
 ```python
 # Storage: /var/lib/selena/push_subscriptions.json
 # Model: PushSubscription { endpoint, keys: { auth, p256dh }, user_id }
-# Registration: browser → Service Worker API → POST /subscribe
+# Registration: browser -> Service Worker API -> POST /subscribe
 # Deletion: on unsubscribe or explicit DELETE
 ```
 
@@ -3232,20 +3304,23 @@ Web Push notifications (RFC 8292, VAPID). VAPID key generation, browser subscrip
 # Delivery: HTTP POST to subscription endpoint with VAPID-Auth header
 # Retry: up to 3 attempts with backoff
 # Response handling:
-#   201/204 → success
-#   410     → endpoint expired → delete subscription
-#   413     → payload too large → reject
-#   4xx/5xx → retry with backoff
+#   201/204 -> success
+#   410     -> endpoint expired -> delete subscription
+#   413     -> payload too large -> reject
+#   4xx/5xx -> retry with backoff
 ```
 
 ### 20.4 Module API
 
+REST endpoints mounted at `/api/ui/modules/notify_push/` via `get_router()`:
+
 ```
-GET    /api/push/vapid-public-key      → public key for subscription
-POST   /api/push/subscribe             → register subscription
-GET    /api/push/subscriptions         → subscription list (admin)
-DELETE /api/push/subscriptions/{id}    → delete subscription
-POST   /api/push/test/{user_id}       → send test notification
+GET    /api/push/vapid-public-key      -> public key for subscription
+POST   /api/push/subscribe             -> register subscription
+GET    /api/push/subscriptions         -> subscription list (admin)
+DELETE /api/push/subscriptions/{id}    -> delete subscription
+POST   /api/push/test/{user_id}       -> send test notification
+GET    /health                         -> {"status": "ok"}
 ```
 
 ### 20.5 Events
@@ -3277,7 +3352,7 @@ py-vapid>=1.9
 # test: VAPID keys generated on first launch
 # test: subscribe saves subscription in JSON
 # test: push delivered via pywebpush (mock)
-# test: 410 → subscription deleted
+# test: 410 -> subscription deleted
 # test: retry on network failure
 # test: test endpoint sends test notification
 ```
@@ -3302,7 +3377,7 @@ Secure remote access via Tailscale VPN. Connection to WireGuard mesh network wit
 # Authorization:
 # 1. Generate auth key in Tailscale admin console
 # 2. Set TAILSCALE_AUTH_KEY in env
-# 3. connect() → device joins the mesh network
+# 3. connect() -> device joins the mesh network
 # 4. Access via Tailscale IP from anywhere in the world
 
 async def get_status() -> TailscaleStatus:
@@ -3318,10 +3393,13 @@ async def disconnect() -> bool:
 
 ### 21.2 Module API
 
+REST endpoints mounted at `/api/ui/modules/remote_access/` via `get_router()`:
+
 ```
-GET  /api/remote/status         → Tailscale connection status
-POST /api/remote/connect        → connect (auth_key in body)
-POST /api/remote/disconnect     → disconnect
+GET  /api/remote/status         -> Tailscale connection status
+POST /api/remote/connect        -> connect (auth_key in body)
+POST /api/remote/disconnect     -> disconnect
+GET  /health                    -> {"status": "ok"}
 ```
 
 ### 21.3 Events
@@ -3336,7 +3414,7 @@ remote.disconnected    { reason }
 ### Settings (settings.html)
 
 ```
-Status: ● Connected / ○ Disconnected
+Status: * Connected / o Disconnected
 Tailscale IP: 100.64.x.x
 Auth Key: [input, masked]
 [Connect] / [Disconnect]
@@ -3367,7 +3445,7 @@ tailscale              # system package on host
 | 1 | scheduler | SYSTEM | SETTINGS_ONLY | 64 MB | 0.15 | Scheduler: cron, interval, sunrise/sunset |
 | 2 | device_watchdog | SYSTEM | ICON_SETTINGS | 64 MB | 0.1 | Device availability monitoring |
 | 3 | protocol_bridge | SYSTEM | FULL | 256 MB | 0.3 | MQTT / Zigbee / Z-Wave / HTTP gateway |
-| 4 | automation_engine | SYSTEM | FULL | 128 MB | 0.3 | Automation engine (if X → then Y) |
+| 4 | automation_engine | SYSTEM | FULL | 128 MB | 0.3 | Automation engine (if X -> then Y) |
 | 5 | presence_detection | SYSTEM | FULL | 64 MB | 0.15 | ARP/BT/GPS presence detection |
 | 6 | weather_service | SYSTEM | FULL | 64 MB | 0.1 | Weather (open-meteo, no API key) |
 | 7 | energy_monitor | SYSTEM | FULL | 64 MB | 0.1 | Energy consumption monitoring |
@@ -3375,13 +3453,13 @@ tailscale              # system package on host
 | 9 | update_manager | SYSTEM | FULL | 64 MB | 0.1 | OTA updates with SHA256 verification |
 | 10 | import_adapters | SYSTEM | SETTINGS_ONLY | 128 MB | 0.2 | Import from HA / Tuya / Hue |
 | 11 | media_player | SYSTEM | FULL | 128 MB | 0.5 | Media player: radio, USB, SMB |
-| 12 | voice_core | SYSTEM | FULL | 256 MB | 0.5 | STT / TTS / Wake-word / Speaker ID |
-| 13 | llm_engine | SYSTEM | SETTINGS_ONLY | 512+ MB | 1.0+ | Fast Matcher + Ollama LLM |
+| 12 | voice_core | SYSTEM | FULL | 256 MB | 0.5 | STT (Vosk) / TTS / Wake-word / Speaker ID |
+| 13 | llm_engine | SYSTEM | SETTINGS_ONLY | 512+ MB | 1.0+ | 4-tier Intent Router + Ollama LLM |
 | 14 | secrets_vault | SYSTEM | SETTINGS_ONLY | 64 MB | 0.1 | AES-256-GCM vault + OAuth + proxy |
 | 15 | user_manager | SYSTEM | FULL | 128 MB | 0.2 | Profiles / PIN / Face ID / Voice ID |
 | 16 | hw_monitor | SYSTEM | ICON_SETTINGS | 32 MB | 0.05 | CPU / RAM / Disk monitoring |
 | 17 | network_scanner | SYSTEM | FULL | 64 MB | 0.3 | ARP / mDNS / SSDP scanner |
-| 18 | ui_core | SYSTEM | — | 96 MB | 0.2 | PWA server :80 + Wizard + proxy |
+| 18 | ui_core | SYSTEM | -- | 96 MB | 0.2 | PWA server :80 + Wizard + proxy |
 | 19 | backup_manager | SYSTEM | SETTINGS_ONLY | 96 MB | 0.3 | Local + E2E cloud backup |
 | 20 | notify_push | SYSTEM | SETTINGS_ONLY | 32 MB | 0.1 | Web Push VAPID notifications |
 | 21 | remote_access | SYSTEM | SETTINGS_ONLY | 32 MB | 0.15 | Tailscale VPN remote access |
@@ -3393,9 +3471,9 @@ tailscale              # system package on host
 ## Related documents
 
 ```
-docs/architecture.md              ← core components
-docs/module-core-protocol.md      ← tokens, HMAC, lifecycle
-docs/module-development.md        ← SDK, manifest, permissions
-docs/deployment.md                ← Raspberry Pi deployment
-CONTRIBUTING.md                   ← code standards
+docs/architecture.md              <- core components
+docs/module-bus-protocol.md       <- module bus, lifecycle, WebSocket protocol
+docs/module-development.md        <- SDK, manifest, permissions
+docs/deployment.md                <- Raspberry Pi deployment
+CONTRIBUTING.md                   <- code standards
 ```

@@ -131,6 +131,6 @@ async def settings() -> HTMLResponse:
     return HTMLResponse(path.read_text())
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("system_modules.update_manager.main:app", host="0.0.0.0", port=8113, reload=False)
+
+# System module — loaded in-process by SelenaCore via importlib.
+# No standalone entry point needed.

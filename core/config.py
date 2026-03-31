@@ -40,7 +40,7 @@ class CoreSettings(BaseSettings):
     agent_check_interval: int = 30
     agent_max_restore_attempts: int = 3
 
-    # Docker
+    # Docker (legacy — modules now communicate via WebSocket bus)
     docker_socket: str = "/var/run/docker.sock"
     module_container_image: str = "smarthome-modules:latest"
     sandbox_image: str = "smarthome-sandbox:latest"

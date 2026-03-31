@@ -5,8 +5,8 @@ System modules (type=SYSTEM) run INSIDE the smarthome-core container as Python
 objects loaded via importlib — NOT as separate subprocesses or Docker containers.
 
 Architecture:
-  - SYSTEM modules  → importlib, no port, ~0 MB RAM overhead
-  - User modules    → Docker sandbox container, port 8100-8200
+  - SYSTEM modules  → importlib, in-process, ~0 MB RAM overhead
+  - User modules    → subprocess, WebSocket Module Bus
 
 Subclass contract:
   1. Set class attribute ``name`` matching manifest.json "name"

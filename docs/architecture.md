@@ -1,275 +1,623 @@
-# SelenaCore Architecture
+# SelenaCore System Architecture
+
+## Table of Contents
+
+- [Overview](#overview)
+- [High-Level Architecture](#high-level-architecture)
+- [Boot Sequence](#boot-sequence)
+- [Module System](#module-system)
+- [EventBus](#eventbus)
+- [Module Bus](#module-bus)
+- [Intent System](#intent-system)
+- [Device Registry](#device-registry)
+- [API Layer](#api-layer)
+- [Cloud Sync](#cloud-sync)
+- [Configuration](#configuration)
+- [Internationalization](#internationalization)
+- [Integrity Agent](#integrity-agent)
+- [Deployment](#deployment)
+- [Shutdown Sequence](#shutdown-sequence)
+- [Further Reading](#further-reading)
+
+---
 
 ## Overview
 
-SelenaCore consists of two independent processes:
+SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run on low-power hardware such as Raspberry Pi. All automation logic, device management, and voice processing happen on the local machine. Cloud connectivity is optional and limited to heartbeat sync and remote command reception.
+
+**Core technology stack:**
+
+| Component       | Technology                          |
+|-----------------|-------------------------------------|
+| Web framework   | FastAPI (port 7070)                 |
+| Database        | SQLite via SQLAlchemy 2.0 async     |
+| Async driver    | aiosqlite                           |
+| Event loop      | Single asyncio loop                 |
+| Entry point     | `core/main.py` (FastAPI lifespan)   |
+| Language        | Python 3.11                         |
+
+---
+
+## High-Level Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      smarthome-core (Docker)                     │
-│                                                                   │
-│  FastAPI :7070 (Core API)          FastAPI :80 (UI Core)       │
-│       │                                   │                      │
-│  ┌────┴────────────────────────────────────┴───────────────┐     │
-│  │             EventBus (asyncio.Queue)                     │     │
-│  └────┬────────────────────────────────────┬───────────────┘     │
-│       │                                   │                      │
-│  Device Registry              Module Loader (Plugin Manager)      │
-│  (SQLite)                     + DockerSandbox                    │
-│                                                                   │
-│  CloudSync ← HMAC             Voice Core (STT/TTS/wake-word)     │
-│  IntegrityAgent (30s)         LLM Engine (Ollama)                │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                         SelenaCore Process                        |
+|   port 7070 (FastAPI)                                            |
+|                                                                  |
+|  +------------------+   +------------------+   +--------------+  |
+|  | 22 SYSTEM        |   |    EventBus      |   |  Device      |  |
+|  | modules          |<->| (asyncio.Queue)  |<->|  Registry    |  |
+|  | (in-process)     |   |                  |   |  (SQLite)    |  |
+|  +------------------+   +--------+---------+   +--------------+  |
+|                                  |                               |
+|                         +--------+---------+                     |
+|                         |   Module Bus     |                     |
+|                         |   (WebSocket)    |                     |
+|                         +--------+---------+                     |
+|                                  |                               |
++----------------------------------+-------------------------------+
+                                   |
+                    +--------------+--------------+
+                    |              |              |
+               +----+----+  +----+----+  +------+------+
+               | Docker  |  | Docker  |  | Docker      |
+               | Module  |  | Module  |  | Module      |
+               | (user)  |  | (user)  |  | (user)      |
+               +---------+  +---------+  +-------------+
 
-┌─────────────────────────────────────────────────────────────────┐
-│              smarthome-agent (systemd, separate process)         │
-│                                                                   │
-│  SHA256 check of core files every 30 sec                         │
-│  On violation: stop modules → notify → rollback → SAFE MODE      │
-└─────────────────────────────────────────────────────────────────┘
+  Separate process:
+  +----------------------------+
+  | Integrity Agent            |
+  | SHA256 hash check / 30s   |
+  | Safe mode enforcement      |
+  +----------------------------+
 ```
 
 ---
 
-## Components
+## Boot Sequence
 
-### Module Execution Model
-
-SelenaCore uses a **two-tier module execution model** to conserve RAM (~580 MB saved on Raspberry Pi):
-
-| Type | Execution | Port | Communication | Container |
-|------|-----------|------|---------------|-----------|
-| **SYSTEM** | In-process via `importlib` | None | Direct Python calls + `SystemModule` ABC | smarthome-core (shared) |
-| **User (UI/INTEGRATION/DRIVER/AUTOMATION)** | Docker sandbox | 8100–8200 | HTTP API + webhook events | smarthome-modules |
-
-**System modules** inherit from `SystemModule` (`core/module_loader/system_module.py`) and are loaded by `sandbox.py → _start_in_process()`. Their `APIRouter` is mounted in the core FastAPI app at `/api/ui/modules/{name}/`. They access the EventBus and Device Registry through direct Python method calls — no HTTP overhead.
-
-**User modules** run in isolated Docker containers with their own ports and communicate with the core exclusively via the REST API and webhook event delivery.
-
----
-
-### 1. Core API (`core/api/`)
-
-FastAPI REST server, port `7070`. Entry point for all modules.
-
-**Middleware:**
-- `X-Request-Id` generated for each request, propagated via `contextvars`
-- CORS — only `localhost` allowed
-- Rate limiting — 120 req/min per token (external), 600 req/min (LAN/localhost); SSE and static files are exempt
-
-**Authorization (`core/api/auth.py`):**
-- `Authorization: Bearer <module_token>` required for all endpoints except `/health`
-- Token stored as a plaintext file in `/secure/module_tokens/<name>.token`; also supports `DEV_MODULE_TOKEN` env var in dev mode
-- No per-endpoint permission granularity in v1 — any valid token grants access
-
----
-
-### 2. Device Registry (`core/registry/`)
-
-SQLite device storage via SQLAlchemy 2.0 async.
-
-**Tables:**
-- `devices` — devices (id, name, type, protocol, state JSON, capabilities, last_seen, module_id, meta)
-- `state_history` — last 1000 states per device (archive)
-- `audit_log` — all user actions (10,000 records, rotation)
-
-**Automatic event:**
-On `PATCH /devices/{id}/state`, a `device.state_changed` event is automatically published to Event Bus.
-
----
-
-### 3. Event Bus (`core/eventbus/`)
-
-```python
-# Publishing
-await bus.publish(event)          # puts into asyncio.Queue
-
-# Subscribing (user modules — webhook)
-await bus.subscribe("device.*", webhook_url)  # wildcard
-
-# Subscribing (system modules — in-process)
-bus.subscribe_direct(sub_id, module_id, ["device.*"], callback)
-
-# Delivery (background task)
-# Webhooks: POST http://module:810X/webhook/events
-# Direct:   asyncio.create_task(callback(event))
-X-Selena-Signature: sha256=<hmac>    # HMAC-SHA256 signature (webhooks only)
-```
-
-**Protection:**
-- `core.*` events cannot be published from a module → 403 Forbidden
-- HMAC-SHA256 signature on every webhook delivery
-
----
-
-### 4. Module Loader (`core/module_loader/`)
-
-#### Module Lifecycle
+The startup procedure is defined in the FastAPI lifespan handler in `core/main.py`. Steps execute in strict order:
 
 ```
-UPLOADED → VALIDATING → READY → RUNNING → STOPPED → REMOVED
-                                    ↓
-                                  ERROR
-```
-
-#### Module Installation
-
-1. Upload ZIP → `/api/v1/modules/install`
-2. **Validator** (`validator.py`) verifies `manifest.json`:
-   - Required fields: `name`, `version`, `type`, `api_version`, `port`, `permissions`
-   - `name` — RFC 1123 slug (`[a-z0-9-]+`)
-   - `version` — semver (`^\d+\.\d+\.\d+$`)
-   - `port` — 8100–8200
-   - `permissions` — only allowed values
-3. **Sandbox** — testing in `smarthome-sandbox` container (--rm)
-4. **DockerSandbox** — launch in `smarthome-modules` on a dedicated port
-
-#### SYSTEM Module Protection
-
-Modules with `type: SYSTEM` cannot be stopped via API → 403 Forbidden.
-
----
-
-### 5. Integrity Agent (`agent/`)
-
-Independent process (systemd unit `smarthome-agent.service`), **does not import** the core.
-
-```
-Every 30 sec:
-  1. Read /secure/master.hash
-  2. Compute SHA256 of /secure/core.manifest
-  3. Compare → if mismatch: MANIFEST TAMPERED
-  4. For each core file: SHA256 from manifest vs SHA256 on disk
-  5. If changes found:
-       a) Log to /var/log/selena/integrity.log
-       b) Stop all modules (Docker stop)
-       c) Notify platform
-       d) Rollback from /secure/core_backup/ (3 attempts, 5 sec pause)
-       e) If rollback failed → SAFE MODE
-```
-
-**SAFE MODE:**
-- Core API read-only (`GET` methods only)
-- Installation and launch of new modules prohibited
-- `GET /health` returns `"mode": "safe_mode"`
-
----
-
-### 6. Cloud Sync (`core/cloud_sync/`)
-
-Background task: heartbeat every 60 sec + long-poll commands.
-
-```
-Heartbeat:
-  POST /api/v1/device/heartbeat
-  Headers:
-    X-Device-Hash: <hash>
-    X-Signature: sha256=<hmac>    # HMAC-SHA256 body + timestamp + key from /secure/platform.key
-  Body: { status, uptime, modules, integrity }
-
-Long-poll:
-  GET /api/v1/device/commands?device_hash=...&wait=30
-  → Handling: INSTALL_MODULE | STOP_MODULE | REBOOT | SYNC_STATE | FACTORY_RESET
-  → Response: POST /api/v1/device/commands/{id}/ack
-```
-
-**Retry:** exponential backoff 2^n sec, max 300 sec.
-
----
-
-### 7. Voice Core (`system_modules/voice_core/`)
-
-| Component | File | Technology |
-|-----------|------|------------|
-| Wake-word | `wake_word.py` | openWakeWord |
-| STT | `stt.py` | Vosk |
-| TTS | `tts.py` | Piper TTS |
-| Speaker ID | `speaker_id.py` | resemblyzer |
-| Audio I/O | `audio_manager.py` | ALSA + PipeWire |
-| WebRTC | — | browser → Whisper pipeline |
-
-**Audio input priorities:** `usb > i2s_gpio > bluetooth > hdmi > builtin`
-
----
-
-### 8. LLM Engine (`system_modules/llm_engine/`)
-
-Two-level router:
-
-```
-Level 1: Fast Matcher
-  Loads YAML with keyword/regex rules
-  Matching in ~50 ms
-  No network, no GPU
-
-Level 2: Ollama (fallback)
-  phi-3-mini (2.3 GB VRAM — Pi 5 8GB)
-  gemma:2b (1.5 GB)
-  Auto-disable when RAM < 5 GB
+1. _setup_logging()
+   |  Read logging.yaml or fall back to basic config
+   v
+2. Create SQLAlchemy async engine + tables
+   |  SQLite database initialized
+   v
+3. Inject session factory into sandbox
+   |  System modules gain database access
+   v
+4. EventBus.start()
+   |  asyncio.Queue consumer begins
+   v
+5. Publish core.startup event
+   |  Listeners notified
+   v
+6. CloudSync.start()
+   |  Heartbeat loop begins (optional)
+   v
+7. Scan system_modules/ -> load in-process -> mount routers
+   |  22 built-in modules activated
+   v
+8. Scan modules/ -> start user modules
+   |  Docker containers launched, bus connections accepted
+   v
+9. "SelenaCore ready on port 7070"
 ```
 
 ---
 
-### 9. Secrets Vault (`system_modules/secrets_vault/`)
+## Module System
+
+SelenaCore supports two distinct module types that share the same EventBus but differ fundamentally in how they run.
+
+### System Modules (in-process)
+
+| Property          | Value                                           |
+|-------------------|-------------------------------------------------|
+| Count             | 22 built-in                                     |
+| Base class        | `SystemModule` (`core/module_loader/system_module.py`) |
+| Execution         | In-process via Python `importlib`               |
+| Isolation         | None (shared process)                           |
+| RAM overhead      | ~0 MB (no container)                            |
+| EventBus access   | Direct async callbacks (DirectSubscription)     |
+| Database access   | Direct SQLAlchemy session                       |
+| API surface       | Optional FastAPI router at `/api/ui/modules/{name}/` |
+| Location          | `system_modules/` directory                     |
+
+**Built-in system modules:**
 
 ```
-/secure/tokens/<module>/<key>.enc
+voice_core           llm_engine           ui_core
+user_manager         automation_engine    scheduler
+device_watchdog      protocol_bridge      notification_router
+media_player         presence_detection   hw_monitor
+backup_manager       remote_access        network_scanner
+import_adapters      energy_monitor       update_manager
+notify_push          secrets_vault        weather_service
 ```
 
-Each secret: `nonce(12 bytes) + ciphertext` (AES-256-GCM).
-Encryption key: PBKDF2(HMAC-SHA256, passphrase, salt=module_name, iterations=480000).
+### User Modules (Docker containers)
 
-**OAuth Device Flow (RFC 8628):**
-1. `POST /api/v1/secrets/oauth/start` → device_code, QR code
-2. Polling → token stored encrypted
-3. Module uses `POST /api/v1/secrets/proxy` — token **never leaves** the core
+| Property          | Value                                           |
+|-------------------|-------------------------------------------------|
+| Base class        | `SmartHomeModule` (`sdk/base_module.py`)        |
+| Execution         | Individual Docker containers                    |
+| Communication     | WebSocket Module Bus                            |
+| Bus endpoint      | `ws://core:7070/api/v1/bus?token=TOKEN`         |
+| Individual ports  | None -- all traffic through the single bus      |
 
-**SSRF protection for proxy:**
-- Only `https://`
-- Private IP blocking: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
-- No allowed redirects (follow_redirects=False)
+**User module types:**
+
+| Type              | Purpose                                         |
+|-------------------|-------------------------------------------------|
+| UI                | Custom user interface panels                    |
+| INTEGRATION       | Third-party service connectors                  |
+| DRIVER            | Hardware/protocol device drivers                |
+| AUTOMATION        | Custom automation logic                         |
+| IMPORT_SOURCE     | External data importers                         |
+
+### Module Lifecycle
+
+```
+  [Discovered]
+       |
+       v
+  [Installed] --module.installed-->
+       |
+       v
+  [Started]   --module.started--->  (EventBus subscription active)
+       |
+       v
+  [Running]   <-- normal operation -->
+       |
+       v
+  [Stopped]   --module.stopped--->
+       |
+       v
+  [Removed]   --module.removed--->
+```
 
 ---
 
-## Network Isolation
+## EventBus
+
+**Source:** `core/eventbus/bus.py`
+
+The EventBus is the central nervous system of SelenaCore. It is an asyncio.Queue-based publish/subscribe system with a maximum queue size of 10,000 messages and a drop-oldest overflow policy.
+
+### Delivery Channels
 
 ```
-External network
-    ↓ :443 (HTTPS — platform and OAuth only)
-    ↓ :80  (redirect)
-WiFi interface (wlan0 / wlan1)
-    ↓
-iptables FORWARD DROP
-    ↓
-localhost
-  :7070  Core API        (modules + UI only)
-  :80  UI Core         (user browser)
-  :8100  User Module 1   (Docker sandbox only — NOT system modules)
-  :8101  User Module 2
-  ...
-  :8200  User Module 100
+  Publisher
+      |
+      v
+  +---+-----------+
+  |   EventBus    |
+  | (Queue: 10K)  |
+  +---+-------+---+
+      |       |
+      v       v
+  Direct    Module Bus
+  Subscr.   WebSocket
+  (system)  (user modules)
 ```
 
-Docker network: `selena_modules` (Compose-managed bridge network).
-User modules run inside the `smarthome-modules` container and reach the core via `extra_hosts: selena-core:host-gateway`.
-System modules run inside the core process and have NO network ports.
+1. **DirectSubscription** -- in-process async callbacks used by system modules. Zero serialization cost, microsecond delivery.
+2. **Module Bus WebSocket** -- events serialized to JSON and delivered over the WebSocket connection to user modules running in Docker containers.
+
+### Event Namespace
+
+All event types are defined in `core/eventbus/types.py`:
+
+| Namespace   | Events                                                              |
+|-------------|---------------------------------------------------------------------|
+| `core.*`    | startup, shutdown, integrity_violation, safe_mode_entered, safe_mode_exited |
+| `device.*`  | state_changed, registered, removed, offline, online, discovered     |
+| `module.*`  | installed, started, stopped, error, removed                         |
+| `sync.*`    | command_received, command_ack, connection_lost, connection_restored  |
+| `voice.*`   | wake_word, recognized, intent, response, privacy_on, privacy_off    |
+
+**Protection rule:** Events in the `core.*` namespace can only be published by the core process itself. Modules cannot emit core events.
 
 ---
 
-## Data Storage
+## Module Bus
+
+**Source:** `core/module_bus.py`
+
+The Module Bus is a CAN-bus-inspired communication layer that multiplexes all user module traffic through a single WebSocket endpoint.
+
+### Design Principles
+
+- **Core is the master node.** Modules connect TO core, never the reverse.
+- **Single endpoint:** `/api/v1/bus` -- no per-module ports.
+- **Dual message queues** per connection to separate critical and best-effort traffic.
+
+### Message Types
+
+| Message            | Direction        | Purpose                            |
+|--------------------|------------------|------------------------------------|
+| `announce`         | module -> core   | Module registers on connect        |
+| `re_announce`      | module -> core   | Module re-registers after reconnect|
+| `announce_ack`     | core -> module   | Registration confirmed             |
+| `intent`           | core -> module   | Intent routed to handler           |
+| `intent_response`  | module -> core   | Handler returns result             |
+| `event`            | bidirectional    | EventBus event forwarding          |
+| `ping` / `pong`    | bidirectional    | Keepalive                          |
+| `api_request`      | module -> core   | Module calls core API              |
+| `api_response`     | core -> module   | Core returns API result            |
+| `shutdown`         | core -> module   | Graceful shutdown signal           |
+
+### Dual Queue Architecture
+
+Each WebSocket connection maintains two independent queues:
 
 ```
-/var/lib/selena/selena.db     SQLite (Registry, AuditLog, Voice History)
-/var/lib/selena/modules/      Unpacked modules
-/var/lib/selena/backups/      Local archives
-
-/secure/platform.key          Platform API key (600 bytes, AES-256-GCM)
-/secure/tls/                  Self-signed HTTPS certificates
-/secure/tokens/<module>/      Encrypted OAuth tokens
-/secure/core.manifest         SHA256 of core files
-/secure/master.hash           SHA256 of the manifest itself
-/secure/core_backup/v0.3.0/   Core files backup copy
+  Module Connection
+  +---------------------------------------+
+  |                                       |
+  |  Critical Queue (backpressure)        |
+  |  - Max size: 100                      |
+  |  - Used for: intent, api_request,     |
+  |    api_response, intent_response      |
+  |  - Blocks sender when full            |
+  |                                       |
+  |  Event Queue (drop-oldest)            |
+  |  - Max size: 1000                     |
+  |  - Used for: event messages           |
+  |  - Drops oldest when full             |
+  |                                       |
+  +---------------------------------------+
 ```
+
+This design ensures that a flood of non-critical events never blocks intent processing or API calls.
+
+### Circuit Breaker
+
+If a module fails to respond within 30 seconds, the bus activates a circuit breaker for that module. The module is temporarily excluded from intent routing until it recovers.
+
+### ACL Permissions
+
+Each module type has a predefined set of allowed message types and event subscriptions. The bus enforces these permissions on every message.
+
+---
+
+## Intent System
+
+**Source:** `system_modules/llm_engine/intent_router.py`
+
+The intent router uses a 4-tier cascade. Each tier is tried in order; the first match wins. This design balances speed against understanding depth.
+
+```
+  User utterance
+       |
+       v
+  +----+----+
+  | Tier 1  |  Fast Matcher (YAML keyword/regex rules)
+  | ~0 ms   |  Defined in YAML config files
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 2  |  System Module Intents (in-process regex)
+  | ~us     |  Registered by system modules at startup
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 3  |  Module Bus Intents (user modules via WebSocket)
+  | ~ms     |  Registered via announce message with regex patterns
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 4  |  Ollama LLM (semantic understanding)
+  | 3-8 sec |  Requires 5GB+ RAM, runs locally
+  +----+----+
+       |
+       v
+    Response
+```
+
+**Tier details:**
+
+| Tier | Source           | Latency  | Mechanism                       | RAM Cost  |
+|------|------------------|----------|---------------------------------|-----------|
+| 1    | Fast Matcher     | ~0 ms    | YAML keyword and regex rules    | Negligible|
+| 2    | System Modules   | ~us      | In-process regex + priority     | Negligible|
+| 3    | Module Bus       | ~ms      | WebSocket round-trip with regex | Negligible|
+| 4    | Ollama LLM       | 3-8 sec  | Full semantic model inference   | 5 GB+     |
+
+Intent routing supports **priority ordering** and **regex pattern matching** at all tiers. Modules register their intent patterns along with a numeric priority; higher-priority handlers are tried first within each tier.
+
+---
+
+## Device Registry
+
+**Source:** `core/registry/`
+
+The device registry is the persistent store for all known devices, their current state, and historical data.
+
+### Database Schema (SQLAlchemy ORM)
+
+**Device table:**
+
+| Column       | Type     | Description                              |
+|--------------|----------|------------------------------------------|
+| device_id    | UUID     | Primary key, auto-generated              |
+| name         | String   | Human-readable device name               |
+| type         | String   | Device category (light, sensor, etc.)    |
+| protocol     | String   | Communication protocol (zigbee, mqtt...) |
+| state        | JSON     | Current device state blob                |
+| capabilities | JSON     | Supported features and value ranges      |
+| last_seen    | DateTime | Last communication timestamp             |
+| module_id    | String   | Owning module identifier                 |
+| meta         | JSON     | Arbitrary metadata                       |
+
+**StateHistory table:**
+
+- Records the last **1,000 state changes** per device.
+- Each entry stores the previous state, new state, and timestamp.
+- Older entries are pruned automatically.
+
+**AuditLog table:**
+
+- Stores up to **10,000 records** with automatic rotation.
+- Logs administrative actions: device registration, removal, configuration changes.
+
+---
+
+## API Layer
+
+### Middleware Pipeline
+
+Requests pass through middleware in the following order:
+
+```
+  Incoming request
+       |
+       v
+  RequestIdMiddleware       -- Assigns unique X-Request-ID header
+       |
+       v
+  RateLimitMiddleware       -- 120 requests per 60 seconds
+       |
+       v
+  CORSMiddleware            -- Cross-origin policy
+       |
+       v
+  Route handler
+```
+
+### Authentication
+
+- **Bearer token** authentication for module and external API access.
+- Tokens stored in `/secure/module_tokens/`.
+- UI routes (`/api/ui/*`) require no auth but are restricted to localhost only.
+
+### Route Groups
+
+**Core API (`/api/v1/*`) -- authenticated:**
+
+| Route        | Purpose                                  |
+|--------------|------------------------------------------|
+| `/system`    | System info, health, status              |
+| `/devices`   | Device CRUD and state queries            |
+| `/events`    | EventBus inspection and publishing       |
+| `/integrity` | Integrity check status and reports       |
+| `/modules`   | Module lifecycle management              |
+| `/secrets`   | Secrets vault access                     |
+| `/intents`   | Intent routing and testing               |
+| `/bus`       | Module Bus WebSocket endpoint            |
+
+**UI API (`/api/ui/*`) -- localhost only, no auth:**
+
+| Route           | Purpose                               |
+|-----------------|---------------------------------------|
+| `/ui`           | UI panel serving                      |
+| `/setup`        | First-run setup wizard                |
+| `/voice_engines`| Voice engine configuration            |
+
+### Swagger Documentation
+
+Available at `/docs` only when `DEBUG=true` in the environment.
+
+---
+
+## Cloud Sync
+
+**Source:** `core/cloud_sync/sync.py`
+
+Cloud connectivity is optional and designed to be minimal. The core never depends on cloud availability for local operation.
+
+| Parameter             | Value                              |
+|-----------------------|------------------------------------|
+| Remote server         | smarthome-lk.com                   |
+| Heartbeat interval    | 60 seconds                         |
+| Request signing       | HMAC-SHA256                        |
+| Command poll timeout  | 55 seconds (long-poll)             |
+| Backoff (initial)     | 5 seconds                          |
+| Backoff (maximum)     | 300 seconds                        |
+| Backoff strategy      | Exponential                        |
+
+```
+  SelenaCore                          smarthome-lk.com
+     |                                      |
+     |--- heartbeat (HMAC-SHA256) --------->|
+     |<-- 200 OK ---------------------------|
+     |                                      |
+     |--- long-poll /commands ------------->|
+     |         (55s timeout)                |
+     |<-- command payload ------------------|
+     |                                      |
+     |--- command ack --------------------->|
+     |                                      |
+```
+
+On network failure, the sync client backs off exponentially from 5 seconds up to 300 seconds before retrying.
+
+---
+
+## Configuration
+
+SelenaCore uses a dual-source configuration model.
+
+### Environment Variables (.env)
+
+Managed by **Pydantic BaseSettings** in `core/config.py` via the `CoreSettings` class. All fields are typed and validated at startup.
+
+**Key settings:**
+
+| Variable          | Default               | Description                    |
+|-------------------|-----------------------|--------------------------------|
+| `CORE_PORT`       | 7070                  | FastAPI listening port         |
+| `CORE_DATA_DIR`   | /var/lib/selena       | Persistent data directory      |
+| `CORE_SECURE_DIR` | /secure               | Tokens and secrets storage     |
+| `DEBUG`           | false                 | Enable debug mode and /docs    |
+
+### YAML Configuration (core.yaml)
+
+Used for structured configuration that does not fit well into flat environment variables (module settings, logging presets, automation rules).
+
+**Precedence:** Environment variables override YAML values where both sources define the same setting.
+
+---
+
+## Internationalization
+
+**Source:** `core/i18n.py`
+
+| Feature              | Implementation                                |
+|----------------------|-----------------------------------------------|
+| Format               | Flat JSON files with dot-notation keys        |
+| Fallback chain       | Requested language -> `en` -> raw key         |
+| Module support       | Per-module locale registration                |
+| Caching              | 10-second TTL cache for system language       |
+
+Modules register their own locale files at startup. The `t()` function resolves keys through the fallback chain, ensuring the UI always displays meaningful text even when a translation is missing.
+
+---
+
+## Integrity Agent
+
+**Source:** `agent/`
+
+The Integrity Agent runs as a **separate process** alongside the core. It is the watchdog that ensures the core codebase has not been tampered with.
+
+### Operation Cycle
+
+```
+  every 30 seconds:
+       |
+       v
+  Compute SHA256 hashes of core files
+       |
+       v
+  Compare against known-good manifest
+       |
+       +-- match -----> OK, sleep 30s
+       |
+       +-- mismatch --> VIOLATION DETECTED
+                             |
+                             v
+                        Stop all modules
+                             |
+                             v
+                        Notify (core.integrity_violation event)
+                             |
+                             v
+                        Attempt rollback
+                             |
+                             v
+                        Enter SAFE MODE
+                             |
+                             v
+                        Publish core.safe_mode_entered
+```
+
+In **Safe Mode**, only essential core functions remain active. All user modules are stopped and cannot be restarted until the integrity issue is resolved.
+
+---
+
+## Deployment
+
+### Docker Compose Architecture
+
+```
+  docker-compose.yml
+  +--------------------------------------------------+
+  |                                                  |
+  |  +------------------+    +-------------------+   |
+  |  | core             |    | agent             |   |
+  |  | Dockerfile.core  |    | Integrity Agent   |   |
+  |  | Host networking  |    | Separate process  |   |
+  |  | Privileged mode  |    |                   |   |
+  |  +------------------+    +-------------------+   |
+  |         |                        |               |
+  |         v                        v               |
+  |  +-------------+    +------------------+         |
+  |  | selena_data |    | selena_secure    |         |
+  |  | (volume)    |    | (volume)         |         |
+  |  +-------------+    +------------------+         |
+  |                                                  |
+  +--------------------------------------------------+
+```
+
+### Core Container (Dockerfile.core)
+
+| Property        | Value                                              |
+|-----------------|----------------------------------------------------|
+| Base image      | python:3.11-slim                                   |
+| Network mode    | host                                               |
+| Privileges      | privileged (hardware access)                       |
+| System packages | ffmpeg, portaudio, VLC, ALSA libs, PulseAudio      |
+
+Host networking and privileged mode are required for:
+- Direct access to audio hardware (microphone, speakers) for voice processing.
+- Access to USB devices and GPIO pins for protocol bridges (Zigbee, Z-Wave dongles).
+- Multicast/broadcast for device discovery protocols.
+
+### Volumes
+
+| Volume          | Purpose                                            |
+|-----------------|----------------------------------------------------|
+| selena_data     | Database, module data, logs, backups               |
+| selena_secure   | Tokens, secrets, certificates                      |
+
+---
+
+## Shutdown Sequence
+
+Graceful shutdown mirrors the boot sequence in reverse, ensuring no data loss:
+
+```
+1. CloudSync.stop()
+   |  Stop heartbeat and command polling
+   v
+2. Publish core.shutdown event
+   |  All listeners notified
+   v
+3. Module Bus shutdown_all(drain_ms=5000)
+   |  Send shutdown to all user modules
+   |  Wait up to 5 seconds for queues to drain
+   v
+4. Shutdown in-process system modules
+   |  Each system module's stop() called
+   v
+5. EventBus.stop()
+   |  Queue consumer halted
+   v
+6. Database engine dispose
+   |  All connections closed, WAL checkpoint
+   v
+   Process exit
+```
+
+The 5-second drain window for the Module Bus ensures that user modules have time to persist their state and acknowledge the shutdown before their WebSocket connections are terminated.
 
 ---
 
@@ -277,8 +625,10 @@ System modules run inside the core process and have NO network ports.
 
 | Topic | Document |
 |-------|----------|
-| User authentication & QR flow | [docs/user-manager-auth.md](user-manager-auth.md) |
-| Module protocol (tokens, HMAC, webhooks) | [docs/module-core-protocol.md](module-core-protocol.md) |
-| Module development (SDK, manifest) | [docs/module-development.md](module-development.md) |
-| Widget development (widget.html, i18n) | [docs/widget-development.md](widget-development.md) |
-| Deployment & systemd | [docs/deployment.md](deployment.md) |
+| User authentication and QR flow | [user-manager-auth.md](user-manager-auth.md) |
+| Module protocol (tokens, HMAC, webhooks) | [module-core-protocol.md](module-core-protocol.md) |
+| Module Bus wire protocol | [module-bus-protocol.md](module-bus-protocol.md) |
+| Module development (SDK, manifest) | [module-development.md](module-development.md) |
+| Widget development (widget.html, i18n) | [widget-development.md](widget-development.md) |
+| Configuration reference | [configuration.md](configuration.md) |
+| Deployment and systemd | [deployment.md](deployment.md) |

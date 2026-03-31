@@ -1,723 +1,491 @@
-# docs/uk/widget-development.md — Розробка віджетів та налаштувань
+# Посібник з розробки віджетів
 
-**Версія:** 1.0
-**Статус:** Нормативний документ
-**Область:** `widget.html`, `settings.html` в кожному модулі
+Цей посібник описує створення UI-віджетів, сторінок налаштувань та іконок для модулів SelenaCore. Модулі можуть надавати віджети для панелі керування та інтерфейси конфігурації, які обслуговуються ядром за адресою `/api/ui/modules/{module_name}/`.
 
 ---
 
-## 1. Сітка дашборда (розмір комірок)
+## Зміст
 
-Дашборд UI Core використовує CSS Grid. Кожен модуль з `ui_profile != HEADLESS` отримує одну або кілька комірок.
-
-### Розміри комірок (`manifest.ui.widget.size`)
-
-| Розмір | Колонки × Рядки | Призначення |
-|--------|-----------------|-------------|
-| `1x1`  | 1 × 1           | Мінімальний: одне значення / іконка / перемикач |
-| `2x1`  | 2 × 1           | Стандартний: назва + значення + графік |
-| `2x2`  | 2 × 2           | Розширений: карта / камера / список |
-| `4x1`  | 4 × 1           | Панель: повна ширина, один рядок |
-| `1x2`  | 1 × 2           | Вертикальний: список / timeline |
-
-### Реальні розміри iframe (залежать від екрана)
-
-| Екран | Колонки сітки | Розмір комірки ≈ |
-|-------|---------------|------------------|
-| 1920 × 1080 (Chromium kiosk) | 4 | 460 × 240 px |
-| 1280 × 720 (планшет)        | 4 | 300 × 200 px |
-| 768 × 1024 (iPad portrait)   | 2 | 360 × 240 px |
-| 375 × 812 (iPhone portrait)  | 1 | 355 × 200 px |
-
-> **Правило:** віджет повинен коректно виглядати при ширині від **300px** до **500px** та висоті від **140px** до **500px**. Не hardcode конкретних пікселів — використовуй `%`, `flex`, `fr`.
+1. [UI-профілі](#ui-профілі)
+2. [Секція UI у manifest.json](#секція-ui-у-manifestjson)
+3. [Розміри сітки](#розміри-сітки)
+4. [HTML-структура віджета](#html-структура-віджета)
+5. [Сторінка налаштувань](#сторінка-налаштувань)
+6. [Шаблони комунікації](#шаблони-комунікації)
+7. [Теми оформлення](#теми-оформлення)
+8. [Вимоги до іконок](#вимоги-до-іконок)
+9. [Повний приклад UI модуля](#повний-приклад-ui-модуля)
+10. [Найкращі практики](#найкращі-практики)
 
 ---
 
-## 2. iframe sandbox — правила ізоляції
+## UI-профілі
 
-```html
-<iframe
-  src="/api/ui/modules/{module_name}/widget.html"
-  sandbox="allow-scripts allow-same-origin"
-  scrolling="no"
-  style="width: 100%; height: 100%; border: none;">
-</iframe>
-```
+Кожен модуль декларує свою UI-присутність через поле `ui_profile` у `manifest.json`. Оберіть профіль, який відповідає потребам вашого модуля:
 
-**Що дозволено:**
-- `allow-scripts` — JavaScript виконується
-- `allow-same-origin` — `fetch()` до API (same-origin) працює
+| Профіль          | Іконка | Віджет | Сторінка налаштувань |
+|------------------|--------|--------|----------------------|
+| `HEADLESS`       | Ні     | Ні     | Ні                   |
+| `SETTINGS_ONLY`  | Ні     | Ні     | Так                  |
+| `ICON_SETTINGS`  | Так    | Ні     | Так                  |
+| `FULL`           | Так    | Так    | Так                  |
 
-**Що заборонено (sandbox блокує):**
-- Навігація top-level (модуль не може підмінити UI Core)
-- Форми з `target="_blank"`
-- Попапи (`window.open`)
-- Завантаження плагінів
-
-**Наслідки для розробника:**
-- Зовнішні бібліотеки можна підключати тільки через `<script>` тег (не через `import`)
-- CSP дозволяє `script-src 'self' 'unsafe-inline'` для inline JS
-- Зображення: тільки локальні або data-URI (зовнішні URL блокуються CSP)
+Фоновий сервіс без елементів керування для користувача повинен використовувати `HEADLESS`. Модуль, якому потрібна конфігурація, але без присутності на панелі, повинен використовувати `SETTINGS_ONLY`. Більшість інтерактивних модулів використовують `FULL`.
 
 ---
 
-## 3. Обов'язковий CSS-шаблон (widget.html)
+## Секція UI у manifest.json
 
-Кожен `widget.html` **зобов'язаний** починатися з цього CSS-ресету, щоб не ламати сітку:
+Додайте блок `ui` до `manifest.json` вашого модуля, щоб оголосити всі UI-ресурси:
 
-```css
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;       /* ← НІЯКОГО скролу у віджеті */
-  background: #0e1220;
-  color: #e0e4f0;
-  font-family: 'Segoe UI', system-ui, sans-serif;
+```json
+{
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2",
+            "max_size": "4x4"
+        },
+        "settings": "settings.html"
+    }
 }
 ```
 
-### ⛔ Заборонені CSS-патерни
+### Опис полів
 
-```css
-/* ❌ Виставляють фіксовану висоту → порушує адаптивність */
-html, body { height: 100vh; }
-html, body { min-height: 100vh; }
-.root { height: 400px; }
+| Поле              | Тип    | Опис                                                 |
+|-------------------|--------|------------------------------------------------------|
+| `ui.icon`         | string | Шлях до SVG-файлу іконки (відносно кореня модуля)    |
+| `ui.widget.file`  | string | HTML-файл для віджета панелі керування               |
+| `ui.widget.size`  | string | Розмір сітки за замовчуванням (`"ШxВ"`, напр. `"2x2"`) |
+| `ui.widget.max_size` | string | Максимальний розмір сітки, до якого користувач може змінити розмір |
+| `ui.settings`     | string | HTML-файл для сторінки налаштувань модуля             |
 
-/* ❌ Фіксовані позиції → вилазять за межі iframe */
-.element { position: fixed; top: 0; }
-
-/* ❌ Overflow auto/scroll → з'являється полоса прокрутки */
-body { overflow: auto; }
-body { overflow-y: scroll; }
-```
-
-### ✅ Правильний root-контейнер
-
-```css
-.root {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  padding: 14px 16px;
-  gap: 10px;
-  overflow: hidden;
-}
-```
+Усі шляхи до файлів є відносними до кореневого каталогу модуля.
 
 ---
 
-## 4. BASE URL — єдиний правильний спосіб
+## Розміри сітки
 
-```javascript
-// ✅ ПРАВИЛЬНО — обчислюється з URL iframe
-const BASE = window.location.pathname
-  .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
+Панель керування використовує сіткову розкладку. Віджети займають комірки, визначені як `ШиринаxВисота`:
 
-// Приклад:
-// URL iframe: /api/ui/modules/weather-service/widget.html
-// BASE =      /api/ui/modules/weather-service
+| Розмір | Опис                  | Випадок використання                    |
+|--------|-----------------------|-----------------------------------------|
+| `1x1`  | Малий квадрат         | Відображення одного значення, перемикач |
+| `2x1`  | Широкий малий         | Значення з підписом, компактний статус  |
+| `1x2`  | Високий малий         | Вертикальний список, мала діаграма      |
+| `2x2`  | Середній квадрат      | Основний розмір віджета (за замовчуванням) |
+| `4x2`  | Широкий великий       | Графіки, багатозначні панелі            |
+| `4x4`  | Повний великий        | Складні елементи керування, відеопотоки |
 
-// Усі запити — тільки через BASE:
-fetch(BASE + '/weather/current')
-fetch(BASE + '/config')
-fetch(BASE + '/status')
-```
-
-```javascript
-// ❌ НЕПРАВИЛЬНО — зламається при зміні хосту/порту
-const BASE = "http://localhost:8115";    // хардкод порту
-const base = window.location.origin;     // не враховує prefix
-fetch('/status');                         // без prefix → 404
-```
+Встановіть `size` як розмір за замовчуванням, а `max_size` як найбільший розмір, до якого віджет може масштабуватися. Панель керування не дозволить користувачам змінювати розмір більше за `max_size`.
 
 ---
 
-## 5. Адаптація під розмір (compact mode)
+## HTML-структура віджета
 
-При `height < 160px` (маленька комірка або мобільний) — віджет повинен перейти в компактний режим, ховаючи другорядний контент.
+Віджети вбудовуються як iframe на панелі керування. Кожен віджет має бути самостійним HTML-файлом із вбудованими стилями та скриптами.
 
-```javascript
-function checkLayout() {
-  const root = document.getElementById('root');
-  if (!root) return;
-  root.classList.toggle('compact', root.offsetHeight < 160);
-}
-
-window.addEventListener('resize', checkLayout);
-checkLayout(); // при ініціалізації
-```
-
-```css
-/* Компактний режим */
-.compact .secondary { display: none; }
-.compact .chart     { display: none; }
-.compact .title     { font-size: 0.8rem; }
-```
-
-**Правило:** у компактному режимі повинні залишатися **тільки**: назва + головне значення + іконка стану.
-
----
-
-## 6. Завантаження даних (fetch)
-
-### Шаблон
-
-```javascript
-async function load() {
-  try {
-    const resp = await fetch(BASE + '/status');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    render(data);
-  } catch (e) {
-    renderError(e.message);
-  }
-}
-```
-
-### Автооновлення
-
-```javascript
-// Poll кожні 30 секунд
-setInterval(load, 30_000);
-
-// АБО SSE (Server-Sent Events) — якщо модуль підтримує
-const sse = new EventSource(BASE + '/stream');
-sse.onmessage = (e) => {
-  const data = JSON.parse(e.data);
-  render(data);
-};
-sse.onerror = () => {
-  renderError('SSE connection lost');
-};
-```
-
-### Обробка помилок
-
-```javascript
-function renderError(message) {
-  document.getElementById('root').innerHTML = `
-    <div class="state">
-      <div class="icon">⚠️</div>
-      <div>${message}</div>
-    </div>`;
-}
-```
-
----
-
-## 7. Запити до Core API (з віджета)
-
-Для запитів до Core API (`/api/v1/*`) з віджета потрібен `ui_token`:
-
-```javascript
-// ui_token передається через query parameter при завантаженні iframe
-const uiToken = new URLSearchParams(window.location.search).get('ui_token');
-
-// Використання:
-const resp = await fetch('/api/v1/devices', {
-  headers: { 'Authorization': `Bearer ${uiToken}` }
-});
-```
-
-**Обмеження ui_token:**
-- Тільки `device.read`, `events.subscribe` (read-only)
-- TTL = 1 година
-- Не є module_token
-
----
-
-## 8. SSE та postMessage
-
-### SSE від модуля
-
-```javascript
-const sse = new EventSource(BASE + '/stream');
-sse.addEventListener('status', (e) => {
-  const data = JSON.parse(e.data);
-  updateWidget(data);
-});
-```
-
-### postMessage (iframe ↔ UI Core)
-
-UI Core може надсилати повідомлення у iframe:
-
-```javascript
-// UI Core → iframe:
-iframe.contentWindow.postMessage({ type: 'theme_changed', theme: 'dark' }, '*');
-iframe.contentWindow.postMessage({ type: 'lang_changed' }, '*');
-
-// widget.html — прийом:
-window.addEventListener('message', (e) => {
-  if (e.data.type === 'theme_changed') {
-    document.body.className = e.data.theme;
-  }
-  if (e.data.type === 'lang_changed') {
-    try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
-    applyLang();
-    load(); // перезавантажити дані
-  }
-});
-```
-
----
-
-## 9. settings.html — правила
-
-### Відмінності від widget.html
-
-| Властивість | widget.html | settings.html |
-|-------------|-------------|---------------|
-| `overflow` | `hidden` | `auto` (скрол дозволений) |
-| `height` | `100%` (фіксований iframe) | `min-height: 100%` |
-| Скрол | Заборонений | Дозволений |
-| Адаптивність | Compact mode | Немає (модалка) |
-| Збереження | Тільки читання | POST /config |
-
-### CSS ресет для settings.html
-
-```css
-html, body {
-  width: 100%;
-  min-height: 100%;        /* ← не 100vh */
-  overflow-y: auto;         /* ← скрол дозволений */
-  background: #0e1220;
-  color: #e0e4f0;
-}
-```
-
-### Збереження налаштувань
-
-```javascript
-async function save() {
-  const body = {
-    param1: document.getElementById('param1').value,
-    param2: document.getElementById('param2').value,
-  };
-  try {
-    const r = await fetch(BASE + '/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    showMsg('Saved!', 'ok');
-  } catch (e) {
-    showMsg('Error: ' + e.message, 'err');
-  }
-}
-```
-
----
-
-## 10. Повний шаблон widget.html
-
-Готовий мінімальний шаблон для копіювання:
+### Мінімальний приклад
 
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My Widget</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* Обов'язково: заповнити iframe без overflow */
-    html, body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #0e1220;
-      color: #e0e4f0;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-    }
-
-    .root {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      height: 100%;
-      padding: 14px 16px;
-      gap: 10px;
-    }
-
-    /* ── Стани завантаження / помилки ── */
-    .state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      height: 100%;
-      gap: 8px;
-      color: #3a4060;
-      font-size: 0.82rem;
-      text-align: center;
-    }
-    .state .icon { font-size: 1.8rem; opacity: .4; }
-
-    @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:.9} }
-    .pulse { animation: pulse 1.8s ease-in-out infinite; }
-
-    /* ── Compact mode (height < 160px) ── */
-    .compact .secondary { display: none; }
-
-    /* ── Ваші стилі ── */
-
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: transparent;
+            color: var(--text-color, #333);
+            padding: 12px;
+        }
+        .widget-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+        .widget-value { font-size: 32px; font-weight: 700; }
+        .widget-label { font-size: 12px; color: var(--text-secondary, #666); }
+    </style>
 </head>
 <body>
+    <div class="widget-title">Weather</div>
+    <div class="widget-value" id="temp">--°C</div>
+    <div class="widget-label" id="condition">Loading...</div>
 
-<div class="root" id="root">
-  <div class="state">
-    <div class="icon pulse">⏳</div>
-    <div>Loading…</div>
-  </div>
-</div>
+    <script>
+        // Communicate with module backend via parent window postMessage
+        // or fetch from module API endpoint
+        async function loadData() {
+            try {
+                const res = await fetch('/api/ui/modules/weather-module/current');
+                const data = await res.json();
+                document.getElementById('temp').textContent = data.temperature + '°C';
+                document.getElementById('condition').textContent = data.condition;
+            } catch (e) {
+                document.getElementById('condition').textContent = 'Error loading data';
+            }
+        }
+        loadData();
+        setInterval(loadData, 60000); // Refresh every minute
+    </script>
+</body>
+</html>
+```
 
-<script>
-(function () {
-  // ── BASE URL — єдиний правильний спосіб ──────────────────────────
-  const BASE = window.location.pathname
-    .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
+### Ключові моменти
 
-  // ── ui_token для запитів до Core API ──────────────────────────────────
-  const uiToken = new URLSearchParams(window.location.search).get('ui_token');
+- **Фон має бути `transparent`**, щоб віджет гармонійно вписувався у плитку панелі.
+- **Вбудовуйте весь CSS та JS.** Зовнішні стилі та скрипти додають затримку та складність.
+- **Встановіть мета-тег viewport**, щоб забезпечити правильне масштабування на всіх пристроях.
+- **Використовуйте блок скидання стилів** (`* { margin: 0; padding: 0; box-sizing: border-box; }`), щоб уникнути невідповідностей стандартних стилів браузера всередині iframe.
 
-  // ── Адаптація під розмір комірки ────────────────────────────────────────
-  function checkLayout() {
-    const root = document.getElementById('root');
-    if (!root) return;
-    root.classList.toggle('compact', root.offsetHeight < 160);
-  }
+---
 
-  // ── Рендер (ваш код) ──────────────────────────────────────────────────
-  function render(data) {
-    const root = document.getElementById('root');
-    root.innerHTML = `
-      <div>Дані: ${JSON.stringify(data)}</div>
-    `;
-    checkLayout();
-  }
+## Сторінка налаштувань
 
-  // ── Завантаження даних ────────────────────────────────────────────────────
-  async function load() {
-    try {
-      const data = await fetch(BASE + '/status').then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      });
-      render(data);
-    } catch (e) {
-      document.getElementById('root').innerHTML = `
-        <div class="state">
-          <div class="icon">⚠️</div>
-          <div>${e.message}</div>
-        </div>`;
+Сторінки налаштувань дозволяють користувачам конфігурувати поведінку модуля. Вони відображаються у більшому вікні перегляду, ніж віджети, та можуть використовувати стандартні елементи форм.
+
+### Приклад
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: sans-serif; padding: 16px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 4px; font-weight: 600; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 16px; background: #007AFF; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #005EC4; }
+        .status { margin-top: 12px; font-size: 14px; }
+        .status.success { color: #28a745; }
+        .status.error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h2>Weather Settings</h2>
+    <div class="form-group">
+        <label>City</label>
+        <input type="text" id="city" value="Kyiv">
+    </div>
+    <div class="form-group">
+        <label>Units</label>
+        <select id="units">
+            <option value="celsius">Celsius</option>
+            <option value="fahrenheit">Fahrenheit</option>
+        </select>
+    </div>
+    <button onclick="saveSettings()">Save</button>
+    <div class="status" id="status"></div>
+
+    <script>
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/ui/modules/weather-module/settings');
+                const data = await res.json();
+                document.getElementById('city').value = data.city || '';
+                document.getElementById('units').value = data.units || 'celsius';
+            } catch (e) {
+                showStatus('Failed to load settings', 'error');
+            }
+        }
+
+        async function saveSettings() {
+            const settings = {
+                city: document.getElementById('city').value,
+                units: document.getElementById('units').value,
+            };
+            try {
+                const res = await fetch('/api/ui/modules/weather-module/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings),
+                });
+                if (res.ok) {
+                    showStatus('Settings saved', 'success');
+                } else {
+                    showStatus('Save failed: ' + res.statusText, 'error');
+                }
+            } catch (e) {
+                showStatus('Network error', 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const el = document.getElementById('status');
+            el.textContent = message;
+            el.className = 'status ' + type;
+        }
+
+        loadSettings();
+    </script>
+</body>
+</html>
+```
+
+Сторінки налаштувань завжди повинні:
+
+1. **Завантажувати наявні значення при відкритті сторінки**, щоб користувач бачив поточну конфігурацію.
+2. **Показувати зворотний зв'язок після збереження** (повідомлення про успіх або помилку).
+3. **Валідувати введені дані на стороні клієнта** перед відправкою на бекенд.
+
+---
+
+## Шаблони комунікації
+
+Спосіб взаємодії віджета з бекендом модуля залежить від типу модуля.
+
+### Системні модулі (SYSTEM)
+
+Системні модулі працюють всередині процесу ядра та надають REST-ендпоінти через `get_router()`. Віджети виконують запити безпосередньо до цих ендпоінтів:
+
+```javascript
+// Direct fetch to the module's registered routes
+const res = await fetch('/api/ui/modules/{module-name}/endpoint');
+const data = await res.json();
+```
+
+Автентифікація не потрібна. UI-маршрути доступні лише з localhost, захищені на мережевому рівні через iptables.
+
+### Користувацькі модулі (User)
+
+Користувацькі модулі працюють в окремих процесах та взаємодіють через Module Bus. Ядро діє як API-проксі, пересилаючи запити до модуля:
+
+```javascript
+// Routed through the core's module API proxy
+const res = await fetch('/api/ui/modules/{module-name}/api/endpoint');
+const data = await res.json();
+```
+
+Альтернативно, реалізуйте метод `handle_api_request()` у вашому підкласі `SmartHomeModule` для програмної обробки вхідних API-запитів.
+
+### Оновлення в реальному часі
+
+Для віджетів, яким потрібні живі дані (показники датчиків, стани пристроїв), використовуйте періодичне опитування за допомогою `setInterval`. Оберіть інтервал, який балансує між актуальністю та використанням ресурсів:
+
+```javascript
+// Poll every 30 seconds for sensor data
+setInterval(async () => {
+    const res = await fetch('/api/ui/modules/sensors/latest');
+    const data = await res.json();
+    updateDisplay(data);
+}, 30000);
+```
+
+Рекомендовані інтервали опитування:
+
+| Тип даних              | Інтервал     |
+|------------------------|--------------|
+| Температура, вологість | 30-60 сек    |
+| Стан пристрою          | 10-30 сек    |
+| Лічильники, статистика | 60-300 сек   |
+| Критичні сповіщення    | Використовуйте SSE |
+
+Уникайте інтервалів коротших за 5 секунд, якщо дані дійсно не змінюються так часто.
+
+---
+
+## Теми оформлення
+
+Панель керування вставляє CSS-змінні (custom properties) в iframe віджетів. Використовуйте ці змінні, щоб ваш віджет адаптувався до світлої або темної теми користувача:
+
+```css
+body {
+    background: transparent;
+    color: var(--text-color, #333);
+}
+
+.secondary-text {
+    color: var(--text-secondary, #666);
+}
+
+.card {
+    background: var(--surface-color, #ffffff);
+    border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 8px;
+}
+
+.accent {
+    color: var(--accent-color, #007AFF);
+}
+```
+
+Завжди вказуйте запасне значення (другий аргумент `var()`), щоб віджет коректно відображався, навіть якщо змінні теми ще не вставлені.
+
+### Підтримка темного режиму
+
+```css
+/* Fallback dark mode if CSS variables are not provided */
+@media (prefers-color-scheme: dark) {
+    body {
+        color: var(--text-color, #e0e0e0);
     }
-  }
+    .secondary-text {
+        color: var(--text-secondary, #999);
+    }
+}
+```
 
-  // ── Ініціалізація ──────────────────────────────────────────────────
-  checkLayout();
-  load();
-  setInterval(load, 30_000);
-  window.addEventListener('resize', checkLayout);
-})();
-</script>
+---
+
+## Вимоги до іконок
+
+Іконки модулів відображаються у бічній панелі та на плитках віджетів.
+
+| Вимога          | Значення                                         |
+|-----------------|--------------------------------------------------|
+| Формат          | SVG                                              |
+| viewBox         | `0 0 24 24` (рекомендовано)                      |
+| Колір           | Використовуйте `currentColor` для сумісності з темами |
+| Розташування    | Кореневий каталог модуля                         |
+| Назва файлу     | Оголошується у `manifest.json` в полі `ui.icon`  |
+
+### Приклад іконки
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="currentColor" stroke-width="2" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M12 2v2"/>
+    <circle cx="12" cy="12" r="5"/>
+    <path d="M12 20v2"/>
+    <path d="M4.93 4.93l1.41 1.41"/>
+    <path d="M17.66 17.66l1.41 1.41"/>
+    <path d="M2 12h2"/>
+    <path d="M20 12h2"/>
+    <path d="M4.93 19.07l1.41-1.41"/>
+    <path d="M17.66 6.34l1.41-1.41"/>
+</svg>
+```
+
+Використання `currentColor` означає, що іконка автоматично відповідає кольору навколишнього тексту, адаптуючись до світлої та темної тем без додаткових зусиль.
+
+---
+
+## Повний приклад UI модуля
+
+Нижче наведена повна структура файлів для модуля з UI-профілем `FULL`:
+
+```
+modules/
+  my-sensor-module/
+    manifest.json
+    icon.svg
+    widget.html
+    settings.html
+    module.py
+```
+
+**manifest.json:**
+
+```json
+{
+    "name": "my-sensor-module",
+    "version": "1.0.0",
+    "description": "Temperature and humidity sensor display",
+    "ui_profile": "FULL",
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x1",
+            "max_size": "2x2"
+        },
+        "settings": "settings.html"
+    }
+}
+```
+
+**widget.html:**
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: transparent;
+            color: var(--text-color, #333);
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            height: 100vh;
+        }
+        .reading { text-align: center; flex: 1; }
+        .reading .value { font-size: 28px; font-weight: 700; }
+        .reading .label {
+            font-size: 11px;
+            color: var(--text-secondary, #666);
+            margin-top: 4px;
+        }
+        .divider {
+            width: 1px;
+            height: 40px;
+            background: var(--border-color, #e0e0e0);
+            margin: 0 8px;
+        }
+        .error {
+            text-align: center;
+            width: 100%;
+            color: var(--text-secondary, #999);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div id="content">
+        <span class="error">Loading...</span>
+    </div>
+
+    <script>
+        async function refresh() {
+            try {
+                const res = await fetch('/api/ui/modules/my-sensor-module/readings');
+                if (!res.ok) throw new Error(res.statusText);
+                const data = await res.json();
+
+                document.getElementById('content').innerHTML = `
+                    <div class="reading">
+                        <div class="value">${data.temperature.toFixed(1)}°C</div>
+                        <div class="label">Temperature</div>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="reading">
+                        <div class="value">${data.humidity.toFixed(0)}%</div>
+                        <div class="label">Humidity</div>
+                    </div>
+                `;
+            } catch (e) {
+                document.getElementById('content').innerHTML =
+                    '<span class="error">Sensor unavailable</span>';
+            }
+        }
+        refresh();
+        setInterval(refresh, 30000);
+    </script>
 </body>
 </html>
 ```
 
 ---
 
-## 11. Повний шаблон settings.html
+## Найкращі практики
 
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* settings — прокручуване модальне вікно, не фіксована комірка */
-    html, body {
-      width: 100%;
-      min-height: 100%;     /* ← не 100vh */
-      overflow-y: auto;     /* ← скрол дозволений */
-      background: #0e1220;
-      color: #e0e4f0;
-      font-family: 'Segoe UI', system-ui, sans-serif;
-    }
-
-    .settings-root {
-      padding: 20px 16px 32px;
-      max-width: 560px;
-    }
-
-    h1 { font-size: 1.2rem; margin-bottom: 20px; color: #fff; }
-
-    .section {
-      background: rgba(255,255,255,.05);
-      border: 1px solid rgba(255,255,255,.07);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 14px;
-    }
-
-    .section h2 {
-      font-size: 0.8rem;
-      color: #5a6080;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 12px;
-    }
-
-    label {
-      display: block;
-      font-size: 0.8rem;
-      color: #7880a0;
-      margin-bottom: 4px;
-    }
-
-    input, select {
-      width: 100%;
-      background: rgba(0,0,0,.4);
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 8px;
-      color: #e0e4f0;
-      padding: 9px 12px;
-      font-size: 0.88rem;
-      margin-bottom: 12px;
-    }
-
-    input:focus, select:focus {
-      outline: none;
-      border-color: #4a6ee0;
-    }
-
-    .btn {
-      display: inline-block;
-      background: #3a5cc8;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 18px;
-      font-size: 0.9rem;
-      cursor: pointer;
-    }
-    .btn:hover  { background: #2e4eb0; }
-    .btn-ghost  { background: rgba(255,255,255,.07); }
-    .btn-ghost:hover { background: rgba(255,255,255,.12); }
-    .btn-full   { width: 100%; text-align: center; }
-
-    .msg {
-      margin-top: 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 0.82rem;
-    }
-    .msg.ok  { background: rgba(50,200,100,.12); color: #3cc870; }
-    .msg.err { background: rgba(220,50,50,.12); color: #e05858; }
-  </style>
-</head>
-<body>
-<div class="settings-root">
-  <h1>⚙️ Налаштування модуля</h1>
-
-  <div class="section">
-    <h2>Конфігурація</h2>
-
-    <label>Параметр 1</label>
-    <input type="text" id="param1" placeholder="Значення">
-
-    <label>Параметр 2</label>
-    <select id="param2">
-      <option value="a">Варіант A</option>
-      <option value="b">Варіант B</option>
-    </select>
-  </div>
-
-  <button class="btn btn-full" onclick="save()">💾 Зберегти</button>
-  <button class="btn btn-ghost btn-full" style="margin-top:8px" onclick="loadStatus()">🔄 Оновити</button>
-
-  <div id="msg"></div>
-</div>
-
-<script>
-  const BASE = window.location.pathname
-    .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
-
-  // ── Завантажити поточні налаштування ────────────────────────────────────────
-  async function loadStatus() {
-    try {
-      const s = await fetch(BASE + '/status').then(r => r.json());
-      if (s.param1) document.getElementById('param1').value = s.param1;
-      if (s.param2) document.getElementById('param2').value = s.param2;
-    } catch (e) {
-      showMsg('Помилка завантаження: ' + e.message, 'err');
-    }
-  }
-
-  // ── Зберегти ──────────────────────────────────────────────────────────
-  async function save() {
-    const body = {
-      param1: document.getElementById('param1').value,
-      param2: document.getElementById('param2').value,
-    };
-    try {
-      const r = await fetch(BASE + '/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      showMsg('Збережено!', 'ok');
-    } catch (e) {
-      showMsg('Помилка: ' + e.message, 'err');
-    }
-  }
-
-  function showMsg(text, type) {
-    const el = document.getElementById('msg');
-    el.className = 'msg ' + type;
-    el.textContent = text;
-    setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
-  }
-
-  loadStatus();
-</script>
-</body>
-</html>
-```
-
----
-
-## 12. Чеклист перед здачею
-
-**CSS:**
-- [ ] `html, body { width: 100%; height: 100%; overflow: hidden; }` — у widget.html
-- [ ] Немає `100vh`, `min-height: 100vh` у widget.html
-- [ ] `.root { width: 100%; height: 100%; display: flex; overflow: hidden; }`
-- [ ] Немає `position: fixed` елементів у widget.html
-- [ ] settings.html використовує `min-height: 100%` та `overflow-y: auto`
-
-**JavaScript:**
-- [ ] `BASE` обчислюється через `window.location.pathname.replace(...)`
-- [ ] Немає хардкоду `localhost:PORT` або IP-адрес
-- [ ] Немає `fetch('/endpoint')` без BASE префіксу
-- [ ] Є обробка помилок fetch (try/catch + показ стану помилки)
-- [ ] Є автооновлення даних через `setInterval` (або SSE)
-- [ ] Є `window.addEventListener('resize', checkLayout)` для адаптації
-
-**Функціональність:**
-- [ ] Віджет показує стан завантаження (`Loading...`) поки немає даних
-- [ ] Віджет показує стан помилки якщо API недоступний
-- [ ] При порожніх даних (`null`, `undefined`) немає падіння — показується `'—'`
-- [ ] Компактний режим при `height < 160px` ховає другорядний контент
-
-**Відповідність розміру:**
-- [ ] Контент поміщається в комірку без скролу при базовому розмірі
-- [ ] При зменшенні iframe (compact) нічого не обрізається некрасиво
-
----
-
-## 13. Типові помилки
-
-### ❌ Біла смуга знизу / контент не заповнює комірку
-
-**Причина:** `body` має стандартний відступ або `height` не задано.
-
-```css
-/* Виправлення */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; }
-```
-
----
-
-### ❌ Смуга прокрутки з'являється в комірці дашборда
-
-**Причина:** контент виходить за `height: 100%`, а `overflow: hidden` не задано.
-
-```css
-/* Виправлення */
-html, body { overflow: hidden; }
-.root      { overflow: hidden; }
-```
-
----
-
-### ❌ Прогноз / список обрізається зверху або знизу
-
-**Причина:** flex-дочірній елемент не може стиснутися менше свого вмісту.
-
-```css
-/* Виправлення */
-.forecast {
-  flex: 1;
-  min-height: 0;  /* ← ключова властивість, дозволяє flex-item стискатися */
-  overflow: hidden;
-}
-```
-
----
-
-### ❌ Запити до API падають з CORS або 404
-
-**Причина:** неправильно обчислений BASE URL (хардкод порту або origin без шляху).
-
-```javascript
-// Виправлення
-const BASE = window.location.pathname
-  .replace(/\/(widget|settings)(\.html)?(\?.*)?$/, '');
-```
-
----
-
-### ❌ Модуль показує старі дані після зміни налаштувань
-
-**Причина:** немає перезавантаження даних після збереження в settings.
-
-```javascript
-// В settings.html — після успішного save():
-async function save() {
-  // ... POST /config ...
-  showMsg('Збережено!', 'ok');
-  // Перезавантажити статус щоб відобразити зміни
-  await loadStatus();
-}
-```
-
----
-
-### ❌ TypeError: Cannot read properties of null / undefined
-
-**Причина:** дані прийшли, але поле відсутнє — немає захисту від null.
-
-```javascript
-// ❌ Падає якщо temperature == null
-document.getElementById('temp').textContent = Math.round(data.temperature) + '°';
-
-// ✅ Безпечно
-const t = data.temperature;
-document.getElementById('temp').textContent =
-  t != null ? Math.round(t) + '°' : '—';
-```
-
----
-
-*SelenaCore · Розробка віджетів · UK переклад · MIT*
+1. **Тримайте віджети легкими.** Мінімізуйте JavaScript та CSS. Уникайте важких фреймворків всередині iframe віджетів.
+2. **Використовуйте CSS-змінні для тем оформлення.** Це забезпечує візуальну узгодженість по всій панелі у світлому та темному режимах.
+3. **Обробляйте помилки коректно.** Завжди показуйте запасний вміст (тире, "Недоступно" або пропозицію повторити) замість того, щоб залишати віджет порожнім або показувати стек помилок.
+4. **Встановіть `background: transparent`.** Плитка панелі забезпечує фон картки. Віджет з власним непрозорим фоном виглядатиме недоречно.
+5. **Оновлюйте дані з розумними інтервалами.** Кожні 30-60 секунд підходить для більшості даних датчиків. Не опитуйте частіше ніж кожні 5 секунд.
+6. **Робіть віджети адаптивними.** Віджет має коректно виглядати при розмірі за замовчуванням `size` та при кожному розмірі до `max_size`. Використовуйте відносні одиниці та flexbox.
+7. **Використовуйте SVG для іконок.** SVG чітко масштабується при будь-якій роздільній здатності та підтримує `currentColor` для автоматичної адаптації до теми.
+8. **Завантажуйте налаштування при відкритті сторінки.** Сторінка налаштувань, яка відкривається з порожніми полями, змушує користувача повторно вводити вже налаштовані значення.
+9. **Валідуйте перед збереженням.** Перевіряйте обов'язкові поля та діапазони значень на стороні клієнта перед відправкою POST-запиту.
+10. **Показуйте зворотний зв'язок при збереженні.** Завжди підтверджуйте успіх або повідомляйте про помилку після натискання кнопки "Зберегти".

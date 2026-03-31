@@ -12,7 +12,5 @@ COPY . .
 # Create writable config directory
 RUN mkdir -p /config
 
-# Module port
-EXPOSE 8100
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100"]
+# Module connects to core via WebSocket bus — no port needed
+CMD ["python", "main.py"]

@@ -34,11 +34,7 @@ iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
 # UI HTTPS (local network only)
 iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
 
-# Block external access to module ports (8100-8200)
-# Modules are only accessible from internal docker network
-iptables -A INPUT -p tcp --dport 8100:8200 -s 127.0.0.1 -j ACCEPT
-iptables -A INPUT -p tcp --dport 8100:8200 -s 172.16.0.0/12 -j ACCEPT
-iptables -A INPUT -p tcp --dport 8100:8200 -j DROP
+# Modules communicate via WebSocket bus on port 7070 — no separate ports needed
 
 # Block external access to Ollama
 iptables -A INPUT -p tcp --dport 11434 -s 127.0.0.1 -j ACCEPT

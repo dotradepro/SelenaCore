@@ -6,7 +6,7 @@
 ## Table of Contents
 
 1. Introduction and Concept
-2. Architecture: 2-Container Scheme
+2. Architecture: Hybrid Module System
 3. Module Classification
 4. Core System Modules
 5. First Launch — Onboarding Wizard
@@ -33,7 +33,7 @@ SmartHome LK Core is an open source (MIT) local smart home hub. It is installed 
 
 **The core is immutable** — core files are protected by a SHA256 reference hash and the `chattr +i` flag. Modification is impossible without an explicit update through the official platform channel.
 
-**Modules are isolated** — all third-party logic runs in isolated Python threads inside the modules container. Communication with the core is only through the Core API (HTTP, localhost:7070). Direct access to core data and the `/secure` partition is prohibited.
+**Modules are isolated** — system modules run in-process via importlib. User modules run as subprocesses and communicate exclusively through the WebSocket Module Bus (`ws://core:7070/api/v1/bus`). Direct access to core data and the `/secure` partition is prohibited.
 
 **The agent watches** — an independent `IntegrityAgent` process continuously verifies SHA256 hashes of core files and responds through a chain: stop modules → notify platform → rollback from backup → SAFE MODE.
 
@@ -43,38 +43,70 @@ The project is distributed under the MIT license. UPS/backup power, custom hardw
 
 ---
 
-## 2. Architecture: 2-Container Scheme
+## 2. Architecture: Hybrid Module System
 
-Instead of a separate Docker container per module, a minimal scheme is used.
+Instead of a separate Docker container per module or a monolithic plugin manager, a hybrid scheme is used with two distinct module types.
 
-| Container | RAM | Purpose |
+### 2.1 Two Module Types
+
+| Type | Loading | Overhead | Communication | Location |
+|---|---|---|---|---|
+| **System modules** (`type=SYSTEM`) | In-process via `importlib` | ~0 MB per module | Direct access to EventBus and database | `system_modules/` |
+| **User modules** (`type=UI/INTEGRATION/DRIVER/AUTOMATION/IMPORT_SOURCE`) | Subprocesses in Docker containers | Per-container overhead | WebSocket Module Bus at `ws://core:7070/api/v1/bus?token=TOKEN` | Installed via marketplace |
+
+**System modules** are loaded directly into the core process. They have no Docker overhead, no subprocess cost, and can register a FastAPI router mounted at `/api/ui/modules/{name}/`. They are shipped with the core and cannot be removed.
+
+**User modules** run as subprocesses inside Docker containers. They do not have individual ports — all traffic flows through the single WebSocket Module Bus endpoint. Module crash (Exception) is caught, logged, and only that module's container is restarted. OOM/segfault triggers container restart via Docker's `--restart=unless-stopped` policy.
+
+### 2.2 Module Bus (CAN-bus Inspired)
+
+The Module Bus is the sole communication channel between user modules and the core. It is inspired by the CAN-bus architecture: a single shared bus where the core acts as the master node.
+
+**Endpoint:** `ws://core:7070/api/v1/bus?token=TOKEN`
+
+**Message types:**
+
+| Message Type | Direction | Purpose |
 |---|---|---|
-| `smarthome-core` | ~420 MB | Core: FastAPI, Device Registry, Event Bus, Module Loader, Cloud Sync, Voice Core, LLM Engine, UI Core |
-| `smarthome-modules` | 180–350 MB | All user modules in a single Python process via Plugin Manager |
-| `smarthome-sandbox` | 96–256 MB, `--rm` | Temporary: test a new module before installation. Auto-deleted. |
+| `announce` | Module → Core | Module registers itself on connect |
+| `intent` | Core → Module | Core dispatches a user intent to the module |
+| `intent_response` | Module → Core | Module returns the intent result |
+| `event` | Bidirectional | EventBus events delivered over the bus |
+| `ping` / `pong` | Bidirectional | Keepalive and health check |
+| `api_request` | Module → Core | Module calls a Core API endpoint |
+| `api_response` | Core → Module | Core returns the API response |
+| `shutdown` | Core → Module | Graceful shutdown signal |
 
-### 2.1 Plugin Manager
+**Dual channels per connection:**
 
-Plugin Manager is a core component that loads modules as Python classes via `importlib` into an isolated namespace with a dedicated thread (Thread).
+- **Critical queue** — capacity 100 items, backpressure (slow consumer blocks sender). Used for intents, API requests, shutdown.
+- **Event queue** — capacity 1,000 items, drop-oldest on overflow. Used for events, non-critical notifications.
 
-- Module crash (Exception) → caught, logged, only that module is restarted
-- OOM / segfault → the entire `smarthome-modules` container crashes → systemd automatically restarts it
-- Hot-reload: module update via `importlib.reload()` without container restart
-- Per-module memory limit: `resource.setrlimit` + `tracemalloc` monitoring inside the thread
+**Reliability:**
 
-### 2.2 Watchdog — Two-Level Protection
+- Circuit breaker per module: 5 failures in 60 sec → module marked unhealthy → reconnect with exponential backoff
+- ACL permissions: each module declares required permissions in `manifest.json`; the bus enforces them at runtime
 
-- **Level 1 — systemd**: `smarthome-core.service` and `smarthome-modules.service` with `Restart=always`, `RestartSec=5s`
-- **Level 2 — Docker**: `--restart=unless-stopped` on both containers
-- **Integrity Agent**: separate `smarthome-agent.service`, independent of both containers
+### 2.3 EventBus
 
-### 2.3 Memory Savings vs Separate Containers
+The EventBus is an asyncio.Queue-based pub/sub system (max 10,000 items) that routes events within the core.
+
+- **DirectSubscription** — system modules subscribe with in-process async callbacks. Zero serialization overhead.
+- **Module Bus delivery** — events matching a user module's subscriptions are serialized to JSON and pushed over the WebSocket bus via the event queue.
+
+### 2.4 Watchdog — Two-Level Protection
+
+- **Level 1 — systemd**: `smarthome-core.service` with `Restart=always`, `RestartSec=5s`
+- **Level 2 — Docker**: `--restart=unless-stopped` on user module containers
+- **Integrity Agent**: separate `smarthome-agent.service`, independent of the core container
+
+### 2.5 Memory Savings vs Separate Containers
 
 | Configuration | RAM (typical load) |
 |---|---|
 | One container per module (8 modules) | ~1,200 MB |
-| 2-container scheme (same 8 modules) | ~620 MB |
-| Savings | ~580 MB (−48%) |
+| Hybrid scheme (same 8 modules: 10 system + 8 user) | ~500 MB |
+| Savings | ~700 MB (−58%) |
 
 ---
 
@@ -103,7 +135,7 @@ Plugin Manager is a core component that loads modules as Python classes via `imp
 ### 3.3 Runtime Modes (manifest.json)
 
 - `always_on` — running constantly. UI modules, drivers, Telegram notifications.
-- `on_demand` — thread starts in ~50 ms, performs the task, stops. AUTOMATION.
+- `on_demand` — subprocess starts, performs the task, stops. AUTOMATION.
 - `scheduled` — cron string in manifest. Example: `"*/5 * * * *"` to check Gmail every 5 minutes.
 
 ### 3.4 manifest.json — Structure
@@ -119,7 +151,14 @@ schedule:      "*/5 * * * *"
 permissions:
   - device.read
   - events.subscribe
-port:          8100               # module HTTP server port
+intents:
+  - pattern: "check mail"
+    action: "check_inbox"
+  - pattern: "send email to {recipient}"
+    action: "send_email"
+publishes:
+  - "email.received"
+  - "email.sent"
 
 # If ui_profile != HEADLESS:
 ui:
@@ -148,7 +187,7 @@ oauth:
 
 | Module | UI Profile | Function |
 |---|---|---|
-| `voice-core` | SETTINGS_ONLY | STT (Whisper.cpp), TTS (Piper), wake-word, speaker ID, privacy mode |
+| `voice-core` | SETTINGS_ONLY | STT (Vosk), TTS (Piper), wake-word, speaker ID, privacy mode |
 | `llm-engine` | SETTINGS_ONLY | Ollama, Intent Router (Fast Matcher + LLM), model selection and download |
 | `network-scanner` | SETTINGS_ONLY | ARP sweep, mDNS, SSDP/UPnP, Zigbee/Z-Wave, OUI classification |
 | `user-manager` | SETTINGS_ONLY | Profiles (admin/resident), PIN/QR auth, voice prints, Face ID, audit log |
@@ -158,12 +197,24 @@ oauth:
 | `hw-monitor` | HEADLESS | CPU temperature, RAM, disk. Alert + automatic load reduction on overheating |
 | `notify-push` | HEADLESS | Web Push VAPID — phone notifications when browser is closed |
 | `ui-core` | FULL | PWA · smarthome.local:80 · TTY1/kiosk · first launch wizard |
+| `device-registry` | HEADLESS | Central device state store, capability index, protocol abstraction |
+| `cloud-sync` | HEADLESS | Platform heartbeat, config sync, buffered upload on reconnect |
+| `module-manager` | SETTINGS_ONLY | Module lifecycle: install, update, remove, sandbox test |
+| `automation-engine` | SETTINGS_ONLY | Rule engine for if/then automations, cron scheduler |
+| `scene-manager` | SETTINGS_ONLY | Scene snapshots: save/restore multi-device states |
+| `intent-router` | HEADLESS | 4-tier intent dispatch: Fast Matcher, system, bus, LLM |
+| `event-logger` | HEADLESS | Persistent event log with rotation and query API |
+| `media-player` | SETTINGS_ONLY | Local media playback, multi-room audio routing |
+| `zigbee-core` | SETTINGS_ONLY | Zigbee coordinator via zigbee2mqtt or direct ZNP |
+| `mqtt-broker` | HEADLESS | Embedded Mosquitto broker for local MQTT devices |
+| `scheduler` | HEADLESS | Centralized cron/timer service for modules and automations |
+| `diagnostics` | SETTINGS_ONLY | Self-test suite, connectivity checks, log collection for support |
 
 ---
 
 ## 5. First Launch — Onboarding Wizard
 
-Goal: a user without technical knowledge sets up the system in 5–10 minutes using only a phone.
+Goal: a user without technical knowledge sets up the system in 5-10 minutes using only a phone.
 
 ### 5.1 Step 0 — Before Powering On: Writing the Image to SD
 
@@ -199,9 +250,9 @@ mDNS fallback: `http://smarthome-setup.local`
 | 2 | **Wi-Fi network** | List of discovered networks. Enter password. Pi connects and checks internet. |
 | 3 | **Device name** | E.g. "Smart Home — Kitchen". Displayed on the platform and in voice responses. |
 | 4 | **Timezone** | Choose from a list or auto-detect by IP. |
-| 5 | **STT voice model** | Whisper tiny (fast, Pi 4) / base (balanced) / small (quality, Pi 5). Downloaded. |
+| 5 | **STT voice model** | Vosk small (fast, Pi 4) / medium (balanced) / large (quality, Pi 5). Downloaded. |
 | 6 | **TTS voice (Piper)** | Voice list for the selected language. "Listen" button. Downloads ~50 MB. |
-| 7 | **First user** | Admin name, 4–8 digit PIN. Optional: voice print (5 phrases). |
+| 7 | **First user** | Admin name, 4-8 digit PIN. Optional: voice print (5 phrases). |
 | 8 | **Platform registration** | QR or link. Optional — can be skipped, works fully locally. |
 | 9 | **Import (optional)** | Home Assistant / Tuya / Philips Hue. OAuth via link. Can be skipped. |
 
@@ -283,7 +334,7 @@ ui:
 | Component | Stack | Characteristics |
 |---|---|---|
 | Wake-word | openWakeWord | < 5% CPU, always in background, customizable wake word |
-| STT | Whisper.cpp tiny/base/small | Selected in wizard. Local only, no internet required. |
+| STT | Vosk small/medium/large | Selected in wizard. Local only, no internet required. |
 | TTS | Piper neural | Voice selection in wizard with preview. Offline. Latency ~300ms. |
 | Speaker ID | resemblyzer | Enrollment: 5 phrases → 256-float d-vector in `/secure/biometrics/` |
 | Privacy mode | GPIO + voice | Physical GPIO button **OR** command "Home, quiet" → microphone disabled |
@@ -295,15 +346,19 @@ openWakeWord → hears wake-word
       ↓
 Audio recording (until 1.5 sec pause)
       ↓
-Whisper.cpp → query text                ~0.8–2 sec
+Vosk → query text                       ~0.3–1.5 sec
       ↓
 Speaker ID: who is speaking?            ~200 ms
       ↓
-Intent Router — Level 1: Fast Matcher   ~50 ms
+Intent Router — Tier 1: Fast Matcher    ~0 ms (YAML lookup)
       ↓ not found
-Intent Router — Level 2: LLM (Pi 5)    ~3–8 sec
+Intent Router — Tier 2: System Intents  ~μs (in-process regex)
+      ↓ not found
+Intent Router — Tier 3: Module Bus      ~ms (user modules via WebSocket)
+      ↓ not found
+Intent Router — Tier 4: Ollama LLM      ~3–8 sec (Pi 5 only)
       ↓
-Found module → Core API → execution
+Found module → execution
 Not found   → TTS: "No such module. Search the marketplace?"
       ↓
 Piper TTS → response playback          ~300 ms
@@ -311,14 +366,25 @@ Piper TTS → response playback          ~300 ms
 Record in dialog history (SQLite)
 ```
 
-### 7.3 Intent Router — Two Levels
+### 7.3 Intent Router — Four Tiers
 
-**Level 1 — Fast Matcher (< 50ms, works on both Pi 4 and Pi 5)**
-- Keyword/regex rules for frequent commands
+**Tier 1 — Fast Matcher (~0ms, works on both Pi 4 and Pi 5)**
+- Static keyword/regex rules for frequent commands
 - Configured in YAML: `"turn on the light" → lights.on`
-- No LLM — instant
+- No LLM, no module dispatch — instant lookup
 
-**Level 2 — LLM Intent (3–8 sec, Pi 5 with 8GB RAM only)**
+**Tier 2 — System Module Intents (microseconds, in-process)**
+- System modules register intent patterns via `@intent` decorator
+- Matched by regex against the query text in-process
+- Direct callback execution, no serialization overhead
+
+**Tier 3 — Module Bus Intents (milliseconds, user modules)**
+- User modules declare `intents` in `manifest.json`
+- Core matches the query against registered patterns
+- Dispatched to the matching module via WebSocket `intent` message
+- Module returns `intent_response` with result
+
+**Tier 4 — LLM Intent (3-8 sec, Pi 5 with 8GB RAM only)**
 - Ollama with phi-3-mini model (3.8B int4) or gemma-2b
 - System prompt contains a dynamic registry of installed modules
 - Registry is rebuilt on each module install/remove
@@ -329,7 +395,7 @@ Record in dialog history (SQLite)
 ### 7.4 Voice Input via Client Browser
 
 - `getUserMedia()` → WebSocket → Pi: audio is streamed in 100ms chunks
-- Pi: `ffmpeg` → WAV 16kHz → Whisper.cpp → Intent Router → Piper TTS → WAV response
+- Pi: `ffmpeg` → WAV 16kHz → Vosk → Intent Router → Piper TTS → WAV response
 - Nothing goes to the cloud — the entire pipeline runs locally on the Pi
 - Client microphone auto-detection: `enumerateDevices()` — if none, the PTT button is hidden
 
@@ -354,7 +420,7 @@ Record in dialog history (SQLite)
 |---|---|---|
 | USB microphone | USB | Plug & play. Priority 1. |
 | ReSpeaker HAT | I2C/SPI | Multi-channel. Requires `seeed-voicecard`. Priority 2. |
-| I2S GPIO (INMP441, SPH0645) | GPIO 18–21 | `dtoverlay` in `/boot/config.txt`. Priority 3. |
+| I2S GPIO (INMP441, SPH0645) | GPIO 18-21 | `dtoverlay` in `/boot/config.txt`. Priority 3. |
 | Bluetooth | PulseAudio + bluez | Latency ~150ms. Pairing via ui-core. Priority 4. |
 | HDMI (ARC) | HDMI | Rarely used. Priority 5. |
 
@@ -405,7 +471,7 @@ users, modules, and devices. No per-role permission matrix.
 
 ### 9.2 Authorization Methods in ui-core
 
-- **PIN** (4–8 digits) — always available
+- **PIN** (4-8 digits) — always available
 - **Face ID** — if enrolled and the client has a camera. Browser captures a JPEG frame → POST → Pi face_recognition → elevated session token. The photo is not saved.
 - **Voice print** — identification during voice requests (command personalization, not UI login)
 
@@ -451,7 +517,7 @@ Tailscale is installed as the `remote-access` system module. It creates an encry
 ### 10.2 Firewall — iptables Rules
 
 ```bash
-# Core API — localhost and core_net only
+# Core API — localhost only
 iptables -A INPUT -p tcp --dport 7070 -s 127.0.0.1 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7070 -j DROP
 
@@ -461,7 +527,7 @@ iptables -A INPUT -p tcp --dport 80 -s 100.0.0.0/8 -j ACCEPT  # Tailscale
 iptables -A INPUT -p tcp --dport 80 -j DROP
 ```
 
-The `/secure` partition is not accessible to modules — there is no `/secure` volume mount in the `smarthome-modules` container.
+The `/secure` partition is not accessible to user modules — containers have no `/secure` volume mount.
 
 ### 10.3 Rate Limiting
 
@@ -470,6 +536,7 @@ The `/secure` partition is not accessible to modules — there is no `/secure` v
 | Incorrect PIN | 5 attempts / 60 sec | 10-minute lockout, audit log entry |
 | Core API requests | 100 / sec per token | HTTP 429 |
 | WebSocket audio (STT) | 1 session per user | New connection rejected |
+| Module Bus connections | 1 per module | Duplicate connection rejected |
 
 ### 10.4 HTTPS and Certificates
 
@@ -592,7 +659,7 @@ pip install smarthome-sdk
 ### 14.2 Base Module Class
 
 ```python
-from smarthome_sdk import SmartHomeModule, on_event, schedule
+from sdk.base_module import SmartHomeModule, intent, on_event, scheduled
 
 class MyModule(SmartHomeModule):
     name = "my-climate-module"
@@ -601,13 +668,19 @@ class MyModule(SmartHomeModule):
     async def on_start(self):
         self.logger.info("Module started")
 
+    @intent(r"set (?:the )?temperature to (\d+)")
+    async def handle_temperature(self, match, context):
+        temp = int(match.group(1))
+        await self.devices.set_state(context.device_id, {"temperature": temp})
+        return f"Temperature set to {temp}"
+
     @on_event("device.state_changed")
     async def handle_state(self, event):
         device = await self.devices.get(event.device_id)
         if device.state.get("temperature") > 25:
             await self.devices.set_state(device.id, {"fan": True})
 
-    @schedule("*/5 * * * *")
+    @scheduled("*/5 * * * *")
     async def periodic_check(self):
         devices = await self.devices.list(type="sensor")
 
@@ -615,11 +688,21 @@ class MyModule(SmartHomeModule):
         pass  # graceful shutdown
 ```
 
+Entry point (bus-based):
+
+```python
+import asyncio
+from my_module import MyModule
+
+module = MyModule()
+asyncio.run(module.start())
+```
+
 ### 14.3 CLI Commands
 
 ```bash
 smarthome new-module my-integration   # create module structure
-smarthome dev                         # start mock Core API on :7070
+smarthome dev                         # start mock Core API + bus on :7070
 smarthome test my-module.zip          # sandbox test
 smarthome publish                     # submit to marketplace
 ```
@@ -634,7 +717,6 @@ my-integration/
   widget.html          # if ui_profile != HEADLESS
   settings.html        # if ui_profile != HEADLESS
   icon.svg
-  Dockerfile
   README.md
 ```
 
@@ -643,9 +725,10 @@ my-integration/
 ```bash
 smarthome dev
 # Starts a mock server on localhost:7070
+# Includes WebSocket Module Bus at ws://localhost:7070/api/v1/bus
 # Supports all Core API v1 endpoints
 # Pre-populated with test devices
-# Logs all requests to the console
+# Logs all requests and bus messages to the console
 ```
 
 ### 14.6 API Documentation
@@ -661,7 +744,7 @@ smarthome dev
 
 | Feature | Without internet | Notes |
 |---|---|---|
-| Voice assistant (STT/TTS) | ✅ Yes | Whisper + Piper — fully local |
+| Voice assistant (STT/TTS) | ✅ Yes | Vosk + Piper — fully local |
 | LLM Intent Router | ✅ Yes | Ollama locally on Pi 5 |
 | Device Registry | ✅ Yes | Local SQLite |
 | Automations | ✅ Yes | Local devices |
@@ -686,17 +769,20 @@ smarthome dev
 
 ### 16.2 Core and Modules
 
-- [ ] 2-container scheme works. Sandbox container auto-deletes after testing.
-- [ ] Crash of one module does not stop the others (test: `kill -9` on the module thread)
+- [ ] Hybrid module system works. System modules load in-process via importlib.
+- [ ] User modules connect via WebSocket Module Bus and exchange messages correctly.
+- [ ] Crash of one user module does not stop the others (test: `kill -9` on the module subprocess)
 - [ ] Watchdog: systemd + Docker automatically restart crashed containers
 - [ ] Integrity Agent detects core file changes within ≤ 30 sec
+- [ ] Module Bus circuit breaker triggers after 5 failures in 60 sec
 
 ### 16.3 Voice and LLM
 
 - [ ] STT works without internet (test: `ip link set eth0 down` → command is recognized)
 - [ ] TTS speaks the response locally via Piper
 - [ ] Privacy mode: GPIO button AND voice command disable the microphone
-- [ ] Fast Matcher processes registered commands in < 50ms
+- [ ] Fast Matcher processes registered commands in < 1ms
+- [ ] 4-tier Intent Router dispatches correctly through all tiers
 - [ ] Biometrics are absent from any outgoing HTTP requests (test via `tcpdump`)
 
 ### 16.4 UI and Access
@@ -716,7 +802,7 @@ smarthome dev
 ### 16.6 SDK and Import
 
 - [ ] `smarthome new-module` creates a working structure
-- [ ] `smarthome dev` starts the mock Core API locally
+- [ ] `smarthome dev` starts the mock Core API and Module Bus locally
 - [ ] Import from Home Assistant: devices and simple automations
 - [ ] OAuth QR flow completes successfully for Tuya and Home Assistant
 

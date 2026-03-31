@@ -25,7 +25,6 @@ class TestValidateZip:
             "version": "1.0.0",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
             "permissions": ["device.read"],
         }
         result = validate_zip(self._make_zip(tmp_path, manifest))

@@ -1,129 +1,77 @@
-# Голосові налаштування — Управління движками
+# Конфігурація голосового конвеєра
 
-## Огляд
+## Огляд конвеєра
 
-Сторінка `/settings/voice` надає повне управління трьома движками:
-- **Vosk** — офлайн розпізнавання мовлення (STT)
-- **Piper** — офлайн синтез мовлення (TTS)
-- **Ollama / Cloud LLM** — мовна модель для обробки команд
+Wake word (openWakeWord) → Запис аудіо → Vosk STT → Ідентифікація мовця (resemblyzer) → Intent Router (4 рівні) → Piper TTS
 
-Всі движки можна встановлювати, налаштовувати та тестувати через веб-інтерфейс.
+## STT - Vosk
 
----
+- Офлайн-розпізнавання мовлення (рушій Kaldi)
+- Оптимізовано для ARM на Raspberry Pi
+- Моделі: tiny, base, small, medium (у `/var/lib/selena/models/vosk/`)
+- Налаштовується в core.yaml: `voice.stt_model`
 
-## Управління движками
+## TTS - Piper
 
-### Vosk STT
-- Встановлено в Docker образ (pip пакет `vosk`)
-- Моделі зберігаються на volume `/var/lib/selena/models/vosk/`
-- Каталог моделей завантажується з alphacephei.com (кеш 24 год)
-- Працює тільки на CPU (обмеження Kaldi)
-- Тест: запис 4 сек → розпізнавання → текст
+- Синтез мовлення на основі ONNX
+- Підтримка CUDA на Jetson
+- Моделі в `/var/lib/selena/models/piper/`
+- Налаштовується в core.yaml: `voice.tts_voice`
 
-### Piper TTS
-- Встановлено в Docker образ (pip пакет `piper-tts`)
-- Голоси зберігаються на volume `/var/lib/selena/models/piper/`
-- Каталог голосів з HuggingFace (кеш 24 год)
-- GPU (CUDA) якщо є `onnxruntime-gpu`
-- Налаштування дикції: швидкість, інтонація, варіативність фонем, пауза, гучність
-- Автоочищення тексту від markdown, emoji, URL, спецсимволів
+## Wake Word
 
-### Ollama LLM
-- Окремий Docker контейнер `selena-ollama` з nvidia runtime
-- Моделі на volume `ollama_data` (зберігаються при перезапусках)
-- 100% GPU на Jetson Orin
-- Pull моделей через UI з прогрес-баром
+- openWakeWord / граматичний режим Vosk
+- Чутливість: core.yaml `voice.wake_word_sensitivity` (від 0.0 до 1.0)
 
----
+## Ідентифікація мовця
 
-## Хмарні LLM провайдери
+- Бібліотека resemblyzer для зняття голосового відбитка
+- Лише локальна обробка, без хмари
 
-Підтримуються: **Ollama** (локальний), **OpenAI**, **Anthropic**, **Google AI**, **Groq**
+## Режим приватності
 
-Перемикання між провайдерами — миттєве, через таби в UI.
+- Перемикання голосовою командою або через GPIO-пін
+- Події: `voice.privacy_on`, `voice.privacy_off`
+- Конфігурація: `voice.privacy_gpio_pin`
 
-Для хмарних: ввести API ключ → Перевірити → Обрати модель → Зберегти.
+## Маршрутизація інтентів (4 рівні)
 
----
+1. **Fast Matcher** — правила на ключових словах/regex у YAML → 0 мс
+2. **Інтенти системних модулів** — regex-шаблони в процесі → мікросекунди
+3. **Інтенти Module Bus** — користувацькі модулі через WebSocket → мілісекунди
+4. **Ollama LLM** — семантичне розуміння → 3-8 сек (потрібно 5 ГБ+ оперативної пам'яті)
 
-## Системний промпт
+## Конфігурація LLM
 
-Редагується через UI (секція LLM → кнопка "Системний промпт").
-
-Визначає:
-- Ім'я та особистість асистента
-- Правила поведінки та обмеження
-- Мову відповідей
-
-Правила TTS-форматування додаються автоматично.
-
----
-
-## Тест голосового пайплайну
-
-Повний цикл тестування в секції Vosk:
-
-1. **Записати і розпізнати** — мікрофон → Vosk STT → текст
-2. **Текстовий запит до AI** — ручне введення → LLM → відповідь
-3. **Озвучити відповідь** — текст → Piper TTS → динамік
-
-Повний пайплайн: Мікрофон → Vosk → AI → Piper → Динамік
-
----
-
-## GPU / Апаратне прискорення
-
-### Автодетекція при старті контейнера
-- Jetson Orin: GPU визначається через `/dev/nvidia0` + `libcuda.so`
-- Raspberry Pi: GPU немає, працює на CPU
-
-### Що де працює
-| Движок | GPU | Як |
-|--------|-----|-----|
-| Vosk | Ні | CPU only (обмеження Kaldi) |
-| Piper | Так | `--cuda` прапорець |
-| Ollama | Так | Окремий контейнер з nvidia runtime |
-
-### UI індикатори
-- Загальний бейдж зверху: "GPU Jetson (CUDA)" або "CPU only"
-- Біля кожного движка: ⚡CUDA / CPU / CPU only / ☁Cloud
-- Кнопка "Примусово CPU" для вимкнення GPU
-
----
-
-## Docker конфігурація
-
-### Raspberry Pi (тільки CPU)
-```bash
-docker compose up -d
+```yaml
+llm:
+  enabled: true
+  provider: "ollama"
+  ollama_url: "http://localhost:11434"
+  default_model: "phi-3-mini"
+  min_ram_gb: 5
+  timeout_sec: 30
 ```
 
-### Jetson Orin (з GPU)
-```bash
-./scripts/start-docker.sh
+## Голосові події
+
+- `voice.wake_word` — виявлено wake word
+- `voice.recognized` — текстовий результат STT
+- `voice.intent` — знайдено відповідний інтент
+- `voice.response` — згенеровано TTS-відповідь
+- `voice.privacy_on` / `voice.privacy_off` — перемикання режиму приватності
+
+## Голосова конфігурація в core.yaml
+
+```yaml
+voice:
+  wake_word_sensitivity: 0.5
+  stt_model: "base"
+  tts_voice: "uk_UA-lada-x_low"
+  privacy_gpio_pin: null
 ```
 
-### Передумови для GPU на Jetson
-```bash
-sudo apt-get install -y cuda-cudart-12-6
-sudo apt-get install -y nvidia-container-toolkit
-sudo nvidia-ctk runtime configure --runtime=docker
-sudo systemctl restart docker
-```
+## WebRTC-стримінг
 
----
-
-## Продуктивність
-
-### gemma3:1b на Jetson Orin
-| Режим | Час | Процесор |
-|-------|-----|----------|
-| CPU | 17-18 сек | 100% CPU |
-| **GPU** | **6.8 сек** | **100% GPU** |
-
-### Рекомендовані моделі для 4 ГБ RAM
-| Модель | Розмір | Мови |
-|--------|--------|------|
-| **gemma3:1b** | 815 МБ | en/ru/uk + 140 |
-| qwen2.5:1.5b | 2 ГБ | en/zh/ru |
-| llama3.2:1b | 1.5 ГБ | en |
+- Підтримка потокового передавання аудіо в реальному часі через WebRTC
+- Використовується для голосової взаємодії через браузер

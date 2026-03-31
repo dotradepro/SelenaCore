@@ -39,7 +39,7 @@ class ModuleInfo:
     status: ModuleStatus
     runtime_mode: str
     installed_at: float
-    port: int = 0  # 0 for SYSTEM modules (in-process, no port needed)
+    port: int = 0  # Legacy field, unused — modules communicate via WebSocket bus
     container_id: str | None = None
     error: str | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
@@ -50,7 +50,8 @@ class DockerSandbox:
     """Manages module lifecycle.
 
     SYSTEM modules (type=SYSTEM) are loaded in-process via importlib.
-    User modules (UI/INTEGRATION/DRIVER/etc.) run in Docker sandbox containers.
+    User modules (UI/INTEGRATION/DRIVER/etc.) run as subprocesses,
+    communicating with core via the WebSocket Module Bus.
     """
 
     def __init__(self) -> None:
@@ -101,7 +102,7 @@ class DockerSandbox:
             type=manifest["type"],
             status=ModuleStatus.READY,
             runtime_mode=manifest.get("runtime_mode", "always_on"),
-            port=manifest.get("port", 0),  # 0 for SYSTEM modules (no port)
+            port=0,  # Legacy field — modules use WebSocket bus, not individual ports
             installed_at=datetime.now(timezone.utc).timestamp(),
             manifest=manifest,
             module_dir=str(module_dir) if module_dir else None,
@@ -126,7 +127,7 @@ class DockerSandbox:
             type=manifest["type"],
             status=ModuleStatus.READY,
             runtime_mode=manifest.get("runtime_mode", "always_on"),
-            port=manifest.get("port", 0),
+            port=0,  # Legacy field — modules use WebSocket bus, not individual ports
             installed_at=datetime.now(timezone.utc).timestamp(),
             manifest=manifest,
         )

@@ -1,305 +1,292 @@
-# Deploying SelenaCore on Raspberry Pi
+# SelenaCore Deployment and Installation Guide
 
-## Supported Platforms
-
-| Device | Support | Recommended |
-|--------|---------|-------------|
-| Raspberry Pi 5 (8 GB) | ✅ Full | Yes — including LLM |
-| Raspberry Pi 5 (4 GB) | ✅ Full | Yes |
-| Raspberry Pi 4 (4/8 GB) | ✅ Full | Without LLM |
-| Raspberry Pi 4 (2 GB) | ⚠️ Limited | LLM disabled |
-| Debian x86-64 / ARM | ✅ | Yes |
+This guide covers hardware requirements, installation, configuration, and ongoing operations for the SelenaCore smart home hub.
 
 ---
 
-## System Preparation
+## Supported Hardware
 
-### 1. Operating System
+| Platform | Notes |
+|----------|-------|
+| Raspberry Pi 4/5 | 4GB+ RAM recommended |
+| NVIDIA Jetson Orin Nano | GPU-accelerated TTS/STT support |
+| Any Linux SBC (ARM64 or x86_64) | Tested on Ubuntu and Debian-based distros |
 
-Recommended: **Raspberry Pi OS 64-bit Lite** (no GUI) or **Debian 12 Bookworm**.
+**Minimum requirements:**
 
-```bash
-# Update the system
-sudo apt update && sudo apt upgrade -y
-
-# Required dependencies
-sudo apt install -y \
-    python3.11 python3.11-venv python3-pip \
-    git curl wget \
-    sqlite3 \
-    ffmpeg \
-    alsa-utils pulseaudio \
-    iptables iptables-persistent \
-    avahi-daemon avahi-utils \
-    bluetooth bluez bluez-tools
-```
-
-### 2. Docker
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Re-login or: newgrp docker
-
-# Verify
-docker run --rm hello-world
-```
-
-### 3. Clone the Repository
-
-```bash
-sudo mkdir -p /opt/selena-core
-sudo chown $USER:$USER /opt/selena-core
-cd /opt/selena-core
-
-git clone https://github.com/dotradepro/SelenaCore.git .
-```
+- **2GB RAM** — sufficient for core functionality without a local LLM
+- **4GB+ RAM** — required for full features including Ollama-based local LLM inference
 
 ---
 
-## Configuration
+## OS and Software Requirements
 
-### 4. Configure .env
+- Ubuntu 22.04+ or Raspberry Pi OS (Bookworm)
+- Docker 24+ and Docker Compose v2
+- Python 3.11+
+
+---
+
+## Installation
+
+### Automatic Setup (Recommended)
 
 ```bash
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+sudo bash scripts/setup.sh
+```
+
+The setup script performs the following steps in order:
+
+1. Install system packages (FFmpeg, PortAudio, VLC, ALSA, PulseAudio)
+2. Install Docker and Docker Compose
+3. Install Python 3.11 and pip
+4. Create data directories (`/var/lib/selena`, `/secure`)
+5. Generate module authentication tokens
+6. Build Docker images
+7. Start all services
+8. Display the access URL
+
+### Manual Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+
+# Copy and edit the environment file
 cp .env.example .env
-nano .env
-```
+# Edit .env with your settings (see Environment Variables below)
 
-Minimum settings:
-
-```bash
-CORE_PORT=7070
-UI_PORT=80
-CORE_DATA_DIR=/var/lib/selena
-CORE_SECURE_DIR=/secure
-CORE_LOG_LEVEL=INFO
-DEBUG=false
-
-# For platform connection (optional):
-PLATFORM_API_URL=https://smarthome-lk.com/api/v1
-PLATFORM_DEVICE_HASH=           # filled during platform registration
-```
-
-### 5. Create Directories
-
-```bash
-sudo mkdir -p /var/lib/selena
-sudo mkdir -p /secure/tokens
-sudo mkdir -p /secure/tls
-sudo mkdir -p /secure/core_backup
-sudo mkdir -p /var/log/selena
-
-sudo chown -R $USER:$USER /var/lib/selena /secure /var/log/selena
-sudo chmod 700 /secure
-```
-
-### 6. Initialize Storage
-
-```bash
-cd /opt/selena-core
-
-# Create core.manifest (SHA256 of all core files)
-python3 agent/manifest.py --init
-
-# Generate HTTPS certificate
-python3 scripts/generate_https_cert.py
+# Build and start
+docker compose build
+docker compose up -d
 ```
 
 ---
 
-## Launch
+## Docker Architecture
 
-### Docker Compose (Recommended)
+The `docker-compose.yml` file defines two services.
+
+### selena-core (main service)
+
+The primary container running the SelenaCore application.
+
+- **Image:** Built from `Dockerfile.core` (base: `python:3.11-slim`)
+- **Network mode:** `host` (required for audio and device access)
+- **Privileged:** `true` (required for hardware access)
+- **Exposed ports:**
+  - `7070` — API server
+  - `80` — Web UI
+- **Volumes:**
+  - `/var/run/docker.sock` — Docker socket for managing module containers
+  - `selena_data:/var/lib/selena` — Database, voice models, backups
+  - `selena_secure:/secure` — Encrypted tokens and keys
+  - PulseAudio socket — Audio input/output
+  - Ollama models directory (if configured)
+- **Health check:** `GET /api/v1/health` every 30 seconds
+- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk, Piper, Ollama
+
+### selena-agent (integrity agent)
+
+A separate container that continuously monitors core integrity.
+
+- Performs SHA256 hash verification of core files every 30 seconds
+- On integrity violation: stops modules, sends notification, initiates rollback, enters **SAFE MODE**
+
+### GPU Support (NVIDIA Jetson)
+
+To enable GPU-accelerated TTS (Piper ONNX + CUDA), start with the GPU override file:
 
 ```bash
-cd /opt/selena-core
-docker compose up -d
-
-# Check logs
-docker compose logs -f core
-docker compose logs -f agent
-
-# Status
-curl http://localhost:7070/api/v1/health
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 ```
 
-### Systemd (Without Docker)
+This adds the NVIDIA container runtime to the selena-core service.
+
+---
+
+## Environment Variables
+
+All configuration is managed through the `.env` file in the project root. Copy `.env.example` to `.env` and adjust as needed.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORE_PORT` | `7070` | API server port |
+| `CORE_DATA_DIR` | `/var/lib/selena` | Data directory (DB, models) |
+| `CORE_SECURE_DIR` | `/secure` | Encrypted secrets directory |
+| `CORE_LOG_LEVEL` | `INFO` | Log level |
+| `DEBUG` | `false` | Enable debug mode and Swagger UI |
+| `PLATFORM_API_URL` | `https://smarthome-lk.com/api/v1` | Cloud platform URL |
+| `PLATFORM_DEVICE_HASH` | *(empty)* | Device identification hash |
+| `UI_PORT` | `80` | Web UI port |
+| `UI_HTTPS` | `true` | Enable HTTPS for UI |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path |
+| `MODULE_CONTAINER_IMAGE` | `smarthome-modules:latest` | User module container image |
+| `GOOGLE_CLIENT_ID` | *(empty)* | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | *(empty)* | Google OAuth secret |
+| `TUYA_CLIENT_ID` | *(empty)* | Tuya integration client ID |
+| `TUYA_CLIENT_SECRET` | *(empty)* | Tuya integration secret |
+| `TAILSCALE_AUTH_KEY` | *(empty)* | Tailscale VPN auth key |
+| `GEMINI_API_KEY` | *(empty)* | Cloud LLM fallback key |
+| `DEV_MODULE_TOKEN` | *(empty)* | Development token for testing |
+| `OLLAMA_MODELS_DIR` | *(empty)* | Ollama model storage directory |
+
+---
+
+## core.yaml Configuration
+
+The main configuration file is located at `/opt/selena-core/config/core.yaml`. See [Configuration Reference](configuration.md) for all available options.
+
+---
+
+## Systemd Services
+
+To run SelenaCore as a system service that starts on boot, install the following unit file.
+
+### smarthome-core.service
+
+```ini
+# /etc/systemd/system/smarthome-core.service
+[Unit]
+Description=SelenaCore Smart Home Hub
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/opt/selena-core
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
 
 ```bash
-# Install services
-sudo cp smarthome-core.service /etc/systemd/system/
-sudo cp smarthome-agent.service /etc/systemd/system/
-sudo cp smarthome-modules.service /etc/systemd/system/
-
 sudo systemctl daemon-reload
-sudo systemctl enable smarthome-core smarthome-agent smarthome-modules
-sudo systemctl start smarthome-core
-
-# Verify
-sudo systemctl status smarthome-core
-journalctl -u smarthome-core -f
+sudo systemctl enable smarthome-core.service
+sudo systemctl start smarthome-core.service
 ```
+
+### Additional Services
+
+| Service | Purpose |
+|---------|---------|
+| `smarthome-agent.service` | Integrity monitoring agent |
+| `smarthome-modules.service` | Module bus gateway |
+| `selena-display.service` | UI kiosk mode (see [Kiosk Setup](kiosk-setup.md)) |
 
 ---
 
 ## Onboarding Wizard
 
-After first launch:
+On first start, SelenaCore enters setup mode and walks the user through initial configuration.
 
-1. **With a monitor:** the browser opens automatically → `http://localhost:80`
-2. **Without a monitor (headless):**
-   - If Wi-Fi is available — the core creates an access point `SmartHome-Setup` / password `smarthome`
-   - Connect from your phone → open `192.168.4.1`
-
-### Wizard Steps
-
-| Step | Description |
-|------|-------------|
-| `wifi` | Connect to Wi-Fi |
-| `language` | Interface language (`uk`, `en`) |
-| `device_name` | Device name |
-| `timezone` | Time zone |
-| `stt_model` | Speech recognition model |
-| `tts_voice` | Text-to-speech voice |
-| `admin_user` | Create administrator account |
-| `platform` | Connect to SmartHome LK platform (optional) |
-| `import` | Import devices (Home Assistant, Tuya, Philips Hue) |
+1. Creates a WiFi access point: `SmartHome-Setup`
+2. Opens a web wizard at `http://192.168.4.1`
+3. Wizard steps:
+   - Language selection
+   - WiFi network configuration
+   - Device name
+   - Voice engine selection
+   - User profile creation
+   - Display settings
+   - Platform link
+4. After completion, the system restarts in normal mode
 
 ---
 
-## Audio
+## Operations
 
-### Auto-detection
+### Health Check
 
-The core automatically detects available devices. To verify:
-
-```bash
-# List ALSA cards
-arecord -l    # inputs
-aplay -l      # outputs
-
-# USB microphone should appear as card 1
-```
-
-### I2S Microphone (INMP441)
+Verify the system is running correctly:
 
 ```bash
-# Add to /boot/config.txt
-echo "dtoverlay=googlevoicehat-soundcard" | sudo tee -a /boot/config.txt
-sudo reboot
-
-# Verify after reboot
-arecord -l
+curl http://localhost:7070/api/v1/health
 ```
 
-### Bluetooth Speaker
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "version": "...",
+  "mode": "normal",
+  "uptime": 12345,
+  "integrity": "ok"
+}
+```
+
+### Viewing Logs
 
 ```bash
-# Via bluetoothctl (API endpoint for Bluetooth pairing not yet implemented)
-bluetoothctl
-  power on
-  scan on
-  pair AA:BB:CC:DD:EE:FF
-  trust AA:BB:CC:DD:EE:FF
-  connect AA:BB:CC:DD:EE:FF
-  quit
+# Follow core logs in real time
+docker compose logs -f selena-core
+
+# Filter logs for a specific module
+docker compose logs -f selena-core | grep "module-name"
+
+# View log files on disk
+ls /var/log/selena/
 ```
 
-### Force Audio Device Selection
+### Data Directories
 
-```bash
-# In .env
-AUDIO_FORCE_INPUT=hw:2,0
-AUDIO_FORCE_OUTPUT=bluez_sink.AA_BB_CC
-```
+| Path | Contents |
+|------|----------|
+| `/var/lib/selena/` | SQLite database, voice models, backups |
+| `/var/lib/selena/models/vosk/` | Vosk STT models |
+| `/var/lib/selena/models/piper/` | Piper TTS models |
+| `/secure/` | Encrypted tokens, AES keys |
+| `/secure/module_tokens/` | Module authentication tokens |
 
 ---
 
 ## Updating
 
+Pull the latest changes and rebuild:
+
 ```bash
 cd /opt/selena-core
-git pull origin main
-
-# Rebuild and restart
-docker compose down
+git pull
 docker compose build
 docker compose up -d
-
-# Update core.manifest after core update
-python3 agent/manifest.py --update
 ```
 
----
-
-## Firewall (iptables)
-
-```bash
-# Apply rules from script
-sudo bash scripts/setup_firewall.sh
-
-# Manually — basic rules
-sudo iptables -A INPUT -i lo -j ACCEPT
-sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT   # UI (LAN)
-sudo iptables -A INPUT -p tcp --dport 7070 -j DROP     # Core API (localhost only)
-sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT     # SSH
-
-# Save
-sudo netfilter-persistent save
-```
+Alternatively, use the `update_manager` system module for automatic over-the-air updates.
 
 ---
 
 ## Backup
 
-### Local Backup to USB
+The `backup_manager` system module handles automated backups:
 
-> **Note:** Backup REST endpoints are not yet implemented. Use the backup module UI or trigger via the cli:
+- **Local backups:** SQLite database and configuration files
+- **Cloud backups:** To configured remote storage
 
-```bash
-python3 -m system_modules.backup_manager.local_backup --destination /media/usb0
-```
-
-### Cloud Backup
-
-Data is encrypted E2E (PBKDF2 + AES-256-GCM) before being sent to the platform:
-
-> **Note:** Cloud backup REST endpoint is not yet implemented. Configure cloud backup through the Settings page in the UI.
-
----
-
-## Monitoring
+For manual backup, copy the data and secrets directories:
 
 ```bash
-# System status
-curl http://localhost:7070/api/v1/system/info | python3 -m json.tool
-
-# Integrity Agent
-curl http://localhost:7070/api/v1/integrity/status | python3 -m json.tool
-
-# Hardware stats — available via UI API (not v1 public API):
-curl http://localhost:80/api/ui/modules/hw-monitor/stats | python3 -m json.tool
+sudo cp -r /var/lib/selena/ /path/to/backup/selena_data/
+sudo cp -r /secure/ /path/to/backup/selena_secure/
 ```
 
 ---
 
-## FAQ
+## Troubleshooting
 
-**Q: Module won't start after installation**
-A: Check status: `GET /api/v1/modules/{name}`. Status `ERROR` → check Docker logs: `docker logs selena-module-{name}`.
-
-**Q: Voice assistant doesn't hear the wake-word**
-A: Check audio input: `arecord -d 5 test.wav && aplay test.wav`. If the recording is quiet — make sure microphone gain is enabled: `alsamixer`.
-
-**Q: SAFE MODE — how to exit**
-A: Cause — core files were modified. Automatic rollback from backup should work. If not:
-```bash
-sudo systemctl stop smarthome-core
-python3 agent/manifest.py --restore
-sudo systemctl start smarthome-core
-```
-
-**Q: Is port 7070 occupied?**
-A: `sudo lsof -i :7070` — find and terminate the conflicting process.
+| Problem | Solution |
+|---------|----------|
+| **Port 7070 in use** | Change `CORE_PORT` in `.env` and restart |
+| **No audio output or input** | Check the PulseAudio socket mount in `docker-compose.yml`; verify PulseAudio is running on the host |
+| **Module will not connect** | Verify `MODULE_TOKEN` and `SELENA_BUS_URL` are set correctly in the module environment |
+| **System entered Safe Mode** | Check integrity agent logs (`docker compose logs selena-agent`); verify core file hashes match expected values |
+| **Docker permission denied** | Ensure the current user is in the `docker` group, or run with `sudo` |
+| **Ollama models not loading** | Verify `OLLAMA_MODELS_DIR` points to an existing directory with sufficient disk space |

@@ -30,28 +30,34 @@ MODULE_MANIFEST_TEMPLATE = """\
   "type": "UI",
   "api_version": "1.0",
   "runtime_mode": "always_on",
-  "port": 8100,
-  "permissions": ["device.read", "events.subscribe", "events.publish"]
+  "permissions": ["devices.read", "events.subscribe", "events.publish"],
+  "intents": [],
+  "publishes": []
 }}
 """
 
 MODULE_MAIN_TEMPLATE = '''\
 """
-{name} — SelenaCore module
+{name} — SelenaCore module (WebSocket bus client)
 """
-import uvicorn
-from fastapi import FastAPI
-
-app = FastAPI(title="{name}")
+import asyncio
+from sdk.base_module import SmartHomeModule, intent, on_event, scheduled
 
 
-@app.get("/health")
-def health():
-    return {{"status": "ok", "module": "{name}"}}
+class Module(SmartHomeModule):
+    name = "{name}"
+    version = "0.1.0"
+
+    async def on_start(self) -> None:
+        self._log.info("Module %s started", self.name)
+
+    async def on_stop(self) -> None:
+        self._log.info("Module %s stopped", self.name)
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8100)
+    module = Module()
+    asyncio.run(module.start())
 '''
 
 DOCKERFILE_TEMPLATE = """\
@@ -78,7 +84,7 @@ def cmd_new_module(name: str) -> None:
     target.mkdir()
     (target / "manifest.json").write_text(MODULE_MANIFEST_TEMPLATE.format(name=name))
     (target / "main.py").write_text(MODULE_MAIN_TEMPLATE.format(name=name))
-    (target / "requirements.txt").write_text("fastapi\nuvicorn\nhttpx\n")
+    (target / "requirements.txt").write_text("websockets\nhttpx\n")
     (target / "Dockerfile").write_text(DOCKERFILE_TEMPLATE)
     (target / "tests").mkdir()
     (target / "tests" / "__init__.py").touch()
@@ -87,9 +93,9 @@ def cmd_new_module(name: str) -> None:
     print(f"  Edit {name}/main.py and {name}/manifest.json to get started")
 
 
-def cmd_dev(port: int = 8100) -> None:
-    """Start module in dev mode with uvicorn hot reload."""
-    os.execvp("uvicorn", ["uvicorn", "main:app", "--reload", "--port", str(port)])
+def cmd_dev() -> None:
+    """Start module in dev mode (connects to core bus)."""
+    os.execvp(sys.executable, [sys.executable, "main.py"])
 
 
 def cmd_test() -> None:
@@ -150,8 +156,7 @@ def main() -> None:
     p_new = sub.add_parser("new-module", help="Scaffold a new module")
     p_new.add_argument("name", help="Module name")
 
-    p_dev = sub.add_parser("dev", help="Start module in dev mode")
-    p_dev.add_argument("--port", type=int, default=8100)
+    sub.add_parser("dev", help="Start module in dev mode (connects to bus)")
 
     sub.add_parser("test", help="Run module tests")
 
@@ -165,7 +170,7 @@ def main() -> None:
     if args.command == "new-module":
         cmd_new_module(args.name)
     elif args.command == "dev":
-        cmd_dev(args.port)
+        cmd_dev()
     elif args.command == "test":
         cmd_test()
     elif args.command == "publish":

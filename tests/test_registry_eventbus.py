@@ -212,11 +212,10 @@ class TestModuleValidator:
             "version": "1.0.0",
             "type": "UI",
             "api_version": "1",
-            "port": 8100,
             "permissions": ["devices.read"],
         }
         result = validate_manifest(manifest)
-        assert result.valid is True  # port is deprecated but ignored
+        assert result.valid is True
 
     def test_missing_required_fields(self):
         from core.module_loader.validator import validate_manifest
@@ -244,7 +243,7 @@ class TestModuleValidator:
             "version": "1.0.0",
             "type": "SYSTEM",
             "api_version": "1",
-            "port": 8100,
+            "port": 9999,
             "permissions": [],
         }
         result = validate_manifest(manifest)

@@ -1,293 +1,292 @@
-# Розгортання SelenaCore на Raspberry Pi
+# Посібник з розгортання та встановлення SelenaCore
 
-🇬🇧 [English version](../deployment.md)
-
-## Підтримувані платформи
-
-| Пристрій | Підтримка | Рекомендовано |
-|----------|-----------|---------------|
-| Raspberry Pi 5 (8 GB) | ✅ Повна | Так — включно з LLM |
-| Raspberry Pi 5 (4 GB) | ✅ Повна | Так |
-| Raspberry Pi 4 (4/8 GB) | ✅ Повна | Без LLM |
-| Raspberry Pi 4 (2 GB) | ⚠️ Обмежена | LLM вимкнено |
-| Debian x86-64 / ARM | ✅ | Так |
+Цей посібник охоплює апаратні вимоги, встановлення, налаштування та поточну експлуатацію розумного хабу SelenaCore.
 
 ---
 
-## Підготовка системи
+## Підтримуване обладнання
 
-### 1. Операційна система
+| Платформа | Примітки |
+|-----------|----------|
+| Raspberry Pi 4/5 | Рекомендовано 4 ГБ+ оперативної пам'яті |
+| NVIDIA Jetson Orin Nano | Підтримка TTS/STT з GPU-прискоренням |
+| Будь-який Linux SBC (ARM64 або x86_64) | Протестовано на Ubuntu та дистрибутивах на базі Debian |
 
-Рекомендовано: **Raspberry Pi OS 64-bit Lite** (без GUI) або **Debian 12 Bookworm**.
+**Мінімальні вимоги:**
 
-```bash
-# Оновити систему
-sudo apt update && sudo apt upgrade -y
-
-# Обов'язкові залежності
-sudo apt install -y \
-    python3.11 python3.11-venv python3-pip \
-    git curl wget \
-    sqlite3 \
-    ffmpeg \
-    alsa-utils pulseaudio \
-    iptables iptables-persistent \
-    avahi-daemon avahi-utils \
-    bluetooth bluez bluez-tools
-```
-
-### 2. Docker
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Перелогінитись або: newgrp docker
-
-# Перевірити
-docker run --rm hello-world
-```
-
-### 3. Клонувати репозиторій
-
-```bash
-sudo mkdir -p /opt/selena-core
-sudo chown $USER:$USER /opt/selena-core
-cd /opt/selena-core
-
-git clone https://github.com/dotradepro/SelenaCore.git .
-```
+- **2 ГБ оперативної пам'яті** — достатньо для базової функціональності без локальної LLM
+- **4 ГБ+ оперативної пам'яті** — необхідно для повної функціональності, включаючи локальний LLM-інференс на базі Ollama
 
 ---
 
-## Налаштування
+## Вимоги до ОС та програмного забезпечення
 
-### 4. Конфігурація .env
+- Ubuntu 22.04+ або Raspberry Pi OS (Bookworm)
+- Docker 24+ та Docker Compose v2
+- Python 3.11+
+
+---
+
+## Встановлення
+
+### Автоматичне налаштування (рекомендовано)
 
 ```bash
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+sudo bash scripts/setup.sh
+```
+
+Скрипт налаштування виконує наступні кроки по порядку:
+
+1. Встановлення системних пакетів (FFmpeg, PortAudio, VLC, ALSA, PulseAudio)
+2. Встановлення Docker та Docker Compose
+3. Встановлення Python 3.11 та pip
+4. Створення директорій даних (`/var/lib/selena`, `/secure`)
+5. Генерація токенів автентифікації модулів
+6. Збірка Docker-образів
+7. Запуск усіх сервісів
+8. Відображення URL-адреси для доступу
+
+### Ручне налаштування
+
+```bash
+# Clone the repository
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+
+# Copy and edit the environment file
 cp .env.example .env
-nano .env
-```
+# Edit .env with your settings (see Environment Variables below)
 
-Мінімальні налаштування:
-
-```bash
-CORE_PORT=7070
-UI_PORT=80
-CORE_DATA_DIR=/var/lib/selena
-CORE_SECURE_DIR=/secure
-CORE_LOG_LEVEL=INFO
-DEBUG=false
-
-# Для підключення до платформи (опціонально):
-PLATFORM_API_URL=https://smarthome-lk.com/api/v1
-PLATFORM_DEVICE_HASH=           # заповнюється при реєстрації на платформі
-```
-
-### 5. Створити директорії
-
-```bash
-sudo mkdir -p /var/lib/selena
-sudo mkdir -p /secure/tokens
-sudo mkdir -p /secure/tls
-sudo mkdir -p /secure/core_backup
-sudo mkdir -p /var/log/selena
-
-sudo chown -R $USER:$USER /var/lib/selena /secure /var/log/selena
-sudo chmod 700 /secure
-```
-
-### 6. Ініціалізація сховища
-
-```bash
-cd /opt/selena-core
-
-# Створити core.manifest (SHA256 усіх файлів ядра)
-python3 agent/manifest.py --init
-
-# Згенерувати HTTPS сертифікат
-python3 scripts/generate_https_cert.py
+# Build and start
+docker compose build
+docker compose up -d
 ```
 
 ---
 
-## Запуск
+## Архітектура Docker
 
-### Docker Compose (рекомендовано)
+Файл `docker-compose.yml` визначає два сервіси.
+
+### selena-core (основний сервіс)
+
+Основний контейнер, що виконує застосунок SelenaCore.
+
+- **Образ:** Збирається з `Dockerfile.core` (базовий: `python:3.11-slim`)
+- **Мережевий режим:** `host` (необхідний для доступу до аудіо та пристроїв)
+- **Привілейований:** `true` (необхідний для доступу до обладнання)
+- **Відкриті порти:**
+  - `7070` — API-сервер
+  - `80` — веб-інтерфейс
+- **Томи:**
+  - `/var/run/docker.sock` — Docker-сокет для керування контейнерами модулів
+  - `selena_data:/var/lib/selena` — база даних, голосові моделі, резервні копії
+  - `selena_secure:/secure` — зашифровані токени та ключі
+  - PulseAudio-сокет — аудіо вхід/вихід
+  - Директорія моделей Ollama (якщо налаштовано)
+- **Перевірка стану:** `GET /api/v1/health` кожні 30 секунд
+- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk, Piper, Ollama
+
+### selena-agent (агент цілісності)
+
+Окремий контейнер, що безперервно моніторить цілісність ядра.
+
+- Виконує SHA256-перевірку хешів файлів ядра кожні 30 секунд
+- При порушенні цілісності: зупиняє модулі, надсилає сповіщення, ініціює відкат, переходить у **БЕЗПЕЧНИЙ РЕЖИМ**
+
+### Підтримка GPU (NVIDIA Jetson)
+
+Для увімкнення TTS з GPU-прискоренням (Piper ONNX + CUDA) запустіть з файлом перевизначення GPU:
 
 ```bash
-cd /opt/selena-core
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
 
-# Перевірити логи
-docker compose logs -f core
-docker compose logs -f agent
+Це додає NVIDIA container runtime до сервісу selena-core.
 
-# Статус
+---
+
+## Змінні середовища
+
+Усі налаштування керуються через файл `.env` у кореневій директорії проєкту. Скопіюйте `.env.example` до `.env` та налаштуйте за потребою.
+
+| Змінна | За замовчуванням | Опис |
+|--------|-----------------|------|
+| `CORE_PORT` | `7070` | Порт API-сервера |
+| `CORE_DATA_DIR` | `/var/lib/selena` | Директорія даних (БД, моделі) |
+| `CORE_SECURE_DIR` | `/secure` | Директорія зашифрованих секретів |
+| `CORE_LOG_LEVEL` | `INFO` | Рівень логування |
+| `DEBUG` | `false` | Увімкнути режим налагодження та Swagger UI |
+| `PLATFORM_API_URL` | `https://smarthome-lk.com/api/v1` | URL хмарної платформи |
+| `PLATFORM_DEVICE_HASH` | *(порожнє)* | Хеш ідентифікації пристрою |
+| `UI_PORT` | `80` | Порт веб-інтерфейсу |
+| `UI_HTTPS` | `true` | Увімкнути HTTPS для інтерфейсу |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Шлях до Docker-сокету |
+| `MODULE_CONTAINER_IMAGE` | `smarthome-modules:latest` | Образ контейнера для користувацьких модулів |
+| `GOOGLE_CLIENT_ID` | *(порожнє)* | Ідентифікатор клієнта Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | *(порожнє)* | Секрет Google OAuth |
+| `TUYA_CLIENT_ID` | *(порожнє)* | Ідентифікатор клієнта інтеграції Tuya |
+| `TUYA_CLIENT_SECRET` | *(порожнє)* | Секрет інтеграції Tuya |
+| `TAILSCALE_AUTH_KEY` | *(порожнє)* | Ключ автентифікації Tailscale VPN |
+| `GEMINI_API_KEY` | *(порожнє)* | Ключ для хмарного LLM (резервний) |
+| `DEV_MODULE_TOKEN` | *(порожнє)* | Токен розробки для тестування |
+| `OLLAMA_MODELS_DIR` | *(порожнє)* | Директорія зберігання моделей Ollama |
+
+---
+
+## Конфігурація core.yaml
+
+Основний файл конфігурації знаходиться за адресою `/opt/selena-core/config/core.yaml`. Дивіться [Довідник конфігурації](../configuration.md) для всіх доступних опцій.
+
+---
+
+## Сервіси systemd
+
+Щоб запускати SelenaCore як системний сервіс при завантаженні, встановіть наступний unit-файл.
+
+### smarthome-core.service
+
+```ini
+# /etc/systemd/system/smarthome-core.service
+[Unit]
+Description=SelenaCore Smart Home Hub
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/opt/selena-core
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Увімкнення та запуск:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable smarthome-core.service
+sudo systemctl start smarthome-core.service
+```
+
+### Додаткові сервіси
+
+| Сервіс | Призначення |
+|--------|-------------|
+| `smarthome-agent.service` | Агент моніторингу цілісності |
+| `smarthome-modules.service` | Шлюз Module Bus |
+| `selena-display.service` | Режим кіоску для інтерфейсу (дивіться [Налаштування кіоску](kiosk-setup.md)) |
+
+---
+
+## Майстер початкового налаштування
+
+При першому запуску SelenaCore переходить у режим налаштування та проводить користувача через початкову конфігурацію.
+
+1. Створює точку доступу WiFi: `SmartHome-Setup`
+2. Відкриває веб-майстер за адресою `http://192.168.4.1`
+3. Кроки майстра:
+   - Вибір мови
+   - Налаштування мережі WiFi
+   - Назва пристрою
+   - Вибір голосового рушія
+   - Створення профілю користувача
+   - Налаштування дисплея
+   - Підключення до платформи
+4. Після завершення система перезавантажується у звичайному режимі
+
+---
+
+## Експлуатація
+
+### Перевірка стану
+
+Перевірте, що система працює коректно:
+
+```bash
 curl http://localhost:7070/api/v1/health
 ```
 
-### Systemd (без Docker)
+Очікувана відповідь:
 
-```bash
-# Встановити сервіси
-sudo cp smarthome-core.service /etc/systemd/system/
-sudo cp smarthome-agent.service /etc/systemd/system/
-sudo cp smarthome-modules.service /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable smarthome-core smarthome-agent smarthome-modules
-sudo systemctl start smarthome-core
-
-# Перевірити
-sudo systemctl status smarthome-core
-journalctl -u smarthome-core -f
+```json
+{
+  "status": "ok",
+  "version": "...",
+  "mode": "normal",
+  "uptime": 12345,
+  "integrity": "ok"
+}
 ```
 
----
-
-## Onboarding Wizard
-
-Після першого запуску:
-
-1. **З монітором:** браузер відкриється автоматично → `http://localhost:80`
-2. **Без монітора (headless):**
-   - Якщо є Wi-Fi — ядро піднімає точку доступу `SmartHome-Setup` / пароль `smarthome`
-   - Підключіться з телефону → відкрийте `192.168.4.1`
-
-### Кроки Wizard
-
-| Крок | Опис |
-|------|------|
-| `wifi` | Підключитися до Wi-Fi |
-| `language` | Мова інтерфейсу (`uk`, `en`) |
-| `device_name` | Назва пристрою |
-| `timezone` | Часовий пояс |
-| `stt_model` | Вибір моделі розпізнавання мовлення |
-| `tts_voice` | Вибір голосу синтезу мовлення |
-| `admin_user` | Створити обліковий запис адміністратора |
-| `platform` | Підключення до платформи SmartHome LK (опціонально) |
-| `import` | Імпорт пристроїв (Home Assistant, Tuya, Philips Hue) |
-
----
-
-## Аудіо
-
-### Автодетект
-
-Ядро автоматично визначає доступні пристрої. Перевірити:
+### Перегляд логів
 
 ```bash
-# Список карт ALSA
-arecord -l    # входи
-aplay -l      # виходи
+# Follow core logs in real time
+docker compose logs -f selena-core
 
-# USB мікрофон повинен з'явитися як card 1
+# Filter logs for a specific module
+docker compose logs -f selena-core | grep "module-name"
+
+# View log files on disk
+ls /var/log/selena/
 ```
 
-### I2S мікрофон (INMP441)
+### Директорії даних
 
-```bash
-# Додати в /boot/config.txt
-echo "dtoverlay=googlevoicehat-soundcard" | sudo tee -a /boot/config.txt
-sudo reboot
-
-# Перевірити після перезавантаження
-arecord -l
-```
-
-### Bluetooth колонка
-
-```bash
-# Через bluetoothctl (API-endpoint для парування Bluetooth ще не реалізовано)
-bluetoothctl
-  power on
-  scan on
-  pair AA:BB:CC:DD:EE:FF
-  trust AA:BB:CC:DD:EE:FF
-  connect AA:BB:CC:DD:EE:FF
-  quit
-```
-
-### Примусовий вибір аудіопристрою
-
-```bash
-# В .env
-AUDIO_FORCE_INPUT=hw:2,0
-AUDIO_FORCE_OUTPUT=bluez_sink.AA_BB_CC
-```
+| Шлях | Вміст |
+|------|-------|
+| `/var/lib/selena/` | База даних SQLite, голосові моделі, резервні копії |
+| `/var/lib/selena/models/vosk/` | Моделі Vosk STT |
+| `/var/lib/selena/models/piper/` | Моделі Piper TTS |
+| `/secure/` | Зашифровані токени, AES-ключі |
+| `/secure/module_tokens/` | Токени автентифікації модулів |
 
 ---
 
 ## Оновлення
 
+Завантажте останні зміни та перезберіть:
+
 ```bash
 cd /opt/selena-core
-git pull origin main
-
-# Перезібрати та перезапустити
-docker compose down
+git pull
 docker compose build
 docker compose up -d
-
-# Оновити core.manifest після оновлення ядра
-python3 agent/manifest.py --update
 ```
+
+Альтернативно, використовуйте системний модуль `update_manager` для автоматичних оновлень по повітрю.
 
 ---
 
-## Брандмауер (iptables)
+## Резервне копіювання
+
+Системний модуль `backup_manager` виконує автоматичне резервне копіювання:
+
+- **Локальні резервні копії:** база даних SQLite та файли конфігурації
+- **Хмарні резервні копії:** на налаштоване віддалене сховище
+
+Для ручного резервного копіювання скопіюйте директорії даних та секретів:
 
 ```bash
-# Застосувати правила зі скрипту
-sudo bash scripts/setup_firewall.sh
-
-# Вручну — основні правила
-sudo iptables -A INPUT -i lo -j ACCEPT
-sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT   # UI (LAN)
-sudo iptables -A INPUT -p tcp --dport 7070 -j DROP     # Core API (лише localhost)
-sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT     # SSH
-
-# Зберегти
-sudo netfilter-persistent save
+sudo cp -r /var/lib/selena/ /path/to/backup/selena_data/
+sudo cp -r /secure/ /path/to/backup/selena_secure/
 ```
 
 ---
 
-## Бекап
+## Усунення несправностей
 
-### Локальний бекап на USB
-
-> **Примітка:** REST-endpoints для бекапу ще не реалізовані. Користуйтесь UI або CLI:
-
-```bash
-python3 -m system_modules.backup_manager.local_backup --destination /media/usb0
-```
-
-### Хмарний бекап
-
-Дані шифруються E2E (PBKDF2 + AES-256-GCM) перед відправкою на платформу:
-
-> **Примітка:** REST-endpoint хмарного бекапу ще не реалізовано. Налаштуйте хмарний бекап через сторінку налаштувань в UI.
-
----
-
-## Моніторинг
-
-```bash
-# Статус системи
-curl http://localhost:7070/api/v1/system/info | python3 -m json.tool
-
-# Integrity Agent
-curl http://localhost:7070/api/v1/integrity/status | python3 -m json.tool
-
-# Апаратний моніторинг — через UI API:
-curl http://localhost:80/api/ui/modules/hw-monitor/stats | python3 -m json.tool
-```
-
----
-
-## Часті запитання
-
-**Q: Модуль не запускається після встановлення**
-A: Перевірте статус: `GET /api/v1/modules/{name}`. Статус `ERROR` → дивіться логи Docker: `docker logs selena-module-{name}`.
+| Проблема | Рішення |
+|----------|---------|
+| **Порт 7070 зайнятий** | Змініть `CORE_PORT` у `.env` та перезапустіть |
+| **Немає аудіо виходу або входу** | Перевірте монтування PulseAudio-сокету в `docker-compose.yml`; переконайтеся, що PulseAudio запущено на хості |
+| **Модуль не підключається** | Переконайтеся, що `MODULE_TOKEN` та `SELENA_BUS_URL` правильно задані в середовищі модуля |
+| **Система увійшла в безпечний режим** | Перевірте логи агента цілісності (`docker compose logs selena-agent`); переконайтеся, що хеші файлів ядра відповідають очікуваним значенням |
+| **Docker: відмова в доступі** | Переконайтеся, що поточний користувач у групі `docker`, або запускайте з `sudo` |
+| **Моделі Ollama не завантажуються** | Переконайтеся, що `OLLAMA_MODELS_DIR` вказує на існуючу директорію з достатнім обсягом дискового простору |

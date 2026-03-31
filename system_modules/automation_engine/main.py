@@ -93,7 +93,7 @@ async def _subscribe_events() -> None:
                 headers={"Authorization": f"Bearer {MODULE_TOKEN}"},
                 json={
                     "event_types": event_types,
-                    "webhook_url": "http://localhost:8108/webhook/events",
+                    "webhook_url": "http://localhost:7070/webhook/events",  # Legacy — use SystemModule.subscribe() instead
                 },
             )
     except Exception as exc:

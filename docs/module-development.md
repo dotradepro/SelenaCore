@@ -1,545 +1,576 @@
-# Module Development for SelenaCore
+# Module Development Guide
 
-## What is a Module
+This guide covers everything you need to build, test, and distribute user modules for SelenaCore.
 
-> **Note:** This guide covers **user modules** (types: UI, INTEGRATION, DRIVER, AUTOMATION) that run in Docker containers.
-> **System modules** (type: SYSTEM) run in-process inside the core. They inherit from `SystemModule` (`core/module_loader/system_module.py`) and communicate with the core through direct Python calls, not WebSocket. See `AGENTS.md` §17 for system module architecture.
+## Overview
 
-A user module is an isolated microservice that runs in a Docker container and communicates with the core through the **Module Bus** (WebSocket connection to `ws://core:7070/api/v1/bus`).
+User modules extend SelenaCore with custom functionality. Each module runs in its own Docker container and communicates with the core through the WebSocket Module Bus. This isolation ensures that a misbehaving module cannot crash the core or interfere with other modules.
 
-A module can:
-- Register voice intents via bus announce
-- Subscribe to Event Bus events via bus
-- Publish events (except `core.*`)
-- Request Core API data via bus proxy (devices, secrets)
-- Store OAuth tokens through Secrets Vault
+## Module Types
 
-A module **cannot**:
-- Read `/secure/` directly
-- Access the core's SQLite database
-- Publish `core.*` events
-- Obtain an OAuth token directly (only via API proxy)
-- Stop other modules
+| Type | Purpose |
+|------|---------|
+| `UI` | Modules with a visual dashboard widget and/or settings page |
+| `INTEGRATION` | Third-party service integrations (cloud APIs, external platforms) |
+| `DRIVER` | Hardware device drivers (Zigbee dongles, serial peripherals) |
+| `AUTOMATION` | Rule engines, schedulers, scene controllers |
+| `IMPORT_SOURCE` | Data importers (CSV, database sync, migration tools) |
 
----
+> **Note:** The `SYSTEM` type is reserved for core-internal modules. User modules must use one of the five types listed above.
 
 ## Module Structure
 
-Minimum ZIP archive structure:
+A minimal module requires only `manifest.json` and `main.py`. The full directory layout:
 
 ```
-my-module.zip
-  manifest.json          <- required
-  main.py                <- entry point (asyncio.run)
-  requirements.txt       <- Python dependencies
-  locales/               <- i18n translation files
-    en.json
-    uk.json
-  icon.svg               <- UI icon (if type: UI)
+my-module/
+  manifest.json        # Module metadata and capabilities (required)
+  main.py              # Entry point (required)
+  locales/
+    en.json            # English translations
+    uk.json            # Ukrainian translations
+  widget.html          # UI widget rendered on the dashboard
+  settings.html        # Settings page for module configuration
+  icon.svg             # Module icon (SVG format)
+  tests/               # Unit and integration tests
 ```
 
----
+## manifest.json Reference
 
-## manifest.json
+The manifest declares your module's identity, capabilities, permissions, and resource limits. The core reads this file during installation and uses it to enforce access control at runtime.
+
+### Full Example
 
 ```json
 {
-  "name": "my-module",
-  "version": "1.0.0",
-  "description": "Brief module description",
-  "type": "UI",
-  "ui_profile": "FULL",
-  "api_version": "1.0",
-  "runtime_mode": "always_on",
-  "permissions": [
-    "devices.read",
-    "events.publish"
-  ],
-  "intents": [
-    {
-      "patterns": {
-        "en": ["weather", "forecast", "temperature outside"],
-        "uk": ["погода", "прогноз", "температура надворі"]
-      },
-      "priority": 50,
-      "description": "Answer weather questions"
-    }
-  ],
-  "publishes": [
-    "weather.module_started"
-  ],
-  "ui": {
-    "icon": "icon.svg",
-    "widget": {
-      "file": "widget.html",
-      "size": "2x1"
+    "name": "weather-module",
+    "version": "1.0.0",
+    "description": "Current weather and forecast via Open-Meteo",
+    "type": "UI",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "permissions": ["devices.read", "events.publish"],
+    "intents": [
+        {
+            "patterns": {
+                "uk": ["погода", "прогноз", "температур"],
+                "en": ["weather", "forecast", "temperatur"]
+            },
+            "priority": 50,
+            "description": "Answer weather questions"
+        }
+    ],
+    "publishes": ["weather.module_started"],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {"file": "widget.html", "size": "2x2"},
+        "settings": "settings.html"
     },
-    "settings": "settings.html"
-  },
-  "resources": {
-    "memory_mb": 128,
-    "cpu": 0.25
-  },
-  "author": "Your Name",
-  "license": "MIT"
+    "resources": {"memory_mb": 128, "cpu": 0.25}
 }
 ```
 
-### Required Fields
+### Field Reference
 
-| Field | Allowed Values | Notes |
-|-------|---------------|-------|
-| `name` | `[a-z0-9-]+` | RFC 1123 slug, unique name |
-| `version` | `1.2.3` | semver |
-| `type` | `UI`, `INTEGRATION`, `DRIVER`, `AUTOMATION`, `IMPORT_SOURCE` | SYSTEM — core only |
-| `api_version` | `"1.0"` | Current API version |
-| `permissions` | see below | List of permissions |
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Lowercase alphanumeric and hyphens, 2-64 characters. Must match the `name` class attribute in your Python module. |
+| `version` | string | Semantic version `X.Y.Z`. Must match the `version` class attribute. |
+| `type` | string | One of: `UI`, `INTEGRATION`, `DRIVER`, `AUTOMATION`, `IMPORT_SOURCE`. |
+| `ui_profile` | string | `HEADLESS` (no UI), `SETTINGS_ONLY`, `ICON_SETTINGS`, or `FULL` (widget + settings). |
+| `api_version` | string | Currently `"1.0"`. |
+| `runtime_mode` | string | `always_on` (runs continuously), `on_demand` (started when needed), `scheduled` (runs on a timer). |
+| `permissions` | array | Capabilities the module requires. See [Permissions](#permissions) below. |
+| `intents` | array | Voice intent definitions. See [Intents](#intents) below. |
+| `publishes` | array | Event types the module may emit. Events not listed here are rejected by the bus. |
+| `ui` | object | UI asset references: `icon` (SVG path), `widget` (HTML file + grid size), `settings` (HTML file). |
+| `resources` | object | Docker container limits: `memory_mb` (integer) and `cpu` (float, where 1.0 = one full core). |
 
 ### Permissions
 
-| Permission | Available for Types | Description |
-|------------|-------------------|-------------|
-| `devices.read` | all | Read devices via bus API proxy |
-| `devices.control` | all | POST /devices/{id}/control |
-| `events.publish` | all | Publish events via bus |
-| `events.subscribe_all` | all | Subscribe to wildcard `*` events |
-| `secrets.read` | all | Read secrets via bus API proxy |
-| `secrets.oauth` | INTEGRATION only | Start OAuth flow |
-| `secrets.proxy` | INTEGRATION only | API proxy through vault |
-| `modules.list` | all | List modules via bus API proxy |
+Permissions control what a module can access through the bus. Request only what you need.
+
+| Permission | Grants |
+|------------|--------|
+| `devices.read` | Read device list and state |
+| `devices.write` | Modify device state |
+| `events.subscribe` | Listen to EventBus events |
+| `events.publish` | Emit events (limited to types in `publishes`) |
 
 ### Intents
 
-Declare voice intent patterns in `manifest.json`. The core uses these for Tier 2 intent routing via Module Bus.
+Intent definitions allow your module to respond to voice commands. Each intent includes:
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `patterns` | Yes | `{"en": [...], "uk": [...]}` — regex patterns per language |
-| `priority` | No | 0-29 system, 30-49 core, 50-99 user (default: 50) |
-| `description` | No | Human-readable description |
-
-### runtime_mode
-
-| Value | Behavior |
-|-------|----------|
-| `always_on` | Starts with core, restarts on failure |
-| `on_demand` | Starts on request, stays while active |
-| `scheduled` | Starts on schedule (cron expression) |
-
-### ui_profile (for type: UI only)
-
-| Profile | What is Displayed |
-|---------|------------------|
-| `HEADLESS` | No UI |
-| `SETTINGS_ONLY` | Settings page only |
-| `ICON_SETTINGS` | Menu icon + settings |
-| `FULL` | Icon + dashboard widget + settings |
+- `patterns`: a dictionary keyed by language code (`en`, `uk`, etc.), where each value is an array of regex substrings that trigger this intent.
+- `priority`: an integer from 0-99. Lower values mean higher priority. **User modules should use 50-99** (0-49 is reserved for core modules).
+- `description`: a human-readable explanation of what this intent handles.
 
 ---
 
-## SDK — base_module.py
+## SDK Reference
+
+### SmartHomeModule Base Class
+
+All modules inherit from `SmartHomeModule`. Import it along with the decorator functions:
 
 ```python
+from sdk.base_module import SmartHomeModule, intent, on_event, scheduled
+```
+
+Your subclass must declare two class attributes that match the manifest:
+
+```python
+class MyModule(SmartHomeModule):
+    name = "my-module"       # Must match manifest.json "name"
+    version = "1.0.0"        # Must match manifest.json "version"
+```
+
+---
+
+## Decorators
+
+### @intent(pattern, order=50)
+
+Register a method as a voice intent handler.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pattern` | str | Regex pattern (case-insensitive) to match against user speech. |
+| `order` | int | Priority 0-99. Lower fires first. User modules should use 50-99. |
+
+The decorated method receives the raw text and a context dictionary. Return a result dictionary or signal that this handler cannot process the request:
+
+```python
+@intent(r"погода|weather|forecast", order=50)
+async def handle_weather(self, text: str, context: dict) -> dict:
+    lang = context.get("_lang", "en")
+
+    # If this handler cannot process the request, pass to the next handler:
+    if "weekly" in text:
+        return {"handled": False}
+
+    # Otherwise, return a response:
+    return {
+        "tts_text": self.t("current_weather", lang=lang, city="Kyiv", temp=12),
+        "data": {"temperature": 12, "condition": "cloudy"},
+    }
+```
+
+### @on_event(event_type)
+
+Subscribe to EventBus events. Supports wildcard patterns with `*`.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `event_type` | str | Event type string. Use `*` for wildcards (e.g., `device.*`). |
+
+```python
+@on_event("device.state_changed")
+async def on_device_changed(self, data: dict) -> None:
+    device_id = data.get("device_id")
+    new_state = data.get("state")
+    self._log.info("Device %s changed to %s", device_id, new_state)
+
+@on_event("device.*")
+async def on_any_device_event(self, data: dict) -> None:
+    self._log.debug("Device event: %s", data)
+```
+
+### @scheduled(cron)
+
+Run a method on a recurring schedule.
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| Simple interval | `"every:30s"` | Every 30 seconds |
+| Simple interval | `"every:5m"` | Every 5 minutes |
+| Simple interval | `"every:1h"` | Every hour |
+| Full cron | `"*/5 * * * *"` | Every 5 minutes (requires `apscheduler`) |
+
+```python
+@scheduled("every:10m")
+async def refresh_cache(self) -> None:
+    self._log.debug("Refreshing cache")
+    # ... update cached data ...
+```
+
+---
+
+## Lifecycle Methods
+
+Override these methods to hook into the module lifecycle. All are optional.
+
+```python
+async def on_start(self) -> None:
+    """Called once before the bus connection is established.
+    Use this to initialize resources, load config, set up state."""
+
+async def on_stop(self) -> None:
+    """Called during graceful shutdown.
+    Use this to clean up resources, close connections, flush buffers."""
+
+async def on_shutdown(self) -> None:
+    """Called when the core sends a shutdown notification.
+    Use this only for last-moment state saving. Keep it fast."""
+```
+
+---
+
+## Built-in Methods
+
+### publish_event
+
+Emit an event through the bus. The event type must be listed in the manifest `publishes` array.
+
+```python
+await self.publish_event("weather.module_started", {"status": "ready"})
+await self.publish_event("weather.data_updated", {
+    "city": "Kyiv",
+    "temperature": 12,
+    "condition": "cloudy",
+})
+```
+
+### api_request
+
+Call the core REST API through the bus proxy. Requests are subject to ACL enforcement based on your manifest permissions.
+
+```python
+result = await self.api_request(method: str, path: str, body: dict | None = None) -> dict
+```
+
+Examples:
+
+```python
+# List all devices
+devices = await self.api_request("GET", "/devices")
+
+# Get a specific device
+device = await self.api_request("GET", f"/devices/{device_id}")
+
+# Update device state
+await self.api_request("PATCH", f"/devices/{device_id}/state", {
+    "state": {"power": True}
+})
+
+# Publish an event (alternative to publish_event)
+await self.api_request("POST", "/events/publish", {
+    "type": "my.custom_event",
+    "source": self.name,
+    "payload": {"key": "value"},
+})
+```
+
+### update_capabilities
+
+Hot-reload the module's capabilities (re-announce to the bus) without reconnecting. Useful after dynamic configuration changes.
+
+```python
+await self.update_capabilities()
+```
+
+### t (translate)
+
+Translate a key using the module's locale files. Falls back through: requested language, then English, then the raw key string.
+
+```python
+text = self.t(key: str, lang: str | None = None, **kwargs) -> str
+```
+
+```python
+msg = self.t("current_weather", lang="uk", city="Kyiv", temp=12)
+err = self.t("fetch_error", lang="en")
+```
+
+### Logging
+
+Every module has a built-in logger at `self._log`:
+
+```python
+self._log.debug("Detailed trace info")
+self._log.info("Normal operational message")
+self._log.warning("Something unexpected but recoverable")
+self._log.error("Something failed: %s", error_message)
+```
+
+---
+
+## Environment Variables
+
+The core injects these environment variables into the module's Docker container at startup:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SELENA_BUS_URL` | WebSocket bus endpoint | `ws://localhost:7070/api/v1/bus` |
+| `MODULE_TOKEN` | Authentication token for the bus connection | (generated by core) |
+| `MODULE_DIR` | Absolute path to the module's working directory | (set by core) |
+| `PYTHONPATH` | Includes the project root and module directory | (set by core) |
+
+---
+
+## Connection Behavior
+
+The SDK handles bus connectivity automatically:
+
+- **Auto-reconnect** with exponential backoff: starts at 1 second, caps at 60 seconds, with 30% jitter to avoid thundering herd.
+- **Fatal disconnect reasons** that stop reconnection attempts: `invalid_token`, `permission_denied`. These indicate configuration problems that require manual intervention.
+- **Outbox queue**: up to 500 messages are buffered while disconnected. The queue is automatically flushed when the connection is restored. Messages beyond 500 are dropped (oldest first).
+
+---
+
+## Internationalization (i18n)
+
+### Setting Up Locale Files
+
+Create JSON files in the `locales/` directory, one per supported language:
+
+**locales/en.json**
+```json
+{
+    "current_weather": "{emoji} {city}: {sign}{temp}{unit}, {condition}. Feels like {fl_sign}{feels_like}{unit}. Humidity {humidity}%, wind {wind} m/s",
+    "fetch_error": "Could not fetch weather data",
+    "module_ready": "Weather module is ready"
+}
+```
+
+**locales/uk.json**
+```json
+{
+    "current_weather": "{emoji} {city}: {sign}{temp}{unit}, {condition}. Відчувається як {fl_sign}{feels_like}{unit}. Вологість {humidity}%, вітер {wind} м/с",
+    "fetch_error": "Не вдалося отримати дані про погоду",
+    "module_ready": "Модуль погоди готовий"
+}
+```
+
+### Using Translations
+
+```python
+# With named placeholders
+msg = self.t("current_weather", lang="uk", city="Kyiv", temp=12,
+             sign="+", unit="C", condition="хмарно",
+             emoji="cloudy", fl_sign="+", feels_like=9,
+             humidity=78, wind=5)
+
+# Simple key without placeholders
+err = self.t("fetch_error", lang="en")
+```
+
+**Fallback chain:** requested language -> `"en"` -> raw key string. If a key is missing from all locale files, the key name itself is returned.
+
+### Rules
+
+- Always add translations to **both** `en.json` and `uk.json`.
+- Logger messages are NOT translated (they stay in English for debugging).
+- Key format: `section.key` or flat keys (e.g., `current_weather`, `fetch_error`).
+
+---
+
+## Complete Example
+
+This is a fully working weather module demonstrating all major SDK features:
+
+```python
+"""Weather module for SelenaCore."""
 import asyncio
 from sdk.base_module import SmartHomeModule, intent, on_event, scheduled
 
-class MyModule(SmartHomeModule):
-    name = "my-module"
+
+class WeatherModule(SmartHomeModule):
+    name = "weather-module"
     version = "1.0.0"
 
-    # === Lifecycle ===
+    async def on_start(self) -> None:
+        """Initialize the module and announce readiness."""
+        self._log.info("Weather module started")
+        await self.publish_event("weather.module_started", {"status": "ready"})
 
-    async def on_start(self):
-        """Called once before bus connection."""
-        self._log.info("Module started")
-
-    async def on_stop(self):
-        """Called once during graceful stop (resource cleanup)."""
-        pass
-
-    async def on_shutdown(self):
-        """Called when core sends shutdown notification (lightweight, no cleanup)."""
-        pass
-
-    # === Voice Intents ===
-
-    @intent(r"weather|forecast|temperature", order=50)
+    @intent(r"погода|прогноз|weather|forecast|temperatur")
     async def handle_weather(self, text: str, context: dict) -> dict:
-        """Handle voice command. Return dict with tts_text and/or data."""
+        """Handle weather-related voice commands."""
         lang = context.get("_lang", "en")
-        forecast = await self._get_forecast()
+
+        # Fetch weather data (simplified for this example)
+        temperature = 12
+        condition = "cloudy"
+
         return {
-            "tts_text": self.t("forecast", lang=lang, temp=forecast["temp"]),
-            "data": forecast
+            "tts_text": self.t("current_weather", lang=lang,
+                               city="Kyiv", temp=temperature,
+                               sign="+", unit="C",
+                               condition=condition,
+                               emoji="cloudy",
+                               fl_sign="+", feels_like=9,
+                               humidity=78, wind=5),
+            "data": {
+                "temperature": temperature,
+                "condition": condition,
+            },
         }
 
-    # === Event handlers ===
-
     @on_event("device.state_changed")
-    async def handle_state_changed(self, payload: dict):
-        """Called on each device state change."""
-        device_id = payload["device_id"]
-        self._log.debug("Device %s state changed", device_id)
+    async def on_device_changed(self, data: dict) -> None:
+        """React to device state changes."""
+        self._log.info("Device changed: %s", data.get("device_id"))
 
-    @on_event("device.*")
-    async def handle_all_device_events(self, payload: dict):
-        """Wildcard subscription — matches device.state_changed, device.offline, etc."""
-        pass
+    @scheduled("every:10m")
+    async def refresh_cache(self) -> None:
+        """Periodically refresh cached weather data."""
+        self._log.debug("Cache refreshed")
 
-    # === Scheduled tasks ===
+    async def on_stop(self) -> None:
+        """Clean up on shutdown."""
+        self._log.info("Weather module stopping")
 
-    @scheduled("every:5m")
-    async def periodic_sync(self):
-        """Runs every 5 minutes."""
-        devices = await self.api_request("GET", "/devices")
-        for device in devices.get("devices", []):
-            await self._sync_device(device)
 
-    # === Core API ===
+if __name__ == "__main__":
+    module = WeatherModule()
+    asyncio.run(module.start())
+```
 
-    async def _sync_device(self, device: dict):
-        await self.publish_event("climate.updated", {
-            "device_id": device["device_id"],
-            "temperature": 22.5
-        })
+---
 
-# Entry point
+## API Access from Modules
+
+Modules access the core API exclusively through the bus proxy (not direct HTTP). All requests are subject to ACL enforcement based on manifest permissions.
+
+```python
+# List all devices (requires devices.read permission)
+devices = await self.api_request("GET", "/devices")
+
+# Get a specific device
+device = await self.api_request("GET", f"/devices/{device_id}")
+
+# Update device state (requires devices.write permission)
+await self.api_request("PATCH", f"/devices/{device_id}/state", {
+    "state": {"power": True}
+})
+
+# Publish an event (requires events.publish permission)
+await self.api_request("POST", "/events/publish", {
+    "type": "my.custom_event",
+    "source": self.name,
+    "payload": {}
+})
+```
+
+---
+
+## Entry Point
+
+Every module must include this block at the bottom of `main.py`:
+
+```python
 if __name__ == "__main__":
     module = MyModule()
     asyncio.run(module.start())
 ```
 
-### Available SmartHomeModule Methods
-
-```python
-# === Lifecycle (override) ===
-await self.on_start()       # called once before bus connection
-await self.on_stop()        # called once during graceful stop
-await self.on_shutdown()    # called on core shutdown notification
-
-# === Events ===
-await self.publish_event(event_type, payload)  # publish via bus (buffered if disconnected)
-
-# === Core API proxy (via bus) ===
-result = await self.api_request("GET", "/devices")
-result = await self.api_request("POST", "/devices/abc/control", body={"action": "on"})
-device = await self.get_device("device-123")
-
-# === Capabilities ===
-await self.update_capabilities()  # hot-reload intents/subscriptions without reconnect
-
-# === i18n (autonomous, no core dependency) ===
-text = self.t("greeting", lang="uk")           # from locales/uk.json
-text = self.t("status", count=5, name="sensor") # with interpolation
-
-# === Properties ===
-self._log          # logging.Logger with module name
-self.name          # module name
-self.version       # module version
-```
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `SELENA_BUS_URL` | WebSocket bus URL | `ws://selena-core:7070/api/v1/bus` |
-| `MODULE_TOKEN` | Authentication token | (set by sandbox) |
-| `MODULE_DIR` | Module directory path | `/opt/selena-module` |
+The `start()` method (inherited from `SmartHomeModule`) handles the full lifecycle: reading environment variables, connecting to the bus, authenticating, registering capabilities, and entering the event loop.
 
 ---
 
-## Voice Intents — Adding Voice Commands
+## Testing
 
-Any module can receive voice commands by declaring **intent patterns**. When a user says a matching phrase, IntentRouter routes the command via Module Bus.
-
-### Flow
-
-```
-User speaks → STT → IntentRouter Tier 2 → Module Bus → @intent handler → TTS response
-```
-
-### User Module — Using `@intent` Decorator
-
-```python
-from sdk.base_module import SmartHomeModule, intent
-
-class MyModule(SmartHomeModule):
-    name = "my-module"
-
-    @intent(r"погода|прогноз|weather|forecast", order=50)
-    async def handle_weather(self, text: str, context: dict) -> dict:
-        lang = context.get("_lang", "en")
-        forecast = await self._get_forecast()
-        return {
-            "tts_text": self.t("forecast", lang=lang, temp=forecast["temp"]),
-            "data": forecast
-        }
-```
-
-**Declare patterns in `manifest.json`** (takes priority over decorators for bus routing):
-
-```json
-{
-  "intents": [
-    {
-      "patterns": {
-        "en": ["weather", "forecast", "what.*weather"],
-        "uk": ["погода", "прогноз", "яка погода"]
-      },
-      "priority": 50,
-      "description": "Answer weather questions"
-    }
-  ]
-}
-```
-
-**Response contract:**
-
-```json
-{
-  "handled": true,
-  "tts_text": "Spoken response text for TTS",
-  "data": { "any": "structured data" }
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `handled` | Yes | `true` if the module processed the command |
-| `tts_text` | No | Text to speak via TTS. Empty = no speech |
-| `data` | No | Arbitrary data (logged, available in events) |
-
-### System Module — Direct Intent Registration
-
-System modules register patterns directly with IntentRouter (no bus overhead).
-
-**Step 1 — Define patterns** (`intent_patterns.py`):
-
-```python
-from system_modules.llm_engine.intent_router import SystemIntentEntry
-
-MY_INTENTS = [
-    SystemIntentEntry(
-        module="my-module",
-        intent="mymodule.do_action",
-        priority=5,
-        description="Execute custom action",
-        patterns={
-            "uk": [r"зроби\s+(?P<what>.+)"],
-            "en": [r"do\s+(?P<what>.+)"],
-        },
-    ),
-]
-```
-
-**Step 2 — Register in `start()`, unregister in `stop()`:**
-
-```python
-async def start(self):
-    self.subscribe(["voice.intent"], self._on_event)
-
-    from system_modules.llm_engine.intent_router import get_intent_router
-    from .intent_patterns import MY_INTENTS
-    for entry in MY_INTENTS:
-        get_intent_router().register_system_intent(entry)
-
-async def stop(self):
-    from system_modules.llm_engine.intent_router import get_intent_router
-    get_intent_router().unregister_system_intents(self.name)
-    self._cleanup_subscriptions()
-```
-
-### Parameter Extraction with Named Groups
-
-Use `(?P<name>...)` in regex to extract parameters:
-
-```python
-# Pattern: r"set volume (?:to )?(?P<level>\d+)"
-# Input:   "set volume to 50"
-# Result:  params = {"level": "50"}
-```
-
-### Multi-language Patterns
-
-Always provide patterns for all supported languages (`uk`, `en`). If the current language has no patterns, `en` is used as fallback.
-
-```python
-patterns={
-    "uk": [r"увімкни\s+радіо"],
-    "en": [r"(?:play|turn on)\s+radio"],
-}
-```
-
----
-
-## Local Development
-
-### Step 1 — Create Module
+Use `mock_core.py` to test modules locally without a running SelenaCore instance. It provides a fake bus endpoint that simulates the core's WebSocket server:
 
 ```bash
-mkdir my-climate-module && cd my-climate-module
-# Create: manifest.json, main.py, requirements.txt, locales/
+# Terminal 1: Start the mock core
+python mock_core.py
+
+# Terminal 2: Run your module
+SELENA_BUS_URL=ws://localhost:7070/api/v1/bus \
+MODULE_TOKEN=test-token \
+MODULE_DIR=./my-module \
+python my-module/main.py
 ```
 
-### Step 2 — Run Module
+The mock core accepts connections, responds to API requests with stub data, and logs all events your module publishes.
+
+---
+
+## Packaging and Installation
+
+### Creating a Package
+
+Bundle your module directory into a ZIP file:
 
 ```bash
-# Set environment variables
-export SELENA_BUS_URL=ws://localhost:7070/api/v1/bus
-export MODULE_TOKEN=test-module-token-xyz
-export MODULE_DIR=$(pwd)
-
-# Run (connects to core via WebSocket bus)
-python main.py
+cd my-module/
+zip -r ../my-module-1.0.0.zip manifest.json main.py locales/ widget.html settings.html icon.svg
 ```
 
-### Step 3 — Develop Module
+Ensure `manifest.json` is at the root of the ZIP archive, not nested inside a subdirectory.
+
+### Installing a Module
+
+Upload the ZIP file to a running SelenaCore instance:
+
+```bash
+curl -X POST http://localhost:7070/api/v1/modules/install \
+  -F "file=@my-module-1.0.0.zip"
+```
+
+The core will:
+1. Validate the manifest.
+2. Extract the module files.
+3. Build a Docker container with the specified resource limits.
+4. Start the module and establish the bus connection.
+
+---
+
+## Common Patterns
+
+### Responding to a Voice Command and Updating a Device
 
 ```python
-# main.py
-import asyncio
-from sdk.base_module import SmartHomeModule, intent, on_event
+@intent(r"turn on|увімкни", order=60)
+async def handle_turn_on(self, text: str, context: dict) -> dict:
+    lang = context.get("_lang", "en")
+    device_id = self._parse_device(text)
 
-class MyClimateModule(SmartHomeModule):
-    name = "my-climate-module"
-    version = "1.0.0"
+    await self.api_request("PATCH", f"/devices/{device_id}/state", {
+        "state": {"power": True}
+    })
 
-    async def on_start(self):
-        self._log.info("Climate module started")
-
-    @intent(r"temperature|temp|how hot")
-    async def handle_temp(self, text: str, context: dict) -> dict:
-        return {"tts_text": "Current temperature is 22 degrees"}
-
-if __name__ == "__main__":
-    module = MyClimateModule()
-    asyncio.run(module.start())
+    return {"tts_text": self.t("device_on", lang=lang, device=device_id)}
 ```
 
-### Step 4 — Tests
+### Reacting to Events and Publishing New Ones
 
-```bash
-pytest tests/
+```python
+@on_event("sensor.temperature_changed")
+async def on_temp_change(self, data: dict) -> None:
+    temp = data.get("value", 0)
+    if temp > 30:
+        await self.publish_event("automation.alert", {
+            "message": f"High temperature: {temp}C",
+            "severity": "warning",
+        })
 ```
 
-### Step 5 — Install to SelenaCore
+### Periodic Data Fetch with Error Handling
 
-```bash
-smarthome publish --core http://localhost:7070
-# Builds ZIP, sends to POST /api/v1/modules/install
-# Tracks status via SSE
+```python
+@scheduled("every:5m")
+async def poll_external_api(self) -> None:
+    try:
+        result = await self._fetch_data()
+        await self.publish_event("integration.data_updated", result)
+    except Exception as exc:
+        self._log.error("Failed to poll API: %s", exc)
 ```
 
 ---
 
-## Localization (i18n) for Modules
+## Quick Reference Checklist
 
-All user-facing strings (TTS responses, error messages) must use the `self.t()` function. No hardcoded text.
-
-### User Module (Docker)
-
-User modules bundle their own locale files and use **autonomous i18n** (no `core.i18n` dependency):
-
-```
-my-module/
-  locales/
-    en.json
-    uk.json
-  main.py
-```
-
-Use `self.t()` — loads from `locales/` directory:
-
-```python
-class MyModule(SmartHomeModule):
-    name = "my-module"
-
-    @intent(r"weather|forecast")
-    async def handle(self, text: str, context: dict) -> dict:
-        lang = context.get("_lang", "en")
-        return {"tts_text": self.t("forecast", lang=lang, temp=22)}
-```
-
-`locales/en.json`:
-```json
-{
-  "forecast": "Temperature is {temp} degrees"
-}
-```
-
-`locales/uk.json`:
-```json
-{
-  "forecast": "Температура {temp} градусів"
-}
-```
-
-### System Module
-
-System modules use `core.i18n` and register translations in `config/locales/`:
-
-```python
-from core.i18n import t
-
-text = t("mymodule.greeting", lang="uk")
-text = t("mymodule.status", count=5, name="sensor")
-```
-
-### Rules
-
-- Always add translations to **both** `en.json` and `uk.json`
-- Fallback chain: requested language -> `en` -> raw key (never crashes)
-- Logger messages are NOT translated
-- Key format: `section.key` (e.g. `media.paused`, `api.device_not_found`)
-
----
-
-## manifest.json Structure for OAuth Integration
-
-```json
-{
-  "name": "gmail-integration",
-  "type": "INTEGRATION",
-  "permissions": [
-    "secrets.oauth",
-    "secrets.proxy"
-  ],
-  "oauth": {
-    "provider": "google",
-    "scopes": ["gmail.readonly", "gmail.send"]
-  }
-}
-```
-
-Usage in code:
-
-```python
-# Start OAuth flow (QR code on screen)
-result = await self.api_request("POST", "/secrets/oauth/start", body={
-    "module": "gmail-integration",
-    "provider": "google",
-    "scopes": ["gmail.readonly"]
-})
-
-# Execute API request — core injects the token
-resp = await self.api_request("POST", "/secrets/proxy", body={
-    "module": "gmail-integration",
-    "url": "https://gmail.googleapis.com/gmail/v1/users/me/messages",
-    "method": "GET"
-})
-# Token NEVER leaves the core
-```
-
----
-
-## Common Errors
-
-| Error | Cause | Solution |
-|-------|-------|----------|
-| `403 Forbidden` on event publish | Event type starts with `core.` or not in `publishes` | Update manifest `publishes` |
-| `403 Forbidden` on `/modules/{name}/stop` | Attempting to stop a SYSTEM module | Not allowed |
-| `422 Unprocessable Entity` on install | Error in manifest.json | Check required fields |
-| `409 Conflict` on install | Module with this name already exists | DELETE first |
-| Module not connecting to bus | Wrong `SELENA_BUS_URL` or `MODULE_TOKEN` | Check env variables |
-| `intent.module_unavailable` TTS | Module disconnected or circuit breaker open | Check module logs |
-| `400 Bad Request` on proxy | URL is not https:// or private IP | Only public HTTPS endpoints |
+1. Create `manifest.json` with a unique `name`, correct `type`, and minimal `permissions`.
+2. Create `main.py` with a class inheriting from `SmartHomeModule`.
+3. Set `name` and `version` class attributes matching the manifest.
+4. Implement `on_start` for initialization.
+5. Add intent handlers, event listeners, and scheduled tasks as needed.
+6. Create locale files in `locales/` for all supported languages.
+7. Add the `if __name__ == "__main__"` entry point.
+8. Test locally with `mock_core.py`.
+9. Package as a ZIP and install via `POST /api/v1/modules/install`.

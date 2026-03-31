@@ -26,8 +26,6 @@ agent:
 modules:
   container_image: "smarthome-modules:latest"
   sandbox_image: "smarthome-sandbox:latest"
-  port_range_start: 8100
-  port_range_end: 8200
 
 voice:
   wake_word_sensitivity: 0.5

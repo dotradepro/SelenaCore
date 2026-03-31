@@ -1,286 +1,634 @@
-# Архітектура SelenaCore
+# Архітектура системи SelenaCore
 
-🇬🇧 [English version](../architecture.md)
+## Зміст
+
+- [Огляд](#огляд)
+- [Архітектура високого рівня](#архітектура-високого-рівня)
+- [Послідовність завантаження](#послідовність-завантаження)
+- [Система модулів](#система-модулів)
+- [EventBus](#eventbus)
+- [Module Bus](#module-bus)
+- [Система інтентів](#система-інтентів)
+- [Реєстр пристроїв](#реєстр-пристроїв)
+- [Рівень API](#рівень-api)
+- [Хмарна синхронізація](#хмарна-синхронізація)
+- [Конфігурація](#конфігурація)
+- [Інтернаціоналізація](#інтернаціоналізація)
+- [Агент цілісності](#агент-цілісності)
+- [Розгортання](#розгортання)
+- [Послідовність завершення роботи](#послідовність-завершення-роботи)
+- [Додаткові матеріали](#додаткові-матеріали)
+
+---
 
 ## Огляд
 
-SelenaCore складається з двох незалежних процесів:
+SelenaCore — це **локальний хаб розумного дому**, побудований на FastAPI, розроблений для роботи на маломіцному обладнанні, такому як Raspberry Pi. Вся логіка автоматизації, управління пристроями та обробка голосу виконуються на локальній машині. Хмарне з'єднання є необов'язковим і обмежується синхронізацією heartbeat та прийомом віддалених команд.
+
+**Основний технологічний стек:**
+
+| Компонент         | Технологія                          |
+|-------------------|-------------------------------------|
+| Веб-фреймворк     | FastAPI (порт 7070)                 |
+| База даних        | SQLite через SQLAlchemy 2.0 async   |
+| Асинхронний драйвер | aiosqlite                        |
+| Цикл подій        | Один цикл asyncio                   |
+| Точка входу       | `core/main.py` (FastAPI lifespan)   |
+| Мова              | Python 3.11                         |
+
+---
+
+## Архітектура високого рівня
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      smarthome-core (Docker)                     │
-│                                                                   │
-│  FastAPI :7070 (Core API)          FastAPI :80 (UI Core)       │
-│       │                                   │                      │
-│  ┌────┴────────────────────────────────────┴───────────────┐     │
-│  │             EventBus (asyncio.Queue)                     │     │
-│  └────┬────────────────────────────────────┬───────────────┘     │
-│       │                                   │                      │
-│  Device Registry              Module Loader (Plugin Manager)      │
-│  (SQLite)                     + DockerSandbox                    │
-│                                                                   │
-│  CloudSync ← HMAC             Voice Core (STT/TTS/wake-word)     │
-│  IntegrityAgent (30s)         LLM Engine (Ollama)                │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                         SelenaCore Process                        |
+|   port 7070 (FastAPI)                                            |
+|                                                                  |
+|  +------------------+   +------------------+   +--------------+  |
+|  | 22 SYSTEM        |   |    EventBus      |   |  Device      |  |
+|  | modules          |<->| (asyncio.Queue)  |<->|  Registry    |  |
+|  | (in-process)     |   |                  |   |  (SQLite)    |  |
+|  +------------------+   +--------+---------+   +--------------+  |
+|                                  |                               |
+|                         +--------+---------+                     |
+|                         |   Module Bus     |                     |
+|                         |   (WebSocket)    |                     |
+|                         +--------+---------+                     |
+|                                  |                               |
++----------------------------------+-------------------------------+
+                                   |
+                    +--------------+--------------+
+                    |              |              |
+               +----+----+  +----+----+  +------+------+
+               | Docker  |  | Docker  |  | Docker      |
+               | Module  |  | Module  |  | Module      |
+               | (user)  |  | (user)  |  | (user)      |
+               +---------+  +---------+  +-------------+
 
-┌─────────────────────────────────────────────────────────────────┐
-│              smarthome-agent (systemd, окремий процес)            │
-│                                                                   │
-│  SHA256 перевірка файлів ядра кожні 30 сек                       │
-│  При порушенні: стоп модулів → повідомлення → відкат → SAFE MODE │
-└─────────────────────────────────────────────────────────────────┘
+  Окремий процес:
+  +----------------------------+
+  | Integrity Agent            |
+  | SHA256 hash check / 30s   |
+  | Safe mode enforcement      |
+  +----------------------------+
 ```
 
 ---
 
-## Компоненти
+## Послідовність завантаження
 
-### Модель виконання модулів
+Процедура запуску визначена в обробнику lifespan FastAPI у `core/main.py`. Кроки виконуються у строгому порядку:
 
-SelenaCore використовує **дворівневу модель виконання** для економії RAM (~580 МБ на Raspberry Pi):
-
-| Тип | Виконання | Порт | Зв'язок з ядром | Контейнер |
-|-----|-----------|------|-----------------|------------|
-| **SYSTEM** | In-process через `importlib` | Немає | Прямі Python-виклики + `SystemModule` ABC | smarthome-core (спільний) |
-| **Користувацькі (UI/INTEGRATION/DRIVER/AUTOMATION)** | Docker sandbox | 8100–8200 | HTTP API + webhook | smarthome-modules |
-
-**Системні модулі** наслідують `SystemModule` (`core/module_loader/system_module.py`) та завантажуються через `sandbox.py → _start_in_process()`. Їх `APIRouter` монтується в core FastAPI app за адресою `/api/ui/modules/{name}/`. Вони працюють з EventBus та Device Registry через прямі Python-виклики — без HTTP.
-
-**Користувацькі модулі** працюють в ізольованих Docker-контейнерах з власними портами.
+```
+1. _setup_logging()
+   |  Читання logging.yaml або перехід на базову конфігурацію
+   v
+2. Create SQLAlchemy async engine + tables
+   |  Ініціалізація бази даних SQLite
+   v
+3. Inject session factory into sandbox
+   |  Системні модулі отримують доступ до бази даних
+   v
+4. EventBus.start()
+   |  Споживач asyncio.Queue починає роботу
+   v
+5. Publish core.startup event
+   |  Слухачі повідомлені
+   v
+6. CloudSync.start()
+   |  Цикл heartbeat починається (необов'язково)
+   v
+7. Scan system_modules/ -> load in-process -> mount routers
+   |  22 вбудовані модулі активовано
+   v
+8. Scan modules/ -> start user modules
+   |  Docker-контейнери запущено, bus-з'єднання прийнято
+   v
+9. "SelenaCore ready on port 7070"
+```
 
 ---
 
-## Додаткова документація
+## Система модулів
+
+SelenaCore підтримує два різних типи модулів, які використовують спільний EventBus, але принципово відрізняються способом виконання.
+
+### Системні модулі (in-process)
+
+| Властивість       | Значення                                        |
+|-------------------|-------------------------------------------------|
+| Кількість         | 22 вбудованих                                   |
+| Базовий клас      | `SystemModule` (`core/module_loader/system_module.py`) |
+| Виконання         | In-process через Python `importlib`             |
+| Ізоляція          | Відсутня (спільний процес)                      |
+| Витрати RAM       | ~0 МБ (без контейнера)                          |
+| Доступ до EventBus | Прямі async-колбеки (DirectSubscription)       |
+| Доступ до БД      | Пряма сесія SQLAlchemy                          |
+| API               | Необов'язковий FastAPI роутер на `/api/ui/modules/{name}/` |
+| Розташування      | Каталог `system_modules/`                       |
+
+**Вбудовані системні модулі:**
+
+```
+voice_core           llm_engine           ui_core
+user_manager         automation_engine    scheduler
+device_watchdog      protocol_bridge      notification_router
+media_player         presence_detection   hw_monitor
+backup_manager       remote_access        network_scanner
+import_adapters      energy_monitor       update_manager
+notify_push          secrets_vault        weather_service
+```
+
+### Користувацькі модулі (Docker-контейнери)
+
+| Властивість       | Значення                                        |
+|-------------------|-------------------------------------------------|
+| Базовий клас      | `SmartHomeModule` (`sdk/base_module.py`)        |
+| Виконання         | Окремі Docker-контейнери                        |
+| Комунікація       | WebSocket Module Bus                            |
+| Bus endpoint      | `ws://core:7070/api/v1/bus?token=TOKEN`         |
+| Окремі порти      | Немає — весь трафік через єдиний bus            |
+
+**Типи користувацьких модулів:**
+
+| Тип               | Призначення                                     |
+|-------------------|-------------------------------------------------|
+| UI                | Панелі користувацького інтерфейсу               |
+| INTEGRATION       | Конектори до сторонніх сервісів                  |
+| DRIVER            | Драйвери пристроїв та протоколів                |
+| AUTOMATION        | Логіка користувацької автоматизації             |
+| IMPORT_SOURCE     | Імпортери зовнішніх даних                       |
+
+### Життєвий цикл модуля
+
+```
+  [Discovered]
+       |
+       v
+  [Installed] --module.installed-->
+       |
+       v
+  [Started]   --module.started--->  (підписка EventBus активна)
+       |
+       v
+  [Running]   <-- нормальна робота -->
+       |
+       v
+  [Stopped]   --module.stopped--->
+       |
+       v
+  [Removed]   --module.removed--->
+```
+
+---
+
+## EventBus
+
+**Джерело:** `core/eventbus/bus.py`
+
+EventBus — це центральна нервова система SelenaCore. Це система публікації/підписки на основі asyncio.Queue з максимальним розміром черги 10 000 повідомлень та політикою видалення найстаріших при переповненні.
+
+### Канали доставки
+
+```
+  Publisher
+      |
+      v
+  +---+-----------+
+  |   EventBus    |
+  | (Queue: 10K)  |
+  +---+-------+---+
+      |       |
+      v       v
+  Direct    Module Bus
+  Subscr.   WebSocket
+  (system)  (user modules)
+```
+
+1. **DirectSubscription** — in-process async-колбеки, які використовуються системними модулями. Нульова вартість серіалізації, доставка за мікросекунди.
+2. **Module Bus WebSocket** — події серіалізуються в JSON і доставляються через WebSocket-з'єднання до користувацьких модулів, які працюють у Docker-контейнерах.
+
+### Простір імен подій
+
+Усі типи подій визначені у `core/eventbus/types.py`:
+
+| Простір імен | Події                                                               |
+|-------------|---------------------------------------------------------------------|
+| `core.*`    | startup, shutdown, integrity_violation, safe_mode_entered, safe_mode_exited |
+| `device.*`  | state_changed, registered, removed, offline, online, discovered     |
+| `module.*`  | installed, started, stopped, error, removed                         |
+| `sync.*`    | command_received, command_ack, connection_lost, connection_restored  |
+| `voice.*`   | wake_word, recognized, intent, response, privacy_on, privacy_off    |
+
+**Правило захисту:** Події у просторі імен `core.*` можуть публікуватися лише основним процесом. Модулі не можуть створювати події core.
+
+---
+
+## Module Bus
+
+**Джерело:** `core/module_bus.py`
+
+Module Bus — це комунікаційний рівень, натхненний CAN-bus, який мультиплексує весь трафік користувацьких модулів через єдиний WebSocket endpoint.
+
+### Принципи проєктування
+
+- **Core є головним вузлом.** Модулі підключаються ДО core, ніколи навпаки.
+- **Єдиний endpoint:** `/api/v1/bus` — без окремих портів для модулів.
+- **Подвійні черги повідомлень** на кожне з'єднання для розділення критичного та некритичного трафіку.
+
+### Типи повідомлень
+
+| Повідомлення       | Напрямок         | Призначення                        |
+|--------------------|------------------|------------------------------------|
+| `announce`         | module -> core   | Модуль реєструється при підключенні |
+| `re_announce`      | module -> core   | Модуль перереєструється після перепідключення |
+| `announce_ack`     | core -> module   | Реєстрацію підтверджено            |
+| `intent`           | core -> module   | Інтент маршрутизовано до обробника |
+| `intent_response`  | module -> core   | Обробник повертає результат        |
+| `event`            | двонаправлений   | Пересилання подій EventBus         |
+| `ping` / `pong`    | двонаправлений   | Keepalive                          |
+| `api_request`      | module -> core   | Модуль викликає API core           |
+| `api_response`     | core -> module   | Core повертає результат API        |
+| `shutdown`         | core -> module   | Сигнал коректного завершення       |
+
+### Архітектура подвійних черг
+
+Кожне WebSocket-з'єднання підтримує дві незалежні черги:
+
+```
+  Module Connection
+  +---------------------------------------+
+  |                                       |
+  |  Critical Queue (backpressure)        |
+  |  - Max size: 100                      |
+  |  - Used for: intent, api_request,     |
+  |    api_response, intent_response      |
+  |  - Blocks sender when full            |
+  |                                       |
+  |  Event Queue (drop-oldest)            |
+  |  - Max size: 1000                     |
+  |  - Used for: event messages           |
+  |  - Drops oldest when full             |
+  |                                       |
+  +---------------------------------------+
+```
+
+Така архітектура гарантує, що потік некритичних подій ніколи не блокує обробку інтентів або API-викликів.
+
+### Circuit Breaker
+
+Якщо модуль не відповідає протягом 30 секунд, bus активує circuit breaker для цього модуля. Модуль тимчасово виключається з маршрутизації інтентів до відновлення.
+
+### Дозволи ACL
+
+Кожен тип модуля має попередньо визначений набір дозволених типів повідомлень та підписок на події. Bus перевіряє ці дозволи для кожного повідомлення.
+
+---
+
+## Система інтентів
+
+**Джерело:** `system_modules/llm_engine/intent_router.py`
+
+Маршрутизатор інтентів використовує 4-рівневий каскад. Кожен рівень перевіряється по порядку; перший збіг виграє. Така архітектура балансує між швидкістю та глибиною розуміння.
+
+```
+  User utterance
+       |
+       v
+  +----+----+
+  | Tier 1  |  Fast Matcher (правила на ключових словах/regex з YAML)
+  | ~0 ms   |  Визначені у YAML-конфігураційних файлах
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 2  |  System Module Intents (in-process regex)
+  | ~us     |  Зареєстровані системними модулями при запуску
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 3  |  Module Bus Intents (користувацькі модулі через WebSocket)
+  | ~ms     |  Зареєстровані через повідомлення announce з regex-шаблонами
+  +----+----+
+       | miss
+       v
+  +----+----+
+  | Tier 4  |  Ollama LLM (семантичне розуміння)
+  | 3-8 sec |  Потребує 5+ ГБ RAM, працює локально
+  +----+----+
+       |
+       v
+    Response
+```
+
+**Деталі рівнів:**
+
+| Рівень | Джерело         | Затримка  | Механізм                        | Витрати RAM |
+|--------|-----------------|----------|---------------------------------|-------------|
+| 1      | Fast Matcher    | ~0 мс   | Ключові слова та regex-правила з YAML | Мінімальні |
+| 2      | System Modules  | ~мкс    | In-process regex + пріоритет    | Мінімальні  |
+| 3      | Module Bus      | ~мс     | Зворотний шлях через WebSocket з regex | Мінімальні |
+| 4      | Ollama LLM      | 3-8 с   | Повний семантичний висновок моделі | 5+ ГБ    |
+
+Маршрутизація інтентів підтримує **впорядкування за пріоритетом** та **зіставлення regex-шаблонів** на всіх рівнях. Модулі реєструють свої шаблони інтентів разом із числовим пріоритетом; обробники з вищим пріоритетом перевіряються першими в межах кожного рівня.
+
+---
+
+## Реєстр пристроїв
+
+**Джерело:** `core/registry/`
+
+Реєстр пристроїв — це постійне сховище для всіх відомих пристроїв, їхнього поточного стану та історичних даних.
+
+### Схема бази даних (SQLAlchemy ORM)
+
+**Таблиця Device:**
+
+| Стовпець     | Тип      | Опис                                     |
+|--------------|----------|------------------------------------------|
+| device_id    | UUID     | Первинний ключ, автогенерований          |
+| name         | String   | Зручна для людини назва пристрою         |
+| type         | String   | Категорія пристрою (light, sensor тощо)  |
+| protocol     | String   | Протокол зв'язку (zigbee, mqtt...)       |
+| state        | JSON     | Поточний стан пристрою                   |
+| capabilities | JSON     | Підтримувані функції та діапазони значень |
+| last_seen    | DateTime | Часова мітка останнього зв'язку          |
+| module_id    | String   | Ідентифікатор модуля-власника            |
+| meta         | JSON     | Довільні метадані                        |
+
+**Таблиця StateHistory:**
+
+- Зберігає останні **1 000 змін стану** для кожного пристрою.
+- Кожен запис містить попередній стан, новий стан та часову мітку.
+- Старіші записи видаляються автоматично.
+
+**Таблиця AuditLog:**
+
+- Зберігає до **10 000 записів** з автоматичною ротацією.
+- Логує адміністративні дії: реєстрацію пристроїв, видалення, зміни конфігурації.
+
+---
+
+## Рівень API
+
+### Конвеєр Middleware
+
+Запити проходять через middleware у такому порядку:
+
+```
+  Incoming request
+       |
+       v
+  RequestIdMiddleware       -- Присвоює унікальний заголовок X-Request-ID
+       |
+       v
+  RateLimitMiddleware       -- 120 запитів за 60 секунд
+       |
+       v
+  CORSMiddleware            -- Політика крос-доменних запитів
+       |
+       v
+  Route handler
+```
+
+### Аутентифікація
+
+- Аутентифікація за допомогою **Bearer token** для доступу модулів та зовнішнього API.
+- Токени зберігаються у `/secure/module_tokens/`.
+- Маршрути UI (`/api/ui/*`) не потребують аутентифікації, але доступні лише з localhost.
+
+### Групи маршрутів
+
+**Core API (`/api/v1/*`) — з аутентифікацією:**
+
+| Маршрут      | Призначення                              |
+|--------------|------------------------------------------|
+| `/system`    | Інформація про систему, стан здоров'я    |
+| `/devices`   | CRUD пристроїв та запити стану           |
+| `/events`    | Інспекція та публікація подій EventBus   |
+| `/integrity` | Статус та звіти перевірки цілісності     |
+| `/modules`   | Управління життєвим циклом модулів       |
+| `/secrets`   | Доступ до сховища секретів               |
+| `/intents`   | Маршрутизація та тестування інтентів     |
+| `/bus`       | WebSocket endpoint Module Bus            |
+
+**UI API (`/api/ui/*`) — лише localhost, без аутентифікації:**
+
+| Маршрут         | Призначення                           |
+|-----------------|---------------------------------------|
+| `/ui`           | Обслуговування панелі UI              |
+| `/setup`        | Майстер початкового налаштування      |
+| `/voice_engines`| Конфігурація голосових рушіїв         |
+
+### Документація Swagger
+
+Доступна за адресою `/docs` лише коли `DEBUG=true` у змінних середовища.
+
+---
+
+## Хмарна синхронізація
+
+**Джерело:** `core/cloud_sync/sync.py`
+
+Хмарне з'єднання є необов'язковим і спроєктоване як мінімальне. Core ніколи не залежить від доступності хмари для локальної роботи.
+
+| Параметр              | Значення                           |
+|-----------------------|------------------------------------|
+| Віддалений сервер     | smarthome-lk.com                   |
+| Інтервал heartbeat    | 60 секунд                          |
+| Підпис запитів        | HMAC-SHA256                        |
+| Тайм-аут опитування команд | 55 секунд (long-poll)         |
+| Відступ (початковий)  | 5 секунд                           |
+| Відступ (максимальний)| 300 секунд                         |
+| Стратегія відступу    | Експоненційна                      |
+
+```
+  SelenaCore                          smarthome-lk.com
+     |                                      |
+     |--- heartbeat (HMAC-SHA256) --------->|
+     |<-- 200 OK ---------------------------|
+     |                                      |
+     |--- long-poll /commands ------------->|
+     |         (55s timeout)                |
+     |<-- command payload ------------------|
+     |                                      |
+     |--- command ack --------------------->|
+     |                                      |
+```
+
+При збої мережі клієнт синхронізації відступає експоненційно від 5 до 300 секунд перед повторною спробою.
+
+---
+
+## Конфігурація
+
+SelenaCore використовує модель конфігурації з двох джерел.
+
+### Змінні середовища (.env)
+
+Керуються через **Pydantic BaseSettings** у `core/config.py` за допомогою класу `CoreSettings`. Усі поля типізовані та валідуються при запуску.
+
+**Основні налаштування:**
+
+| Змінна            | Значення за замовчуванням | Опис                          |
+|-------------------|--------------------------|-------------------------------|
+| `CORE_PORT`       | 7070                     | Порт прослуховування FastAPI  |
+| `CORE_DATA_DIR`   | /var/lib/selena          | Каталог постійних даних       |
+| `CORE_SECURE_DIR` | /secure                  | Сховище токенів та секретів   |
+| `DEBUG`           | false                    | Увімкнення режиму налагодження та /docs |
+
+### YAML-конфігурація (core.yaml)
+
+Використовується для структурованої конфігурації, яка погано вписується у плоскі змінні середовища (налаштування модулів, пресети логування, правила автоматизації).
+
+**Пріоритет:** Змінні середовища перевизначають значення YAML, де обидва джерела визначають однакове налаштування.
+
+---
+
+## Інтернаціоналізація
+
+**Джерело:** `core/i18n.py`
+
+| Функція              | Реалізація                                    |
+|----------------------|-----------------------------------------------|
+| Формат               | Плоскі JSON-файли з ключами через крапку      |
+| Ланцюг резервного пошуку | Запитана мова -> `en` -> необроблений ключ |
+| Підтримка модулів    | Реєстрація локалей для кожного модуля         |
+| Кешування            | TTL-кеш 10 секунд для системної мови          |
+
+Модулі реєструють власні файли локалей при запуску. Функція `t()` розв'язує ключі через ланцюг резервного пошуку, гарантуючи, що UI завжди відображає зрозумілий текст, навіть коли переклад відсутній.
+
+---
+
+## Агент цілісності
+
+**Джерело:** `agent/`
+
+Агент цілісності працює як **окремий процес** поряд із core. Це сторожовий модуль, який забезпечує, що кодова база core не була змінена.
+
+### Цикл роботи
+
+```
+  every 30 seconds:
+       |
+       v
+  Compute SHA256 hashes of core files
+       |
+       v
+  Compare against known-good manifest
+       |
+       +-- match -----> OK, sleep 30s
+       |
+       +-- mismatch --> VIOLATION DETECTED
+                             |
+                             v
+                        Stop all modules
+                             |
+                             v
+                        Notify (core.integrity_violation event)
+                             |
+                             v
+                        Attempt rollback
+                             |
+                             v
+                        Enter SAFE MODE
+                             |
+                             v
+                        Publish core.safe_mode_entered
+```
+
+У **безпечному режимі** залишаються активними лише основні функції core. Усі користувацькі модулі зупиняються і не можуть бути перезапущені, доки проблему цілісності не буде вирішено.
+
+---
+
+## Розгортання
+
+### Архітектура Docker Compose
+
+```
+  docker-compose.yml
+  +--------------------------------------------------+
+  |                                                  |
+  |  +------------------+    +-------------------+   |
+  |  | core             |    | agent             |   |
+  |  | Dockerfile.core  |    | Integrity Agent   |   |
+  |  | Host networking  |    | Separate process  |   |
+  |  | Privileged mode  |    |                   |   |
+  |  +------------------+    +-------------------+   |
+  |         |                        |               |
+  |         v                        v               |
+  |  +-------------+    +------------------+         |
+  |  | selena_data |    | selena_secure    |         |
+  |  | (volume)    |    | (volume)         |         |
+  |  +-------------+    +------------------+         |
+  |                                                  |
+  +--------------------------------------------------+
+```
+
+### Контейнер Core (Dockerfile.core)
+
+| Властивість     | Значення                                           |
+|-----------------|----------------------------------------------------|
+| Базовий образ   | python:3.11-slim                                   |
+| Режим мережі    | host                                               |
+| Привілеї        | privileged (доступ до обладнання)                  |
+| Системні пакети | ffmpeg, portaudio, VLC, ALSA libs, PulseAudio      |
+
+Мережа host та привілейований режим необхідні для:
+- Прямого доступу до аудіообладнання (мікрофон, динаміки) для обробки голосу.
+- Доступу до USB-пристроїв та GPIO-пінів для мостів протоколів (Zigbee, Z-Wave dongles).
+- Multicast/broadcast для протоколів виявлення пристроїв.
+
+### Томи
+
+| Том             | Призначення                                        |
+|-----------------|----------------------------------------------------|
+| selena_data     | База даних, дані модулів, логи, резервні копії     |
+| selena_secure   | Токени, секрети, сертифікати                       |
+
+---
+
+## Послідовність завершення роботи
+
+Коректне завершення роботи дзеркально відображає послідовність завантаження у зворотному порядку, гарантуючи відсутність втрати даних:
+
+```
+1. CloudSync.stop()
+   |  Зупинка heartbeat та опитування команд
+   v
+2. Publish core.shutdown event
+   |  Усі слухачі повідомлені
+   v
+3. Module Bus shutdown_all(drain_ms=5000)
+   |  Надсилання shutdown усім користувацьким модулям
+   |  Очікування до 5 секунд для дренажу черг
+   v
+4. Shutdown in-process system modules
+   |  Виклик stop() кожного системного модуля
+   v
+5. EventBus.stop()
+   |  Споживач черги зупинено
+   v
+6. Database engine dispose
+   |  Усі з'єднання закриті, WAL checkpoint
+   v
+   Process exit
+```
+
+5-секундне вікно дренажу для Module Bus гарантує, що користувацькі модулі мають час зберегти свій стан та підтвердити завершення роботи до того, як їхні WebSocket-з'єднання будуть розірвані.
+
+---
+
+## Додаткові матеріали
 
 | Тема | Документ |
 |------|----------|
-| Автентифікація користувачів та QR-флоу | [docs/uk/user-manager-auth.md](user-manager-auth.md) |
-| Протокол модулів (токени, HMAC, вебхуки) | [docs/uk/module-core-protocol.md](module-core-protocol.md) |
-| Розробка модулів (SDK, manifest) | [docs/uk/module-development.md](module-development.md) |
-| Розробка віджетів (widget.html, i18n) | [docs/uk/widget-development.md](widget-development.md) |
-| Деплой та systemd | [docs/uk/deployment.md](deployment.md) |
-
----
-
-### 1. Core API (`core/api/`)
-
-REST-сервер на FastAPI, порт `7070`. Точка входу для всіх модулів.
-
-**Middleware:**
-- `X-Request-Id` генерується для кожного запиту, пробрасується через `contextvars`
-- CORS — дозволено лише `localhost`
-- Rate limiting — 120 зап/хв (зовнішні), 600 зап/хв (LAN/localhost); SSE та статика — виняток
-
-**Авторизація (`core/api/auth.py`):**
-- `Authorization: Bearer <module_token>` обов'язковий для всіх endpoints крім `/health`
-- Токен зберігається як plaintext файл `/secure/module_tokens/<name>.token`; в dev-режимі підтримується `DEV_MODULE_TOKEN`
-- Гранулярна перевірка дозволів не реалізована в v1 — будь-який валідний токен отримує повний доступ до API
-
----
-
-### 2. Device Registry (`core/registry/`)
-
-SQLite-сховище пристроїв через SQLAlchemy 2.0 async.
-
-**Таблиці:**
-- `devices` — пристрої (id, name, type, protocol, state JSON, capabilities, last_seen, module_id, meta)
-- `state_history` — останні 1000 станів на пристрій (архів)
-- `audit_log` — всі дії користувачів (10 000 записів, ротація)
-
-**Автоматична подія:**
-При `PATCH /devices/{id}/state` автоматично публікується `device.state_changed` в Event Bus.
-
----
-
-### 3. Event Bus (`core/eventbus/`)
-
-```python
-# Публікація
-await bus.publish(event)          # кладе в asyncio.Queue
-
-# Підписка (користувацькі модулі — webhook)
-await bus.subscribe("device.*", webhook_url)  # wildcard
-
-# Підписка (системні модулі — in-process)
-bus.subscribe_direct(sub_id, module_id, ["device.*"], callback)
-
-# Доставка (background task)
-# Webhook: POST http://module:810X/webhook/events
-# Direct:  asyncio.create_task(callback(event))
-X-Selena-Signature: sha256=<hmac>    # HMAC-SHA256 підпис (лише webhook)
-```
-
-**Захист:**
-- `core.*` події не можна публікувати з модуля → 403 Forbidden
-- HMAC-SHA256 підпис на кожну webhook-доставку
-
----
-
-### 4. Module Loader (`core/module_loader/`)
-
-#### Життєвий цикл модуля
-
-```
-UPLOADED → VALIDATING → READY → RUNNING → STOPPED → REMOVED
-                                    ↓
-                                  ERROR
-```
-
-#### Встановлення модуля
-
-1. Upload ZIP → `/api/v1/modules/install`
-2. **Validator** (`validator.py`) перевіряє `manifest.json`:
-   - Обов'язкові поля: `name`, `version`, `type`, `api_version`, `port`, `permissions`
-   - `name` — RFC 1123 slug (`[a-z0-9-]+`)
-   - `version` — semver (`^\d+\.\d+\.\d+$`)
-   - `port` — 8100–8200
-   - `permissions` — лише дозволені значення
-3. **Sandbox** — тестування в `smarthome-sandbox` контейнері (--rm)
-4. **DockerSandbox** — запуск в `smarthome-modules` на виділеному порту
-
-#### Захист SYSTEM-модулів
-
-Модулі з `type: SYSTEM` не можна зупинити через API → 403 Forbidden.
-
----
-
-### 5. Integrity Agent (`agent/`)
-
-Незалежний процес (systemd юніт `smarthome-agent.service`), **не імпортує** ядро.
-
-```
-Кожні 30 сек:
-  1. Читає /secure/master.hash
-  2. Обчислює SHA256 файлу /secure/core.manifest
-  3. Порівнює → якщо розбіжність: MANIFEST TAMPERED
-  4. Для кожного файлу ядра: SHA256 з manifest vs SHA256 на диску
-  5. Якщо знайдено зміни:
-       а) Лог до /var/log/selena/integrity.log
-       б) Стоп усіх модулів (Docker stop)
-       в) Повідомлення платформі
-       г) Відкат з /secure/core_backup/ (3 спроби, 5 сек пауза)
-       ґ) Якщо відкат не вдався → SAFE MODE
-```
-
-**SAFE MODE:**
-- Core API лише для читання (лише `GET` методи)
-- Встановлення та запуск нових модулів заборонені
-- `GET /health` повертає `"mode": "safe_mode"`
-
----
-
-### 6. Cloud Sync (`core/cloud_sync/`)
-
-Background task: heartbeat кожні 60 сек + long-poll команд.
-
-```
-Heartbeat:
-  POST /api/v1/device/heartbeat
-  Headers:
-    X-Device-Hash: <hash>
-    X-Signature: sha256=<hmac>    # HMAC-SHA256 тіло + timestamp + ключ з /secure/platform.key
-  Body: { status, uptime, modules, integrity }
-
-Long-poll:
-  GET /api/v1/device/commands?device_hash=...&wait=30
-  → Обробка: INSTALL_MODULE | STOP_MODULE | REBOOT | SYNC_STATE | FACTORY_RESET
-  → Відповідь: POST /api/v1/device/commands/{id}/ack
-```
-
-**Retry:** експоненціальний backoff 2^n сек, max 300 сек.
-
----
-
-### 7. Voice Core (`system_modules/voice_core/`)
-
-| Компонент | Файл | Технологія |
-|-----------|------|------------|
-| Wake-word | `wake_word.py` | openWakeWord |
-| STT | `stt.py` | Vosk |
-| TTS | `tts.py` | Piper TTS |
-| Speaker ID | `speaker_id.py` | resemblyzer |
-| Аудіо I/O | `audio_manager.py` | ALSA + PipeWire |
-| WebRTC | — | браузер → Whisper pipeline |
-
-**Пріоритети аудіо входів:** `usb > i2s_gpio > bluetooth > hdmi > builtin`
-
----
-
-### 8. LLM Engine (`system_modules/llm_engine/`)
-
-Дворівневий маршрутизатор:
-
-```
-Рівень 1: Fast Matcher
-  Завантажує YAML з keyword/regex правилами
-  Матчинг за ~50 мс
-  Без мережі, без GPU
-
-Рівень 2: Ollama (fallback)
-  phi-3-mini (2.3 GB VRAM — Pi 5 8GB)
-  gemma:2b (1.5 GB)
-  Автовимкнення при RAM < 5 GB
-```
-
----
-
-### 9. Secrets Vault (`system_modules/secrets_vault/`)
-
-```
-/secure/tokens/<module>/<key>.enc
-```
-
-Кожен секрет: `nonce(12 байт) + ciphertext` (AES-256-GCM).
-Ключ шифрування: PBKDF2(HMAC-SHA256, passphrase, salt=module_name, iterations=480000).
-
-**OAuth Device Flow (RFC 8628):**
-1. `POST /api/v1/secrets/oauth/start` → device_code, QR-код
-2. Polling → токен зберігається зашифрованим
-3. Модуль використовує `POST /api/v1/secrets/proxy` — токен **ніколи не покидає** ядро
-
-**SSRF-захист proxy:**
-- Лише `https://`
-- Блокування приватних IP: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
-- Дозволених redirect немає (follow_redirects=False)
-
----
-
-## Мережева ізоляція
-
-```
-Зовнішня мережа
-    ↓ :443 (HTTPS — лише платформа та OAuth)
-    ↓ :80  (редирект)
-WiFi інтерфейс (wlan0 / wlan1)
-    ↓
-iptables FORWARD DROP
-    ↓
-localhost
-  :7070  Core API        (лише модулі + UI)
-  :80  UI Core         (браузер користувача)
-  :8100  Користувацький модуль 1 (тільки Docker sandbox — НЕ системні)
-  :8101  Користувацький модуль 2
-  ...
-  :8200  Користувацький модуль 100
-```
-
-Docker network: `selena-net` (driver: bridge, internal).
-Користувацькі модулі НЕ можуть спілкуватися між собою напряму.
-Системні модулі працюють у процесі ядра і НЕ мають мережевих портів.
-
----
-
-## Сховище даних
-
-```
-/var/lib/selena/selena.db     SQLite (Registry, AuditLog, Voice History)
-/var/lib/selena/modules/      Розпаковані модулі
-/var/lib/selena/backups/      Локальні архіви
-
-/secure/platform.key          API ключ платформи (600 байт, AES-256-GCM)
-/secure/tls/                  Self-signed HTTPS сертифікати
-/secure/tokens/<module>/      Зашифровані OAuth токени
-/secure/core.manifest         SHA256 файлів ядра
-/secure/master.hash           SHA256 самого маніфесту
-/secure/core_backup/v0.3.0/   Резервна копія файлів ядра
-```
+| Аутентифікація користувачів та QR-процес | [user-manager-auth.md](user-manager-auth.md) |
+| Протокол модулів (токени, HMAC, webhooks) | [module-core-protocol.md](module-core-protocol.md) |
+| Дротовий протокол Module Bus | [module-bus-protocol.md](module-bus-protocol.md) |
+| Розробка модулів (SDK, маніфест) | [module-development.md](module-development.md) |
+| Розробка віджетів (widget.html, i18n) | [widget-development.md](widget-development.md) |
+| Довідник конфігурації | [configuration.md](configuration.md) |
+| Розгортання та systemd | [deployment.md](deployment.md) |

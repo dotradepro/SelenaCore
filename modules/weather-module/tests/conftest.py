@@ -16,4 +16,3 @@ os.environ["WEATHER_CONFIG_PATH"] = "/tmp/weather-test.json"
 os.environ.setdefault("SELENA_CORE_API",   "http://localhost:7070/api/v1")
 os.environ.setdefault("MODULE_TOKEN",      "test-token")
 os.environ.setdefault("DEV_MODULE_TOKEN",  "test-token")
-os.environ.setdefault("SELENA_MODULE_PORT","8100")
