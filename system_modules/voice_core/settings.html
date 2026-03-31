@@ -232,6 +232,42 @@
         .provider-tab:hover { color: var(--tx); }
         .provider-tab.active { background: #2563eb; color: #fff; }
 
+        /* ── Settings tabs ── */
+        .settings-tabs {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 16px;
+            background: var(--sf);
+            border: 1px solid var(--b);
+            border-radius: 10px;
+            padding: 3px;
+            overflow-x: auto;
+        }
+        .settings-tab {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            background: transparent;
+            color: var(--tx3);
+            transition: .15s;
+            text-align: center;
+        }
+        .settings-tab:hover { color: var(--tx); }
+        .settings-tab.active { background: var(--ac); color: #fff; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        .intent-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .intent-table th { text-align: left; padding: 8px 10px; color: var(--tx2); font-weight: 500; border-bottom: 1px solid var(--b2); font-size: 11px; }
+        .intent-table td { padding: 6px 10px; border-bottom: 1px solid var(--b); }
+        .intent-table tr:hover td { background: var(--sf2); }
+        .intent-module { font-size: 11px; color: var(--tx3); }
+        .intent-name { font-family: monospace; font-size: 11px; color: var(--ac); }
+
         .slider-row { margin-bottom: 12px; }
         .slider-header {
             display: flex;
@@ -310,6 +346,20 @@
 
 <h2 data-i18n="title"></h2>
 <div class="subtitle" data-i18n="subtitle"></div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  Tab Navigation                                                   -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="settings-tabs" id="settingsTabs">
+    <button class="settings-tab active" data-tab="engines" data-i18n="tab_engines"></button>
+    <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
+    <button class="settings-tab" data-tab="test" data-i18n="tab_test"></button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Engines (STT, Wake Word, TTS, LLM)                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tabEngines">
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  GPU / Hardware Status                                           -->
@@ -694,6 +744,48 @@
     </div>
 </div>
 
+</div><!-- /tabEngines -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Intents                                                     -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabIntents">
+<div class="card">
+    <div class="mb12">
+        <div class="flex gap8">
+            <span class="section-title" data-i18n="intents_title"></span>
+            <span class="badge badge-ac" id="intentsCountBadge">0</span>
+        </div>
+        <div class="section-sub" data-i18n="intents_desc"></div>
+    </div>
+    <div class="flex gap8 mb12">
+        <input type="text" id="intentsSearch" style="flex:1" data-placeholder-i18n="intents_search">
+        <select id="intentsModuleFilter" style="min-width:120px">
+            <option value="" data-i18n="intents_all_modules"></option>
+        </select>
+    </div>
+    <div id="intentsTableWrap" style="overflow-x:auto">
+        <table class="intent-table" id="intentsTable">
+            <thead>
+                <tr>
+                    <th data-i18n="intents_col_module">Module</th>
+                    <th data-i18n="intents_col_intent">Intent</th>
+                    <th data-i18n="intents_col_description">Description</th>
+                    <th data-i18n="intents_col_params">Params</th>
+                    <th data-i18n="intents_col_source">Source</th>
+                </tr>
+            </thead>
+            <tbody id="intentsBody"></tbody>
+        </table>
+    </div>
+</div>
+</div><!-- /tabIntents -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Test Console                                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabTest">
+
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  Command Test Console                                             -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -758,6 +850,8 @@
         </div>
     </div>
 </div>
+
+</div><!-- /tabTest -->
 
 <div class="toast" id="toast"></div>
 
@@ -865,6 +959,21 @@
             privacy_desc: 'Disables microphone and wake word detection',
             privacy_on: 'Privacy ON',
             privacy_off: 'Privacy OFF',
+
+            tab_engines: 'Engines',
+            tab_intents: 'Voice Commands',
+            tab_test: 'Test Console',
+
+            intents_title: 'Registered Voice Commands',
+            intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
+            intents_search: 'Search intents...',
+            intents_all_modules: 'All modules',
+            intents_col_module: 'Module',
+            intents_col_intent: 'Intent',
+            intents_col_description: 'Description',
+            intents_col_params: 'Params',
+            intents_col_source: 'Source',
+            intents_loading: 'Loading...',
 
             test_cmd_title: 'Command Test Console',
             test_cmd_desc: 'Simulate a voice command via text — full intent pipeline with trace',
@@ -978,6 +1087,21 @@
             privacy_desc: 'Вимикає мiкрофон та wake word детекцiю',
             privacy_on: 'Приватнiсть УВIМК',
             privacy_off: 'Приватнiсть ВИМК',
+
+            tab_engines: 'Движки',
+            tab_intents: 'Голосові команди',
+            tab_test: 'Тест консоль',
+
+            intents_title: 'Зареєстровані голосові команди',
+            intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
+            intents_search: 'Пошук інтентів...',
+            intents_all_modules: 'Усі модулі',
+            intents_col_module: 'Модуль',
+            intents_col_intent: 'Інтент',
+            intents_col_description: 'Опис',
+            intents_col_params: 'Параметри',
+            intents_col_source: 'Джерело',
+            intents_loading: 'Завантаження...',
 
             test_cmd_title: 'Консоль тестування команд',
             test_cmd_desc: 'Iмiтацiя голосової команди текстом — повний пайплайн з трейсом',
@@ -2339,6 +2463,77 @@
         } catch(e) { /* ignore */ }
         this.disabled = false;
     };
+
+    // ══════════════════════════════════════════════════════════════
+    //  Tab Navigation
+    // ══════════════════════════════════════════════════════════════
+    var tabMap = { engines: 'tabEngines', intents: 'tabIntents', test: 'tabTest' };
+    document.querySelectorAll('.settings-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.settings-tab').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+            btn.classList.add('active');
+            var panel = $(tabMap[btn.getAttribute('data-tab')]);
+            if (panel) panel.classList.add('active');
+            if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
+        });
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    //  Intents Table
+    // ══════════════════════════════════════════════════════════════
+    state.intentsLoaded = false;
+    state.intents = [];
+
+    async function loadIntents() {
+        $('intentsBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--tx3)">' + t('intents_loading') + '</td></tr>';
+        try {
+            var res = await api('/modules/voice-core/intents');
+            state.intents = res.intents || [];
+            state.intentsLoaded = true;
+            $('intentsCountBadge').textContent = state.intents.length;
+            // Populate module filter
+            var modules = [];
+            state.intents.forEach(function(i) { if (modules.indexOf(i.module) === -1) modules.push(i.module); });
+            modules.sort();
+            $('intentsModuleFilter').innerHTML = '<option value="">' + t('intents_all_modules') + '</option>' +
+                modules.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+            renderIntents();
+        } catch(e) {
+            $('intentsBody').innerHTML = '<tr><td colspan="5" style="color:var(--rd)">Error: ' + e.message + '</td></tr>';
+        }
+    }
+
+    function renderIntents() {
+        var search = ($('intentsSearch').value || '').toLowerCase();
+        var modFilter = $('intentsModuleFilter').value;
+        var filtered = state.intents.filter(function(i) {
+            if (modFilter && i.module !== modFilter) return false;
+            if (search) {
+                var hay = (i.module + ' ' + i.intent + ' ' + i.description + ' ' + (i.params || []).join(' ')).toLowerCase();
+                return hay.indexOf(search) !== -1;
+            }
+            return true;
+        });
+        var sourceColors = { system_module: 'var(--gr)', fast_matcher: 'var(--ac)', module_bus: 'var(--am)' };
+        $('intentsBody').innerHTML = filtered.map(function(i) {
+            var params = (i.params && i.params.length) ? i.params.join(', ') : '—';
+            var srcColor = sourceColors[i.source] || 'var(--tx3)';
+            return '<tr>' +
+                '<td class="intent-module">' + i.module + '</td>' +
+                '<td class="intent-name">' + i.intent + '</td>' +
+                '<td>' + (i.description || '') + '</td>' +
+                '<td style="font-family:monospace;font-size:11px;color:var(--pr)">' + params + '</td>' +
+                '<td><span class="badge" style="background:rgba(79,140,247,.1);color:' + srcColor + '">' + i.source + '</span></td>' +
+                '</tr>';
+        }).join('');
+        if (!filtered.length) {
+            $('intentsBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--tx3)">—</td></tr>';
+        }
+    }
+
+    $('intentsSearch').addEventListener('input', renderIntents);
+    $('intentsModuleFilter').addEventListener('change', renderIntents);
 
     // ══════════════════════════════════════════════════════════════
     //  Command Test Console

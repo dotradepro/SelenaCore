@@ -751,6 +751,66 @@ class VoiceCoreModule(SystemModule):
             records = await svc._voice_history.get_recent(min(limit, 200))
             return JSONResponse({"records": records})
 
+        @router.get("/intents")
+        async def list_intents() -> JSONResponse:
+            """List all registered voice intents from all sources."""
+            import re as _re
+            from system_modules.llm_engine.intent_router import get_intent_router
+            router = get_intent_router()
+            intents: list[dict] = []
+
+            # System module intents (Tier 1.5)
+            for entry in router._system_intents:
+                param_names: list[str] = []
+                for patterns in entry.patterns.values():
+                    for p in patterns:
+                        param_names.extend(_re.findall(r"\?P<(\w+)>", p))
+                intents.append({
+                    "module": entry.module,
+                    "intent": entry.intent,
+                    "description": entry.description or "",
+                    "priority": entry.priority,
+                    "params": sorted(set(param_names)),
+                    "source": "system_module",
+                })
+
+            # Fast matcher rules (Tier 1)
+            try:
+                from system_modules.llm_engine.fast_matcher import get_fast_matcher
+                for rule in get_fast_matcher()._rules:
+                    name = rule.get("name", "")
+                    if not name:
+                        continue
+                    intents.append({
+                        "module": "fast-matcher",
+                        "intent": name,
+                        "description": ", ".join(rule.get("keywords", [])[:3]),
+                        "priority": 0,
+                        "params": [],
+                        "source": "fast_matcher",
+                    })
+            except Exception:
+                pass
+
+            # Module Bus intents (Tier 2)
+            try:
+                from core.module_bus import get_module_bus
+                for item in get_module_bus()._intent_index:
+                    module_name = getattr(item, "module", "")
+                    desc = getattr(item, "description", "")
+                    intents.append({
+                        "module": module_name,
+                        "intent": f"module.{module_name}",
+                        "description": desc,
+                        "priority": getattr(item, "priority", 0),
+                        "params": [],
+                        "source": "module_bus",
+                    })
+            except Exception:
+                pass
+
+            return JSONResponse({"intents": intents, "total": len(intents)})
+
         @router.post("/test-command")
         async def test_command(req: TestCommandRequest) -> JSONResponse:
             """Run text through the full intent pipeline (simulates voice command)."""
