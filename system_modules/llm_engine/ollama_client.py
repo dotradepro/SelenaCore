@@ -82,9 +82,6 @@ class OllamaClient:
         temperature: float = 0.7,
     ) -> str:
         """Generate a completion (non-streaming) via /api/chat messages format."""
-        if not _should_use_llm():
-            return ""
-
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -117,9 +114,6 @@ class OllamaClient:
         temperature: float = 0.7,
     ) -> AsyncGenerator[str, None]:
         """Generate a streaming completion via /api/chat, yielding tokens."""
-        if not _should_use_llm():
-            return
-
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})

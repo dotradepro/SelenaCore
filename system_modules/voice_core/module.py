@@ -495,10 +495,11 @@ class VoiceCoreModule(SystemModule):
         loop = asyncio.get_running_loop()
 
         # Try native Piper server first (GPU-accelerated, runs on host)
-        pcm_data = await self._fetch_tts_raw(clean, voice, settings)
-        if pcm_data:
+        tts_result = await self._fetch_tts_raw(clean, voice, settings)
+        if tts_result:
+            pcm_data, sample_rate = tts_result
             await loop.run_in_executor(
-                None, self._play_raw_pcm, pcm_data, output_device,
+                None, self._play_raw_pcm, pcm_data, output_device, sample_rate,
             )
             return
 
@@ -508,8 +509,8 @@ class VoiceCoreModule(SystemModule):
             None, self._pipe_piper_local, clean, model_path, settings, output_device,
         )
 
-    async def _fetch_tts_raw(self, text: str, voice: str, settings) -> bytes | None:
-        """Fetch raw PCM from native Piper server."""
+    async def _fetch_tts_raw(self, text: str, voice: str, settings) -> tuple[bytes, int] | None:
+        """Fetch raw PCM from native Piper server. Returns (pcm_bytes, sample_rate) or None."""
         try:
             import httpx
             gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
@@ -525,17 +526,18 @@ class VoiceCoreModule(SystemModule):
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(f"{gpu_url}/synthesize/raw", json=payload)
                 if resp.status_code == 200 and resp.content:
-                    return resp.content
+                    sample_rate = int(resp.headers.get("X-Audio-Rate", "22050"))
+                    return resp.content, sample_rate
         except Exception:
             pass
         return None
 
     @staticmethod
-    def _play_raw_pcm(pcm_data: bytes, output_device: str | None) -> None:
-        """Play raw PCM s16le 22050Hz mono via paplay."""
+    def _play_raw_pcm(pcm_data: bytes, output_device: str | None, sample_rate: int = 22050) -> None:
+        """Play raw PCM s16le mono via paplay."""
         play_cmd = [
             "paplay", "--raw",
-            "--format=s16le", "--rate=22050", "--channels=1",
+            "--format=s16le", f"--rate={sample_rate}", "--channels=1",
         ]
         if output_device:
             play_cmd.append("--device=" + output_device)
@@ -687,9 +689,7 @@ class VoiceCoreModule(SystemModule):
             rephrased = ""
 
             if provider == "ollama":
-                from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
-                if not _should_use_llm():
-                    return default_text
+                from system_modules.llm_engine.ollama_client import get_ollama_client
                 rephrased = await asyncio.wait_for(
                     get_ollama_client().generate(prompt=messages_ctx, system=system),
                     timeout=10.0,

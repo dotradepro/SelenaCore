@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -433,12 +434,17 @@ class IntentRouter:
         raw = ""
 
         if provider == "ollama":
-            from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
-            if not _should_use_llm():
-                return None, "ollama (RAM < 5GB)"
+            from system_modules.llm_engine.ollama_client import get_ollama_client
+            # Read model from UI config (same logic as /llm/chat)
+            model = voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
+            p_model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
+            if p_model:
+                model = p_model
             client = get_ollama_client()
+            if not await client.is_available():
+                return None, "ollama (unavailable)"
             raw = await asyncio.wait_for(
-                client.generate(prompt=user_prompt, system=system_prompt),
+                client.generate(prompt=user_prompt, system=system_prompt, model=model, temperature=0.0),
                 timeout=25.0,
             )
 
