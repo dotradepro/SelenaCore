@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from core.module_loader.system_module import SystemModule
 from system_modules.automation_engine.engine import AutomationEngine
+from system_modules.automation_engine.voice_handler import AutomationVoiceHandler
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,23 @@ class AutomationEngineModule(SystemModule):
     def __init__(self) -> None:
         super().__init__()
         self._engine: AutomationEngine | None = None
+        self._voice: AutomationVoiceHandler | None = None
 
     async def _send_notification(self, message: str, channel: str) -> None:
         await self.publish(
             "notification.send", {"message": message, "channel": channel}
         )
 
+    async def speak(self, text: str) -> None:
+        """Send text to TTS via EventBus."""
+        await self.publish("voice.speak", {"text": text})
+
     async def _on_event(self, event) -> None:
+        if event.type == "voice.intent":
+            intent = event.payload.get("intent", "")
+            if intent.startswith("automation.") and self._voice:
+                await self._voice.handle(intent, event.payload.get("params", {}))
+            return
         if self._engine:
             await self._engine.on_event(event.type, event.payload)
 
@@ -53,14 +64,32 @@ class AutomationEngineModule(SystemModule):
             get_device_state_cb=self.get_device_state,
             send_notification_cb=self._send_notification,
         )
+        self._voice = AutomationVoiceHandler(self)
         self.subscribe(
             ["device.state_changed", "presence.home", "presence.away", "voice.intent"],
             self._on_event,
         )
+
+        # Register voice intent patterns with IntentRouter (Tier 1.5)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            from .intent_patterns import AUTOMATION_INTENTS
+            intent_router = get_intent_router()
+            for entry in AUTOMATION_INTENTS:
+                intent_router.register_system_intent(entry)
+            logger.info("AutomationEngine: registered %d voice intents", len(AUTOMATION_INTENTS))
+        except Exception as exc:
+            logger.warning("AutomationEngine: failed to register intents: %s", exc)
+
         await self.publish("module.started", {"name": self.name})
 
     async def stop(self) -> None:
         self._cleanup_subscriptions()
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().unregister_system_intents(self.name)
+        except Exception:
+            pass
         await self.publish("module.stopped", {"name": self.name})
 
     def get_router(self) -> APIRouter:

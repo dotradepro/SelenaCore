@@ -65,6 +65,16 @@
   "presence.invite_expired": "Запрошення прострочене",
   "presence.registration_failed": "Реєстрація не вдалася",
 
+  "presence.voice.no_users": "Немає зареєстрованих користувачів у системі присутності",
+  "presence.voice.nobody_home": "Зараз нікого немає вдома",
+  "presence.voice.one_home": "{name} вдома",
+  "presence.voice.who_home": "Вдома {count} людей: {names}",
+  "presence.voice.specify_name": "Будь ласка, вкажіть ім'я користувача",
+  "presence.voice.user_not_found": "Користувача {name} не знайдено",
+  "presence.voice.user_home": "{name} вдома",
+  "presence.voice.user_away": "{name} відсутній",
+  "presence.voice.status": "Статус присутності: {total} користувачів, {home} вдома, {away} відсутні",
+
   "api.device_not_found": "Пристрій не знайдено",
   "api.module_not_found": "Модуль не знайдено",
   "api.cannot_stop_system": "Неможливо зупинити системний модуль",

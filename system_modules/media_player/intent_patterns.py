@@ -37,7 +37,7 @@ MEDIA_INTENTS: list[SystemIntentEntry] = [
         description="Play radio by genre",
         patterns={
             "uk": [
-                r"(?:увімкни|включи|постав)\s+(?P<genre>рок|джаз|класик\w*|ембієнт|ambient|lofi|поп|новини)\s*(?:музику|радіо)?",
+                r"(?:у?вімкни|включи|постав|запусти)\s+(?P<genre>рок|джаз|класик\w*|ембієнт|ambient|lofi|поп|новини)\s*(?:музику|радіо)?",
             ],
             "en": [
                 r"play\s+(?P<genre>rock|jazz|classical|ambient|lofi|pop|news)\s*(?:music|radio)?",
@@ -51,7 +51,7 @@ MEDIA_INTENTS: list[SystemIntentEntry] = [
         description="Play specific radio station by name",
         patterns={
             "uk": [
-                r"(?:увімкни|включи)\s+(?:радіо|станцію)\s+(?P<station_name>.+)",
+                r"(?:у?вімкни|включи)\s+(?:радіо|станцію)\s+(?P<station_name>.+)",
             ],
             "en": [
                 r"(?:play|tune)\s+(?:radio\s+)?station\s+(?P<station_name>.+)",
@@ -83,8 +83,8 @@ MEDIA_INTENTS: list[SystemIntentEntry] = [
         description="Play radio (generic)",
         patterns={
             "uk": [
-                r"(?:увімкни|включи|постав)\s+радіо",
-                r"(?:увімкни|включи)\s+музику",
+                r"(?:у?вімкни|включи|постав|запусти)\s+радіо",
+                r"(?:у?вімкни|включи|запусти)\s+музику",
             ],
             "en": [
                 r"(?:play|turn on)\s+(?:the\s+)?radio",

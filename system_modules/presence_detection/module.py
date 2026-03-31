@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from core.module_loader.system_module import SystemModule
 from system_modules.presence_detection.presence import PresenceDetector, mac_in_arp_table, _read_arp_table
+from .voice_handler import PresenceVoiceHandler
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class PresenceDetectionModule(SystemModule):
     def __init__(self) -> None:
         super().__init__()
         self._detector: PresenceDetector | None = None
+        self._voice: PresenceVoiceHandler = PresenceVoiceHandler(self)
 
     async def _on_state_changed(self, event) -> None:
         """Forward device state changes to the detector."""
@@ -86,13 +88,49 @@ class PresenceDetectionModule(SystemModule):
             db_path=db_path,
         )
         await self._detector.start()
-        self.subscribe(["device.state_changed"], self._on_state_changed)
+        self.subscribe(
+            ["device.state_changed", "voice.intent"],
+            self._on_event,
+        )
+
+        # Register voice intent patterns with IntentRouter (Tier 1.5)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            from .intent_patterns import PRESENCE_INTENTS
+            intent_router = get_intent_router()
+            for entry in PRESENCE_INTENTS:
+                intent_router.register_system_intent(entry)
+            logger.info("PresenceDetection: registered %d voice intents", len(PRESENCE_INTENTS))
+        except Exception as exc:
+            logger.warning("PresenceDetection: failed to register intents: %s", exc)
+
         await self.publish("module.started", {"name": self.name})
+
+    async def _on_event(self, event) -> None:
+        """Route EventBus events to the appropriate handler."""
+        etype = event.type
+        payload = event.payload
+
+        if etype == "voice.intent":
+            intent = payload.get("intent", "")
+            if intent.startswith("presence."):
+                await self._voice.handle(intent, payload.get("params", {}))
+        elif etype == "device.state_changed":
+            await self._on_state_changed(event)
+
+    async def speak(self, text: str) -> None:
+        """Send text to TTS via EventBus -> voice-core."""
+        await self.publish("voice.speak", {"text": text})
 
     async def stop(self) -> None:
         if self._detector:
             await self._detector.stop()
         self._cleanup_subscriptions()
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().unregister_system_intents(self.name)
+        except Exception:
+            pass
         await self.publish("module.stopped", {"name": self.name})
 
     def get_router(self) -> APIRouter:

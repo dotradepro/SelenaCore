@@ -694,6 +694,71 @@
     </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  Command Test Console                                             -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="testCommandCard">
+    <div class="mb16">
+        <div class="flex gap8">
+            <span class="section-title" data-i18n="test_cmd_title"></span>
+            <span class="badge badge-pr">Debug</span>
+        </div>
+        <div class="section-sub" data-i18n="test_cmd_desc"></div>
+    </div>
+
+    <div class="flex gap8 mb12">
+        <input type="text" id="testCmdInput" style="flex:1" data-placeholder-i18n="test_cmd_placeholder">
+        <label class="flex gap4" style="font-size:11px;color:var(--tx2);white-space:nowrap;cursor:pointer">
+            <input type="checkbox" id="testCmdSpeak" checked> <span data-i18n="test_cmd_speak"></span>
+        </label>
+        <button id="testCmdBtn" class="btn btn-purple" data-i18n="test_cmd_send"></button>
+    </div>
+
+    <div id="testCmdResult" class="hidden">
+        <!-- Input -->
+        <div class="card-inner mb8">
+            <div class="label-xs mb4" data-i18n="test_cmd_input_label"></div>
+            <div class="flex gap8" style="flex-wrap:wrap">
+                <span class="badge badge-ac" id="testResInput"></span>
+                <span class="badge" id="testResLang" style="background:rgba(168,85,247,.12);color:var(--pr)"></span>
+            </div>
+        </div>
+
+        <!-- Pipeline trace -->
+        <div class="card-inner mb8">
+            <div class="label-xs mb8" data-i18n="test_cmd_pipeline"></div>
+            <div id="testTraceSteps"></div>
+        </div>
+
+        <!-- Result -->
+        <div class="card-inner mb8">
+            <div class="label-xs mb4" data-i18n="test_cmd_result_label"></div>
+            <div class="flex gap8 mb8" style="flex-wrap:wrap">
+                <span class="badge badge-ok" id="testResIntent"></span>
+                <span class="badge badge-ac" id="testResSource"></span>
+                <span class="badge" id="testResLatency" style="background:rgba(168,85,247,.12);color:var(--pr)"></span>
+                <span class="badge" id="testResTts" style="background:rgba(46,201,138,.12);color:var(--gr)"></span>
+            </div>
+        </div>
+
+        <!-- Response text -->
+        <div class="card-inner mb8">
+            <div class="label-xs mb4" data-i18n="test_cmd_response"></div>
+            <div id="testResText" style="font-size:13px;white-space:pre-wrap;word-break:break-word"></div>
+        </div>
+
+        <!-- Action / Params -->
+        <div id="testResAction" class="card-inner mb8 hidden">
+            <div class="label-xs mb4" data-i18n="test_cmd_action"></div>
+            <pre id="testResActionJson" style="font-size:11px;color:var(--tx2);background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+        </div>
+        <div id="testResParams" class="card-inner mb8 hidden">
+            <div class="label-xs mb4" data-i18n="test_cmd_params"></div>
+            <pre id="testResParamsJson" style="font-size:11px;color:var(--tx2);background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+        </div>
+    </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -800,6 +865,19 @@
             privacy_desc: 'Disables microphone and wake word detection',
             privacy_on: 'Privacy ON',
             privacy_off: 'Privacy OFF',
+
+            test_cmd_title: 'Command Test Console',
+            test_cmd_desc: 'Simulate a voice command via text — full intent pipeline with trace',
+            test_cmd_placeholder: 'Type a command (e.g. "turn on the light")...',
+            test_cmd_send: 'Send',
+            test_cmd_sending: 'Processing...',
+            test_cmd_speak: 'TTS',
+            test_cmd_input_label: 'Input',
+            test_cmd_pipeline: 'Pipeline Trace',
+            test_cmd_result_label: 'Result',
+            test_cmd_response: 'Response',
+            test_cmd_action: 'Action',
+            test_cmd_params: 'Params',
         },
         uk: {
             title: 'Голос та AI',
@@ -900,6 +978,19 @@
             privacy_desc: 'Вимикає мiкрофон та wake word детекцiю',
             privacy_on: 'Приватнiсть УВIМК',
             privacy_off: 'Приватнiсть ВИМК',
+
+            test_cmd_title: 'Консоль тестування команд',
+            test_cmd_desc: 'Iмiтацiя голосової команди текстом — повний пайплайн з трейсом',
+            test_cmd_placeholder: 'Введiть команду (напр. "увiмкни свiтло")...',
+            test_cmd_send: 'Надiслати',
+            test_cmd_sending: 'Обробка...',
+            test_cmd_speak: 'TTS',
+            test_cmd_input_label: 'Вхiднi данi',
+            test_cmd_pipeline: 'Трейс пайплайну',
+            test_cmd_result_label: 'Результат',
+            test_cmd_response: 'Вiдповiдь',
+            test_cmd_action: 'Дiя',
+            test_cmd_params: 'Параметри',
         }
     };
 
@@ -2248,6 +2339,88 @@
         } catch(e) { /* ignore */ }
         this.disabled = false;
     };
+
+    // ══════════════════════════════════════════════════════════════
+    //  Command Test Console
+    // ══════════════════════════════════════════════════════════════
+    function renderTraceSteps(steps) {
+        var html = '';
+        var statusIcons = { hit: '&#10004;', miss: '&#10008;', skip: '&#9723;', error: '&#9888;', used: '&#9654;' };
+        var statusColors = { hit: 'var(--gr)', miss: 'var(--tx3)', skip: 'var(--tx3)', error: 'var(--am)', used: 'var(--ac)' };
+        var statusBg = { hit: 'rgba(46,201,138,.1)', miss: 'transparent', skip: 'transparent', error: 'rgba(245,169,58,.1)', used: 'rgba(79,140,247,.1)' };
+        for (var i = 0; i < steps.length; i++) {
+            var s = steps[i];
+            var icon = statusIcons[s.status] || '?';
+            var color = statusColors[s.status] || 'var(--tx)';
+            var bg = statusBg[s.status] || 'transparent';
+            var line = s.status === 'hit' || s.status === 'used' ? '2px solid ' + color : '1px solid var(--b2)';
+            html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;margin-bottom:4px;border-left:' + line + ';background:' + bg + '">';
+            html += '<span style="font-size:13px;color:' + color + ';min-width:18px;text-align:center">' + icon + '</span>';
+            html += '<span style="font-size:12px;font-weight:600;color:var(--tx);min-width:56px">Tier ' + s.tier + '</span>';
+            html += '<span style="font-size:12px;color:var(--tx2);flex:1">' + s.name;
+            if (s.registered) html += ' <span style="opacity:.5">(' + s.registered + ' registered)</span>';
+            html += '</span>';
+            if (s.detail) html += '<span style="font-size:11px;color:' + color + ';font-family:monospace">' + s.detail + '</span>';
+            html += '<span style="font-size:11px;color:var(--tx3);font-family:monospace;min-width:40px;text-align:right">' + s.ms + 'ms</span>';
+            html += '</div>';
+        }
+        $('testTraceSteps').innerHTML = html;
+    }
+
+    $('testCmdBtn').onclick = async function() {
+        var text = $('testCmdInput').value.trim();
+        if (!text) return;
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = t('test_cmd_sending');
+        hide('testCmdResult');
+        try {
+            var speak = $('testCmdSpeak').checked;
+            var res = await postJson('/modules/voice-core/test-command', { text: text, speak: speak });
+
+            // Input
+            $('testResInput').textContent = res.input_text || text;
+            $('testResLang').textContent = 'lang: ' + (res.lang || '?');
+
+            // Trace
+            if (res.trace && res.trace.length) renderTraceSteps(res.trace);
+
+            // Result badges
+            $('testResIntent').textContent = res.intent || '—';
+            $('testResSource').textContent = 'source: ' + (res.source || '—');
+            $('testResLatency').textContent = (res.duration_ms || 0) + ' ms';
+            $('testResTts').textContent = res.tts_played ? 'TTS &#10004;' : 'TTS off';
+
+            // Response
+            $('testResText').textContent = res.response || '(no response)';
+
+            // Action
+            if (res.action) {
+                $('testResActionJson').textContent = JSON.stringify(res.action, null, 2);
+                show('testResAction');
+            } else {
+                hide('testResAction');
+            }
+
+            // Params
+            if (res.params && Object.keys(res.params).length > 0) {
+                $('testResParamsJson').textContent = JSON.stringify(res.params, null, 2);
+                show('testResParams');
+            } else {
+                hide('testResParams');
+            }
+
+            show('testCmdResult');
+        } catch(e) {
+            showToast('Error: ' + e.message, 3000);
+        }
+        btn.disabled = false;
+        btn.textContent = t('test_cmd_send');
+    };
+
+    $('testCmdInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') $('testCmdBtn').click();
+    });
 
     // ══════════════════════════════════════════════════════════════
     //  Init

@@ -54,6 +54,11 @@ class SynthesizeRequest(BaseModel):
     voice: str | None = None
 
 
+class TestCommandRequest(BaseModel):
+    text: str
+    speak: bool = True
+
+
 class EnrollSpeakerRequest(BaseModel):
     user_id: str
 
@@ -79,6 +84,10 @@ class VoiceCoreModule(SystemModule):
         self._state = STATE_IDLE
         self._privacy_mode = False
         self._system_speak_done = asyncio.Event()
+        self._session: list[dict[str, str]] = []  # conversation history [{role, content}]
+        self._session_ts: float = 0.0              # last interaction timestamp
+        self._last_intent: str = ""                # last classified intent (for rephrase context)
+        self._last_query: str = ""                 # last user query text
 
         # Defaults from env, overridden by core.yaml
         defaults = {
@@ -292,6 +301,18 @@ class VoiceCoreModule(SystemModule):
         )
         return code if code in ("uk", "en") else "en"
 
+    @staticmethod
+    def _is_system_module_intent(intent: str) -> bool:
+        """Check if intent belongs to a registered system module."""
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            for entry in get_intent_router()._system_intents:
+                if entry.intent == intent:
+                    return True
+        except Exception:
+            pass
+        return False
+
     # ── Command processing pipeline ──────────────────────────────────────
 
     async def _process_command(self, text: str) -> None:
@@ -318,10 +339,24 @@ class VoiceCoreModule(SystemModule):
                 result.intent, result.source, result.latency_ms,
             )
 
+            # Session context for LLM rephrase
+            self._last_query = text
+            self._last_intent = result.intent
+            # Reset session after 5 min of inactivity
+            if time.monotonic() - self._session_ts > 300:
+                self._session.clear()
+            self._session_ts = time.monotonic()
+            self._session.append({"role": "user", "content": text})
+
             # System modules handle their own TTS via EventBus (voice.speak).
-            # For system_module intents, stay in PROCESSING until TTS completes
+            # For system_module intents (or cloud_llm-classified intents that map
+            # to a system module), stay in PROCESSING until TTS completes
             # to prevent mic from picking up speaker audio or accepting new commands.
-            if result.source == "system_module":
+            _is_system_handled = (
+                result.source == "system_module"
+                or (result.source == "cloud_llm" and self._is_system_module_intent(result.intent))
+            )
+            if _is_system_handled:
                 self._system_speak_done.clear()
                 try:
                     await asyncio.wait_for(self._system_speak_done.wait(), timeout=15.0)
@@ -332,6 +367,12 @@ class VoiceCoreModule(SystemModule):
                 logger.info("Voice pipeline: speaking...")
                 await self._stream_speak(result.response)
                 await self.publish("voice.speak_done", {"text": result.response})
+
+            # Track assistant response in session (trim to last 10 exchanges)
+            if result.response:
+                self._session.append({"role": "assistant", "content": result.response})
+            if len(self._session) > 20:
+                self._session = self._session[-20:]
 
             # History
             duration_ms = int((time.monotonic() - start_ts) * 1000)
@@ -486,10 +527,67 @@ class VoiceCoreModule(SystemModule):
         await self.publish(event_type, {"privacy_mode": enabled})
         self._privacy_mode = enabled
 
+    async def _rephrase_via_llm(self, default_text: str) -> str:
+        """Ask Cloud LLM to rephrase a module's hardcoded response naturally.
+
+        Uses conversation session for context. Falls back to default_text on failure.
+        """
+        try:
+            from core.config_writer import read_config
+            config = read_config()
+            voice_cfg = config.get("voice", {})
+            provider = voice_cfg.get("llm_provider", "ollama")
+            if provider in ("ollama", "llamacpp"):
+                return default_text
+
+            p_cfg = voice_cfg.get("providers", {}).get(provider, {})
+            api_key = p_cfg.get("api_key", "")
+            model = p_cfg.get("model", "")
+            if not api_key or not model:
+                return default_text
+
+            lang = self._detect_lang()
+            lang_names = {"uk": "Ukrainian", "en": "English"}
+            lang_name = lang_names.get(lang, "English")
+
+            system = (
+                f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
+                "The system performed an action and generated a default response.\n"
+                "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"
+                "Vary your phrasing — don't repeat the same structure.\n"
+                "Keep it short for TTS. Plain text only."
+            )
+
+            # Build context from session
+            messages_ctx = ""
+            if self._last_query:
+                messages_ctx += f"User said: \"{self._last_query}\"\n"
+            if self._last_intent:
+                messages_ctx += f"Classified intent: {self._last_intent}\n"
+            messages_ctx += f"Default response: \"{default_text}\"\n"
+            messages_ctx += "Your rephrased response:"
+
+            from system_modules.llm_engine.cloud_providers import generate
+            import asyncio as _aio
+            rephrased = await _aio.wait_for(
+                generate(provider, api_key, model, messages_ctx, system, temperature=0.9),
+                timeout=8.0,
+            )
+
+            rephrased = rephrased.strip().strip('"').strip("'")
+            if rephrased and len(rephrased) < 300:
+                return rephrased
+        except Exception as exc:
+            logger.debug("Rephrase via LLM failed: %s", exc)
+
+        return default_text
+
     async def _on_voice_event(self, event: Any) -> None:
         if event.type == "voice.speak" and self._tts:
             text = event.payload.get("text", "")
             if text:
+                # Rephrase hardcoded module response via Cloud LLM for variety
+                text = await self._rephrase_via_llm(text)
                 await self._stream_speak(text)
                 await self.publish("voice.speak_done", {"text": text})
                 self._system_speak_done.set()
@@ -652,6 +750,76 @@ class VoiceCoreModule(SystemModule):
                 raise HTTPException(503, "Voice history not ready")
             records = await svc._voice_history.get_recent(min(limit, 200))
             return JSONResponse({"records": records})
+
+        @router.post("/test-command")
+        async def test_command(req: TestCommandRequest) -> JSONResponse:
+            """Run text through the full intent pipeline (simulates voice command)."""
+            import time as _time
+            from system_modules.llm_engine.intent_router import get_intent_router
+
+            start_ts = _time.monotonic()
+            text = req.text.strip()
+            if not text:
+                raise HTTPException(400, "Empty text")
+
+            lang = svc._detect_lang()
+            result, trace_steps = await get_intent_router().route(
+                text, user_id=None, lang=lang, trace=True,
+            )
+
+            # Set session context for LLM rephrase
+            svc._last_query = text
+            svc._last_intent = result.intent
+
+            tts_done = False
+            # Cloud LLM intents that map to system modules are handled
+            # by the module itself via EventBus (voice.intent → module.handle → module.speak)
+            _sys_handled = (
+                result.source == "system_module"
+                or (result.source == "cloud_llm" and svc._is_system_module_intent(result.intent))
+            )
+            if req.speak and _sys_handled:
+                svc._system_speak_done.clear()
+                try:
+                    await asyncio.wait_for(svc._system_speak_done.wait(), timeout=15.0)
+                    tts_done = True
+                except asyncio.TimeoutError:
+                    pass
+            elif req.speak and result.response:
+                await svc.publish("voice.response", {"text": result.response, "query": text})
+                await svc._stream_speak(result.response)
+                await svc.publish("voice.speak_done", {"text": result.response})
+                tts_done = True
+
+            duration_ms = int((_time.monotonic() - start_ts) * 1000)
+
+            # Save to history
+            if svc._voice_history:
+                from system_modules.voice_core.voice_history import VoiceRecord
+                await svc._voice_history.add(VoiceRecord(
+                    timestamp=_time.time(),
+                    user_id=None,
+                    wake_word="[text-test]",
+                    recognized_text=text,
+                    intent=result.intent,
+                    response=result.response,
+                    duration_ms=duration_ms,
+                ))
+
+            return JSONResponse({
+                "ok": True,
+                "input_text": text,
+                "lang": lang,
+                "intent": result.intent,
+                "response": result.response,
+                "source": result.source,
+                "latency_ms": result.latency_ms,
+                "duration_ms": duration_ms,
+                "action": result.action,
+                "params": result.params,
+                "tts_played": tts_done,
+                "trace": trace_steps,
+            })
 
         @router.get("/widget", response_class=HTMLResponse)
         async def widget() -> HTMLResponse:

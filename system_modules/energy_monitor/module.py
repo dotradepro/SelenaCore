@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from core.module_loader.system_module import SystemModule
 from system_modules.energy_monitor.energy import EnergyMonitor
+from system_modules.energy_monitor.voice_handler import EnergyVoiceHandler
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class EnergyMonitorModule(SystemModule):
     def __init__(self) -> None:
         super().__init__()
         self._monitor: EnergyMonitor | None = None
+        self._voice: EnergyVoiceHandler | None = None
 
     async def start(self) -> None:
         db_path = os.getenv("ENERGY_DB_PATH", ":memory:")
@@ -47,13 +49,38 @@ class EnergyMonitorModule(SystemModule):
             db_path=db_path,
         )
         await self._monitor.start()
+        self._voice = EnergyVoiceHandler(self)
 
         # Subscribe to device state changes for device_registry sources
         self.subscribe(["device.state_changed"], self._on_device_state_changed)
         # Subscribe to MQTT data events from protocol_bridge
         self.subscribe(["mqtt.message"], self._on_mqtt_message)
+        # Subscribe to voice intents
+        self.subscribe(["voice.intent"], self._on_voice_intent)
+
+        # Register voice intent patterns with IntentRouter (Tier 1.5)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            from .intent_patterns import ENERGY_INTENTS
+            intent_router = get_intent_router()
+            for entry in ENERGY_INTENTS:
+                intent_router.register_system_intent(entry)
+            logger.info("EnergyMonitor: registered %d voice intents", len(ENERGY_INTENTS))
+        except Exception as exc:
+            logger.warning("EnergyMonitor: failed to register intents: %s", exc)
 
         await self.publish("module.started", {"name": self.name})
+
+    async def speak(self, text: str) -> None:
+        """Send text to TTS via EventBus."""
+        await self.publish("voice.speak", {"text": text})
+
+    async def _on_voice_intent(self, event: Any) -> None:
+        """Handle voice.intent events for energy.* intents."""
+        payload = event.payload if hasattr(event, "payload") else event
+        intent = payload.get("intent", "")
+        if intent.startswith("energy.") and self._voice:
+            await self._voice.handle(intent, payload.get("params", {}))
 
     async def _on_device_state_changed(self, event: Any) -> None:
         """Handle device.state_changed events — extract watts from configured sources."""
@@ -135,6 +162,11 @@ class EnergyMonitorModule(SystemModule):
         if self._monitor:
             await self._monitor.stop()
         self._cleanup_subscriptions()
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().unregister_system_intents(self.name)
+        except Exception:
+            pass
         await self.publish("module.stopped", {"name": self.name})
 
     def get_router(self) -> APIRouter:

@@ -65,6 +65,16 @@
   "presence.invite_expired": "Invite expired",
   "presence.registration_failed": "Registration failed",
 
+  "presence.voice.no_users": "No users registered in the presence system",
+  "presence.voice.nobody_home": "Nobody is home right now",
+  "presence.voice.one_home": "{name} is home",
+  "presence.voice.who_home": "{count} people are home: {names}",
+  "presence.voice.specify_name": "Please specify a user name",
+  "presence.voice.user_not_found": "User {name} not found",
+  "presence.voice.user_home": "{name} is home",
+  "presence.voice.user_away": "{name} is away",
+  "presence.voice.status": "Presence status: {total} users total, {home} home, {away} away",
+
   "api.device_not_found": "Device not found",
   "api.module_not_found": "Module not found",
   "api.cannot_stop_system": "Cannot stop SYSTEM modules",

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.module_loader.system_module import SystemModule
 from system_modules.weather_service.weather import WeatherService
+from system_modules.weather_service.voice_handler import WeatherVoiceHandler
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class WeatherServiceModule(SystemModule):
     def __init__(self) -> None:
         super().__init__()
         self._weather: WeatherService | None = None
+        self._voice: WeatherVoiceHandler = WeatherVoiceHandler(self)
 
     async def start(self) -> None:
         lat = float(os.getenv("WEATHER_LAT", "50.4501"))
@@ -50,13 +52,53 @@ class WeatherServiceModule(SystemModule):
             units=units,
         )
         await self._weather.start()
+
+        # Subscribe to EventBus for voice intents
+        self.subscribe(
+            ["voice.intent"],
+            self._on_event,
+        )
+
+        # Register voice intent patterns with IntentRouter (Tier 1.5)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            from .intent_patterns import WEATHER_INTENTS
+            intent_router = get_intent_router()
+            for entry in WEATHER_INTENTS:
+                intent_router.register_system_intent(entry)
+            logger.info("WeatherService: registered %d voice intents", len(WEATHER_INTENTS))
+        except Exception as exc:
+            logger.warning("WeatherService: failed to register intents: %s", exc)
+
         await self.publish("module.started", {"name": self.name})
 
     async def stop(self) -> None:
         if self._weather:
             await self._weather.stop()
         self._cleanup_subscriptions()
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().unregister_system_intents(self.name)
+        except Exception:
+            pass
         await self.publish("module.stopped", {"name": self.name})
+
+    # ── EventBus handler ──────────────────────────────────────────────────────
+
+    async def _on_event(self, event) -> None:
+        etype = event.type
+        payload = event.payload
+
+        if etype == "voice.intent":
+            intent = payload.get("intent", "")
+            if intent.startswith("weather."):
+                await self._voice.handle(intent, payload.get("params", {}))
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    async def speak(self, text: str) -> None:
+        """Send text to TTS via EventBus."""
+        await self.publish("voice.speak", {"text": text})
 
     def get_router(self) -> APIRouter:
         router = APIRouter()
