@@ -4,6 +4,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from core.i18n import t
+
 if TYPE_CHECKING:
     from .module import EnergyMonitorModule
 
@@ -19,7 +21,7 @@ class EnergyVoiceHandler:
         m = self._module
 
         if monitor is None:
-            await m.speak("Energy monitor is not running.")
+            await m.speak(t("energy.not_running"))
             return
 
         match intent:
@@ -27,18 +29,11 @@ class EnergyVoiceHandler:
                 total_w = monitor.get_total_power()
                 devices = monitor.get_current_power()
                 count = len(devices)
-                await m.speak(
-                    f"Current consumption is {total_w:.0f} watts "
-                    f"across {count} device{'s' if count != 1 else ''}."
-                )
+                await m.speak(t("energy.current", watts=f"{total_w:.0f}", count=count))
 
             case "energy.today":
                 kwh = monitor.get_total_today_kwh()
-                await m.speak(
-                    f"Today's total energy consumption is {kwh:.2f} kilowatt-hours."
-                )
+                await m.speak(t("energy.today", kwh=f"{kwh:.2f}"))
 
             case _:
-                logger.debug(
-                    "EnergyVoiceHandler: unhandled intent '%s'", intent
-                )
+                logger.debug("EnergyVoiceHandler: unhandled intent '%s'", intent)

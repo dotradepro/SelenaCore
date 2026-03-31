@@ -21,6 +21,7 @@ numpy>=1.22.2
 pyaudio==0.2.14
 python-vlc>=3.0.20115
 websockets>=12.0
+num2words==0.5.14
 
 # Pinned transitive dependencies (security)
 h11>=0.16.0

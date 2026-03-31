@@ -5,6 +5,8 @@ import logging
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
+from core.i18n import t
+
 if TYPE_CHECKING:
     from .module import AutomationEngineModule
 
@@ -31,51 +33,44 @@ class AutomationVoiceHandler:
         m = self._module
 
         if engine is None:
-            await m.speak("Automation engine is not running.")
+            await m.speak(t("automation.not_running"))
             return
 
         match intent:
             case "automation.list":
                 rules = engine.list_rules()
                 if not rules:
-                    await m.speak("No automation rules configured.")
+                    await m.speak(t("automation.no_rules"))
                     return
-                names = [r["name"] for r in rules]
-                await m.speak(
-                    f"There are {len(rules)} automations: {', '.join(names)}."
-                )
+                names = ", ".join(r["name"] for r in rules)
+                await m.speak(t("automation.list", count=len(rules), names=names))
 
             case "automation.enable":
                 name = params.get("name", "")
                 rules = engine.list_rules()
                 match_rule = _fuzzy_find(name, rules)
                 if match_rule is None:
-                    await m.speak(f"Automation '{name}' not found.")
+                    await m.speak(t("automation.not_found", name=name))
                     return
                 engine.enable_rule(match_rule["id"], True)
-                await m.speak(f"Automation '{match_rule['name']}' enabled.")
+                await m.speak(t("automation.enabled", name=match_rule["name"]))
 
             case "automation.disable":
                 name = params.get("name", "")
                 rules = engine.list_rules()
                 match_rule = _fuzzy_find(name, rules)
                 if match_rule is None:
-                    await m.speak(f"Automation '{name}' not found.")
+                    await m.speak(t("automation.not_found", name=name))
                     return
                 engine.enable_rule(match_rule["id"], False)
-                await m.speak(f"Automation '{match_rule['name']}' disabled.")
+                await m.speak(t("automation.disabled", name=match_rule["name"]))
 
             case "automation.status":
                 status = engine.get_status()
                 total = status.get("rules_total", 0)
                 enabled = status.get("rules_enabled", 0)
                 runs = status.get("run_count", 0)
-                await m.speak(
-                    f"{total} rules total, {enabled} enabled. "
-                    f"Executed {runs} times."
-                )
+                await m.speak(t("automation.status", total=total, enabled=enabled, runs=runs))
 
             case _:
-                logger.debug(
-                    "AutomationVoiceHandler: unhandled intent '%s'", intent
-                )
+                logger.debug("AutomationVoiceHandler: unhandled intent '%s'", intent)

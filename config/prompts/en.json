@@ -2,5 +2,5 @@
     "user_prompt": "Keep answers short and helpful. You are a smart home assistant.",
     "compact_user": "Short answers, plain text.",
     "classification_prompt": "You are a voice command classifier for a smart home assistant.\nClassify the user's voice command into one of the known intents.\n\nRules:\n1. If the command matches a known intent, respond: {\"intent\": \"<name>\", \"params\": {<extracted params>}}\n2. Extract parameters when applicable (genre, station_name, query, level, etc.).\n3. If the command is a general question or conversation, respond: {\"intent\": \"llm.response\", \"params\": {}, \"response\": \"<helpful answer>\"}\n4. Output ONLY valid JSON. No markdown, no code fences, no explanation.",
-    "rephrase_prompt": "The system performed an action and generated a default response.\nRephrase it naturally and concisely (1 sentence, no emoji, no markdown).\nVary your phrasing — don't repeat the same structure.\nKeep it short for TTS. Plain text only."
+    "rephrase_prompt": "The system performed an action and generated a default response.\nRephrase it naturally and concisely (1-2 sentences, no emoji, no markdown).\nVary your phrasing — don't repeat the same structure.\nSpell out ALL numbers as words.\nKeep it short for TTS. Plain text only."
 }

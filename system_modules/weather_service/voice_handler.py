@@ -4,20 +4,22 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from core.i18n import t
+
 if TYPE_CHECKING:
     from .module import WeatherServiceModule
 
 logger = logging.getLogger(__name__)
 
 
-def _temp_unit_label(units: str) -> str:
-    """Return TTS-friendly temperature unit label."""
-    return "fahrenheit" if units == "imperial" else "celsius"
-
-
-def _wind_unit_label(units: str) -> str:
-    """Return TTS-friendly wind speed unit label."""
-    return "miles per hour" if units == "imperial" else "kilometers per hour"
+def _localized_condition(data: dict) -> str:
+    """Get weather condition text in the current locale via WMO code."""
+    wmo = data.get("wmo_code")
+    if wmo is not None:
+        localized = t(f"wmo.{wmo}")
+        if not localized.startswith("wmo."):
+            return localized
+    return data.get("condition", "")
 
 
 class WeatherVoiceHandler:
@@ -29,91 +31,84 @@ class WeatherVoiceHandler:
         svc = m._weather
 
         if svc is None:
-            await m.speak("Weather service is not ready yet.")
+            await m.speak(t("weather.not_ready"))
             return
 
         match intent:
             case "weather.current":
                 current = svc.get_current()
                 if current is None:
-                    await m.speak("I don't have weather data yet. Please try again in a moment.")
+                    await m.speak(t("weather.no_data"))
                     return
 
                 temp = current.get("temperature")
                 feels = current.get("feels_like")
-                condition = current.get("condition", "unknown")
+                condition = _localized_condition(current)
                 humidity = current.get("humidity")
                 wind = current.get("wind_speed")
                 units = current.get("units", "metric")
-                t_unit = _temp_unit_label(units)
-                w_unit = _wind_unit_label(units)
 
                 location = svc._location_name
-                loc_str = f" in {location}" if location else ""
+                loc_str = f" ({location})" if location else ""
 
-                text = f"Currently{loc_str}: {condition}, {temp} degrees {t_unit}."
+                text = t("weather.current", location=loc_str, condition=condition, temp=temp)
                 if feels is not None and temp is not None and abs(feels - temp) >= 2:
-                    text += f" Feels like {feels} degrees."
+                    text += t("weather.current_feels", feels=feels)
                 if humidity is not None:
-                    text += f" Humidity {humidity} percent."
+                    text += t("weather.current_humidity", humidity=humidity)
                 if wind is not None:
-                    text += f" Wind speed {wind} {w_unit}."
+                    wind_key = "weather.current_wind_imperial" if units == "imperial" else "weather.current_wind"
+                    text += t(wind_key, wind=wind)
                 await m.speak(text)
 
             case "weather.forecast":
                 forecast = svc.get_forecast()
                 if not forecast:
-                    await m.speak("I don't have forecast data yet. Please try again in a moment.")
+                    await m.speak(t("weather.no_data"))
                     return
-
-                units = "metric"
-                current = svc.get_current()
-                if current:
-                    units = current.get("units", "metric")
-                t_unit = _temp_unit_label(units)
 
                 period = params.get("period", "")
 
                 if period and period.lower() in ("tomorrow", "завтра"):
-                    # Only tomorrow
                     day = forecast[0] if forecast else None
                     if day is None:
-                        await m.speak("No forecast data available for tomorrow.")
+                        await m.speak(t("weather.no_data"))
                         return
-                    cond = day.get("condition", "unknown")
+                    cond = _localized_condition(day)
                     hi = day.get("temp_max")
                     lo = day.get("temp_min")
                     precip = day.get("precipitation", 0)
-                    text = f"Tomorrow: {cond}, high {hi}, low {lo} degrees {t_unit}."
+                    text = t("weather.forecast_tomorrow", condition=cond, hi=hi, lo=lo)
                     if precip and precip > 0:
-                        text += f" Precipitation {precip} millimeters."
+                        text += t("weather.forecast_precip", precip=precip)
                     await m.speak(text)
                 else:
-                    # Full 3-day forecast
-                    parts = ["Here is the forecast."]
-                    day_labels = ["Tomorrow", "Day after tomorrow", "In three days"]
+                    labels = [
+                        t("weather.forecast_label_1"),
+                        t("weather.forecast_label_2"),
+                        t("weather.forecast_label_3"),
+                    ]
+                    parts = [t("weather.forecast_intro")]
                     for i, day in enumerate(forecast[:3]):
-                        label = day_labels[i] if i < len(day_labels) else day.get("date", "")
-                        cond = day.get("condition", "unknown")
+                        label = labels[i] if i < len(labels) else day.get("date", "")
+                        cond = _localized_condition(day)
                         hi = day.get("temp_max")
                         lo = day.get("temp_min")
-                        parts.append(f"{label}: {cond}, {hi} to {lo} degrees.")
+                        parts.append(t("weather.forecast_day", label=label, condition=cond, hi=hi, lo=lo))
                     await m.speak(" ".join(parts))
 
             case "weather.temperature":
                 current = svc.get_current()
                 if current is None:
-                    await m.speak("I don't have temperature data yet. Please try again in a moment.")
+                    await m.speak(t("weather.no_data"))
                     return
 
                 temp = current.get("temperature")
                 feels = current.get("feels_like")
-                units = current.get("units", "metric")
-                t_unit = _temp_unit_label(units)
 
-                text = f"The temperature is {temp} degrees {t_unit}."
+                text = t("weather.temperature", temp=temp)
                 if feels is not None and temp is not None and abs(feels - temp) >= 2:
-                    text += f" Feels like {feels} degrees."
+                    text += t("weather.temperature_feels", feels=feels)
                 await m.speak(text)
 
             case _:
