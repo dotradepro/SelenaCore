@@ -330,29 +330,127 @@ class MyModule(SystemModule):
 
 ## Інтеграція з IntentRouter
 
-Системні модулі можуть реєструвати наміри для **Tier 1.5** (обробка намірів в процесі). Це дозволяє LLM-двигуну маршрутизувати команди природною мовою безпосередньо до вашого модуля без проходження через повний LLM-конвеєр.
+Системні модулі можуть реєструвати інтенти для **Tier 1.5** (обробка інтентів в процесі). Це дозволяє маршрутизувати голосові команди безпосередньо до модуля через regex-шаблони — без виклику Cloud LLM чи Ollama. Cloud LLM (Tier 3a) також використовує зареєстровані інтенти для побудови каталогу класифікації, тому навіть вільні формулювання будуть маршрутизовані правильно.
+
+Рекомендований паттерн використовує три файли: `intent_patterns.py`, `voice_handler.py` та зміни до `module.py`.
+
+### Крок 1: Визначити шаблони інтентів
 
 ```python
-from system_modules.llm_engine.intent_router import register_system_intent
+# system_modules/my_module/intent_patterns.py
+from __future__ import annotations
+from system_modules.llm_engine.intent_router import SystemIntentEntry
 
-async def _handle_light_command(text: str, context: dict) -> dict:
-    # Розбір та виконання команди
-    return {"response": "Light turned on", "action": "turn_on"}
-
-register_system_intent(
-    pattern=r"turn (on|off) the (?P<room>\w+) light",
-    handler=_handle_light_command,
-    priority=15
-)
+MY_INTENTS: list[SystemIntentEntry] = [
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.do_something",
+        priority=5,
+        description="Виконати дію",
+        patterns={
+            "uk": [r"зроби\s+(?P<what>.+)"],
+            "en": [r"do\s+(?P<what>.+)"],
+        },
+    ),
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.status",
+        priority=5,
+        description="Статус модуля",
+        patterns={
+            "uk": [r"статус\s+модуля"],
+            "en": [r"module\s+status"],
+        },
+    ),
+]
 ```
 
-**Діапазони пріоритетів для системних намірів: 0-29.** Менші числа зіставляються першими. Обирайте пріоритет залежно від специфічності вашого шаблону:
+### Крок 2: Створити голосовий обробник
+
+```python
+# system_modules/my_module/voice_handler.py
+from __future__ import annotations
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .module import MyModule
+
+logger = logging.getLogger(__name__)
+
+class MyVoiceHandler:
+    def __init__(self, module: "MyModule") -> None:
+        self._module = module
+
+    async def handle(self, intent: str, params: dict) -> None:
+        m = self._module
+        match intent:
+            case "mymodule.do_something":
+                what = params.get("what", "")
+                # Виконати дію...
+                await m.speak(f"Зроблено: {what}")
+            case "mymodule.status":
+                await m.speak("Модуль працює нормально")
+```
+
+### Крок 3: Зареєструвати в module.py
+
+```python
+# У методі start() вашого модуля:
+async def start(self) -> None:
+    # ... наявне налаштування ...
+
+    self._voice = MyVoiceHandler(self)
+    self.subscribe(["voice.intent"], self._on_event)
+
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        from .intent_patterns import MY_INTENTS
+        for entry in MY_INTENTS:
+            get_intent_router().register_system_intent(entry)
+    except Exception as exc:
+        logger.warning("Не вдалося зареєструвати інтенти: %s", exc)
+
+async def stop(self) -> None:
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().unregister_system_intents(self.name)
+    except Exception:
+        pass
+    # ... наявне очищення ...
+
+async def _on_event(self, event) -> None:
+    if event.type == "voice.intent":
+        intent = event.payload.get("intent", "")
+        if intent.startswith("mymodule."):
+            await self._voice.handle(intent, event.payload.get("params", {}))
+
+async def speak(self, text: str) -> None:
+    """Надіслати текст до TTS через EventBus → voice-core."""
+    await self.publish("voice.speak", {"text": text})
+```
+
+### Довідник пріоритетів
+
+Більші числа = перевіряються першими в межах Tier 1.5.
 
 | Пріоритет | Випадок використання |
-|---|---|
-| 0-9 | Точні збіги команд, критичні для безпеки наміри |
-| 10-19 | Загальне керування пристроями, типові запити |
-| 20-29 | Резервні шаблони, широкі збіги |
+|-----------|----------------------|
+| 10 | Інтенти з параметрами (іменовані regex-групи) — повинні матчитися раніше за загальні |
+| 5 | Стандартні інтенти — прості команди без параметрів |
+
+### Існуючі модулі з голосовим керуванням
+
+Ці модулі є еталонними реалізаціями:
+
+| Модуль | Інтенти | Файл |
+|--------|---------|------|
+| media-player | 14 | `system_modules/media_player/intent_patterns.py` |
+| automation-engine | 4 | `system_modules/automation_engine/intent_patterns.py` |
+| weather-service | 3 | `system_modules/weather_service/intent_patterns.py` |
+| presence-detection | 3 | `system_modules/presence_detection/intent_patterns.py` |
+| energy-monitor | 2 | `system_modules/energy_monitor/intent_patterns.py` |
+| device-watchdog | 2 | `system_modules/device_watchdog/intent_patterns.py` |
 
 ---
 

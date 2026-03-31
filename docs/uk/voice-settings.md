@@ -2,7 +2,32 @@
 
 ## Огляд конвеєра
 
-Wake word (openWakeWord) → Запис аудіо → Vosk STT → Ідентифікація мовця (resemblyzer) → Intent Router (4 рівні) → Piper TTS
+Wake word → Запис аудіо → Vosk STT → Ідентифікація мовця (resemblyzer) → Intent Router (6 рівнів) → Cloud LLM Rephrase → Piper TTS
+
+```
+Мікрофон (parecord)
+     │
+     ▼
+  Vosk STT ──► текст
+     │
+     ▼
+  Intent Router
+     ├── Tier 1:   Fast Matcher (ключові слова/regex)     ~0 мс
+     ├── Tier 1.5: Інтенти системних модулів (в процесі)  ~мкс
+     ├── Tier 2:   Module Bus (модулі, WebSocket)          ~мс
+     ├── Tier 3a:  Cloud LLM класифікація (Gemini/…)       ~1-2 сек
+     ├── Tier 3b:  Ollama LLM (локальний, RAM ≥ 5 ГБ)      3-8 сек
+     └── Fallback: i18n "не зрозумів"
+     │
+     ▼
+  Модуль виконує дію
+     │
+     ▼
+  Cloud LLM Rephrase (варіативний TTS)
+     │
+     ▼
+  Piper TTS → Динамік
+```
 
 ## STT - Vosk
 
@@ -34,41 +59,229 @@ Wake word (openWakeWord) → Запис аудіо → Vosk STT → Іденти
 - Події: `voice.privacy_on`, `voice.privacy_off`
 - Конфігурація: `voice.privacy_gpio_pin`
 
-## Маршрутизація інтентів (4 рівні)
+---
 
-1. **Fast Matcher** — правила на ключових словах/regex у YAML → 0 мс
-2. **Інтенти системних модулів** — regex-шаблони в процесі → мікросекунди
-3. **Інтенти Module Bus** — користувацькі модулі через WebSocket → мілісекунди
-4. **Ollama LLM** — семантичне розуміння → 3-8 сек (потрібно 5 ГБ+ оперативної пам'яті)
+## Маршрутизація інтентів (6 рівнів)
 
-## Конфігурація LLM
+Маршрутизатор інтентів використовує каскадну систему. Кожен рівень перевіряється послідовно; перший збіг виграє.
+
+| Рівень | Назва | Затримка | Механізм | Джерело |
+|--------|-------|----------|----------|---------|
+| 1 | Fast Matcher | ~0 мс | Правила на ключових словах/regex у YAML | `fast_matcher.py` |
+| 1.5 | Інтенти системних модулів | ~мкс | Regex з іменованими групами, в процесі | `intent_router.py` |
+| 2 | Module Bus | ~мс | WebSocket запит до модулів користувача | `module_bus.py` |
+| 3a | Cloud LLM класифікація | ~1-2 сек | Структурований JSON через Gemini/OpenAI тощо | `cloud_providers.py` |
+| 3b | Ollama LLM | 3-8 сек | Локальна семантична модель (RAM ≥ 5 ГБ) | `ollama_client.py` |
+| — | Fallback | ~0 мс | i18n повідомлення "не зрозумів" | `i18n` |
+
+### Tier 1: Fast Matcher
+
+Правила на ключових словах та regex, визначені у `/opt/selena-core/config/intent_rules.yaml` або вбудовані за замовчуванням. Нульова затримка. Підтримує базове керування пристроями (світло, температура, приватність).
+
+### Tier 1.5: Інтенти системних модулів
+
+Системні модулі реєструють паттерни `SystemIntentEntry` при старті. Підтримують іменовані групи regex для вилучення параметрів (напр. `(?P<genre>rock|jazz)`). 28 інтентів зареєстровано у 6 модулях.
+
+### Tier 2: Module Bus
+
+Модулі користувача (у контейнерах) реєструють інтенти через WebSocket повідомлення `announce`. Module Bus підтримує відсортований індекс інтентів та маршрутизацію з circuit breaker.
+
+### Tier 3a: Cloud LLM класифікація
+
+Коли regex-рівні не спрацьовують, маршрутизатор відправляє команду до налаштованого хмарного LLM-провайдера для структурованої класифікації. Це критично на Raspberry Pi, де локальний Ollama вимкнений (RAM < 5 ГБ).
+
+**Як це працює:**
+
+1. Маршрутизатор динамічно будує каталог усіх зареєстрованих інтентів (Tier 1 + 1.5 + 2)
+2. Відправляє промпт класифікації до хмарного LLM (temperature=0.0 для детермінованого результату)
+3. LLM повертає структурований JSON: `{"intent": "media.play_radio", "params": {}}`
+4. Для загальних питань LLM повертає: `{"intent": "llm.response", "params": {}, "response": "..."}`
+
+**Підтримувані провайдери:** OpenAI, Anthropic, Google AI (Gemini), Groq
+
+**Таймаут:** 15 секунд
+
+### Tier 3b: Ollama LLM
+
+Локальний запасний варіант для пристроїв з достатньою RAM (≥ 5 ГБ). Використовує компактний системний промпт для малих моделей. Автоматично вимикається на пристроях з малою RAM.
+
+---
+
+## Конфігурація Cloud LLM
 
 ```yaml
-llm:
-  enabled: true
-  provider: "ollama"
-  ollama_url: "http://localhost:11434"
-  default_model: "phi-3-mini"
-  min_ram_gb: 5
-  timeout_sec: 30
+voice:
+  llm_provider: "google"          # "ollama" | "llamacpp" | "openai" | "anthropic" | "google" | "groq"
+  providers:
+    google:
+      api_key: "AIza..."
+      model: "gemini-2.0-flash"
+    openai:
+      api_key: "sk-..."
+      model: "gpt-4o-mini"
+    anthropic:
+      api_key: "sk-ant-..."
+      model: "claude-3-haiku-20240307"
 ```
+
+Налаштовується через UI: **Settings → System Modules → Voice Core → LLM Router**
+
+---
+
+## LLM Rephrase відповідей
+
+Коли системний модуль виконує голосову команду, він генерує стандартну відповідь (напр. "Граю радіо станцію Kiss FM"). Перед відтворенням TTS voice-core відправляє цей текст до Cloud LLM для перефразування.
+
+**Мета:** варіативні, природні відповіді замість одноманітних шаблонів.
+
+**Як це працює:**
+
+1. Модуль викликає `m.speak("Граю радіо станцію Kiss FM")`
+2. Подія `voice.speak` надходить до voice-core
+3. voice-core відправляє стандартний текст + контекст діалогу до Cloud LLM
+4. LLM перефразовує текст природно (temperature=0.9 для варіативності)
+5. Перефразований текст озвучується через Piper TTS
+6. У разі недоступності LLM використовується оригінальний текст
+
+**Сесія діалогу:** останні 20 повідомлень (користувач + асистент) зберігаються в пам'яті, скидаються після 5 хвилин бездіяльності.
+
+---
+
+## Консоль тестування команд
+
+UI для дебагу голосових команд без необхідності говорити. Розташована:
+
+**Settings → System Modules → Voice Core → Command Test Console** (внизу сторінки)
+
+Можливості:
+- Текстове поле для імітації голосових команд
+- Чекбокс TTS (озвучити відповідь або лише показати результат)
+- Повний трейс пайплайну з відображенням статусу кожного рівня (hit/miss/skip/error) з таймінгом
+- Відображення результату: назва інтенту, рівень, затримка, текст відповіді, action, params
+- Клавіша Enter для відправки
+
+**API ендпоінт:** `POST /api/ui/modules/voice-core/test-command`
+
+```json
+// Запит
+{"text": "увімкни радіо", "speak": false}
+
+// Відповідь
+{
+  "ok": true,
+  "input_text": "увімкни радіо",
+  "lang": "uk",
+  "intent": "media.play_radio",
+  "source": "system_module",
+  "latency_ms": 5,
+  "duration_ms": 5,
+  "trace": [
+    {"tier": "1", "name": "Fast Matcher", "status": "miss", "ms": 1},
+    {"tier": "1.5", "name": "System Module Intents", "status": "hit", "ms": 5, "detail": "media-player::media.play_radio", "registered": 28}
+  ]
+}
+```
+
+---
+
+## Довідник голосових команд
+
+### media-player (14 інтентів)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `media.play_radio` | Увімкнути радіо | "увімкни радіо" | "play radio" |
+| `media.play_genre` | Грати за жанром | "увімкни джаз" | "play jazz music" |
+| `media.play_radio_name` | Грати станцію | "увімкни радіо Kiss FM" | "play station Kiss FM" |
+| `media.play_search` | Пошук і відтворення | "знайди Yesterday" | "find Yesterday" |
+| `media.pause` | Пауза | "пауза" | "pause" |
+| `media.resume` | Продовжити | "продовжуй" | "resume" |
+| `media.stop` | Стоп | "стоп" | "stop" |
+| `media.next` | Наступний трек | "наступний" | "next" |
+| `media.previous` | Попередній трек | "попередній" | "previous" |
+| `media.volume_up` | Гучніше | "гучніше" | "louder" |
+| `media.volume_down` | Тихіше | "тихіше" | "quieter" |
+| `media.volume_set` | Встановити гучність | "гучність на 50" | "volume 50" |
+| `media.whats_playing` | Що грає | "що грає" | "what's playing" |
+| `media.shuffle_toggle` | Перемішати | "перемішай" | "shuffle" |
+
+### weather-service (3 інтенти)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `weather.current` | Поточна погода | "яка погода" | "what's the weather" |
+| `weather.forecast` | Прогноз погоди | "прогноз на завтра" | "weather forecast" |
+| `weather.temperature` | Температура | "скільки градусів" | "what's the temperature" |
+
+### presence-detection (3 інтенти)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `presence.who_home` | Хто вдома | "хто вдома" | "who is home" |
+| `presence.check_user` | Перевірити користувача | "чи є Олена вдома" | "is Alice home" |
+| `presence.status` | Статус присутності | "статус присутності" | "presence status" |
+
+### automation-engine (4 інтенти)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `automation.list` | Список автоматизацій | "які автоматизації" | "list automations" |
+| `automation.enable` | Увімкнути автоматизацію | "увімкни автоматизацію X" | "enable automation X" |
+| `automation.disable` | Вимкнути автоматизацію | "вимкни автоматизацію X" | "disable automation X" |
+| `automation.status` | Статус автоматизацій | "статус автоматизацій" | "automation status" |
+
+### energy-monitor (2 інтенти)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `energy.current` | Поточне споживання | "яке споживання" | "power consumption" |
+| `energy.today` | Енергія за сьогодні | "скільки електрики сьогодні" | "energy today" |
+
+### device-watchdog (2 інтенти)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `watchdog.status` | Статус пристроїв | "статус пристроїв" | "device status" |
+| `watchdog.scan` | Сканування пристроїв | "перевір пристрої" | "scan devices" |
+
+### Інтенти Fast Matcher (5 інтентів)
+
+| Інтент | Опис | Приклад (UK) | Приклад (EN) |
+|--------|------|--------------|--------------|
+| `turn_on_light` | Увімкнути світло | "увімкни світло" | "turn on light" |
+| `turn_off_light` | Вимкнути світло | "вимкни світло" | "turn off light" |
+| `temperature_query` | Запит температури | "яка температура" | "what's the temperature" |
+| `privacy_on` | Увімкнути приватність | "не слухай" | "privacy on" |
+| `privacy_off` | Вимкнути приватність | "вийди з приватного" | "privacy off" |
+
+---
 
 ## Голосові події
 
-- `voice.wake_word` — виявлено wake word
-- `voice.recognized` — текстовий результат STT
-- `voice.intent` — знайдено відповідний інтент
-- `voice.response` — згенеровано TTS-відповідь
-- `voice.privacy_on` / `voice.privacy_off` — перемикання режиму приватності
+| Подія | Опис |
+|-------|------|
+| `voice.wake_word` | Виявлено wake word |
+| `voice.recognized` | Текстовий результат STT |
+| `voice.intent` | Знайдено інтент (включає intent, source, params, latency) |
+| `voice.response` | Згенеровано текст TTS-відповіді |
+| `voice.speak` | Запит на озвучення тексту (EventBus → voice-core) |
+| `voice.speak_done` | TTS-відтворення завершено |
+| `voice.privacy_on` | Режим приватності увімкнено |
+| `voice.privacy_off` | Режим приватності вимкнено |
 
 ## Голосова конфігурація в core.yaml
 
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "base"
-  tts_voice: "uk_UA-lada-x_low"
+  stt_model: "vosk-model-small-uk-v3-nano"
+  tts_voice: "uk_UA-ukrainian_tts-medium"
   privacy_gpio_pin: null
+  llm_provider: "google"
+  providers:
+    google:
+      api_key: "AIza..."
+      model: "gemini-2.0-flash"
 ```
 
 ## WebRTC-стримінг

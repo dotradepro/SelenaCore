@@ -330,29 +330,127 @@ Tips for REST APIs:
 
 ## IntentRouter Integration
 
-System modules can register intents for **Tier 1.5** (in-process intent handling). This allows the LLM engine to route natural language commands directly to your module without going through the full LLM pipeline.
+System modules can register intents for **Tier 1.5** (in-process intent handling). This allows the intent router to match voice commands directly to your module via regex patterns -- without going through the Cloud LLM or Ollama pipeline. The Cloud LLM (Tier 3a) also uses registered intents to build its classification catalog, so even free-form commands will be routed correctly.
+
+The recommended pattern uses three files: `intent_patterns.py`, `voice_handler.py`, and additions to `module.py`.
+
+### Step 1: Define intent patterns
 
 ```python
-from system_modules.llm_engine.intent_router import register_system_intent
+# system_modules/my_module/intent_patterns.py
+from __future__ import annotations
+from system_modules.llm_engine.intent_router import SystemIntentEntry
 
-async def _handle_light_command(text: str, context: dict) -> dict:
-    # Parse and execute the command
-    return {"response": "Light turned on", "action": "turn_on"}
-
-register_system_intent(
-    pattern=r"turn (on|off) the (?P<room>\w+) light",
-    handler=_handle_light_command,
-    priority=15
-)
+MY_INTENTS: list[SystemIntentEntry] = [
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.do_something",
+        priority=5,
+        description="Perform an action",
+        patterns={
+            "uk": [r"зроби\s+(?P<what>.+)"],
+            "en": [r"do\s+(?P<what>.+)"],
+        },
+    ),
+    SystemIntentEntry(
+        module="my-module",
+        intent="mymodule.status",
+        priority=5,
+        description="Get module status",
+        patterns={
+            "uk": [r"статус\s+модуля"],
+            "en": [r"module\s+status"],
+        },
+    ),
+]
 ```
 
-**Priority ranges for system intents: 0-29.** Lower numbers are matched first. Choose your priority based on how specific your pattern is:
+### Step 2: Create voice handler
+
+```python
+# system_modules/my_module/voice_handler.py
+from __future__ import annotations
+import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .module import MyModule
+
+logger = logging.getLogger(__name__)
+
+class MyVoiceHandler:
+    def __init__(self, module: "MyModule") -> None:
+        self._module = module
+
+    async def handle(self, intent: str, params: dict) -> None:
+        m = self._module
+        match intent:
+            case "mymodule.do_something":
+                what = params.get("what", "")
+                # Execute action...
+                await m.speak(f"Done: {what}")
+            case "mymodule.status":
+                await m.speak("Module is running fine")
+```
+
+### Step 3: Register in module.py
+
+```python
+# In your module's start() method:
+async def start(self) -> None:
+    # ... existing setup ...
+
+    self._voice = MyVoiceHandler(self)
+    self.subscribe(["voice.intent"], self._on_event)
+
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        from .intent_patterns import MY_INTENTS
+        for entry in MY_INTENTS:
+            get_intent_router().register_system_intent(entry)
+    except Exception as exc:
+        logger.warning("Failed to register intents: %s", exc)
+
+async def stop(self) -> None:
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().unregister_system_intents(self.name)
+    except Exception:
+        pass
+    # ... existing cleanup ...
+
+async def _on_event(self, event) -> None:
+    if event.type == "voice.intent":
+        intent = event.payload.get("intent", "")
+        if intent.startswith("mymodule."):
+            await self._voice.handle(intent, event.payload.get("params", {}))
+
+async def speak(self, text: str) -> None:
+    """Send text to TTS via EventBus → voice-core."""
+    await self.publish("voice.speak", {"text": text})
+```
+
+### Priority guide
+
+Higher numbers = checked first within Tier 1.5.
 
 | Priority | Use Case |
-|---|---|
-| 0-9 | Exact command matches, safety-critical intents |
-| 10-19 | General device control, common queries |
-| 20-29 | Fallback patterns, broad matches |
+|----------|----------|
+| 10 | Intents with parameters (named regex groups) — must match before generic patterns |
+| 5 | Standard intents — simple commands without parameters |
+
+### Existing voice-enabled modules
+
+These modules serve as reference implementations:
+
+| Module | Intents | File |
+|--------|---------|------|
+| media-player | 14 | `system_modules/media_player/intent_patterns.py` |
+| automation-engine | 4 | `system_modules/automation_engine/intent_patterns.py` |
+| weather-service | 3 | `system_modules/weather_service/intent_patterns.py` |
+| presence-detection | 3 | `system_modules/presence_detection/intent_patterns.py` |
+| energy-monitor | 2 | `system_modules/energy_monitor/intent_patterns.py` |
+| device-watchdog | 2 | `system_modules/device_watchdog/intent_patterns.py` |
 
 ---
 

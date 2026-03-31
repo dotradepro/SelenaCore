@@ -290,49 +290,68 @@ Each module type has a predefined set of allowed message types and event subscri
 
 **Source:** `system_modules/llm_engine/intent_router.py`
 
-The intent router uses a 4-tier cascade. Each tier is tried in order; the first match wins. This design balances speed against understanding depth.
+The intent router uses a 6-tier cascade. Each tier is tried in order; the first match wins. This design balances speed against understanding depth.
 
 ```
   User utterance
        |
        v
-  +----+----+
-  | Tier 1  |  Fast Matcher (YAML keyword/regex rules)
-  | ~0 ms   |  Defined in YAML config files
-  +----+----+
+  +----------+
+  | Tier 1   |  Fast Matcher (YAML keyword/regex rules)
+  | ~0 ms    |  Defined in YAML config files
+  +----------+
        | miss
        v
-  +----+----+
-  | Tier 2  |  System Module Intents (in-process regex)
-  | ~us     |  Registered by system modules at startup
-  +----+----+
+  +----------+
+  | Tier 1.5 |  System Module Intents (in-process regex)
+  | ~μs      |  Registered by system modules at startup (28 intents)
+  +----------+
        | miss
        v
-  +----+----+
-  | Tier 3  |  Module Bus Intents (user modules via WebSocket)
-  | ~ms     |  Registered via announce message with regex patterns
-  +----+----+
+  +----------+
+  | Tier 2   |  Module Bus Intents (user modules via WebSocket)
+  | ~ms      |  Registered via announce message with regex patterns
+  +----------+
        | miss
        v
-  +----+----+
-  | Tier 4  |  Ollama LLM (semantic understanding)
-  | 3-8 sec |  Requires 5GB+ RAM, runs locally
-  +----+----+
+  +----------+
+  | Tier 3a  |  Cloud LLM Classification (Gemini / OpenAI / Anthropic)
+  | ~1-2 sec |  Structured JSON intent classification
+  +----------+
+       | miss
+       v
+  +----------+
+  | Tier 3b  |  Ollama LLM (local semantic understanding)
+  | 3-8 sec  |  Requires 5GB+ RAM, runs locally
+  +----------+
+       | miss
+       v
+  +----------+
+  | Fallback |  i18n "not understood" message
+  +----------+
        |
        v
-    Response
+    Response (LLM rephrase for variety → TTS)
 ```
 
 **Tier details:**
 
-| Tier | Source           | Latency  | Mechanism                       | RAM Cost  |
-|------|------------------|----------|---------------------------------|-----------|
-| 1    | Fast Matcher     | ~0 ms    | YAML keyword and regex rules    | Negligible|
-| 2    | System Modules   | ~us      | In-process regex + priority     | Negligible|
-| 3    | Module Bus       | ~ms      | WebSocket round-trip with regex | Negligible|
-| 4    | Ollama LLM       | 3-8 sec  | Full semantic model inference   | 5 GB+     |
+| Tier | Source | Latency | Mechanism | RAM Cost |
+|------|--------|---------|-----------|----------|
+| 1 | Fast Matcher | ~0 ms | YAML keyword and regex rules | Negligible |
+| 1.5 | System Modules | ~μs | In-process regex + priority + named groups | Negligible |
+| 2 | Module Bus | ~ms | WebSocket round-trip with regex | Negligible |
+| 3a | Cloud LLM | ~1-2 sec | Structured intent classification via cloud API | None (cloud) |
+| 3b | Ollama LLM | 3-8 sec | Full semantic model inference | 5 GB+ |
+| — | Fallback | ~0 ms | i18n "not understood" | Negligible |
 
 Intent routing supports **priority ordering** and **regex pattern matching** at all tiers. Modules register their intent patterns along with a numeric priority; higher-priority handlers are tried first within each tier.
+
+**Cloud LLM Classification (Tier 3a):** When regex tiers miss, the router dynamically builds a catalog of all known intents and sends a classification prompt to the active cloud LLM provider. The LLM returns structured JSON (`{"intent": "...", "params": {...}}`). This enables natural language understanding on low-RAM devices like Raspberry Pi where local Ollama is disabled.
+
+**LLM Response Rephrase:** After a module executes a voice command and generates a response, voice-core sends the default text to the Cloud LLM for rephrasing (temperature=0.9). This produces variative, natural-sounding TTS responses instead of repetitive templates. A conversation session (last 20 messages, 5-min timeout) provides context for coherent dialogue.
+
+**Voice-enabled modules:** media-player (14 intents), weather-service (3), presence-detection (3), automation-engine (4), energy-monitor (2), device-watchdog (2). See [Voice Pipeline Configuration](voice-settings.md) for the full command reference.
 
 ---
 
