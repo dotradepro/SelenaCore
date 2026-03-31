@@ -156,8 +156,8 @@ class TTSEngine:
     async def synthesize(self, text: str, voice: str | None = None, settings: TTSSettings | None = None) -> bytes:
         """Convert text to WAV audio bytes using Piper.
 
-        Auto-detects GPU server (piper-gpu on port 5100) and uses it if available.
-        Falls back to local CPU piper binary.
+        Primary path: native Piper GPU server on host (port 5100).
+        Fallback: local CPU piper binary (if server unavailable).
         Returns raw WAV bytes, or empty bytes if synthesis failed.
         """
         clean = sanitize_for_tts(text)
@@ -167,7 +167,7 @@ class TTSEngine:
         v = voice or self.voice
         s = settings or _load_tts_settings()
 
-        # Try GPU server first (separate container with CUDA onnxruntime)
+        # Primary: native Piper server on host (GPU-accelerated, handles noise trim)
         gpu_result = await self._try_gpu_server(clean, v, s)
         if gpu_result:
             return gpu_result
@@ -179,7 +179,7 @@ class TTSEngine:
             return await loop.run_in_executor(None, self._synthesize_sync, clean, model_path, s)
 
     async def _try_gpu_server(self, text: str, voice: str, settings: TTSSettings) -> bytes | None:
-        """Try to use Piper GPU server if running."""
+        """Use native Piper server on host (handles GPU + noise trim server-side)."""
         try:
             import httpx
             gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
@@ -195,10 +195,7 @@ class TTSEngine:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.post(f"{gpu_url}/synthesize", json=payload)
                 if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("audio/"):
-                    wav = resp.content
-                    # Post-process: trim trailing noise
-                    trimmed = self._trim_trailing_noise_bytes(wav)
-                    return trimmed or wav
+                    return resp.content
         except Exception:
             pass
         return None

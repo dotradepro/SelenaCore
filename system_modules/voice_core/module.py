@@ -63,6 +63,38 @@ class EnrollSpeakerRequest(BaseModel):
     user_id: str
 
 
+# ── TTS text preparation ─────────────────────────────────────────────────────
+
+_NUM2WORDS_LANGS = {"uk": "uk", "en": "en", "de": "de", "fr": "fr", "es": "es", "pl": "pl"}
+
+
+def _numbers_to_words(text: str, lang: str) -> str:
+    """Replace all numbers in text with words using num2words.
+
+    Handles integers and decimals. Falls back to original text if num2words
+    is not installed or language not supported.
+    """
+    try:
+        from num2words import num2words
+    except ImportError:
+        return text
+
+    n2w_lang = _NUM2WORDS_LANGS.get(lang, "en")
+
+    import re
+    def _replace(m: re.Match) -> str:
+        s = m.group(0)
+        try:
+            if "." in s or "," in s:
+                val = float(s.replace(",", "."))
+                return num2words(val, lang=n2w_lang)
+            return num2words(int(s), lang=n2w_lang)
+        except Exception:
+            return s
+
+    return re.sub(r"\d+[.,]\d+|\d+", _replace, text)
+
+
 # ── State constants ──────────────────────────────────────────────────────────
 
 STATE_IDLE = "idle"            # waiting for wake phrase
@@ -116,9 +148,9 @@ class VoiceCoreModule(SystemModule):
     def _get_silence_timeout(self) -> float:
         try:
             from core.config_writer import get_value
-            return float(get_value("voice", "stt_silence_timeout", 1.5))
+            return float(get_value("voice", "stt_silence_timeout", 1.0))
         except Exception:
-            return 1.5
+            return 1.0
 
     def _get_input_device(self) -> str | None:
         try:
@@ -364,9 +396,10 @@ class VoiceCoreModule(SystemModule):
                 except asyncio.TimeoutError:
                     logger.warning("Voice pipeline: system module TTS timeout (15s)")
             elif result.response:
-                await self.publish("voice.response", {"text": result.response, "query": text})
+                tts_text = _numbers_to_words(result.response, self._detect_lang())
+                await self.publish("voice.response", {"text": tts_text, "query": text})
                 logger.info("Voice pipeline: speaking...")
-                await self._stream_speak(result.response)
+                await self._stream_speak(tts_text)
                 await self.publish("voice.speak_done", {"text": result.response})
 
             # Track assistant response in session (trim to last 10 exchanges)
@@ -441,10 +474,10 @@ class VoiceCoreModule(SystemModule):
     # ── TTS + Playback ───────────────────────────────────────────────────
 
     async def _stream_speak(self, text: str) -> None:
-        """Stream TTS: piper --output-raw | paplay --raw.
+        """TTS playback: fetch raw PCM from Piper server → paplay.
 
-        Audio starts playing as soon as piper generates the first samples.
-        No intermediate file, no waiting for full synthesis.
+        Primary: HTTP request to native Piper server (GPU-accelerated on host).
+        Fallback: local piper binary pipe (if server unavailable).
         """
         from system_modules.voice_core.tts import sanitize_for_tts, PIPER_BIN, MODELS_DIR, _load_tts_settings
 
@@ -452,74 +485,141 @@ class VoiceCoreModule(SystemModule):
         if not clean:
             return
 
-        voice = self._tts.voice if self._tts else os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
-        model_path = str(Path(MODELS_DIR) / f"{voice}.onnx")
+        # Always read current voice from config (may change via UI without restart)
+        from core.config_writer import get_value
+        voice = get_value("voice", "tts_voice", None) or (
+            self._tts.voice if self._tts else os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
+        )
         settings = _load_tts_settings()
         output_device = self._get_output_device()
         loop = asyncio.get_running_loop()
 
-        def _pipe() -> None:
-            piper_cmd = [
-                PIPER_BIN, "--model", model_path, "--output-raw",
-                "--length-scale", str(settings.length_scale),
-                "--noise-scale", str(settings.noise_scale),
-                "--noise-w-scale", str(settings.noise_w_scale),
-                "--sentence-silence", str(settings.sentence_silence),
-                "--speaker", str(settings.speaker),
-            ]
+        # Try native Piper server first (GPU-accelerated, runs on host)
+        pcm_data = await self._fetch_tts_raw(clean, voice, settings)
+        if pcm_data:
+            await loop.run_in_executor(
+                None, self._play_raw_pcm, pcm_data, output_device,
+            )
+            return
+
+        # Fallback: local piper binary pipe
+        model_path = str(Path(MODELS_DIR) / f"{voice}.onnx")
+        await loop.run_in_executor(
+            None, self._pipe_piper_local, clean, model_path, settings, output_device,
+        )
+
+    async def _fetch_tts_raw(self, text: str, voice: str, settings) -> bytes | None:
+        """Fetch raw PCM from native Piper server."""
+        try:
+            import httpx
+            gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+            payload = {
+                "text": text, "voice": voice,
+                "length_scale": settings.length_scale,
+                "noise_scale": settings.noise_scale,
+                "noise_w_scale": settings.noise_w_scale,
+                "sentence_silence": settings.sentence_silence,
+                "speaker": settings.speaker,
+                "volume": settings.volume,
+            }
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(f"{gpu_url}/synthesize/raw", json=payload)
+                if resp.status_code == 200 and resp.content:
+                    return resp.content
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _play_raw_pcm(pcm_data: bytes, output_device: str | None) -> None:
+        """Play raw PCM s16le 22050Hz mono via paplay."""
+        play_cmd = [
+            "paplay", "--raw",
+            "--format=s16le", "--rate=22050", "--channels=1",
+        ]
+        if output_device:
+            play_cmd.append("--device=" + output_device)
+        try:
+            proc = subprocess.Popen(
+                play_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            proc.stdin.write(pcm_data)
+            proc.stdin.close()
+            proc.wait(timeout=120)
+            logger.info("Voice pipeline: playback complete")
+        except Exception as e:
+            logger.error("PCM playback error: %s", e)
+        finally:
             try:
-                from core.hardware import should_use_gpu, onnxruntime_has_gpu
-                if should_use_gpu() and onnxruntime_has_gpu():
-                    piper_cmd.append("--cuda")
+                proc.kill()
+                proc.wait(timeout=2)
             except Exception:
                 pass
 
-            play_cmd = [
-                "paplay", "--raw",
-                "--format=s16le", "--rate=22050", "--channels=1",
-            ]
-            if output_device:
-                play_cmd.append("--device=" + output_device)
-
-            piper_proc = None
-            play_proc = None
-            try:
-                piper_proc = subprocess.Popen(
-                    piper_cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                )
-                play_proc = subprocess.Popen(
-                    play_cmd,
-                    stdin=piper_proc.stdout,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                piper_proc.stdout.close()
-                piper_proc.stdin.write(clean.encode("utf-8"))
-                piper_proc.stdin.close()
-                play_proc.wait(timeout=120)
-                piper_proc.wait(timeout=5)
-                logger.info("Voice pipeline: playback complete")
-            except FileNotFoundError as e:
-                logger.warning("piper or paplay not found: %s", e)
-            except subprocess.TimeoutExpired:
-                logger.warning("TTS stream timed out")
-            except Exception as e:
-                logger.error("Stream speak error: %s", e)
-            finally:
-                for p in [piper_proc, play_proc]:
-                    if p:
-                        try:
-                            p.kill()
-                        except Exception:
-                            pass
-
+    @staticmethod
+    def _pipe_piper_local(text: str, model_path: str, settings, output_device: str | None) -> None:
+        """Fallback: local piper binary → paplay pipe."""
+        from system_modules.voice_core.tts import PIPER_BIN
+        piper_cmd = [
+            PIPER_BIN, "--model", model_path, "--output-raw",
+            "--length-scale", str(settings.length_scale),
+            "--noise-scale", str(settings.noise_scale),
+            "--noise-w-scale", str(settings.noise_w_scale),
+            "--sentence-silence", str(settings.sentence_silence),
+            "--speaker", str(settings.speaker),
+        ]
         try:
-            await loop.run_in_executor(None, _pipe)
-        except Exception as exc:
-            logger.warning("Stream speak failed: %s", exc)
+            from core.hardware import should_use_gpu, onnxruntime_has_gpu
+            if should_use_gpu() and onnxruntime_has_gpu():
+                piper_cmd.append("--cuda")
+        except Exception:
+            pass
+
+        play_cmd = [
+            "paplay", "--raw",
+            "--format=s16le", "--rate=22050", "--channels=1",
+        ]
+        if output_device:
+            play_cmd.append("--device=" + output_device)
+
+        piper_proc = None
+        play_proc = None
+        try:
+            piper_proc = subprocess.Popen(
+                piper_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            play_proc = subprocess.Popen(
+                play_cmd,
+                stdin=piper_proc.stdout,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            piper_proc.stdout.close()
+            piper_proc.stdin.write(text.encode("utf-8"))
+            piper_proc.stdin.close()
+            play_proc.wait(timeout=120)
+            piper_proc.wait(timeout=5)
+            logger.info("Voice pipeline: playback complete")
+        except FileNotFoundError as e:
+            logger.warning("piper or paplay not found: %s", e)
+        except subprocess.TimeoutExpired:
+            logger.warning("TTS stream timed out")
+        except Exception as e:
+            logger.error("Stream speak error: %s", e)
+        finally:
+            for p in [piper_proc, play_proc]:
+                if p:
+                    try:
+                        p.kill()
+                        p.wait(timeout=2)
+                    except Exception:
+                        pass
 
     # ── Privacy ──────────────────────────────────────────────────────────
 
@@ -528,27 +628,29 @@ class VoiceCoreModule(SystemModule):
         await self.publish(event_type, {"privacy_mode": enabled})
         self._privacy_mode = enabled
 
-    async def _rephrase_via_llm(self, default_text: str) -> str:
-        """Ask Cloud LLM to rephrase a module's hardcoded response naturally.
+    @staticmethod
+    def _num2words_available() -> bool:
+        try:
+            import num2words  # noqa: F401
+            return True
+        except ImportError:
+            return False
 
-        Uses conversation session for context. Falls back to default_text on failure.
+    async def _rephrase_via_llm(self, default_text: str) -> str:
+        """Ask LLM to rephrase a module response for natural TTS output.
+
+        Works with any provider (cloud, ollama, llamacpp).
+        Converts numbers to words, translates foreign text, varies phrasing.
+        Falls back to default_text on failure.
         """
         try:
             from core.config_writer import read_config
             config = read_config()
             voice_cfg = config.get("voice", {})
             provider = voice_cfg.get("llm_provider", "ollama")
-            if provider in ("ollama", "llamacpp"):
-                return default_text
-
-            p_cfg = voice_cfg.get("providers", {}).get(provider, {})
-            api_key = p_cfg.get("api_key", "")
-            model = p_cfg.get("model", "")
-            if not api_key or not model:
-                return default_text
 
             lang = self._detect_lang()
-            lang_names = {"uk": "Ukrainian", "en": "English"}
+            lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "pl": "Polish"}
             lang_name = lang_names.get(lang, "English")
 
             # Load custom rephrase prompt or localized default
@@ -563,10 +665,13 @@ class VoiceCoreModule(SystemModule):
 
             system = (
                 f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-                f"{rephrase_rules}"
+                f"{rephrase_rules}\n"
+                f"CRITICAL: All numbers MUST be spelled out as words in {lang_name} (e.g. 15.4 → п'ятнадцять і чотири).\n"
+                f"CRITICAL: Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
+                f"Output will be read aloud by TTS — no digits, no Latin letters, no symbols."
             )
 
-            # Build context from session
+            # Build context
             messages_ctx = ""
             if self._last_query:
                 messages_ctx += f"User said: \"{self._last_query}\"\n"
@@ -575,27 +680,68 @@ class VoiceCoreModule(SystemModule):
             messages_ctx += f"Default response: \"{default_text}\"\n"
             messages_ctx += "Your rephrased response:"
 
-            from system_modules.llm_engine.cloud_providers import generate
-            import asyncio as _aio
-            rephrased = await _aio.wait_for(
-                generate(provider, api_key, model, messages_ctx, system, temperature=0.9),
-                timeout=8.0,
-            )
+            # For local providers, add language tag
+            if provider in ("ollama", "llamacpp"):
+                messages_ctx = f"[{lang_name}] {messages_ctx}"
+
+            rephrased = ""
+
+            if provider == "ollama":
+                from system_modules.llm_engine.ollama_client import get_ollama_client, _should_use_llm
+                if not _should_use_llm():
+                    return default_text
+                rephrased = await asyncio.wait_for(
+                    get_ollama_client().generate(prompt=messages_ctx, system=system),
+                    timeout=10.0,
+                )
+            elif provider == "llamacpp":
+                import httpx
+                llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": messages_ctx},
+                ]
+                async with httpx.AsyncClient(timeout=10) as http:
+                    resp = await http.post(
+                        f"{llamacpp_url}/v1/chat/completions",
+                        json={"messages": messages, "temperature": 0.9, "max_tokens": 256},
+                    )
+                    resp.raise_for_status()
+                    rephrased = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                # Cloud provider
+                p_cfg = voice_cfg.get("providers", {}).get(provider, {})
+                api_key = p_cfg.get("api_key", "")
+                model = p_cfg.get("model", "")
+                if not api_key or not model:
+                    return default_text
+                from system_modules.llm_engine.cloud_providers import generate
+                rephrased = await asyncio.wait_for(
+                    generate(provider, api_key, model, messages_ctx, system, temperature=0.9),
+                    timeout=8.0,
+                )
 
             rephrased = rephrased.strip().strip('"').strip("'")
             if rephrased and len(rephrased) < 300:
-                return rephrased
+                return _numbers_to_words(rephrased, lang)
         except Exception as exc:
-            logger.debug("Rephrase via LLM failed: %s", exc)
+            logger.warning("Rephrase via LLM failed (provider=%s): %s", provider, exc)
 
-        return default_text
+        return _numbers_to_words(default_text, self._detect_lang())
+
+    def _is_rephrase_enabled(self) -> bool:
+        """Check if LLM rephrase is enabled in config (default: off)."""
+        return self._config.get("rephrase_enabled", False)
 
     async def _on_voice_event(self, event: Any) -> None:
         if event.type == "voice.speak" and self._tts:
             text = event.payload.get("text", "")
             if text:
-                # Rephrase hardcoded module response via Cloud LLM for variety
-                text = await self._rephrase_via_llm(text)
+                # Rephrase module response via LLM (if enabled)
+                if self._is_rephrase_enabled():
+                    text = await self._rephrase_via_llm(text)
+                # Always convert remaining numbers to words for TTS
+                text = _numbers_to_words(text, self._detect_lang())
                 self._last_spoken = text  # capture for debug
                 await self._stream_speak(text)
                 await self.publish("voice.speak_done", {"text": text})
@@ -850,13 +996,14 @@ class VoiceCoreModule(SystemModule):
             if req.speak and _sys_handled:
                 svc._system_speak_done.clear()
                 try:
-                    await asyncio.wait_for(svc._system_speak_done.wait(), timeout=15.0)
+                    await asyncio.wait_for(svc._system_speak_done.wait(), timeout=30.0)
                     tts_done = True
                 except asyncio.TimeoutError:
                     pass
             elif req.speak and result.response:
-                await svc.publish("voice.response", {"text": result.response, "query": text})
-                await svc._stream_speak(result.response)
+                tts_text = _numbers_to_words(result.response, svc._detect_lang())
+                await svc.publish("voice.response", {"text": tts_text, "query": text})
+                await svc._stream_speak(tts_text)
                 await svc.publish("voice.speak_done", {"text": result.response})
                 tts_done = True
 
