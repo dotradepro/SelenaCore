@@ -422,6 +422,14 @@ class IntentRouter:
         provider = voice_cfg.get("llm_provider", "ollama")
 
         system_prompt, user_prompt = self._build_classification_prompt(text, lang)
+
+        # Local models need extra language enforcement (they tend to respond in English)
+        if provider in ("ollama", "llamacpp"):
+            lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "pl": "Polish"}
+            lang_name = lang_names.get(lang, "English")
+            system_prompt += f"\nCRITICAL: Response language for llm.response MUST be {lang_name}. Never use English unless user language is English."
+            user_prompt = f"[{lang_name}] {user_prompt}"
+
         raw = ""
 
         if provider == "ollama":
