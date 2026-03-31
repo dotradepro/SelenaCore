@@ -848,6 +848,18 @@
             <div class="label-xs mb4" data-i18n="test_cmd_params"></div>
             <pre id="testResParamsJson" style="font-size:11px;color:var(--tx2);background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
         </div>
+
+        <!-- Debug: Raw LLM response -->
+        <div id="testResRawLlm" class="card-inner mb8 hidden">
+            <div class="label-xs mb4" data-i18n="test_cmd_raw_llm"></div>
+            <pre id="testResRawLlmText" style="font-size:11px;color:var(--am);background:var(--bg);padding:8px;border-radius:6px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+        </div>
+
+        <!-- Debug: Spoken text (after rephrase) -->
+        <div id="testResSpoken" class="card-inner mb8 hidden">
+            <div class="label-xs mb4" data-i18n="test_cmd_spoken"></div>
+            <div id="testResSpokenText" style="font-size:13px;color:var(--gr);white-space:pre-wrap;word-break:break-word"></div>
+        </div>
     </div>
 </div>
 
@@ -987,6 +999,8 @@
             test_cmd_response: 'Response',
             test_cmd_action: 'Action',
             test_cmd_params: 'Params',
+            test_cmd_raw_llm: 'Raw LLM Response',
+            test_cmd_spoken: 'Spoken Text (after rephrase)',
         },
         uk: {
             title: 'Голос та AI',
@@ -1115,6 +1129,8 @@
             test_cmd_response: 'Вiдповiдь',
             test_cmd_action: 'Дiя',
             test_cmd_params: 'Параметри',
+            test_cmd_raw_llm: 'Вiдповiдь LLM (raw)',
+            test_cmd_spoken: 'Озвучений текст (пiсля rephrase)',
         }
     };
 
@@ -2603,6 +2619,22 @@
                 show('testResParams');
             } else {
                 hide('testResParams');
+            }
+
+            // Raw LLM response
+            if (res.raw_llm) {
+                $('testResRawLlmText').textContent = res.raw_llm;
+                show('testResRawLlm');
+            } else {
+                hide('testResRawLlm');
+            }
+
+            // Spoken text (after rephrase)
+            if (res.spoken_text) {
+                $('testResSpokenText').textContent = res.spoken_text;
+                show('testResSpoken');
+            } else {
+                hide('testResSpoken');
             }
 
             show('testCmdResult');

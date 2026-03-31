@@ -36,6 +36,7 @@ class IntentResult:
     latency_ms: int
     user_id: str | None = None
     params: dict[str, Any] | None = None
+    raw_llm: str | None = None  # raw LLM response before parsing (debug)
 
 
 @dataclass
@@ -457,6 +458,8 @@ class IntentRouter:
         if not raw:
             return None, provider
 
+        raw_debug = raw  # keep original for debug
+
         # Parse JSON — strip code fences if present
         cleaned = raw.strip()
         if cleaned.startswith("```"):
@@ -466,10 +469,9 @@ class IntentRouter:
         start_idx = cleaned.find("{")
         end_idx = cleaned.rfind("}")
         if start_idx == -1 or end_idx == -1:
-            # Not JSON — use raw text as conversational response
             return IntentResult(
                 intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0,
+                source="llm", latency_ms=0, raw_llm=raw_debug,
             ), provider
 
         try:
@@ -477,7 +479,7 @@ class IntentRouter:
         except json.JSONDecodeError:
             return IntentResult(
                 intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0,
+                source="llm", latency_ms=0, raw_llm=raw_debug,
             ), provider
 
         intent_name = data.get("intent", "")
@@ -488,12 +490,12 @@ class IntentRouter:
         if intent_name and intent_name in known:
             return IntentResult(
                 intent=intent_name, response=response, action=None,
-                source="llm", latency_ms=0, params=params,
+                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
             ), provider
         elif intent_name == "llm.response" or response:
             return IntentResult(
                 intent="llm.response", response=response, action=None,
-                source="llm", latency_ms=0, params=params,
+                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
             ), provider
 
         return None, provider

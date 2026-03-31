@@ -88,6 +88,7 @@ class VoiceCoreModule(SystemModule):
         self._session_ts: float = 0.0              # last interaction timestamp
         self._last_intent: str = ""                # last classified intent (for rephrase context)
         self._last_query: str = ""                 # last user query text
+        self._last_spoken: str = ""                # last TTS text (after rephrase, for debug)
 
         # Defaults from env, overridden by core.yaml
         defaults = {
@@ -588,6 +589,7 @@ class VoiceCoreModule(SystemModule):
             if text:
                 # Rephrase hardcoded module response via Cloud LLM for variety
                 text = await self._rephrase_via_llm(text)
+                self._last_spoken = text  # capture for debug
                 await self._stream_speak(text)
                 await self.publish("voice.speak_done", {"text": text})
                 self._system_speak_done.set()
@@ -879,6 +881,8 @@ class VoiceCoreModule(SystemModule):
                 "params": result.params,
                 "tts_played": tts_done,
                 "trace": trace_steps,
+                "raw_llm": result.raw_llm,
+                "spoken_text": svc._last_spoken if tts_done else None,
             })
 
         @router.get("/widget", response_class=HTMLResponse)
