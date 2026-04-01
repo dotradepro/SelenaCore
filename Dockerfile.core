@@ -39,7 +39,8 @@ RUN pip install --no-cache-dir vosk pathvalidate
 RUN mkdir -p /var/lib/selena/models/vosk \
              /var/lib/selena/models/piper \
              /var/lib/selena/db \
-             /var/lib/selena/cache
+             /var/lib/selena/cache \
+             /var/lib/selena/smart_matcher
 
 COPY core/ ./core/
 COPY system_modules/ ./system_modules/
