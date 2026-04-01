@@ -1102,6 +1102,55 @@ class UserManagerModule(SystemModule):
                 raise HTTPException(status_code=404, detail="Device not found or already revoked")
             return {"device_id": device_id, "device_name": new_name}
 
+        # ── Role Permissions ───────────────────────────────────────────────────
+
+        _DEFAULT_PERMS: dict[str, dict[str, Any]] = {
+            "admin": {
+                "devices_view": True, "devices_control": True,
+                "modules_configure": True, "users_manage": True,
+                "system_reboot": True, "system_update": True,
+                "voice_commands": "all", "scenes_run": "all",
+            },
+            "user": {
+                "devices_view": True, "devices_control": True,
+                "modules_configure": False, "users_manage": False,
+                "system_reboot": False, "system_update": False,
+                "voice_commands": "basic", "scenes_run": "approved",
+            },
+            "guest": {
+                "devices_view": True, "devices_control": False,
+                "modules_configure": False, "users_manage": False,
+                "system_reboot": False, "system_update": False,
+                "voice_commands": "none", "scenes_run": "none",
+            },
+        }
+
+        @router.get("/roles/{role}/permissions")
+        async def get_role_permissions(role: str, request: Request) -> dict:
+            info = await mod._require_device_auth(request)
+            try:
+                from core.config_writer import read_config
+                config = read_config()
+                perms = config.get("roles", {}).get(role)
+            except Exception:
+                perms = None
+            if perms is None:
+                perms = _DEFAULT_PERMS.get(role, _DEFAULT_PERMS["guest"])
+            return perms
+
+        @router.put("/roles/{role}/permissions")
+        async def set_role_permissions(role: str, body: dict, request: Request) -> dict:
+            info = await mod._require_device_auth(request)
+            mod._require_elevated(request, info)
+            if role not in ("admin", "user", "guest"):
+                raise HTTPException(status_code=400, detail="Invalid role")
+            try:
+                from core.config_writer import update_config
+                update_config("roles", role, body)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=str(exc)) from exc
+            return {"status": "ok"}
+
         # ── Widget / Settings HTML ─────────────────────────────────────────────
 
         @router.get("/widget.html", response_class=HTMLResponse)

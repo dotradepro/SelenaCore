@@ -1073,9 +1073,12 @@ class VoiceCoreModule(SystemModule):
             elif req.speak and result.response:
                 tts_text = _numbers_to_words(result.response, svc._detect_lang())
                 await svc.publish("voice.response", {"text": tts_text, "query": text})
-                await svc._stream_speak(tts_text)
+                try:
+                    await svc._stream_speak(tts_text)
+                    tts_done = True
+                except Exception as tts_exc:
+                    logger.warning("test-command TTS failed: %s", tts_exc)
                 await svc.publish("voice.speak_done", {"text": result.response})
-                tts_done = True
 
             duration_ms = int((_time.monotonic() - start_ts) * 1000)
 
