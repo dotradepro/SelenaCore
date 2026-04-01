@@ -51,6 +51,7 @@ llm:
   default_model: "phi-3-mini"
   min_ram_gb: 5
   timeout_sec: 30
+  llm_two_step: false              # two-step LLM: classify noun_class → extract intent (faster)
 
 platform:
   api_url: "https://smarthome-lk.com/api/v1"

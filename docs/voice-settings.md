@@ -108,49 +108,48 @@ sudo systemctl restart piper-tts
 
 ---
 
-## Intent Routing (6-tier)
+## Intent Routing (multi-tier)
 
 The intent router uses a multi-tier cascade. Each tier is tried in order; the first match wins.
 
 | Tier | Name | Latency | Mechanism | Source |
 |------|------|---------|-----------|--------|
 | 1 | Fast Matcher | ~0 ms | YAML keyword/regex rules | `fast_matcher.py` |
-| 1.5 | System Module Intents | ~μs | In-process regex with named groups | `intent_router.py` |
-| 2 | Module Bus | ~ms | WebSocket round-trip to user modules | `module_bus.py` |
-| 3a | Cloud LLM Classification | ~1-2 sec | Structured intent JSON via Gemini/OpenAI/etc. | `cloud_providers.py` |
-| 3b | Ollama LLM | 3-8 sec | Local model semantic understanding (RAM ≥ 5GB) | `ollama_client.py` |
+| 1.5 | IntentCompiler | ~0.1 ms | YAML vocabulary → compiled regex | `intent_compiler.py` |
+| 1.7 | SmartMatcher | ~2-4 ms | TF-IDF cosine similarity | `smart_matcher.py` |
+| 2 | Module Bus | ~5-50 ms | WebSocket round-trip to user modules | `module_bus.py` |
+| 3 | LLM (two-step or single) | ~0.5-8 sec | Ollama / Cloud LLM classification | `intent_router.py` |
 | — | Fallback | ~0 ms | i18n "not understood" message | `i18n` |
 
 ### Tier 1: Fast Matcher
 
-Keyword and regex rules defined in `/opt/selena-core/config/intent_rules.yaml` or built-in defaults. Zero latency. Supports basic device control (lights, temperature, privacy).
+Keyword and regex rules defined in `/opt/selena-core/config/intent_rules.yaml` or built-in defaults. Zero latency. Supports basic device control (lights, temperature, privacy, media transport).
 
-### Tier 1.5: System Module Intents
+### Tier 1.5: IntentCompiler
 
-System modules register `SystemIntentEntry` patterns at startup. Patterns support named regex groups for parameter extraction (e.g., `(?P<genre>rock|jazz)`). 28 intents registered across 6 modules.
+28 intents defined in `config/intents/definitions.yaml` with YAML templates and vocabulary. IntentCompiler expands templates into regex at startup (cached via pickle). Supports named groups for parameter extraction (e.g., `(?P<genre>rock|jazz)`). Vocabulary files per language in `config/intents/vocab/{en,uk}.yaml`.
+
+### Tier 1.7: SmartMatcher
+
+TF-IDF + cosine similarity catches near-miss utterances that regex misses. Uses noun_class pre-filtering (only compares within same semantic class). Two thresholds: confident (≥ 0.55, stops routing) and uncertain (≥ 0.46, falls through). **AutoLearner** saves successful LLM classifications → SmartMatcher learns and catches them next time (~3ms vs ~3sec).
 
 ### Tier 2: Module Bus
 
 User modules (running in containers) register intents via WebSocket `announce` message. The Module Bus maintains a sorted intent index and routes commands with circuit breaker pattern.
 
-### Tier 3a: Cloud LLM Intent Classification
+### Tier 3: LLM Classification
 
-When regex tiers miss, the router sends the command to a configured cloud LLM provider for structured intent classification. This is critical on Raspberry Pi where local Ollama is disabled (RAM < 5GB).
+When local tiers miss, the router sends the command to LLM for classification.
 
-**How it works:**
+**Two-step mode** (`voice.llm_two_step: true`):
+1. Step 1: classify noun_class (~6 categories, ~100ms)
+2. Step 2: extract intent within class (~5 intents, ~400ms)
 
-1. Router dynamically builds an intent catalog from all registered intents (Tier 1 + 1.5 + 2)
-2. Sends a classification prompt to the cloud LLM (temperature=0.0 for deterministic output)
-3. LLM returns structured JSON: `{"intent": "media.play_radio", "params": {}}`
-4. If the intent is a general question, LLM returns: `{"intent": "llm.response", "params": {}, "response": "..."}`
+**Single-step mode** (default): full intent catalog in one prompt.
 
-**Supported providers:** OpenAI, Anthropic, Google AI (Gemini), Groq
+**Supported providers:** Ollama (local), llama.cpp (local), OpenAI, Anthropic, Google AI (Gemini), Groq
 
-**Timeout:** 15 seconds
-
-### Tier 3b: Ollama LLM
-
-Local model fallback for devices with sufficient RAM (≥ 5GB). Uses compact system prompt optimized for small models. Automatically disabled on low-RAM devices.
+**AutoLearner:** successful LLM results saved to SmartMatcher for future fast matching.
 
 ---
 

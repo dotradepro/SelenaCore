@@ -330,40 +330,44 @@ Tips for REST APIs:
 
 ## IntentRouter Integration
 
-System modules can register intents for **Tier 1.5** (in-process intent handling). This allows the intent router to match voice commands directly to your module via regex patterns -- without going through the Cloud LLM or Ollama pipeline. The Cloud LLM (Tier 3a) also uses registered intents to build its classification catalog, so even free-form commands will be routed correctly.
+System modules can register intents for **Tier 1.5** (in-process intent handling). Intents are defined in YAML and compiled by **IntentCompiler** — no hand-written regex files needed.
 
-The recommended pattern uses three files: `intent_patterns.py`, `voice_handler.py`, and additions to `module.py`.
+The intent router cascade: FastMatcher → IntentCompiler (regex) → SmartMatcher (TF-IDF) → Module Bus → LLM → Fallback.
 
-### Step 1: Define intent patterns
+### Step 1: Define intents in YAML
 
-```python
-# system_modules/my_module/intent_patterns.py
-from __future__ import annotations
-from system_modules.llm_engine.intent_router import SystemIntentEntry
+Add your intents to `config/intents/definitions.yaml`:
 
-MY_INTENTS: list[SystemIntentEntry] = [
-    SystemIntentEntry(
-        module="my-module",
-        intent="mymodule.do_something",
-        priority=5,
-        description="Perform an action",
-        patterns={
-            "uk": [r"зроби\s+(?P<what>.+)"],
-            "en": [r"do\s+(?P<what>.+)"],
-        },
-    ),
-    SystemIntentEntry(
-        module="my-module",
-        intent="mymodule.status",
-        priority=5,
-        description="Get module status",
-        patterns={
-            "uk": [r"статус\s+модуля"],
-            "en": [r"module\s+status"],
-        },
-    ),
-]
+```yaml
+intents:
+  mymodule.do_something:
+    module: my-module
+    noun_class: DEVICE           # semantic category (MEDIA, DEVICE, WEATHER, ENERGY, PRESENCE, AUTOMATION, WATCHDOG)
+    verb: on                     # verb category (on, off, play, stop, pause, set, query, search, scan, list)
+    priority: 5
+    description: "Perform an action"
+    templates:                   # expanded using vocabulary YAML
+      - "{verb.on} {param.what}"
+    params:
+      what: {type: freetext}
+    overrides:                   # raw regex (when templates are insufficient)
+      uk:
+        - "зроби\\s+(?P<what>.+)"
+      en:
+        - "do\\s+(?P<what>.+)"
+
+  mymodule.status:
+    module: my-module
+    noun_class: DEVICE
+    verb: query
+    priority: 5
+    description: "Get module status"
+    overrides:
+      uk: ["статус\\s+модуля"]
+      en: ["module\\s+status"]
 ```
+
+Add new vocabulary words to `config/intents/vocab/{en,uk}.yaml` if needed.
 
 ### Step 2: Create voice handler
 
@@ -387,7 +391,6 @@ class MyVoiceHandler:
         match intent:
             case "mymodule.do_something":
                 what = params.get("what", "")
-                # Execute action...
                 await m.speak(f"Done: {what}")
             case "mymodule.status":
                 await m.speak("Module is running fine")
@@ -396,7 +399,6 @@ class MyVoiceHandler:
 ### Step 3: Register in module.py
 
 ```python
-# In your module's start() method:
 async def start(self) -> None:
     # ... existing setup ...
 
@@ -405,8 +407,9 @@ async def start(self) -> None:
 
     try:
         from system_modules.llm_engine.intent_router import get_intent_router
-        from .intent_patterns import MY_INTENTS
-        for entry in MY_INTENTS:
+        from system_modules.llm_engine.intent_compiler import get_intent_compiler
+        entries = get_intent_compiler().get_intents_for_module("my-module")
+        for entry in entries:
             get_intent_router().register_system_intent(entry)
     except Exception as exc:
         logger.warning("Failed to register intents: %s", exc)
@@ -417,7 +420,6 @@ async def stop(self) -> None:
         get_intent_router().unregister_system_intents(self.name)
     except Exception:
         pass
-    # ... existing cleanup ...
 
 async def _on_event(self, event) -> None:
     if event.type == "voice.intent":
@@ -441,16 +443,16 @@ Higher numbers = checked first within Tier 1.5.
 
 ### Existing voice-enabled modules
 
-These modules serve as reference implementations:
+All intent definitions are in `config/intents/definitions.yaml`:
 
-| Module | Intents | File |
-|--------|---------|------|
-| media-player | 14 | `system_modules/media_player/intent_patterns.py` |
-| automation-engine | 4 | `system_modules/automation_engine/intent_patterns.py` |
-| weather-service | 3 | `system_modules/weather_service/intent_patterns.py` |
-| presence-detection | 3 | `system_modules/presence_detection/intent_patterns.py` |
-| energy-monitor | 2 | `system_modules/energy_monitor/intent_patterns.py` |
-| device-watchdog | 2 | `system_modules/device_watchdog/intent_patterns.py` |
+| Module | Intents | noun_class |
+|--------|---------|------------|
+| media-player | 14 | MEDIA |
+| automation-engine | 4 | AUTOMATION |
+| weather-service | 3 | WEATHER |
+| presence-detection | 3 | PRESENCE |
+| energy-monitor | 2 | ENERGY |
+| device-watchdog | 2 | WATCHDOG |
 
 ---
 
