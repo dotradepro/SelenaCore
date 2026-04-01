@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 os.environ.setdefault("CORE_DATA_DIR", "/tmp/selena-test")
 os.environ.setdefault("CORE_SECURE_DIR", "/tmp/selena-secure")
 os.environ.setdefault("DEV_MODULE_TOKEN", "test-module-token-xyz")
+os.environ.setdefault("NOTIFY_CONFIG_FILE", "/tmp/selena-test/notification_router.json")
 
 from core.main import create_app
 from core.registry.models import Base
