@@ -151,7 +151,7 @@ class IntentRouter:
                 user_id=user_id,
                 params=match.params or {},
             )
-            await self._publish_event(result)
+            await self._publish_event(result, raw_text=text)
             return (result, steps) if trace else result
 
         # Tier 1.5: System Module Intents — in-process, no HTTP
@@ -177,7 +177,7 @@ class IntentRouter:
                 user_id=user_id,
                 params=params,
             )
-            await self._publish_event(result)
+            await self._publish_event(result, raw_text=text)
             return (result, steps) if trace else result
 
         # Tier 1.7: SmartMatcher — TF-IDF cosine similarity
@@ -211,7 +211,7 @@ class IntentRouter:
                 user_id=user_id,
                 params=smart_result.get("params", {}),
             )
-            await self._publish_event(result)
+            await self._publish_event(result, raw_text=text)
             return (result, steps) if trace else result
 
         # Tier 2: Module Bus — route intent via WebSocket bus
@@ -240,7 +240,7 @@ class IntentRouter:
                             "ms": _elapsed(),
                             "detail": bus_result.get("module", "?"),
                         })
-                    await self._publish_event(result)
+                    await self._publish_event(result, raw_text=text)
                     return (result, steps) if trace else result
                 # Bus matched but module unavailable (circuit_open/timeout/disconnected)
                 reason = bus_result.get("reason", "")
@@ -266,7 +266,7 @@ class IntentRouter:
                             "ms": _elapsed(),
                             "detail": bus_error,
                         })
-                    await self._publish_event(result)
+                    await self._publish_event(result, raw_text=text)
                     return (result, steps) if trace else result
         except Exception as exc:
             logger.warning("Module bus Tier 2 error: %s", exc)
@@ -313,7 +313,7 @@ class IntentRouter:
         if llm_result is not None:
             llm_result.latency_ms = _elapsed()
             llm_result.user_id = user_id
-            await self._publish_event(llm_result)
+            await self._publish_event(llm_result, raw_text=text)
             return (llm_result, steps) if trace else llm_result
 
         # Fallback — language-aware "not understood" via i18n
@@ -336,7 +336,7 @@ class IntentRouter:
             latency_ms=_elapsed(),
             user_id=user_id,
         )
-        await self._publish_event(result)
+        await self._publish_event(result, raw_text=text)
         return (result, steps) if trace else result
 
     # ── Cloud LLM Intent Classification ──────────────────────────────
@@ -456,6 +456,10 @@ class IntentRouter:
         voice_cfg = config.get("voice", {})
         provider = voice_cfg.get("llm_provider", "ollama")
 
+        # Two-step LLM: classify noun_class first, then extract intent
+        if voice_cfg.get("llm_two_step"):
+            return await self._two_step_llm(text, lang, voice_cfg, provider)
+
         system_prompt, user_prompt = self._build_classification_prompt(text, lang)
 
         # Local models need extra language enforcement (they tend to respond in English)
@@ -573,7 +577,181 @@ class IntentRouter:
         """Clear cached prompt so it re-reads from config on next call."""
         self._system_prompt = None
 
-    async def _publish_event(self, result: IntentResult) -> None:
+    # ── Two-step LLM classification ──────────────────────────────────────
+
+    async def _two_step_llm(
+        self, text: str, lang: str, voice_cfg: dict, provider: str,
+    ) -> tuple[IntentResult | None, str]:
+        """Two-step LLM: Step 1 classifies noun_class, Step 2 extracts intent.
+
+        Faster than single-step because each prompt is smaller:
+        - Step 1: ~6 noun_classes → one-word answer (~100ms)
+        - Step 2: ~5 intents within class → JSON answer (~400ms)
+        Total: ~500ms vs ~1500ms for single-step with full catalog.
+        """
+        # Get noun_classes from IntentCompiler
+        try:
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
+            compiler = get_intent_compiler()
+            all_classes = compiler.get_all_noun_classes()
+        except Exception:
+            # Fallback to single-step if compiler unavailable
+            return None, provider
+
+        if not all_classes:
+            return None, provider
+
+        # Resolve model
+        model = voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
+        p_model = voice_cfg.get("providers", {}).get(provider, {}).get("model", "")
+        if p_model:
+            model = p_model
+
+        # ── Step 1: Classify noun_class ──────────────────────────────────
+        step1_system = (
+            "You are a smart home intent classifier. "
+            "Classify the user's utterance into exactly ONE category. "
+            "Reply with ONLY the category name, nothing else."
+        )
+        step1_prompt = (
+            f"Categories: {', '.join(all_classes)}, UNKNOWN\n"
+            f"Utterance: \"{text}\"\n"
+            f"Category:"
+        )
+
+        raw_class = await self._call_llm_provider(
+            provider, voice_cfg, model, step1_prompt, step1_system,
+        )
+        if not raw_class:
+            return None, provider
+
+        # Robust parsing: find first word matching a known class
+        noun_class = None
+        for word in raw_class.upper().split():
+            cleaned = word.strip(".,!?:\"'")
+            if cleaned in all_classes:
+                noun_class = cleaned
+                break
+
+        if not noun_class:
+            logger.debug("Two-step LLM: Step 1 failed to classify, raw=%r", raw_class)
+            return None, provider
+
+        # ── Step 2: Extract intent within class ──────────────────────────
+        class_intents = compiler.get_intents_for_noun_class(noun_class)
+        if not class_intents:
+            return None, provider
+
+        lang_names = {
+            "uk": "Ukrainian", "en": "English", "de": "German",
+            "fr": "French", "es": "Spanish", "pl": "Polish",
+        }
+        lang_name = lang_names.get(lang, "English")
+
+        step2_system = (
+            f"You are a smart home assistant. Category: {noun_class}.\n"
+            f"Allowed intents: {', '.join(class_intents)}\n"
+            f"Reply with valid JSON only. Response language: {lang_name}.\n"
+            f"Format: {{\"intent\": \"<from list>\", \"params\": {{}}, \"response\": \"<{lang_name} reply>\"}}"
+        )
+        step2_prompt = text
+
+        raw_intent = await self._call_llm_provider(
+            provider, voice_cfg, model, step2_prompt, step2_system,
+        )
+        if not raw_intent:
+            return None, provider
+
+        # Parse JSON response (reuse existing parsing logic)
+        raw_debug = raw_intent
+        cleaned = raw_intent.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        start_idx = cleaned.find("{")
+        end_idx = cleaned.rfind("}")
+        if start_idx == -1 or end_idx == -1:
+            return IntentResult(
+                intent="llm.response", response=cleaned, action=None,
+                source="llm", latency_ms=0, raw_llm=raw_debug,
+            ), provider
+
+        try:
+            data = json.loads(cleaned[start_idx:end_idx + 1])
+        except json.JSONDecodeError:
+            return IntentResult(
+                intent="llm.response", response=cleaned, action=None,
+                source="llm", latency_ms=0, raw_llm=raw_debug,
+            ), provider
+
+        intent_name = data.get("intent", "")
+        params = data.get("params") or {}
+        response = data.get("response", "")
+
+        if intent_name and intent_name in class_intents:
+            return IntentResult(
+                intent=intent_name, response=response, action=None,
+                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
+            ), provider
+        elif response:
+            return IntentResult(
+                intent="llm.response", response=response, action=None,
+                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
+            ), provider
+
+        return None, provider
+
+    async def _call_llm_provider(
+        self,
+        provider: str,
+        voice_cfg: dict,
+        model: str,
+        prompt: str,
+        system: str,
+    ) -> str:
+        """Call the active LLM provider and return raw string response."""
+        try:
+            if provider == "ollama":
+                from system_modules.llm_engine.ollama_client import get_ollama_client
+                client = get_ollama_client()
+                if not await client.is_available():
+                    return ""
+                return await asyncio.wait_for(
+                    client.generate(prompt=prompt, system=system, model=model, temperature=0.0),
+                    timeout=15.0,
+                )
+            elif provider == "llamacpp":
+                import httpx
+                llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
+                messages = [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ]
+                async with httpx.AsyncClient(timeout=15) as http:
+                    resp = await http.post(
+                        f"{llamacpp_url}/v1/chat/completions",
+                        json={"messages": messages, "temperature": 0.0, "max_tokens": 128},
+                    )
+                    resp.raise_for_status()
+                    return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                # Cloud provider
+                providers_cfg = voice_cfg.get("providers", {})
+                p_cfg = providers_cfg.get(provider, {})
+                api_key = p_cfg.get("api_key", "")
+                cloud_model = p_cfg.get("model", model)
+                if not api_key:
+                    return ""
+                from system_modules.llm_engine.cloud_providers import generate
+                return await asyncio.wait_for(
+                    generate(provider, api_key, cloud_model, prompt, system, temperature=0.0),
+                    timeout=15.0,
+                )
+        except Exception as exc:
+            logger.warning("Two-step LLM provider call failed: %s", exc)
+            return ""
+
+    async def _publish_event(self, result: IntentResult, raw_text: str = "") -> None:
         try:
             from core.eventbus.bus import get_event_bus
             from core.eventbus.types import VOICE_INTENT
@@ -588,6 +766,7 @@ class IntentRouter:
                     "source": result.source,
                     "user_id": result.user_id,
                     "latency_ms": result.latency_ms,
+                    "raw_text": raw_text,
                 },
             )
         except Exception as e:
