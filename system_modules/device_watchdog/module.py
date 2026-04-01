@@ -73,11 +73,12 @@ class DeviceWatchdogModule(SystemModule):
         # Register voice intent patterns with IntentRouter (Tier 1.5)
         try:
             from system_modules.llm_engine.intent_router import get_intent_router
-            from .intent_patterns import WATCHDOG_INTENTS
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
             intent_router = get_intent_router()
-            for entry in WATCHDOG_INTENTS:
+            entries = get_intent_compiler().get_intents_for_module("device-watchdog")
+            for entry in entries:
                 intent_router.register_system_intent(entry)
-            logger.info("DeviceWatchdog: registered %d voice intents", len(WATCHDOG_INTENTS))
+            logger.info("DeviceWatchdog: registered %d voice intents", len(entries))
         except Exception as exc:
             logger.warning("DeviceWatchdog: failed to register intents: %s", exc)
 

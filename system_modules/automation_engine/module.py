@@ -73,11 +73,12 @@ class AutomationEngineModule(SystemModule):
         # Register voice intent patterns with IntentRouter (Tier 1.5)
         try:
             from system_modules.llm_engine.intent_router import get_intent_router
-            from .intent_patterns import AUTOMATION_INTENTS
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
             intent_router = get_intent_router()
-            for entry in AUTOMATION_INTENTS:
+            entries = get_intent_compiler().get_intents_for_module("automation-engine")
+            for entry in entries:
                 intent_router.register_system_intent(entry)
-            logger.info("AutomationEngine: registered %d voice intents", len(AUTOMATION_INTENTS))
+            logger.info("AutomationEngine: registered %d voice intents", len(entries))
         except Exception as exc:
             logger.warning("AutomationEngine: failed to register intents: %s", exc)
 

@@ -1,0 +1,65 @@
+# config/intents/vocab/en.yaml — English vocabulary for IntentCompiler
+# Used by IntentCompiler to expand templates into regex patterns.
+
+verbs:
+  on:
+    exact: ["turn on", "switch on", "enable", "start", "activate"]
+  off:
+    exact: ["turn off", "switch off", "disable", "shut off"]
+  play:
+    exact: ["play", "put on", "start", "turn on", "launch"]
+  stop:
+    exact: ["stop", "halt", "end", "quit"]
+  pause:
+    exact: ["pause", "hold"]
+  resume:
+    exact: ["resume", "continue"]
+  set:
+    exact: ["set", "adjust", "change", "put", "make it"]
+  query:
+    exact: ["what is", "what's", "how is", "how's", "show", "tell me", "get"]
+  search:
+    exact: ["find", "search", "search for", "look for"]
+  scan:
+    exact: ["scan", "check"]
+  list:
+    exact: ["list", "show", "show all"]
+  enable:
+    exact: ["enable", "turn on", "activate"]
+  disable:
+    exact: ["disable", "turn off", "deactivate"]
+
+nouns:
+  # MEDIA
+  radio:      ["radio", "music", "audio"]
+  volume:     ["volume", "sound", "loudness"]
+  track:      ["track", "song"]
+  # DEVICE
+  light:      ["light", "lights", "lamp", "lighting", "bulb"]
+  device:     ["device", "devices"]
+  # WEATHER
+  weather:    ["weather"]
+  forecast:   ["forecast"]
+  temperature_noun: ["temperature", "degrees"]
+  # ENERGY
+  power:      ["power", "consumption", "energy", "electricity"]
+  # PRESENCE
+  presence:   ["presence"]
+  # AUTOMATION
+  automation: ["automation", "automations", "rule", "rules"]
+
+params:
+  level:        "__NUMBER__"
+  genre:        ["rock", "jazz", "classical", "ambient", "lofi", "pop", "news"]
+  station_name: "__FREETEXT__"
+  query:        "__FREETEXT__"
+  name:         "__FREETEXT__"
+  period:       ["tomorrow", "week", "next days"]
+
+locations:
+  kitchen:     ["kitchen"]
+  bedroom:     ["bedroom"]
+  living_room: ["living room", "lounge", "sitting room"]
+  bathroom:    ["bathroom", "toilet"]
+  garage:      ["garage"]
+  hallway:     ["hallway", "corridor", "entrance"]
