@@ -182,6 +182,40 @@ class Learner:
             "unconfirmed": total - confirmed_count,
         }
 
+    def get_all_entries(self) -> list[dict[str, Any]]:
+        """Return all learned entries for UI display."""
+        if not self._learned_path.exists():
+            return []
+
+        entries: list[dict[str, Any]] = []
+        for line in self._learned_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        # Most recent first
+        entries.reverse()
+        return entries
+
+    def delete_entry(self, key: str) -> None:
+        """Delete a learned entry by normalized key."""
+        if not self._learned_path.exists():
+            return
+
+        lines = self._learned_path.read_text(encoding="utf-8").splitlines()
+        kept = [
+            line for line in lines
+            if line.strip() and json.loads(line).get("key") != key
+        ]
+        self._learned_path.write_text(
+            "\n".join(kept) + ("\n" if kept else ""),
+            encoding="utf-8",
+        )
+        self._seen_keys.discard(key)
+
     # ── Internal ─────────────────────────────────────────────────────────
 
     def _load_seen_keys(self) -> None:

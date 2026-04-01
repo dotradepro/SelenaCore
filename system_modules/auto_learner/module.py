@@ -12,6 +12,7 @@ from datetime import datetime, time as dt_time
 from typing import Any
 
 from fastapi import APIRouter
+from fastapi.responses import HTMLResponse
 
 from core.module_loader.system_module import SystemModule
 
@@ -112,6 +113,58 @@ class AutoLearnerModule(SystemModule):
                 "smart_matcher_entries": matcher.entry_count,
                 "learner_stats": self._learner.get_stats() if self._learner else {},
             }
+
+        @router.get("/learned")
+        async def learned_data() -> dict[str, Any]:
+            """Return all learned examples for UI display."""
+            if not self._learner:
+                return {"entries": []}
+            return {"entries": self._learner.get_all_entries()}
+
+        @router.delete("/learned/{key}")
+        async def delete_learned(key: str) -> dict[str, str]:
+            """Delete a learned example by key."""
+            if self._learner:
+                self._learner.delete_entry(key)
+            return {"status": "ok"}
+
+        @router.get("/config")
+        async def get_config() -> dict[str, Any]:
+            """Return AutoLearner + LLM config."""
+            try:
+                from core.config_writer import read_config
+                config = read_config()
+                voice_cfg = config.get("voice", {})
+            except Exception:
+                voice_cfg = {}
+            from system_modules.llm_engine.smart_matcher import get_smart_matcher
+            matcher = get_smart_matcher()
+            return {
+                "llm_two_step": voice_cfg.get("llm_two_step", False),
+                "smart_matcher_built": matcher.is_built,
+                "smart_matcher_entries": matcher.entry_count,
+                "threshold_confident": matcher.THRESHOLD_CONFIDENT,
+                "threshold_min": matcher.THRESHOLD_MIN,
+            }
+
+        @router.post("/config")
+        async def update_config(body: dict[str, Any]) -> dict[str, str]:
+            """Update llm_two_step flag."""
+            try:
+                from core.config_writer import update_config as write_cfg
+                if "llm_two_step" in body:
+                    write_cfg("voice", "llm_two_step", bool(body["llm_two_step"]))
+            except Exception as exc:
+                logger.warning("AutoLearner config update failed: %s", exc)
+                return {"status": "error", "detail": str(exc)}
+            return {"status": "ok"}
+
+        @router.get("/settings", response_class=HTMLResponse)
+        async def settings_page() -> HTMLResponse:
+            """Serve settings HTML page."""
+            from pathlib import Path
+            f = Path(__file__).parent / "settings.html"
+            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
 
         return router
 

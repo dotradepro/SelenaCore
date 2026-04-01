@@ -10,6 +10,9 @@
         "events.subscribe",
         "events.publish"
     ],
+    "ui": {
+        "settings": "settings.html"
+    },
     "resources": {
         "memory_mb": 64,
         "cpu": 0.1
