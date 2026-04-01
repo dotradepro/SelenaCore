@@ -23,3 +23,6 @@ benchmarks/report.json
 
 # Private planning — never commit to GitHub
 _private/
+
+# Claude Code instructions — local only
+CLAUDE.md
