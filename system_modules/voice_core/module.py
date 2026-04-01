@@ -122,6 +122,12 @@ class VoiceCoreModule(SystemModule):
         self._last_query: str = ""                 # last user query text
         self._last_spoken: str = ""                # last TTS text (after rephrase, for debug)
 
+        # Speech queue: serializes all TTS playback (priority, timestamp, text, done_event)
+        self._speech_queue: asyncio.PriorityQueue[tuple[int, float, str, asyncio.Event | None]] = (
+            asyncio.PriorityQueue(maxsize=200)
+        )
+        self._speech_worker_task: asyncio.Task | None = None
+
         # Defaults from env, overridden by core.yaml
         defaults = {
             "stt_model": os.getenv("VOSK_MODEL", "vosk-model-small-uk"),
@@ -399,7 +405,9 @@ class VoiceCoreModule(SystemModule):
                 tts_text = _numbers_to_words(result.response, self._detect_lang())
                 await self.publish("voice.response", {"text": tts_text, "query": text})
                 logger.info("Voice pipeline: speaking...")
-                await self._stream_speak(tts_text)
+                done = asyncio.Event()
+                await self._enqueue_speech(tts_text, priority=0, done_event=done)
+                await done.wait()
                 await self.publish("voice.speak_done", {"text": result.response})
 
             # Track assistant response in session (trim to last 10 exchanges)
@@ -432,6 +440,16 @@ class VoiceCoreModule(SystemModule):
     # ── Chime ────────────────────────────────────────────────────────────
 
     async def _play_chime(self) -> None:
+        """Enqueue chime through speech queue to prevent overlaps."""
+        chime_path = "/var/lib/selena/sounds/listen.wav"
+        if not Path(chime_path).exists():
+            return
+        done = asyncio.Event()
+        await self._enqueue_speech("__CHIME__", priority=0, done_event=done)
+        await done.wait()
+
+    async def _play_chime_internal(self) -> None:
+        """Actually play the chime WAV via paplay (called from speech worker)."""
         chime_path = "/var/lib/selena/sounds/listen.wav"
         if not Path(chime_path).exists():
             return
@@ -470,6 +488,45 @@ class VoiceCoreModule(SystemModule):
         except Exception as exc:
             logger.error("LLM query failed: %s", exc)
             return ""
+
+    # ── Speech Queue ────────────────────────────────────────────────────
+
+    async def _enqueue_speech(self, text: str, priority: int = 1,
+                              done_event: asyncio.Event | None = None) -> None:
+        """Add text to the speech queue. priority=0 high, 1 normal."""
+        try:
+            self._speech_queue.put_nowait((priority, time.monotonic(), text, done_event))
+        except asyncio.QueueFull:
+            logger.warning("Speech queue full, dropping: %s", text[:60])
+            if done_event:
+                done_event.set()
+
+    async def _speech_worker(self) -> None:
+        """Long-running worker: pulls items from speech queue one at a time."""
+        while True:
+            try:
+                priority, _ts, text, done_event = await self._speech_queue.get()
+
+                await self.publish("voice.tts_start", {"text": text})
+                await asyncio.sleep(0.15)  # let ducking take effect
+
+                try:
+                    if text == "__CHIME__":
+                        await self._play_chime_internal()
+                    else:
+                        await self._stream_speak(text)
+                except Exception as exc:
+                    logger.error("Speech worker playback error: %s", exc)
+                finally:
+                    await self.publish("voice.tts_done", {"text": text})
+                    if done_event:
+                        done_event.set()
+                    self._speech_queue.task_done()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("Speech worker unexpected error: %s", exc)
 
     # ── TTS + Playback ───────────────────────────────────────────────────
 
@@ -743,7 +800,11 @@ class VoiceCoreModule(SystemModule):
                 # Always convert remaining numbers to words for TTS
                 text = _numbers_to_words(text, self._detect_lang())
                 self._last_spoken = text  # capture for debug
-                await self._stream_speak(text)
+
+                done = asyncio.Event()
+                await self._enqueue_speech(text, priority=1, done_event=done)
+                await done.wait()
+
                 await self.publish("voice.speak_done", {"text": text})
                 self._system_speak_done.set()
 
@@ -764,6 +825,11 @@ class VoiceCoreModule(SystemModule):
         on_privacy_change(self._on_privacy_change)
         self.subscribe(["voice.speak"], self._on_voice_event)
 
+        # Start speech queue worker (serializes all TTS playback)
+        self._speech_worker_task = asyncio.create_task(
+            self._speech_worker(), name="tts-speech-worker",
+        )
+
         # Start single audio loop
         self._listen_task = asyncio.create_task(self._audio_loop())
 
@@ -775,6 +841,10 @@ class VoiceCoreModule(SystemModule):
         logger.info("VoiceCoreModule started")
 
     async def stop(self) -> None:
+        if self._speech_worker_task:
+            self._speech_worker_task.cancel()
+            await asyncio.gather(self._speech_worker_task, return_exceptions=True)
+            self._speech_worker_task = None
         if self._listen_task:
             self._listen_task.cancel()
             await asyncio.gather(self._listen_task, return_exceptions=True)

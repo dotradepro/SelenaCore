@@ -107,6 +107,10 @@ class MediaPlayerModule(SystemModule):
         self._voice: MediaVoiceHandler
         self._config: dict[str, Any] = {}
         self._state_task: asyncio.Task | None = None
+        # Audio ducking: lower media volume during TTS playback
+        self._pre_duck_volume: int | None = None
+        self._duck_volume: int = 15
+        self._duck_generation: int = 0  # incremented on each tts_start
 
     async def start(self) -> None:
         COVER_DIR.mkdir(parents=True, exist_ok=True)
@@ -131,6 +135,9 @@ class MediaPlayerModule(SystemModule):
             ["voice.intent", "device.state_changed"],
             self._on_event,
         )
+        # Audio ducking: lower volume during TTS playback
+        self.subscribe(["voice.tts_start"], self._on_tts_start)
+        self.subscribe(["voice.tts_done"], self._on_tts_done)
 
         # Register voice intent patterns with IntentRouter (Tier 1.5)
         try:
@@ -173,6 +180,28 @@ class MediaPlayerModule(SystemModule):
             intent = payload.get("intent", "")
             if intent.startswith("media."):
                 await self._voice.handle(intent, payload.get("params", {}))
+
+    # ── Audio ducking (lower volume during TTS) ────────────────────────────────
+
+    async def _on_tts_start(self, event: Any) -> None:
+        """Duck media volume when TTS begins."""
+        if self._player.get_state() == "playing":
+            if self._pre_duck_volume is None:
+                self._pre_duck_volume = self._player._volume
+            self._duck_generation += 1
+            await self._player.set_volume(self._duck_volume)
+            logger.debug("Audio ducking: %d → %d", self._pre_duck_volume, self._duck_volume)
+
+    async def _on_tts_done(self, event: Any) -> None:
+        """Restore media volume when TTS ends."""
+        if self._pre_duck_volume is not None:
+            gen = self._duck_generation
+            # Grace period: if another TTS starts within 300ms, stay ducked
+            await asyncio.sleep(0.3)
+            if self._pre_duck_volume is not None and self._duck_generation == gen:
+                await self._player.set_volume(self._pre_duck_volume)
+                logger.debug("Audio ducking restored: → %d", self._pre_duck_volume)
+                self._pre_duck_volume = None
 
     # ── Background tasks ──────────────────────────────────────────────────────
 
