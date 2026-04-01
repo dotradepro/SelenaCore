@@ -22,6 +22,7 @@ pyaudio==0.2.14
 python-vlc>=3.0.20115
 websockets>=12.0
 num2words==0.5.14
+scikit-learn>=1.3.0
 
 # Pinned transitive dependencies (security)
 h11>=0.16.0

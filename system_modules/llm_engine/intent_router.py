@@ -180,6 +180,40 @@ class IntentRouter:
             await self._publish_event(result)
             return (result, steps) if trace else result
 
+        # Tier 1.7: SmartMatcher — TF-IDF cosine similarity
+        smart_result = None
+        try:
+            from system_modules.llm_engine.smart_matcher import get_smart_matcher
+            from system_modules.llm_engine.structure_extractor import extract_structure
+            matcher = get_smart_matcher()
+            if matcher.is_built:
+                struct = extract_structure(text)
+                smart_result = matcher.match(text, struct)
+        except Exception as exc:
+            logger.debug("SmartMatcher Tier 1.7 error: %s", exc)
+
+        if trace:
+            steps.append({
+                "tier": "1.7", "name": "SmartMatcher",
+                "status": "hit" if smart_result else "miss",
+                "ms": _elapsed(),
+                "detail": smart_result["intent"] if smart_result else None,
+                "score": smart_result.get("score") if smart_result else None,
+            })
+
+        if smart_result and not smart_result.get("uncertain"):
+            result = IntentResult(
+                intent=smart_result["intent"],
+                response="",
+                action=None,
+                source="smart_matcher",
+                latency_ms=_elapsed(),
+                user_id=user_id,
+                params=smart_result.get("params", {}),
+            )
+            await self._publish_event(result)
+            return (result, steps) if trace else result
+
         # Tier 2: Module Bus — route intent via WebSocket bus
         bus_hit = False
         bus_error = None
