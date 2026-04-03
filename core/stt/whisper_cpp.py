@@ -35,7 +35,7 @@ class WhisperCppProvider(STTProvider):
             resp = await self._client.post(
                 f"{self._host}/inference",
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
-                data={"response_format": "json", "temperature": "0.0"},
+                data={"response_format": "verbose_json", "temperature": "0.0"},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -44,8 +44,9 @@ class WhisperCppProvider(STTProvider):
             # Filter Whisper artifacts
             if text in ("[BLANK_AUDIO]", "(BLANK_AUDIO)", "[silence]"):
                 text = ""
-            lang = data.get("language", "en")
-            # whisper.cpp returns full language name sometimes
+            # verbose_json returns detected_language / language fields
+            lang = data.get("detected_language") or data.get("language") or "en"
+            # whisper.cpp returns full language name (e.g. "english", "ukrainian")
             if len(lang) > 3:
                 lang = _lang_name_to_code(lang)
 
