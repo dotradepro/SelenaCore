@@ -657,7 +657,7 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
 async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
     """Stream TTS: piper → paplay directly, no intermediate file."""
     import time as _time
-    from system_modules.voice_core.tts import sanitize_for_tts, _load_tts_settings
+    from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
     if not req.text.strip():
         raise HTTPException(status_code=422, detail=t("api.text_empty"))
@@ -671,11 +671,20 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
     if not clean:
         raise HTTPException(status_code=422, detail="empty after sanitize")
 
-    settings = _load_tts_settings()
+    # Load per-voice settings based on which voice is being tested
+    config = read_config()
+    tts_cfg = config.get("voice", {}).get("tts", {})
+    pri_voice = tts_cfg.get("primary", {}).get("voice", "")
+    fb_voice = tts_cfg.get("fallback", {}).get("voice", "")
+    if voice == fb_voice:
+        voice_settings = tts_cfg.get("fallback", {}).get("settings", {})
+    else:
+        voice_settings = tts_cfg.get("primary", {}).get("settings", {})
+    settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
+
     t0 = _time.monotonic()
     loop = asyncio.get_event_loop()
 
-    # Try native piper-server first (streams raw PCM), then fallback to local binary
     gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
     pcm_data = None
     try:
@@ -685,8 +694,9 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
                 "length_scale": settings.length_scale,
                 "noise_scale": settings.noise_scale,
                 "noise_w_scale": settings.noise_w_scale,
-                "sentence_silence": settings.sentence_silence,
+                "sentence_silence": getattr(settings, 'sentence_silence', 0.2),
                 "speaker": settings.speaker,
+                "volume": settings.volume,
             })
             if resp.status_code == 200 and resp.content:
                 pcm_data = resp.content
@@ -697,8 +707,9 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
 
     if pcm_data:
         size_kb = round(len(pcm_data) / 1024, 1)
+        sample_rate = 22050
         t1 = _time.monotonic()
-        await loop.run_in_executor(None, _play_raw_pcm, pcm_data, device)
+        await loop.run_in_executor(None, _aplay_raw_pcm, pcm_data, device, sample_rate)
         play_ms = int((_time.monotonic() - t1) * 1000)
     else:
         # Fallback: local piper binary pipe → paplay (streaming)
@@ -723,8 +734,16 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
 
 
 def _aplay_raw_pcm(pcm_data: bytes, device: str, sample_rate: int = 22050) -> None:
-    """Play raw PCM s16le mono via aplay (ALSA direct) with software volume."""
+    """Play raw PCM s16le mono via aplay (ALSA direct) with software volume.
+
+    Prepends 150ms silence so aplay pipe has time to start before speech begins.
+    """
     import struct
+
+    # Prepend silence (150ms) — prevents aplay pipe from cutting the first syllable
+    silence_samples = int(sample_rate * 0.15)
+    silence_bytes = b'\x00\x00' * silence_samples
+    pcm_data = silence_bytes + pcm_data
 
     # Apply software volume from config
     try:
@@ -976,13 +995,24 @@ async def tts_test_mix() -> dict[str, Any]:
         loop = asyncio.get_event_loop()
         t0 = _time.monotonic()
 
-        # Synthesize and play each segment with the correct voice
+        # Load per-voice settings
+        pri_settings = tts_cfg.get("primary", {}).get("settings", {})
+        fb_settings = tts_cfg.get("fallback", {}).get("settings", {})
+
+        # Synthesize and play each segment with the correct voice + settings
         for seg in segments:
-            voice = fallback_voice if seg.lang == "en" else primary_voice
+            is_fallback = seg.lang == "en"
+            voice = fallback_voice if is_fallback else primary_voice
+            s = fb_settings if is_fallback else pri_settings
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.post(f"{gpu_url}/synthesize/raw", json={
                         "text": seg.text, "voice": voice,
+                        "length_scale": s.get("length_scale", 1.0),
+                        "noise_scale": s.get("noise_scale", 0.667),
+                        "noise_w_scale": s.get("noise_w_scale", 0.8),
+                        "speaker": s.get("speaker", 0),
+                        "volume": s.get("volume", 1.0),
                     })
                     if resp.status_code == 200 and resp.content:
                         sample_rate = int(resp.headers.get("X-Audio-Rate", "22050"))

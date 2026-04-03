@@ -144,8 +144,11 @@ class TTSEngine:
         self._fallback_lang: str = "en"
         self._primary_sample_rate: int = 22050
         self._fallback_sample_rate: int = 22050
+        self._primary_settings: dict = {}
+        self._fallback_settings: dict = {}
         self._lock = asyncio.Lock()
         self._loaded = False
+        self._use_http = False
 
     @property
     def voice(self) -> str:
@@ -166,6 +169,16 @@ class TTSEngine:
         self._primary_name = primary
         self._fallback_name = fallback
         self._primary_lang = primary.split("-")[0].split("_")[0]
+
+        # Load per-voice settings from config
+        try:
+            from core.config_writer import read_config
+            cfg = read_config()
+            tts_cfg = cfg.get("voice", {}).get("tts", {})
+            self._primary_settings = tts_cfg.get("primary", {}).get("settings", {})
+            self._fallback_settings = tts_cfg.get("fallback", {}).get("settings", {})
+        except Exception:
+            pass
         self._fallback_lang = fallback.split("-")[0].split("_")[0] if fallback else "en"
 
         # Try piper1-gpl Python API
@@ -209,6 +222,23 @@ class TTSEngine:
                 logger.warning("Piper HTTP server unhealthy: %s", resp.status_code)
         except Exception as exc:
             logger.warning("Piper HTTP server not available: %s", exc)
+
+    def get_settings_for_lang(self, lang: str) -> dict:
+        """Get TTS synthesis settings for a language."""
+        if lang == "en" and self._fallback_settings:
+            return self._fallback_settings
+        return self._primary_settings or {}
+
+    def reload_settings(self) -> None:
+        """Reload per-voice settings from config (called after settings change)."""
+        try:
+            from core.config_writer import read_config
+            cfg = read_config()
+            tts_cfg = cfg.get("voice", {}).get("tts", {})
+            self._primary_settings = tts_cfg.get("primary", {}).get("settings", {})
+            self._fallback_settings = tts_cfg.get("fallback", {}).get("settings", {})
+        except Exception:
+            pass
 
     def get_voice_for_lang(self, lang: str) -> tuple[Any, int]:
         """Select voice for a language segment.
@@ -280,10 +310,15 @@ class TTSEngine:
 
         for seg in segments:
             voice, sr = self.get_voice_for_lang(seg.lang)
-            sample_rate = sr  # use last segment's rate (usually same)
+            sample_rate = sr
 
+            s = self.get_settings_for_lang(seg.lang)
             config = SynthesisConfig(
-                volume=0.9,
+                length_scale=s.get("length_scale"),
+                noise_scale=s.get("noise_scale"),
+                noise_w_scale=s.get("noise_w_scale"),
+                volume=s.get("volume", 1.0),
+                speaker_id=s.get("speaker") if s.get("speaker", 0) > 0 else None,
             )
 
             for chunk in voice.synthesize(seg.text, syn_config=config):
@@ -316,7 +351,14 @@ class TTSEngine:
             from piper import SynthesisConfig
 
             pcm = bytearray()
-            config = SynthesisConfig(volume=0.9)
+            s = self.get_settings_for_lang(lang)
+            config = SynthesisConfig(
+                length_scale=s.get("length_scale"),
+                noise_scale=s.get("noise_scale"),
+                noise_w_scale=s.get("noise_w_scale"),
+                volume=s.get("volume", 1.0),
+                speaker_id=s.get("speaker") if s.get("speaker", 0) > 0 else None,
+            )
             for chunk in voice.synthesize(clean, syn_config=config):
                 pcm.extend(chunk.audio_int16_bytes)
 

@@ -166,38 +166,65 @@ modules:
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "base"
+  stt_model: "small"
   stt_silence_timeout: 1.0
-  tts_voice: "uk_UA-lada-x_low"
   rephrase_enabled: false
-  tts_settings:
-    length_scale: 1.0
-    noise_scale: 0.667
-    noise_w_scale: 0.8
-    sentence_silence: 0.2
-    volume: 1.0
-    speaker: 0
-  privacy_gpio_pin: null
+  output_volume: 50               # Загальна гучність TTS (0-150%)
+  input_gain: 100                 # Підсилення мікрофона (0-150%)
+  audio_force_input: null         # ALSA пристрій захоплення (авто якщо null)
+  audio_force_output: null        # ALSA пристрій відтворення (авто якщо null)
+  privacy_gpio_pin: null          # GPIO-пін для фізичного вимикача мікрофона
+  tts:
+    primary:
+      voice: "uk_UA-ukrainian_tts-medium"
+      lang: "uk"
+      cuda: true
+      settings:
+        length_scale: 0.65
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.7
+        speaker: 1
+    fallback:
+      voice: "en_US-ryan-low"
+      lang: "en"
+      cuda: false
+      settings:
+        length_scale: 0.75
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.55
+        speaker: 0
 ```
 
 | Ключ | Тип | За замовчуванням | Опис |
 |------|-----|-----------------|------|
 | `wake_word_sensitivity` | `float` | `0.5` | Поріг чутливості для слова активації (0.0-1.0). |
-| `stt_model` | `str` | `base` | Розмір моделі Whisper STT: `tiny`, `base`, `small`, `medium`. |
+| `stt_model` | `str` | `small` | Розмір моделі Whisper STT: `tiny`, `base`, `small`, `medium`. |
 | `stt_silence_timeout` | `float` | `1.0` | Секунди тиші перед обробкою команди (0.5-5.0). |
-| `tts_voice` | `str` | `uk_UA-lada-x_low` | Ідентифікатор голосу Piper TTS. |
-| `rephrase_enabled` | `bool` | `false` | LLM перефразування відповідей модулів. Додає 3-10 сек при локальному LLM. |
-| `tts_settings.length_scale` | `float` | `1.0` | Швидкість мовлення (0.5=швидко, 2.0=повільно). |
-| `tts_settings.noise_scale` | `float` | `0.667` | Варіативність інтонації (0.0-1.0). |
-| `tts_settings.noise_w_scale` | `float` | `0.8` | Варіативність ширини фонем (0.0-1.0). |
-| `tts_settings.sentence_silence` | `float` | `0.2` | Пауза між реченнями (секунди). |
-| `tts_settings.volume` | `float` | `1.0` | Гучність (0.1-3.0). |
-| `tts_settings.speaker` | `int` | `0` | ID мовця для багатомовцевих моделей. |
+| `rephrase_enabled` | `bool` | `false` | LLM перефразування відповідей модулів. Додає затримку. |
+| `output_volume` | `int` | `100` | Загальна гучність TTS 0-150%. Програмне масштабування PCM. |
+| `input_gain` | `int` | `100` | Підсилення мікрофона 0-150%. Застосовується через `amixer`. |
+| `audio_force_input` | `str\|null` | `null` | ALSA пристрій захоплення (напр., `plughw:0,0`). |
+| `audio_force_output` | `str\|null` | `null` | ALSA пристрій відтворення (напр., `plughw:1,3`). |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO-пін для фізичного вимикача мікрофона. |
-| `audio_force_input` | `str\|null` | `null` | ALSA пристрій захоплення (напр., `plughw:0,0`). Авто якщо null. |
-| `audio_force_output` | `str\|null` | `null` | ALSA пристрій відтворення (напр., `plughw:1,3`). Авто якщо null. |
-| `output_volume` | `int` | `100` | Гучність TTS 0-150. Програмне масштабування PCM (працює з HDMI). |
-| `input_gain` | `int` | `100` | Підсилення мікрофона 0-150. Застосовується через `amixer`. |
+| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Основний голос Piper TTS. |
+| `tts.primary.lang` | `str` | `uk` | Код мови основного голосу. |
+| `tts.primary.cuda` | `bool` | `false` | GPU-прискорення для основного голосу. |
+| `tts.primary.settings.*` | `dict` | див. вище | Параметри синтезу для кожного голосу. |
+| `tts.fallback.voice` | `str` | `en_US-ryan-low` | Резервний (англійський) голос. |
+| `tts.fallback.lang` | `str` | `en` | Мова резервного голосу. |
+| `tts.fallback.settings.*` | `dict` | див. вище | Параметри синтезу для кожного голосу. |
+
+**Налаштування TTS для кожного голосу:**
+
+| Налаштування | Діапазон | За замовчуванням | Опис |
+|--------------|----------|-----------------|------|
+| `length_scale` | 0.3-2.0 | 1.0 | Швидкість мовлення (менше = швидше). |
+| `noise_scale` | 0.0-1.0 | 0.667 | Варіативність інтонації. |
+| `noise_w_scale` | 0.0-1.0 | 0.8 | Варіативність ширини фонем. |
+| `volume` | 0.1-3.0 | 1.0 | Гучність синтезу (нативна Piper). |
+| `speaker` | 0-N | 0 | ID мовця для багатомовцевих моделей. |
 
 ### Змінні оточення (голос/TTS/LLM)
 

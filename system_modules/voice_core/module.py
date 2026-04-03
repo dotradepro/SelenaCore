@@ -685,7 +685,7 @@ class VoiceCoreModule(SystemModule):
         Fallback: local piper binary pipe (if server unavailable).
         voice_override: use specific voice (e.g. EN fallback) instead of config default.
         """
-        from system_modules.voice_core.tts import sanitize_for_tts, PIPER_BIN, MODELS_DIR, _load_tts_settings
+        from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, PIPER_BIN, MODELS_DIR, _load_tts_settings
 
         clean = sanitize_for_tts(text)
         if not clean:
@@ -694,32 +694,34 @@ class VoiceCoreModule(SystemModule):
         # Force lowercase — Piper VITS models garble uppercase letters
         clean = clean.lower()
 
-        # Select voice: override > auto-detect from text language
+        # Select voice + settings: override > auto-detect from text language
+        import re as _re
+        is_primary = bool(_re.search(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
+
         if voice_override:
             voice = voice_override
         else:
-            # Auto-detect: if text is Latin → fallback EN voice, else → primary
-            import re as _re
-            has_cyrillic = bool(_re.search(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
-            if has_cyrillic:
-                from core.config_writer import get_value
-                voice = get_value("voice", "tts_voice", None) or (
-                    self._tts.voice if self._tts else os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
-                )
-            else:
-                # Latin text → use fallback EN voice
-                voice = self._tts_fallback_voice_name if hasattr(self, '_tts_fallback_voice_name') else "en_US-amy-low"
-                try:
-                    from core.config_writer import read_config
-                    cfg = read_config()
-                    tts_cfg = cfg.get("voice", {}).get("tts", {})
-                    if tts_cfg.get("fallback", {}).get("voice"):
-                        voice = tts_cfg["fallback"]["voice"]
-                    elif cfg.get("voice", {}).get("tts_fallback_voice"):
-                        voice = cfg["voice"]["tts_fallback_voice"]
-                except Exception:
-                    pass
-        settings = _load_tts_settings()
+            try:
+                from core.config_writer import read_config
+                cfg = read_config()
+                tts_cfg = cfg.get("voice", {}).get("tts", {})
+                if is_primary:
+                    voice = tts_cfg.get("primary", {}).get("voice", "") or self._tts.voice
+                else:
+                    voice = tts_cfg.get("fallback", {}).get("voice", "") or "en_US-amy-low"
+            except Exception:
+                voice = self._tts.voice if self._tts else "uk_UA-ukrainian_tts-medium"
+
+        # Load per-voice settings from config
+        try:
+            from core.config_writer import read_config
+            cfg = read_config()
+            tts_cfg = cfg.get("voice", {}).get("tts", {})
+            role = "primary" if is_primary else "fallback"
+            voice_settings = tts_cfg.get(role, {}).get("settings", {})
+            settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
+        except Exception:
+            settings = _load_tts_settings()
         output_device = self._get_output_device()
         loop = asyncio.get_running_loop()
 
@@ -789,6 +791,9 @@ class VoiceCoreModule(SystemModule):
     @staticmethod
     def _play_raw_pcm(pcm_data: bytes, output_device: str | None, sample_rate: int = 22050) -> None:
         """Play raw PCM s16le mono via aplay (ALSA direct) with software volume."""
+        # Prepend 150ms silence — prevents aplay pipe from cutting first syllable
+        silence_bytes = b'\x00\x00' * int(sample_rate * 0.15)
+        pcm_data = silence_bytes + pcm_data
         volume = VoiceCoreModule._get_output_volume()
         pcm_data = VoiceCoreModule._scale_pcm(pcm_data, volume)
         play_cmd = [

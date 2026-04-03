@@ -166,38 +166,65 @@ modules:
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "base"
+  stt_model: "small"
   stt_silence_timeout: 1.0
-  tts_voice: "uk_UA-lada-x_low"
   rephrase_enabled: false
-  tts_settings:
-    length_scale: 1.0
-    noise_scale: 0.667
-    noise_w_scale: 0.8
-    sentence_silence: 0.2
-    volume: 1.0
-    speaker: 0
-  privacy_gpio_pin: null
+  output_volume: 50               # Master TTS playback volume (0-150%)
+  input_gain: 100                 # Microphone gain (0-150%)
+  audio_force_input: null         # ALSA capture device (auto-detect if null)
+  audio_force_output: null        # ALSA playback device (auto-detect if null)
+  privacy_gpio_pin: null          # GPIO pin for physical mic kill switch
+  tts:
+    primary:
+      voice: "uk_UA-ukrainian_tts-medium"
+      lang: "uk"
+      cuda: true
+      settings:
+        length_scale: 0.65
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.7
+        speaker: 1
+    fallback:
+      voice: "en_US-ryan-low"
+      lang: "en"
+      cuda: false
+      settings:
+        length_scale: 0.75
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.55
+        speaker: 0
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0 to 1.0). |
-| `stt_model` | `str` | `base` | Whisper STT model size: `tiny`, `base`, `small`, `medium`. |
+| `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0-1.0). |
+| `stt_model` | `str` | `small` | Whisper STT model size: `tiny`, `base`, `small`, `medium`. |
 | `stt_silence_timeout` | `float` | `1.0` | Seconds of silence before processing command (0.5-5.0). |
-| `tts_voice` | `str` | `uk_UA-lada-x_low` | Piper TTS voice identifier. |
-| `rephrase_enabled` | `bool` | `false` | LLM rephrase for module responses. Adds 3-10s latency on local LLM. |
-| `tts_settings.length_scale` | `float` | `1.0` | Speech speed (0.5=fast, 2.0=slow). |
-| `tts_settings.noise_scale` | `float` | `0.667` | Intonation variability (0.0-1.0). |
-| `tts_settings.noise_w_scale` | `float` | `0.8` | Phoneme width variability (0.0-1.0). |
-| `tts_settings.sentence_silence` | `float` | `0.2` | Pause between sentences (seconds). |
-| `tts_settings.volume` | `float` | `1.0` | Volume multiplier (0.1-3.0). |
-| `tts_settings.speaker` | `int` | `0` | Speaker ID for multi-speaker models. |
+| `rephrase_enabled` | `bool` | `false` | LLM rephrase for module responses. Adds latency. |
+| `output_volume` | `int` | `100` | Master TTS output volume 0-150%. Software PCM scaling. |
+| `input_gain` | `int` | `100` | Microphone gain 0-150%. Applied via `amixer`. |
+| `audio_force_input` | `str\|null` | `null` | ALSA capture device (e.g., `plughw:0,0`). |
+| `audio_force_output` | `str\|null` | `null` | ALSA playback device (e.g., `plughw:1,3`). |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO pin for physical mic kill switch. |
-| `audio_force_input` | `str\|null` | `null` | ALSA capture device (e.g., `plughw:0,0`). Auto-detected if null. |
-| `audio_force_output` | `str\|null` | `null` | ALSA playback device (e.g., `plughw:1,3`). Auto-detected if null. |
-| `output_volume` | `int` | `100` | TTS output volume 0-150. Software PCM scaling (works with HDMI). |
-| `input_gain` | `int` | `100` | Microphone gain 0-150. Applied via `amixer` to the ALSA card. |
+| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Primary Piper TTS voice. |
+| `tts.primary.lang` | `str` | `uk` | Primary voice language code. |
+| `tts.primary.cuda` | `bool` | `false` | GPU acceleration for primary voice. |
+| `tts.primary.settings.*` | `dict` | see above | Per-voice synthesis parameters. |
+| `tts.fallback.voice` | `str` | `en_US-ryan-low` | Fallback (English) voice. |
+| `tts.fallback.lang` | `str` | `en` | Fallback voice language. |
+| `tts.fallback.settings.*` | `dict` | see above | Per-voice synthesis parameters. |
+
+**TTS settings per voice:**
+
+| Setting | Range | Default | Description |
+|---------|-------|---------|-------------|
+| `length_scale` | 0.3-2.0 | 1.0 | Speech speed (lower = faster). |
+| `noise_scale` | 0.0-1.0 | 0.667 | Intonation variability. |
+| `noise_w_scale` | 0.0-1.0 | 0.8 | Phoneme width variability. |
+| `volume` | 0.1-3.0 | 1.0 | Synthesis volume (Piper native). |
+| `speaker` | 0-N | 0 | Speaker ID for multi-speaker models. |
 
 ### Environment variables (voice/TTS/LLM)
 

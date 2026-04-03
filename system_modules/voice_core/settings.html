@@ -562,21 +562,37 @@
                         <span id="primaryStatusBadge" class="badge badge-off"></span>
                     </div>
                     <div class="label-xs mono" id="primaryVoiceName" style="margin-top:2px">—</div>
+                    <div class="label-xs" id="primaryModelInfo" style="color:var(--tx3);margin-top:2px"></div>
                 </div>
                 <select id="primaryVoiceSelect" style="max-width:200px;font-size:12px"></select>
             </div>
             <div class="slider-row">
                 <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="priSpeedVal">1.00</span></div>
-                <input type="range" id="priSpeed" min="0.5" max="2.0" step="0.05" value="1.0" data-role="primary" data-key="length_scale">
+                <input type="range" id="priSpeed" min="0.3" max="2.0" step="0.05" value="1.0">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_intonation"></span><span class="slider-value" id="priNoiseVal">0.667</span></div>
+                <input type="range" id="priNoise" min="0" max="1" step="0.01" value="0.667">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_phoneme"></span><span class="slider-value" id="priNoiseWVal">0.800</span></div>
+                <input type="range" id="priNoiseW" min="0" max="1" step="0.01" value="0.8">
             </div>
             <div class="slider-row">
                 <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="priVolVal">1.00</span></div>
-                <input type="range" id="priVol" min="0.1" max="3.0" step="0.05" value="1.0" data-role="primary" data-key="volume">
+                <input type="range" id="priVol" min="0.1" max="3.0" step="0.05" value="1.0">
             </div>
-            <div class="flex gap8">
+            <div class="slider-row hidden" id="priSpeakerRow">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_speaker"></span><span class="slider-value" id="priSpeakerVal">0</span></div>
+                <input type="range" id="priSpeaker" min="0" max="0" step="1" value="0">
+                <div class="label-xs" id="priSpeakerNames" style="color:var(--tx3)"></div>
+            </div>
+            <div class="flex gap8 mt8">
                 <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
                     <input type="checkbox" id="primaryCuda"> GPU (CUDA)
                 </label>
+                <input type="text" id="priTestText" style="flex:1;font-size:11px" placeholder="Test text...">
+                <button id="priTestBtn" class="btn btn-blue" style="font-size:11px">Test</button>
             </div>
         </div>
 
@@ -590,23 +606,36 @@
                         <span id="fallbackStatusBadge" class="badge badge-off"></span>
                     </div>
                     <div class="label-xs mono" id="fallbackVoiceName" style="margin-top:2px">—</div>
+                    <div class="label-xs" id="fallbackModelInfo" style="color:var(--tx3);margin-top:2px"></div>
                 </div>
                 <select id="fallbackVoiceSelect" style="max-width:200px;font-size:12px"></select>
             </div>
             <div class="slider-row">
                 <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="fbSpeedVal">1.00</span></div>
-                <input type="range" id="fbSpeed" min="0.5" max="2.0" step="0.05" value="1.0" data-role="fallback" data-key="length_scale">
+                <input type="range" id="fbSpeed" min="0.3" max="2.0" step="0.05" value="1.0">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_intonation"></span><span class="slider-value" id="fbNoiseVal">0.667</span></div>
+                <input type="range" id="fbNoise" min="0" max="1" step="0.01" value="0.667">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_phoneme"></span><span class="slider-value" id="fbNoiseWVal">0.800</span></div>
+                <input type="range" id="fbNoiseW" min="0" max="1" step="0.01" value="0.8">
             </div>
             <div class="slider-row">
                 <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="fbVolVal">1.00</span></div>
-                <input type="range" id="fbVol" min="0.1" max="3.0" step="0.05" value="1.0" data-role="fallback" data-key="volume">
+                <input type="range" id="fbVol" min="0.1" max="3.0" step="0.05" value="1.0">
+            </div>
+            <div class="flex gap8 mt8">
+                <input type="text" id="fbTestText" style="flex:1;font-size:11px" placeholder="Test text...">
+                <button id="fbTestBtn" class="btn btn-blue" style="font-size:11px">Test</button>
             </div>
         </div>
 
-        <!-- ── Test & Save ── -->
+        <!-- ── Save + Mix Test ── -->
         <div class="flex gap8 mb8">
-            <button id="dualTestBtn" class="btn btn-blue" data-i18n="test_voice"></button>
             <button id="dualSaveBtn" class="btn btn-green" data-i18n="save"></button>
+            <button id="dualTestBtn" class="btn btn-blue" data-i18n="tts_test_mix"></button>
         </div>
         <div id="dualTestResult" class="hidden label-xs mono mb8" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
     </div>
@@ -2689,38 +2718,47 @@
         var dv = state.dualVoice;
         if (!dv.primary || !dv.fallback) return;
 
-        // Primary
-        var p = dv.primary;
-        $('primaryVoiceName').textContent = p.voice || '—';
-        $('primaryStatusBadge').textContent = p.installed ? t('tts_loaded') : t('tts_not_loaded');
-        $('primaryStatusBadge').className = 'badge ' + (p.installed ? 'badge-ok' : 'badge-off');
-        $('primaryAccelBadge').textContent = p.cuda ? 'GPU' : 'CPU';
-        $('primaryAccelBadge').className = 'badge ' + (p.cuda ? 'badge-ok' : 'badge-ac');
-        if (p.settings) {
-            $('priSpeed').value = p.settings.length_scale || 1.0;
-            $('priSpeedVal').textContent = (p.settings.length_scale || 1.0).toFixed(2);
-            $('priVol').value = p.settings.volume || 1.0;
-            $('priVolVal').textContent = (p.settings.volume || 1.0).toFixed(2);
-        }
-        $('primaryCuda').checked = !!p.cuda;
+        // Helper: apply settings to sliders
+        function applyRole(role, prefix) {
+            var d = dv[role];
+            $(prefix + 'VoiceName').textContent = d.voice || '—';
+            $(prefix + 'StatusBadge').textContent = d.installed ? t('tts_loaded') : t('tts_not_loaded');
+            $(prefix + 'StatusBadge').className = 'badge ' + (d.installed ? 'badge-ok' : 'badge-off');
+            $(prefix + 'ModelInfo').textContent = d.sample_rate + 'Hz · ' + d.num_speakers + ' speaker' + (d.num_speakers > 1 ? 's' : '');
 
-        // Fallback
-        var f = dv.fallback;
-        $('fallbackVoiceName').textContent = f.voice || '—';
-        $('fallbackStatusBadge').textContent = f.installed ? t('tts_loaded') : t('tts_not_loaded');
-        $('fallbackStatusBadge').className = 'badge ' + (f.installed ? 'badge-ok' : 'badge-off');
-        if (f.settings) {
-            $('fbSpeed').value = f.settings.length_scale || 1.0;
-            $('fbSpeedVal').textContent = (f.settings.length_scale || 1.0).toFixed(2);
-            $('fbVol').value = f.settings.volume || 1.0;
-            $('fbVolVal').textContent = (f.settings.volume || 1.0).toFixed(2);
+            var s = d.settings || {};
+            var p = prefix === 'primary' ? 'pri' : 'fb';
+            $(p + 'Speed').value = s.length_scale || 1.0;
+            $(p + 'SpeedVal').textContent = (s.length_scale || 1.0).toFixed(2);
+            $(p + 'Noise').value = s.noise_scale || 0.667;
+            $(p + 'NoiseVal').textContent = (s.noise_scale || 0.667).toFixed(3);
+            $(p + 'NoiseW').value = s.noise_w_scale || 0.8;
+            $(p + 'NoiseWVal').textContent = (s.noise_w_scale || 0.8).toFixed(3);
+            $(p + 'Vol').value = s.volume || 1.0;
+            $(p + 'VolVal').textContent = (s.volume || 1.0).toFixed(2);
+
+            // Speaker selector (only for multi-speaker models)
+            if (d.num_speakers > 1 && $(p + 'SpeakerRow')) {
+                show(p + 'SpeakerRow');
+                $(p + 'Speaker').max = d.num_speakers - 1;
+                $(p + 'Speaker').value = s.speaker || 0;
+                $(p + 'SpeakerVal').textContent = s.speaker || 0;
+            }
         }
+
+        applyRole('primary', 'primary');
+        applyRole('fallback', 'fallback');
+
+        // Primary specific
+        $('primaryAccelBadge').textContent = dv.primary.cuda ? 'GPU' : 'CPU';
+        $('primaryAccelBadge').className = 'badge ' + (dv.primary.cuda ? 'badge-ok' : 'badge-ac');
+        $('primaryCuda').checked = !!dv.primary.cuda;
 
         // Populate voice selects
         if (state.piperVoices && state.piperVoices.length > 0) {
             ['primaryVoiceSelect', 'fallbackVoiceSelect'].forEach(function(selId) {
                 var sel = $(selId);
-                var current = selId === 'primaryVoiceSelect' ? p.voice : f.voice;
+                var current = selId === 'primaryVoiceSelect' ? dv.primary.voice : dv.fallback.voice;
                 sel.innerHTML = state.piperVoices.map(function(v) {
                     return '<option value="' + v.id + '"' + (v.id === current ? ' selected' : '') + '>' + v.id + '</option>';
                 }).join('');
@@ -2728,14 +2766,32 @@
         }
     }
 
-    // Slider events for dual voice
-    ['priSpeed', 'priVol', 'fbSpeed', 'fbVol'].forEach(function(id) {
-        $(id).oninput = function() {
+    // Slider events for all dual voice controls
+    var sliderMap = {
+        priSpeed: 'priSpeedVal', priNoise: 'priNoiseVal', priNoiseW: 'priNoiseWVal',
+        priVol: 'priVolVal', priSpeaker: 'priSpeakerVal',
+        fbSpeed: 'fbSpeedVal', fbNoise: 'fbNoiseVal', fbNoiseW: 'fbNoiseWVal',
+        fbVol: 'fbVolVal',
+    };
+    Object.keys(sliderMap).forEach(function(id) {
+        if ($(id)) $(id).oninput = function() {
             var v = parseFloat(this.value);
-            var valId = id === 'priSpeed' ? 'priSpeedVal' : id === 'priVol' ? 'priVolVal' : id === 'fbSpeed' ? 'fbSpeedVal' : 'fbVolVal';
-            $(valId).textContent = v.toFixed(2);
+            var fmt = id.indexOf('Noise') >= 0 ? 3 : (id.indexOf('Speaker') >= 0 ? 0 : 2);
+            $(sliderMap[id]).textContent = fmt === 0 ? String(parseInt(v)) : v.toFixed(fmt);
         };
     });
+
+    // Collect settings from sliders
+    function collectSettings(prefix) {
+        var p = prefix === 'primary' ? 'pri' : 'fb';
+        return {
+            length_scale: parseFloat($(p + 'Speed').value),
+            noise_scale: parseFloat($(p + 'Noise').value),
+            noise_w_scale: parseFloat($(p + 'NoiseW').value),
+            volume: parseFloat($(p + 'Vol').value),
+            speaker: $(p + 'Speaker') ? parseInt($(p + 'Speaker').value) : 0,
+        };
+    }
 
     // Save dual config
     $('dualSaveBtn').onclick = async function() {
@@ -2744,25 +2800,13 @@
                 voice: $('primaryVoiceSelect').value,
                 lang: (($('primaryVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'uk',
                 cuda: $('primaryCuda').checked,
-                settings: {
-                    length_scale: parseFloat($('priSpeed').value),
-                    volume: parseFloat($('priVol').value),
-                    noise_scale: 0.667,
-                    noise_w_scale: 0.8,
-                    speaker: 0,
-                }
+                settings: collectSettings('primary'),
             },
             fallback: {
                 voice: $('fallbackVoiceSelect').value,
                 lang: (($('fallbackVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'en',
                 cuda: false,
-                settings: {
-                    length_scale: parseFloat($('fbSpeed').value),
-                    volume: parseFloat($('fbVol').value),
-                    noise_scale: 0.667,
-                    noise_w_scale: 0.8,
-                    speaker: 0,
-                }
+                settings: collectSettings('fallback'),
             }
         };
         try {
@@ -2771,6 +2815,30 @@
             await loadDualVoiceStatus();
         } catch(e) { showToast('Error: ' + e.message, 'error'); }
     };
+
+    // Test per-voice
+    function setupTestBtn(btnId, textId, voiceSelectId, settingsPrefix) {
+        $(btnId).onclick = async function() {
+            var btn = $(btnId);
+            btn.disabled = true;
+            var text = $(textId).value.trim() || (settingsPrefix === 'primary' ? 'привіт, я селена, тестування основного голосу' : 'hello, i am selena, testing fallback voice');
+            var voice = $(voiceSelectId).value;
+            try {
+                // Save current settings first
+                await postJson('/setup/tts/dual-config', {
+                    [settingsPrefix]: {
+                        voice: voice,
+                        settings: collectSettings(settingsPrefix),
+                    }
+                });
+                // Play test
+                await postJson('/setup/tts/test', { text: text.toLowerCase(), voice: voice, output_device: 'default' });
+            } catch(e) { /* ignore */ }
+            btn.disabled = false;
+        };
+    }
+    setupTestBtn('priTestBtn', 'priTestText', 'primaryVoiceSelect', 'primary');
+    setupTestBtn('fbTestBtn', 'fbTestText', 'fallbackVoiceSelect', 'fallback');
 
     // Test mixed voice
     $('dualTestBtn').onclick = async function() {
@@ -2783,7 +2851,7 @@
                 var segs = (res.segments || []).map(function(s) {
                     return '<span style="color:' + (s.lang === 'en' ? 'var(--ac)' : 'var(--gr)') + '">[' + s.lang + '] ' + s.text + '</span>';
                 }).join(' ');
-                resultEl.innerHTML = segs;
+                resultEl.innerHTML = segs + ' <span style="color:var(--tx3)">(' + res.total_ms + 'ms)</span>';
                 show('dualTestResult');
             } else {
                 resultEl.textContent = res.error || 'Error';
