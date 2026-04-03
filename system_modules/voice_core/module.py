@@ -204,7 +204,8 @@ class VoiceCoreModule(SystemModule):
         self._arecord_proc: subprocess.Popen | None = None
 
         # Detected language from last STT result (auto-updated by Whisper)
-        self._lang: str = "en"
+        # Default language = primary Piper voice lang (set properly after config load)
+        self._lang: str = "uk"
         # STT provider (created in start())
         self._stt_provider = None
 
@@ -1111,6 +1112,9 @@ class VoiceCoreModule(SystemModule):
             self._tts_fallback_lang = tts_cfg["fallback"]["lang"]
         else:
             self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else "en"
+
+        # Set default lang from primary TTS voice (until Whisper detects actual language)
+        self._lang = self._tts_primary_lang
 
         self._speaker_id = get_speaker_id()
         self._voice_history = get_voice_history()
