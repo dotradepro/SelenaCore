@@ -343,11 +343,14 @@ class VoiceCoreModule(SystemModule):
         # Audio buffer for STT
         audio_buffer = bytearray()
         last_speech_time = 0.0
+        speech_chunks_in_buffer = 0  # count of chunks with speech energy
         # IDLE: transcribe every N seconds to check wake phrase
         idle_interval_sec = 2.5
         idle_buffer_start = time.monotonic()
         # Energy threshold for speech detection (RMS of 16-bit samples)
         energy_threshold = 300
+        # Minimum speech chunks required before sending to STT (filters background noise)
+        min_speech_chunks = 3  # ~750ms of speech needed
 
         async def _safe_transcribe(buf: bytes) -> tuple[str, str]:
             """Transcribe with error handling. Returns (text, lang)."""
@@ -385,14 +388,16 @@ class VoiceCoreModule(SystemModule):
                 # Simple energy-based VAD
                 has_speech = _rms_energy(data) > energy_threshold
 
-                # ── STATE: IDLE — buffer and periodically check for wake phrase ──
+                # ── STATE: IDLE — buffer and check for wake phrase ──
                 if self._state == STATE_IDLE:
                     audio_buffer.extend(data)
+                    if has_speech:
+                        speech_chunks_in_buffer += 1
                     elapsed = time.monotonic() - idle_buffer_start
 
-                    # Transcribe when we have enough audio or speech detected
+                    # Transcribe ONLY if there was enough speech energy (not just background noise)
                     if elapsed >= idle_interval_sec or (has_speech and elapsed >= 1.0):
-                        if len(audio_buffer) > BYTES_PER_CHUNK * 2:
+                        if speech_chunks_in_buffer >= min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK * 2:
                             text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
                             self._lang = detected_lang
 
@@ -405,25 +410,30 @@ class VoiceCoreModule(SystemModule):
                                     await self.publish("voice.wake_word", {"wake_word": wake_phrase})
                                     self._state = STATE_LISTENING
                                     audio_buffer.clear()
+                                    speech_chunks_in_buffer = 0
                                     last_speech_time = time.monotonic()
                                     asyncio.create_task(self._play_chime())
                                 else:
                                     logger.debug("Voice idle heard: '%s'", text)
 
                         audio_buffer.clear()
+                        speech_chunks_in_buffer = 0
                         idle_buffer_start = time.monotonic()
 
                 # ── STATE: LISTENING — accumulate command audio ──
                 elif self._state == STATE_LISTENING:
-                    audio_buffer.extend(data)
-
                     if has_speech:
+                        audio_buffer.extend(data)
+                        speech_chunks_in_buffer += 1
                         last_speech_time = time.monotonic()
+                    elif last_speech_time:
+                        # Keep buffering silence after speech (for natural pauses)
+                        audio_buffer.extend(data)
 
-                    # Check silence timeout
+                    # Check silence timeout — only if we had speech before
                     silence_dur = time.monotonic() - last_speech_time if last_speech_time else 0
                     if last_speech_time and silence_dur >= self._get_silence_timeout():
-                        if len(audio_buffer) > BYTES_PER_CHUNK:
+                        if speech_chunks_in_buffer >= min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK:
                             # Transcribe the full command buffer
                             text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
                             self._lang = detected_lang
@@ -433,15 +443,20 @@ class VoiceCoreModule(SystemModule):
                                 logger.info("Voice: command recognized: '%s' (lang=%s)", text, self._lang)
                                 self._state = STATE_PROCESSING
                                 audio_buffer.clear()
+                                speech_chunks_in_buffer = 0
                                 asyncio.create_task(self._process_command(text))
                             else:
                                 logger.debug("Voice: empty transcription, back to idle")
                                 self._state = self._idle_state()
                                 audio_buffer.clear()
+                                speech_chunks_in_buffer = 0
                                 idle_buffer_start = time.monotonic()
                         else:
+                            # Not enough speech — discard and reset
                             self._state = self._idle_state()
                             audio_buffer.clear()
+                            speech_chunks_in_buffer = 0
+                            last_speech_time = 0.0
                             idle_buffer_start = time.monotonic()
 
                     # Safety: max 15 sec of listening
@@ -451,10 +466,13 @@ class VoiceCoreModule(SystemModule):
                         if text:
                             self._state = STATE_PROCESSING
                             audio_buffer.clear()
+                            speech_chunks_in_buffer = 0
                             asyncio.create_task(self._process_command(text))
                         else:
                             self._state = self._idle_state()
                             audio_buffer.clear()
+                            speech_chunks_in_buffer = 0
+                            last_speech_time = 0.0
                             idle_buffer_start = time.monotonic()
 
         except asyncio.CancelledError:
