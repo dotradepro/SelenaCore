@@ -208,7 +208,8 @@ class VoiceCoreModule(SystemModule):
         defaults = {
             "stt_model": os.getenv("STT_MODEL", "small"),
             "tts_voice": os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"),
-            "wake_word_model": os.getenv("WAKE_WORD_MODEL", "привіт селена"),
+            "wake_word_model": os.getenv("WAKE_WORD_MODEL", "селена"),
+            "wake_word_enabled": True,  # False = always listening (no wake word needed)
             "privacy_mode": False,
             "speaker_threshold": float(os.getenv("SPEAKER_THRESHOLD", "0.75")),
         }
@@ -226,6 +227,10 @@ class VoiceCoreModule(SystemModule):
 
     def _get_wake_phrase(self) -> str:
         return self._config.get("wake_word_model", "").replace("_", " ").lower().strip()
+
+    def _idle_state(self) -> str:
+        """Return the 'resting' state: IDLE if wake word enabled, LISTENING if disabled."""
+        return STATE_IDLE if self._config.get("wake_word_enabled", True) else STATE_LISTENING
 
     def _get_silence_timeout(self) -> float:
         try:
@@ -318,7 +323,9 @@ class VoiceCoreModule(SystemModule):
             return
 
         wake_phrase = self._get_wake_phrase()
-        self._state = STATE_IDLE
+        wake_enabled = self._config.get("wake_word_enabled", True)
+        # If wake word disabled → start in LISTENING mode (always listening)
+        self._state = STATE_IDLE if wake_enabled else STATE_LISTENING
 
         # Audio buffer for STT
         audio_buffer = bytearray()
@@ -338,7 +345,10 @@ class VoiceCoreModule(SystemModule):
                 logger.warning("STT transcription error: %s", exc)
                 return "", self._lang
 
-        logger.info("Voice loop: ready, wake phrase='%s'", wake_phrase)
+        if wake_enabled:
+            logger.info("Voice loop: ready, wake phrase='%s'", wake_phrase)
+        else:
+            logger.info("Voice loop: ready, wake word DISABLED (always listening)")
 
         try:
             while True:
@@ -410,11 +420,11 @@ class VoiceCoreModule(SystemModule):
                                 asyncio.create_task(self._process_command(text))
                             else:
                                 logger.debug("Voice: empty transcription, back to idle")
-                                self._state = STATE_IDLE
+                                self._state = self._idle_state()
                                 audio_buffer.clear()
                                 idle_buffer_start = time.monotonic()
                         else:
-                            self._state = STATE_IDLE
+                            self._state = self._idle_state()
                             audio_buffer.clear()
                             idle_buffer_start = time.monotonic()
 
@@ -427,7 +437,7 @@ class VoiceCoreModule(SystemModule):
                             audio_buffer.clear()
                             asyncio.create_task(self._process_command(text))
                         else:
-                            self._state = STATE_IDLE
+                            self._state = self._idle_state()
                             audio_buffer.clear()
                             idle_buffer_start = time.monotonic()
 
@@ -580,7 +590,7 @@ class VoiceCoreModule(SystemModule):
         except Exception as exc:
             logger.error("Voice pipeline error: %s", exc)
         finally:
-            self._state = STATE_IDLE
+            self._state = self._idle_state()
 
     # ── Chime ────────────────────────────────────────────────────────────
 

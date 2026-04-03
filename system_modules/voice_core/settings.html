@@ -485,24 +485,15 @@
         <span id="wakeStatus" class="badge badge-off">—</span>
     </div>
 
-    <!-- Wake word: greeting + name -->
+    <!-- Wake word toggle + name only -->
     <div class="mb12">
-        <div class="label-sm" data-i18n="wake_greeting"></div>
-        <div style="position:relative">
-            <div class="flex gap4">
-                <input type="text" id="wakeGreetingInput" style="flex:1" placeholder="привіт">
-                <button id="greetPresetsBtn" class="btn btn-secondary" style="padding:6px 8px;font-size:16px;line-height:1" title="Presets">&#9662;</button>
-            </div>
-            <div id="greetPresetsList" class="hidden" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sf);border:1px solid var(--b2);border-radius:8px;z-index:10;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.3)">
-                <div class="greet-preset" data-val="привіт">привіт</div>
-                <div class="greet-preset" data-val="hey">hey</div>
-                <div class="greet-preset" data-val="hello">hello</div>
-                <div class="greet-preset" data-val="ok">ok</div>
-                <div class="greet-preset" data-val="слухай">слухай</div>
-            </div>
-        </div>
+        <label class="flex gap8" style="font-size:12px;cursor:pointer;align-items:center">
+            <input type="checkbox" id="wakeEnabledToggle" checked>
+            <span data-i18n="wake_enabled"></span>
+        </label>
+        <div id="wakeDisabledHint" class="hidden label-xs mt4" style="color:var(--am)" data-i18n="wake_disabled_hint"></div>
     </div>
-    <div class="mb12">
+    <div class="mb12" id="wakeNameSection">
         <div class="label-sm" data-i18n="wake_name"></div>
         <div style="position:relative">
             <div class="flex gap4">
@@ -1068,7 +1059,8 @@
             saved: 'Saved',
             wake_title: 'Activation Phrase',
             wake_desc: 'Wake word detection — always-on listener',
-            wake_greeting: 'Greeting word',
+            wake_enabled: 'Wake word enabled',
+            wake_disabled_hint: 'Disabled — always listening mode (for testing)',
             wake_name: 'Assistant name',
             wake_preview: 'Activation phrase:',
             wake_threshold: 'Detection threshold',
@@ -1218,7 +1210,8 @@
             saved: 'Збережено',
             wake_title: 'Фраза активацiї',
             wake_desc: 'Детекцiя wake word — постiйне прослуховування',
-            wake_greeting: 'Слово привiтання',
+            wake_enabled: 'Wake word увiмкнено',
+            wake_disabled_hint: 'Вимкнено — режим постiйного прослуховування (для тестування)',
             wake_name: 'Iм\'я асистента',
             wake_preview: 'Фраза активацiї:',
             wake_threshold: 'Порiг виявлення',
@@ -1409,27 +1402,29 @@
     }
 
     function updateWakePreview() {
-        var g = $('wakeGreetingInput').value.trim();
         var n = $('wakeNameInput').value.trim();
-        var phrase = (g && n) ? g + ' ' + n : (g || n || '');
-        $('wakePreview').textContent = t('wake_preview') + ' ' + (phrase || '—');
+        $('wakePreview').textContent = t('wake_preview') + ' ' + (n || '—');
     }
 
     async function loadWakeWordStatus() {
         try {
             var cfg = await moduleApi('/config');
-            var full = (cfg.wake_word_model || 'привіт_селена').replace(/_/g, ' ');
-            var parts = full.split(/\s+/);
-            if (parts.length >= 2) {
-                $('wakeGreetingInput').value = parts.slice(0, -1).join(' ');
-                $('wakeNameInput').value = parts[parts.length - 1];
-            } else {
-                $('wakeGreetingInput').value = '';
-                $('wakeNameInput').value = parts[0] || '';
-            }
+            // Name only (no greeting)
+            var name = (cfg.wake_word_model || 'селена').replace(/_/g, ' ').trim();
+            $('wakeNameInput').value = name;
             updateWakePreview();
-            $('wakeThreshold').value = cfg.wake_word_threshold || 0.5;
-            $('wakeThresholdVal').textContent = (cfg.wake_word_threshold || 0.5).toFixed(2);
+
+            // Wake word enabled toggle
+            var enabled = cfg.wake_word_enabled !== false;
+            $('wakeEnabledToggle').checked = enabled;
+            if (!enabled) {
+                show('wakeDisabledHint');
+                $('wakeNameSection').style.opacity = '0.4';
+            } else {
+                hide('wakeDisabledHint');
+                $('wakeNameSection').style.opacity = '1';
+            }
+
             var silTO = cfg.stt_silence_timeout || 1.2;
             $('sttSilence').value = silTO;
             $('sttSilenceVal').textContent = parseFloat(silTO).toFixed(1) + 's';
@@ -1445,25 +1440,21 @@
         }
     }
 
-    $('wakeGreetingInput').oninput = updateWakePreview;
     $('wakeNameInput').oninput = updateWakePreview;
+
+    $('wakeEnabledToggle').onchange = function() {
+        if (this.checked) {
+            hide('wakeDisabledHint');
+            $('wakeNameSection').style.opacity = '1';
+        } else {
+            show('wakeDisabledHint');
+            $('wakeNameSection').style.opacity = '0.4';
+        }
+    };
 
     $('sttSilence').oninput = function() {
         $('sttSilenceVal').textContent = parseFloat(this.value).toFixed(1) + 's';
     };
-
-    // Greeting presets
-    $('greetPresetsBtn').onclick = function(e) {
-        e.stopPropagation();
-        $('greetPresetsList').classList.toggle('hidden');
-    };
-    $('greetPresetsList').querySelectorAll('.greet-preset').forEach(function(el) {
-        el.onclick = function() {
-            $('wakeGreetingInput').value = this.getAttribute('data-val');
-            hide('greetPresetsList');
-            updateWakePreview();
-        };
-    });
 
     // Name presets
     $('namePresetsBtn').onclick = function(e) {
@@ -1479,19 +1470,18 @@
     });
 
     document.addEventListener('click', function() {
-        hide('greetPresetsList');
         hide('namePresetsList');
     });
 
     $('wakeWordSaveBtn').onclick = async function() {
-        var greeting = $('wakeGreetingInput').value.trim();
         var name = $('wakeNameInput').value.trim();
         if (!name) return;
-        var phrase = greeting ? greeting + '_' + name : name;
+        var enabled = $('wakeEnabledToggle').checked;
         this.disabled = true;
         try {
             var payload = {
-                wake_word_model: phrase.replace(/\s+/g, '_'),
+                wake_word_model: name.replace(/\s+/g, '_'),
+                wake_word_enabled: enabled,
                 stt_silence_timeout: parseFloat($('sttSilence').value),
             };
             var resp = await fetch(MODULE_BASE + '/config', {
