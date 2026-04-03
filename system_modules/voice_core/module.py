@@ -196,6 +196,10 @@ class VoiceCoreModule(SystemModule):
 
         # Mic test lock: when set, voice loop pauses to release the device
         self._mic_test_active = False
+
+        # Live debug log: ring buffer of recent STT events for UI terminal
+        self._live_log: list[dict] = []
+        self._live_log_max = 100
         # Current arecord process (for killing when mic test starts)
         self._arecord_proc: subprocess.Popen | None = None
 
@@ -227,6 +231,14 @@ class VoiceCoreModule(SystemModule):
 
     def _get_wake_phrase(self) -> str:
         return self._config.get("wake_word_model", "").replace("_", " ").lower().strip()
+
+    def _log_live(self, event: str, data: dict | None = None) -> None:
+        """Append to live debug log (ring buffer for UI terminal)."""
+        import time as _t
+        entry = {"ts": _t.time(), "event": event, **(data or {})}
+        self._live_log.append(entry)
+        if len(self._live_log) > self._live_log_max:
+            self._live_log = self._live_log[-self._live_log_max:]
 
     def _idle_state(self) -> str:
         """Return the 'resting' state: IDLE if wake word enabled, LISTENING if disabled."""
@@ -384,9 +396,11 @@ class VoiceCoreModule(SystemModule):
                             self._lang = detected_lang
 
                             if text:
+                                self._log_live("stt", {"text": text, "lang": detected_lang, "state": "idle"})
                                 wake_phrase = self._get_wake_phrase()
                                 if self._matches_phrase(text, wake_phrase):
                                     logger.info("Voice: wake phrase detected in '%s'", text)
+                                    self._log_live("wake", {"phrase": wake_phrase})
                                     await self.publish("voice.wake_word", {"wake_word": wake_phrase})
                                     self._state = STATE_LISTENING
                                     audio_buffer.clear()
@@ -414,6 +428,7 @@ class VoiceCoreModule(SystemModule):
                             self._lang = detected_lang
 
                             if text:
+                                self._log_live("command", {"text": text, "lang": self._lang})
                                 logger.info("Voice: command recognized: '%s' (lang=%s)", text, self._lang)
                                 self._state = STATE_PROCESSING
                                 audio_buffer.clear()
@@ -525,6 +540,11 @@ class VoiceCoreModule(SystemModule):
                 text, user_id=None, lang=stt_lang, tts_lang=tts_lang,
             )
 
+            self._log_live("intent", {
+                "text": text, "intent": result.intent, "source": result.source,
+                "response": result.response[:100] if result.response else "",
+                "latency_ms": result.latency_ms,
+            })
             logger.info(
                 "Voice pipeline: intent='%s' source='%s' latency=%dms",
                 result.intent, result.source, result.latency_ms,
@@ -1251,6 +1271,17 @@ class VoiceCoreModule(SystemModule):
                 "model": svc._config.get("wake_word_model", ""),
                 "state": svc._state,
                 "running": svc._listen_task is not None and not svc._listen_task.done(),
+            })
+
+        @router.get("/live-log")
+        async def live_log(since: float = 0) -> JSONResponse:
+            """Get live STT/intent debug log entries since timestamp."""
+            entries = [e for e in svc._live_log if e["ts"] > since]
+            return JSONResponse({
+                "entries": entries,
+                "state": svc._state,
+                "lang": svc._lang,
+                "wake_enabled": svc._config.get("wake_word_enabled", True),
             })
 
         @router.get("/history")

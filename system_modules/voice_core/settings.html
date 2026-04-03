@@ -868,6 +868,32 @@
 <div class="tab-panel" id="tabTest">
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  Live STT Terminal                                                 -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card mb12" id="liveTerminalCard">
+    <div class="row mb8">
+        <div>
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="live_title"></span>
+                <span class="badge badge-off" id="liveStateBadge">idle</span>
+                <span class="badge badge-ac" id="liveLangBadge">en</span>
+            </div>
+            <div class="section-sub" data-i18n="live_desc"></div>
+        </div>
+        <div class="flex gap8">
+            <button id="liveToggleBtn" class="btn btn-green" style="font-size:11px" data-i18n="live_start"></button>
+            <button id="liveClearBtn" class="btn btn-ghost" style="font-size:11px" data-i18n="live_clear"></button>
+        </div>
+    </div>
+    <pre id="liveTerminal" style="
+        background:var(--bg);border:1px solid var(--b2);border-radius:8px;
+        padding:10px;font-size:11px;line-height:1.7;color:var(--tx2);
+        max-height:300px;min-height:120px;overflow-y:auto;white-space:pre-wrap;
+        font-family:'JetBrains Mono','Fira Code',monospace;
+    "></pre>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  Command Test Console                                             -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="card" id="testCommandCard">
@@ -1096,6 +1122,11 @@
             intents_col_source: 'Source',
             intents_loading: 'Loading...',
 
+            live_title: 'Live STT Monitor',
+            live_desc: 'Real-time speech recognition and intent routing',
+            live_start: 'Start',
+            live_stop: 'Stop',
+            live_clear: 'Clear',
             test_cmd_title: 'Command Test Console',
             test_cmd_desc: 'Simulate a voice command via text — full intent pipeline with trace',
             test_cmd_placeholder: 'Type a command (e.g. "turn on the light")...',
@@ -1247,6 +1278,11 @@
             intents_col_source: 'Джерело',
             intents_loading: 'Завантаження...',
 
+            live_title: 'Live STT монiтор',
+            live_desc: 'Розпiзнавання мовлення та маршрутизацiя в реальному часi',
+            live_start: 'Старт',
+            live_stop: 'Стоп',
+            live_clear: 'Очистити',
             test_cmd_title: 'Консоль тестування команд',
             test_cmd_desc: 'Iмiтацiя голосової команди текстом — повний пайплайн з трейсом',
             test_cmd_placeholder: 'Введiть команду (напр. "увiмкни свiтло")...',
@@ -2849,6 +2885,80 @@
             }
         } catch(e) { /* ignore */ }
         btn.disabled = false;
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    //  LIVE STT TERMINAL
+    // ══════════════════════════════════════════════════════════════
+    var liveTimer = null;
+    var liveSince = 0;
+    var liveRunning = false;
+
+    var EVENT_COLORS = {
+        stt: 'var(--tx3)',
+        wake: 'var(--am)',
+        command: 'var(--gr)',
+        intent: 'var(--ac)',
+    };
+
+    function formatLiveEntry(e) {
+        var dt = new Date(e.ts * 1000);
+        var time = dt.toLocaleTimeString('en-GB', {hour12: false});
+        var color = EVENT_COLORS[e.event] || 'var(--tx2)';
+
+        if (e.event === 'stt') {
+            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[STT]</span> <span style="color:var(--tx)">"' + (e.text||'') + '"</span> <span style="color:var(--tx3)">lang=' + (e.lang||'?') + ' state=' + (e.state||'') + '</span>';
+        }
+        if (e.event === 'wake') {
+            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[WAKE]</span> phrase="' + (e.phrase||'') + '"';
+        }
+        if (e.event === 'command') {
+            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[CMD]</span> <span style="color:var(--tx);font-weight:600">"' + (e.text||'') + '"</span> lang=' + (e.lang||'?');
+        }
+        if (e.event === 'intent') {
+            var src = e.source || '?';
+            var srcColor = src === 'system_module' ? 'var(--gr)' : src === 'cache' ? 'var(--am)' : 'var(--pr)';
+            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[INTENT]</span> <span style="color:var(--tx);font-weight:600">' + (e.intent||'?') + '</span> <span style="color:' + srcColor + '">(' + src + ' ' + (e.latency_ms||0) + 'ms)</span>' + (e.response ? '\n         <span style="color:var(--tx2)">→ "' + e.response + '"</span>' : '');
+        }
+        return '<span style="color:var(--tx3)">' + time + '</span> ' + JSON.stringify(e);
+    }
+
+    async function pollLive() {
+        try {
+            var res = await moduleApi('/live-log?since=' + liveSince);
+            var term = $('liveTerminal');
+            $('liveStateBadge').textContent = res.state || 'idle';
+            $('liveStateBadge').className = 'badge ' + (res.state === 'listening' ? 'badge-ok' : res.state === 'processing' ? 'badge-am' : 'badge-off');
+            $('liveLangBadge').textContent = res.lang || '?';
+
+            if (res.entries && res.entries.length > 0) {
+                var html = res.entries.map(formatLiveEntry).join('\n');
+                term.innerHTML += (term.innerHTML ? '\n' : '') + html;
+                term.scrollTop = term.scrollHeight;
+                liveSince = res.entries[res.entries.length - 1].ts;
+            }
+        } catch(e) { /* ignore */ }
+    }
+
+    $('liveToggleBtn').onclick = function() {
+        if (liveRunning) {
+            clearInterval(liveTimer);
+            liveTimer = null;
+            liveRunning = false;
+            this.textContent = t('live_start');
+            this.className = 'btn btn-green';
+        } else {
+            liveRunning = true;
+            this.textContent = t('live_stop');
+            this.className = 'btn btn-red';
+            pollLive();
+            liveTimer = setInterval(pollLive, 1000);
+        }
+    };
+
+    $('liveClearBtn').onclick = function() {
+        $('liveTerminal').innerHTML = '';
+        liveSince = Date.now() / 1000;
     };
 
     init();
