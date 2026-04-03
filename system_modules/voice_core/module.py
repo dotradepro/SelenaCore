@@ -241,6 +241,20 @@ class VoiceCoreModule(SystemModule):
         if len(self._live_log) > self._live_log_max:
             self._live_log = self._live_log[-self._live_log_max:]
 
+    async def _speak_wake_response(self) -> None:
+        """Speak a short confirmation after wake phrase detected, then listen."""
+        try:
+            from core.i18n import t
+            text = t("voice.wake_response", lang=self._tts_primary_lang)
+            from system_modules.voice_core.tts import sanitize_for_tts
+            clean = sanitize_for_tts(text).lower()
+            if clean:
+                done = asyncio.Event()
+                await self._enqueue_speech(clean, priority=0, done_event=done)
+                await asyncio.wait_for(done.wait(), timeout=5.0)
+        except Exception as exc:
+            logger.debug("Wake response failed: %s", exc)
+
     def _idle_state(self) -> str:
         """Return the 'resting' state: IDLE if wake word enabled, LISTENING if disabled."""
         return STATE_IDLE if self._config.get("wake_word_enabled", True) else STATE_LISTENING
@@ -408,11 +422,12 @@ class VoiceCoreModule(SystemModule):
                                     logger.info("Voice: wake phrase detected in '%s'", text)
                                     self._log_live("wake", {"phrase": wake_phrase})
                                     await self.publish("voice.wake_word", {"wake_word": wake_phrase})
+                                    # Respond with "listening?" then switch to LISTENING
+                                    await self._speak_wake_response()
                                     self._state = STATE_LISTENING
                                     audio_buffer.clear()
                                     speech_chunks_in_buffer = 0
-                                    last_speech_time = time.monotonic()
-                                    asyncio.create_task(self._play_chime())
+                                    last_speech_time = 0.0  # reset — wait for new speech
                                 else:
                                     logger.debug("Voice idle heard: '%s'", text)
 

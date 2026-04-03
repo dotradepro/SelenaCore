@@ -20,6 +20,7 @@
   "media.already_playing_radio": "Радіо вже грає. Станція {station}",
   "media.no_stations": "Немає доступних радіостанцій. Додайте станції в налаштуваннях.",
 
+  "voice.wake_response": "Так? Слухаю",
   "intent.fallback": "Вибачте, я не зрозумів запит. Спробуйте ще раз.",
   "intent.module_unavailable": "Модуль тимчасово недоступний. Спробуйте пізніше.",
   "intent.disambiguation": "Який саме ви мали на увазі: {devices}?",

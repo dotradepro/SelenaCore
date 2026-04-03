@@ -20,6 +20,7 @@
   "media.already_playing_radio": "Radio is already playing. Station {station}",
   "media.no_stations": "No radio stations available. Add stations in settings.",
 
+  "voice.wake_response": "Yes? I'm listening",
   "intent.fallback": "Sorry, I didn't understand. Please try again.",
   "intent.module_unavailable": "The module is temporarily unavailable. Please try again later.",
   "intent.disambiguation": "Which one did you mean: {devices}?",
