@@ -91,6 +91,7 @@ function AppearanceSettings() {
   const setTheme = useStore(s => s.setTheme);
   const selectedLanguage = useStore(s => s.selectedLanguage);
   const setSelectedLanguage = useStore(s => s.setSelectedLanguage);
+  const showToast = useStore(s => s.showToast);
 
   const themeOptions: { value: ThemeMode; label: string; desc: string; icon: string }[] = [
     { value: 'auto', label: t('settings.themeAuto'), desc: t('settings.themeAutoDesc'), icon: '🖥️' },
@@ -119,7 +120,7 @@ function AppearanceSettings() {
             return (
               <button
                 key={opt.value}
-                onClick={() => setTheme(opt.value)}
+                onClick={() => { setTheme(opt.value); showToast(t('settings.themeChanged')); }}
                 style={{
                   padding: '16px 12px',
                   borderRadius: 10,
@@ -148,7 +149,7 @@ function AppearanceSettings() {
             return (
               <button
                 key={lang.code}
-                onClick={() => setSelectedLanguage(lang.code)}
+                onClick={() => { setSelectedLanguage(lang.code); showToast(t('settings.languageChanged')); }}
                 style={{
                   padding: '12px 24px',
                   borderRadius: 10,
@@ -190,6 +191,8 @@ function AudioSettings() {
   const [liveMicLevel, setLiveMicLevel] = useState(0);
   const [micMonitoring, setMicMonitoring] = useState(false);
   const micMonitorRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [savingAudio, setSavingAudio] = useState(false);
+  const showToast = useStore(s => s.showToast);
 
   useEffect(() => {
     fetch('/api/ui/setup/audio/devices').then(r => r.json()).then(data => {
@@ -208,14 +211,22 @@ function AudioSettings() {
   }, []);
 
   const saveAudio = async () => {
-    await fetch('/api/ui/setup/audio/select', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input: selectedInput, output: selectedOutput }),
-    });
-    await fetch('/api/ui/setup/audio/levels', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ output_volume: outputVolume, input_gain: inputGain }),
-    });
+    setSavingAudio(true);
+    try {
+      await fetch('/api/ui/setup/audio/select', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: selectedInput, output: selectedOutput }),
+      });
+      await fetch('/api/ui/setup/audio/levels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_volume: outputVolume, input_gain: inputGain }),
+      });
+      showToast(t('settings.audioSaved'));
+    } catch {
+      showToast(t('settings.audioSaveError'), 'error');
+    } finally {
+      setSavingAudio(false);
+    }
   };
 
   const applyVolume = async (vol: number) => {
@@ -406,9 +417,53 @@ function AudioSettings() {
         </div>
       </div>
 
-      <button onClick={saveAudio} className="px-4 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 transition-colors">
-        {t('common.save')}
+      <button onClick={saveAudio} disabled={savingAudio} className="px-4 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        {savingAudio ? t('common.saving') : t('common.save')}
       </button>
+
+      {/* Audio Sources */}
+      <AudioSources />
+    </div>
+  );
+}
+
+function AudioSources() {
+  const { t } = useTranslation();
+  const [sources, setSources] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/ui/setup/audio/sources').then(r => r.json()).then(data => {
+      setSources(data.sources || []);
+    }).catch(() => {});
+  }, []);
+
+  const setVolume = async (module: string, vol: number) => {
+    setSources(prev => prev.map(s => s.module === module ? { ...s, volume: vol } : s));
+    await fetch('/api/ui/setup/audio/sources/volume', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ module, volume: vol }),
+    }).catch(() => {});
+  };
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+      <h4 className="font-medium mb-4">{t('settings.audioSources')}</h4>
+      <div className="space-y-4">
+        {sources.map(s => (
+          <div key={s.module}>
+            <div className="flex justify-between mb-1">
+              <span className="text-sm text-zinc-300">{s.name}</span>
+              <span className="text-xs text-zinc-400 font-mono">{s.volume}%</span>
+            </div>
+            <input type="range" min={0} max={100} step={1} value={s.volume}
+              onChange={(e) => setVolume(s.module, parseInt(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-emerald-500"
+              style={{ background: `linear-gradient(to right, #10b981 ${s.volume}%, #27272a ${s.volume}%)` }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

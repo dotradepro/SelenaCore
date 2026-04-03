@@ -213,8 +213,8 @@
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { title: '🔔 Notification Router Settings', add_channel: 'Add Channel', channel_type: 'Channel type', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (voice)', opt_push: 'Web Push', add_channel_btn: 'Add Channel', add_rule: 'Add Routing Rule', channel_lbl: 'Channel', priority_lbl: 'Priority (lower = first)', level_filter: 'Level filter (blank = all)', opt_all: 'All', add_rule_btn: 'Add Rule', active_channels: 'Active Channels', col_name: 'Name', col_sent: 'Sent', active_rules: 'Active Rules', col_priority: 'Priority', col_channel: 'Channel', col_level: 'Level', col_events: 'Events', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Channel added', rule_added: '✓ Rule added', no_channels: 'No channels', no_rules: 'No rules' },
-            uk: { title: '🔔 Налаштування маршрутизації сповіщень', add_channel: 'Додати канал', channel_type: 'Тип каналу', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (голос)', opt_push: 'Web Push', add_channel_btn: 'Додати канал', add_rule: 'Додати правило маршрутизації', channel_lbl: 'Канал', priority_lbl: 'Пріоритет (Менший = перший)', level_filter: 'Фільтр рівня (пусто = усі)', opt_all: 'Усі', add_rule_btn: 'Додати правило', active_channels: 'Активні канали', col_name: 'Назва', col_sent: 'Надіслано', active_rules: 'Активні правила', col_priority: 'Пріоритет', col_channel: 'Канал', col_level: 'Рівень', col_events: 'Події', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Канал додано', rule_added: '✓ Правило додано', no_channels: 'Немає каналів', no_rules: 'Немає правил' }
+            en: { title: '🔔 Notification Router Settings', add_channel: 'Add Channel', channel_type: 'Channel type', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (voice)', opt_push: 'Web Push', add_channel_btn: 'Add Channel', add_rule: 'Add Routing Rule', channel_lbl: 'Channel', priority_lbl: 'Priority (lower = first)', level_filter: 'Level filter (blank = all)', opt_all: 'All', add_rule_btn: 'Add Rule', active_channels: 'Active Channels', col_name: 'Name', col_sent: 'Sent', active_rules: 'Active Rules', col_priority: 'Priority', col_channel: 'Channel', col_level: 'Level', col_events: 'Events', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Channel added', rule_added: '✓ Rule added', no_channels: 'No channels', no_rules: 'No rules', saving: 'Saving…', deleted: 'Deleted', error: 'Error', adding: 'Adding…' },
+            uk: { title: '🔔 Налаштування маршрутизації сповіщень', add_channel: 'Додати канал', channel_type: 'Тип каналу', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (голос)', opt_push: 'Web Push', add_channel_btn: 'Додати канал', add_rule: 'Додати правило маршрутизації', channel_lbl: 'Канал', priority_lbl: 'Пріоритет (Менший = перший)', level_filter: 'Фільтр рівня (пусто = усі)', opt_all: 'Усі', add_rule_btn: 'Додати правило', active_channels: 'Активні канали', col_name: 'Назва', col_sent: 'Надіслано', active_rules: 'Активні правила', col_priority: 'Пріоритет', col_channel: 'Канал', col_level: 'Рівень', col_events: 'Події', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Канал додано', rule_added: '✓ Правило додано', no_channels: 'Немає каналів', no_rules: 'Немає правил', saving: 'Збереження…', deleted: 'Видалено', error: 'Помилка', adding: 'Додавання…' }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
@@ -241,6 +241,10 @@
         renderChFields();
 
         async function addChannel() {
+            var btn = document.querySelector('[onclick="addChannel()"]');
+            btn.disabled = true;
+            var origText = btn.textContent;
+            btn.textContent = t('adding');
             const name = document.getElementById('ch-type').value;
             let config = {};
             if (name === 'telegram') {
@@ -253,7 +257,10 @@
                 const d = await r.json();
                 if (r.ok) { showMsg('ch-msg', t('ch_added'), 'ok'); await loadStatus(); }
                 else showMsg('ch-msg', d.detail || 'Error', 'err');
-            } catch (e) { showMsg('ch-msg', e.message, 'err'); }
+            } catch (e) { showMsg('ch-msg', e.message, 'err'); } finally {
+                btn.disabled = false;
+                btn.textContent = origText;
+            }
         }
 
         async function addRule() {

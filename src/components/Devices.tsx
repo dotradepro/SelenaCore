@@ -48,8 +48,18 @@ export default function Devices() {
     const devicesLoading = useStore((s) => s.devicesLoading);
     const fetchDevices = useStore((s) => s.fetchDevices);
     const updateDeviceState = useStore((s) => s.updateDeviceState);
+    const showToast = useStore((s) => s.showToast);
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState('all');
+
+    async function handleToggle(deviceId: string, newOn: boolean) {
+        try {
+            await updateDeviceState(deviceId, { on: newOn });
+            showToast?.(t('devices.stateUpdated'), 'success');
+        } catch {
+            showToast?.(t('devices.updateFailed'), 'error');
+        }
+    }
 
     useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
@@ -72,11 +82,18 @@ export default function Devices() {
                         {t('devices.registryInfo', { count: devices.length })}
                     </div>
                 </div>
-                <button onClick={() => fetchDevices()} style={{
+                <button onClick={() => fetchDevices()} disabled={devicesLoading} style={{
                     background: 'var(--surface2)', border: '1px solid var(--border)',
-                    borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer',
+                    borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'var(--text2)',
+                    cursor: devicesLoading ? 'default' : 'pointer',
+                    opacity: devicesLoading ? 0.6 : 1, transition: 'opacity .15s',
+                    display: 'flex', alignItems: 'center', gap: 4,
                 }}>
-                    {devicesLoading ? '…' : '↺ Refresh'}
+                    <span style={{
+                        display: 'inline-block',
+                        animation: devicesLoading ? 'spin .8s linear infinite' : 'none',
+                    }}>↺</span>
+                    {t('common.refresh')}
                 </button>
             </div>
 
@@ -163,6 +180,12 @@ export default function Devices() {
                                         background: 'var(--surface3)', color: 'var(--text3)', flexShrink: 0,
                                     }}>{device.protocol}</span>
                                     <span style={{ fontSize: 9, color: col.fg, flexShrink: 0 }}>{device.type}</span>
+                                    {device.location && (
+                                        <span style={{
+                                            fontSize: 9, padding: '2px 6px', borderRadius: 4,
+                                            background: 'var(--blue-bg)', color: 'var(--accent)', flexShrink: 0,
+                                        }}>{device.location}</span>
+                                    )}
                                 </div>
                                 {preview && (
                                     <div style={{
@@ -182,7 +205,7 @@ export default function Devices() {
                             {/* Toggle / state indicator */}
                             {on !== null ? (
                                 <div className={`toggle-switch ${on ? 'on' : 'off'}`}
-                                    onClick={() => updateDeviceState(device.device_id, { on: !on })}>
+                                    onClick={() => handleToggle(device.device_id, !on)}>
                                     <div className="toggle-knob" />
                                 </div>
                             ) : (

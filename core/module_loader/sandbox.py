@@ -191,6 +191,7 @@ class DockerSandbox:
                 return info
             if bus.is_connected(name):
                 info.status = ModuleStatus.RUNNING
+                self._register_in_module_registry(info)
                 logger.info(
                     "Local module %s connected to bus (pid=%d)",
                     name, proc.pid,
@@ -259,8 +260,92 @@ class DockerSandbox:
 
         self._in_process[info.name] = instance
         info.status = ModuleStatus.RUNNING
+
+        # Auto-register module in ModuleRegistry from manifest
+        self._register_in_module_registry(info)
+
         logger.info("System module '%s' started in-process", info.name)
         return info
+
+    def _register_in_module_registry(self, info: ModuleInfo) -> None:
+        """Register module metadata (intents, entities, group) from manifest.
+
+        Updates both in-memory ModuleRegistry and persistent registered_modules DB.
+        """
+        from core.module_registry import ModuleEntry, get_module_registry
+
+        manifest = info.manifest
+        group = manifest.get("group", "")
+        intents = manifest.get("intents", [])
+        entities = manifest.get("entities", [])
+
+        if not group and not intents and not entities:
+            return
+
+        entry = ModuleEntry(
+            name=info.name,
+            group=group,
+            intents=intents,
+            entities=entities,
+            description=manifest.get("description", ""),
+            type=info.type,
+            status=info.status.value,
+        )
+        get_module_registry().register(entry)
+
+        # Persist to DB (fire-and-forget)
+        if self._session_factory:
+            asyncio.ensure_future(self._persist_module_to_db(info, group, intents, entities))
+
+    async def _persist_module_to_db(
+        self, info: ModuleInfo, group: str, intents: list, entities: list,
+    ) -> None:
+        """Persist module metadata to registered_modules table."""
+        try:
+            import json as _json
+            from sqlalchemy import select
+            from core.registry.models import RegisteredModule
+
+            async with self._session_factory() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(RegisteredModule).where(RegisteredModule.name == info.name)
+                    )
+                    existing = result.scalar_one_or_none()
+
+                    description = info.manifest.get("description", "")
+
+                    if existing:
+                        existing.description_user = description
+                        if not existing.description_en or existing.description_en == existing.description_user:
+                            existing.description_en = description  # EN description from manifest
+                        existing.intents = _json.dumps(intents)
+                        existing.entities = _json.dumps(entities)
+                        existing.group = group
+                        existing.module_type = info.type
+                        existing.connected = True
+                        existing.enabled = True
+                        from datetime import datetime, timezone
+                        existing.last_seen = datetime.now(timezone.utc)
+                    else:
+                        mod = RegisteredModule(
+                            name=info.name,
+                            name_user=info.name,
+                            name_en=info.name,
+                            description_user=description,
+                            description_en=description,
+                            intents=_json.dumps(intents),
+                            entities=_json.dumps(entities),
+                            group=group,
+                            module_type=info.type,
+                            connected=True,
+                            enabled=True,
+                        )
+                        from datetime import datetime, timezone
+                        mod.last_seen = datetime.now(timezone.utc)
+                        session.add(mod)
+        except Exception as exc:
+            logger.debug("Failed to persist module '%s' to DB: %s", info.name, exc)
 
 
     async def start(self, name: str) -> ModuleInfo:
@@ -380,6 +465,11 @@ class DockerSandbox:
 
         info.status = ModuleStatus.REMOVED
         del self._modules[name]
+
+        # Unregister from ModuleRegistry
+        from core.module_registry import get_module_registry
+        get_module_registry().unregister(name)
+
         logger.info("Module %s removed", name)
 
 

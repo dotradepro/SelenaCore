@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "network",
+    "intents": ["protocol.status"],
+    "entities": ["bridge", "protocol", "gateway"],
     "permissions": [
         "device.read",
         "device.write",

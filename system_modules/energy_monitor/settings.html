@@ -470,7 +470,9 @@
                 src_active: 'Receiving data', src_no_data: 'No data yet', src_disabled: 'Disabled',
                 last_reading: 'Last reading', never: 'never',
                 confirm_delete_source: 'Remove this data source?',
-                err_name_required: 'Please enter a source name'
+                err_name_required: 'Please enter a source name',
+                saving: 'Saving…', deleted: 'Deleted', error: 'Error', loading_btn: 'Loading…',
+                toggled_on: 'Source enabled', toggled_off: 'Source disabled', adding: 'Adding…'
             },
             uk: {
                 title: '\u26A1 Моніторинг енергії',
@@ -507,7 +509,9 @@
                 src_active: 'Отримую дані', src_no_data: 'Даних ще немає', src_disabled: 'Вимкнено',
                 last_reading: 'Останній показник', never: 'ніколи',
                 confirm_delete_source: 'Видалити це джерело даних?',
-                err_name_required: 'Введіть назву джерела'
+                err_name_required: 'Введіть назву джерела',
+                saving: 'Збереження…', deleted: 'Видалено', error: 'Помилка', loading_btn: 'Завантаження…',
+                toggled_on: 'Джерело увімкнено', toggled_off: 'Джерело вимкнено', adding: 'Додавання…'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -604,6 +608,10 @@
         async function addSource() {
             var name = document.getElementById('src-name').value.trim();
             if (!name) { showSrcMsg(t('err_name_required'), true); return; }
+            var addBtn = document.querySelector('[onclick="addSource()"]');
+            addBtn.disabled = true;
+            var origAddText = addBtn.textContent;
+            addBtn.textContent = t('adding');
             var type = document.getElementById('src-type').value;
             var config = {};
 
@@ -629,22 +637,27 @@
                     var e = await r.json();
                     showSrcMsg((e.detail || 'Error'), true);
                 }
-            } catch (ex) { showSrcMsg(String(ex), true); }
+            } catch (ex) { showSrcMsg(String(ex), true); } finally {
+                addBtn.disabled = false;
+                addBtn.textContent = origAddText;
+            }
         }
 
         async function deleteSource(id) {
             if (!confirm(t('confirm_delete_source'))) return;
             try {
                 var r = await fetch(base + '/energy/sources/' + id, { method: 'DELETE', headers: h });
-                if (r.ok) { showSrcMsg(t('source_deleted'), false); loadSources(); }
-            } catch (e) { }
+                if (r.ok) { showToast(t('deleted')); loadSources(); }
+                else { showToast(t('error'), 3000); }
+            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
         }
 
         async function toggleSource(id, enabled) {
             try {
                 await fetch(base + '/energy/sources/' + id + '/toggle', { method: 'PATCH', headers: h, body: JSON.stringify({ enabled: enabled }) });
+                showToast(enabled ? t('toggled_on') : t('toggled_off'));
                 loadSources();
-            } catch (e) { }
+            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
         }
 
         function showSrcMsg(msg, isErr) {
@@ -654,8 +667,17 @@
             setTimeout(function () { el.textContent = ''; }, 3000);
         }
 
+        function showToast(msg, ms) {
+            var el = document.getElementById('toast');
+            if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--sf2);color:var(--tx);padding:10px 20px;border-radius:8px;font-size:0.85rem;z-index:9999;opacity:0;transition:opacity .3s;border:1px solid var(--b2)'; document.body.appendChild(el); }
+            el.textContent = msg; el.style.opacity = '1';
+            setTimeout(function () { el.style.opacity = '0'; }, ms || 2500);
+        }
+
         /* ── Load overview + devices ────────────────────────────── */
         async function load() {
+            var refBtn = document.querySelector('[onclick="load()"]');
+            if (refBtn) { refBtn.disabled = true; }
             try {
                 var results = await Promise.all([
                     fetch(base + '/energy/status').then(function (r) { return r.json(); }).catch(function () { return {}; }),
@@ -694,10 +716,16 @@
             } catch (e) {
                 document.getElementById('s-status').textContent = '\u2717';
                 document.getElementById('s-status').className = 'val err';
+            } finally {
+                if (refBtn) { refBtn.disabled = false; }
             }
         }
 
         async function saveThresholds() {
+            var saveBtn = document.querySelector('[onclick="saveThresholds()"]');
+            saveBtn.disabled = true;
+            var origSaveText = saveBtn.textContent;
+            saveBtn.textContent = t('saving');
             var body = {
                 alert_threshold_w: parseFloat(document.getElementById('alert-w').value) || null,
                 low_power_threshold_w: parseFloat(document.getElementById('low-w').value) || null,
@@ -711,6 +739,9 @@
             } catch (e) {
                 msg.textContent = t('error_prefix') + e.message;
                 msg.className = 'msg err-msg';
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = origSaveText;
             }
             setTimeout(function () { msg.textContent = ''; }, 3000);
         }

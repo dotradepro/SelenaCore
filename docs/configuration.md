@@ -183,7 +183,7 @@ voice:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0 to 1.0). |
-| `stt_model` | `str` | `base` | Vosk STT model size: `tiny`, `base`, `small`, `medium`. |
+| `stt_model` | `str` | `base` | Whisper STT model size: `tiny`, `base`, `small`, `medium`. |
 | `stt_silence_timeout` | `float` | `1.0` | Seconds of silence before processing command (0.5-5.0). |
 | `tts_voice` | `str` | `uk_UA-lada-x_low` | Piper TTS voice identifier. |
 | `rephrase_enabled` | `bool` | `false` | LLM rephrase for module responses. Adds 3-10s latency on local LLM. |
@@ -194,6 +194,10 @@ voice:
 | `tts_settings.volume` | `float` | `1.0` | Volume multiplier (0.1-3.0). |
 | `tts_settings.speaker` | `int` | `0` | Speaker ID for multi-speaker models. |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO pin for physical mic kill switch. |
+| `audio_force_input` | `str\|null` | `null` | ALSA capture device (e.g., `plughw:0,0`). Auto-detected if null. |
+| `audio_force_output` | `str\|null` | `null` | ALSA playback device (e.g., `plughw:1,3`). Auto-detected if null. |
+| `output_volume` | `int` | `100` | TTS output volume 0-150. Software PCM scaling (works with HDMI). |
+| `input_gain` | `int` | `100` | Microphone gain 0-150. Applied via `amixer` to the ALSA card. |
 
 ### Environment variables (voice/TTS/LLM)
 

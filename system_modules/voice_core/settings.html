@@ -317,6 +317,33 @@
         }
         .toast.show { opacity: 1; transform: translateY(0); }
 
+        .stt-snack {
+            position: fixed; bottom: 16px; right: 16px; z-index: 200;
+            background: var(--bg2); border: 1px solid var(--b2); border-radius: 10px;
+            padding: 14px 18px; min-width: 260px; max-width: 340px;
+            box-shadow: 0 4px 24px rgba(0,0,0,.35);
+            transform: translateY(120%); opacity: 0;
+            transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s;
+            pointer-events: auto;
+        }
+        .stt-snack.visible { transform: translateY(0); opacity: 1; }
+        .stt-snack-title {
+            font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--tx);
+        }
+        .stt-step {
+            display: flex; align-items: center; gap: 8px;
+            padding: 4px 0; font-size: 12px; color: var(--tx3);
+            transition: color .2s;
+        }
+        .stt-step.active { color: var(--ac); font-weight: 500; }
+        .stt-step.done { color: var(--gr); }
+        .stt-step.error { color: #ef4444; }
+        .stt-step-icon {
+            width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; font-size: 12px;
+        }
+        .stt-step.active .stt-step-icon .spinner { width: 12px; height: 12px; }
+
         .password-wrap { position: relative; }
         .password-wrap input { width: 100%; padding-right: 36px; }
         .password-toggle {
@@ -376,35 +403,32 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  VOSK — Speech-to-Text                                           -->
+<!--  WHISPER — Speech-to-Text                                        -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="card" id="voskCard">
+<div class="card" id="whisperCard">
     <div class="row">
         <div>
             <div class="flex gap8">
                 <span class="section-title" data-i18n="stt_title"></span>
-                <span class="badge badge-ac">CPU</span>
+                <span class="badge badge-ac">Whisper</span>
             </div>
-            <div class="section-sub">Vosk</div>
+            <div class="section-sub">99 languages, auto-detect</div>
         </div>
-        <span id="voskStatus" class="badge badge-off"></span>
+        <span id="whisperStatus" class="badge badge-off"></span>
     </div>
 
-    <!-- Engine actions -->
-    <div class="flex gap8 mb12 wrap" id="voskActions"></div>
-    <div id="voskProgress" class="hidden mb12">
-        <div class="label-xs mono truncate" id="voskProgressText"></div>
-        <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
+    <div class="mb12">
+        <div class="label-xs">Provider: <span id="whisperProvider">—</span></div>
     </div>
 
-    <!-- Installed models -->
-    <div id="voskInstalled" class="mb12 hidden">
+    <!-- Model selection -->
+    <div id="whisperModels" class="mb12">
         <div class="label-sm" data-i18n="installed_models"></div>
-        <div id="voskModelList"></div>
+        <div id="whisperModelList"></div>
     </div>
 
     <!-- Voice Pipeline Test -->
-    <div id="voskTestSection" class="card-inner hidden">
+    <div id="whisperTestSection" class="card-inner">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px" data-i18n="pipeline_test"></div>
 
         <!-- Record & recognize -->
@@ -422,6 +446,7 @@
         <div id="sttResult" class="hidden mb12">
             <div class="label-xs" data-i18n="recognized_text"></div>
             <div id="sttRecognizedText" style="padding:10px 12px;background:var(--sf);border:1px solid var(--b);border-radius:8px;font-size:14px;min-height:36px"></div>
+            <div id="sttDetectedLang" style="font-size:11px;color:var(--tx2);margin-top:4px"></div>
             <div class="flex gap8 mt8" id="sttResultActions"></div>
         </div>
 
@@ -445,16 +470,6 @@
                 <button id="speakAiBtn" class="btn btn-green" data-i18n="speak_response"></button>
             </div>
         </div>
-    </div>
-
-    <!-- Catalog toggle -->
-    <button id="voskCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
-    <div id="voskCatalog" class="hidden mt8">
-        <div class="flex gap8 mb12">
-            <input type="text" id="voskSearch" style="flex:1;padding-left:8px" data-placeholder-i18n="search_models">
-            <select id="voskLangFilter"><option value="" data-i18n="all_languages"></option></select>
-        </div>
-        <div id="voskCatalogList" class="catalog-list"></div>
     </div>
 </div>
 
@@ -518,16 +533,13 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  PIPER — Text-to-Speech                                          -->
+<!--  PIPER — Dual Voice TTS                                           -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="card" id="piperCard">
     <div class="row">
         <div>
-            <div class="flex gap8">
-                <span class="section-title" data-i18n="tts_title"></span>
-                <span id="piperAccelBadge" class="badge badge-ac">CPU</span>
-            </div>
-            <div class="section-sub">Piper TTS</div>
+            <span class="section-title" data-i18n="tts_title"></span>
+            <div class="section-sub">Piper TTS — Dual Voice</div>
         </div>
         <span id="piperStatus" class="badge badge-off"></span>
     </div>
@@ -539,52 +551,64 @@
         <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
     </div>
 
-    <!-- Installed voices -->
-    <div id="piperInstalled" class="mb12 hidden">
-        <div class="label-sm" data-i18n="installed_voices"></div>
-        <div id="piperVoiceList" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
-    </div>
-
-    <!-- TTS Settings -->
-    <div id="ttsSettingsSection" class="card-inner hidden">
-        <div class="label-sm mb12" data-i18n="tts_settings"></div>
-
-        <div class="slider-row">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="lengthScaleVal">1.00</span></div>
-            <input type="range" id="lengthScale" min="0.5" max="2.0" step="0.05" value="1.0">
-            <div class="slider-hints"><span data-i18n="fast"></span><span data-i18n="slow"></span></div>
-        </div>
-        <div class="slider-row">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_intonation"></span><span class="slider-value" id="noiseScaleVal">0.667</span></div>
-            <input type="range" id="noiseScale" min="0" max="1" step="0.01" value="0.667">
-            <div class="slider-hints"><span data-i18n="monotone"></span><span data-i18n="expressive"></span></div>
-        </div>
-        <div class="slider-row">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_phoneme"></span><span class="slider-value" id="noiseWVal">0.800</span></div>
-            <input type="range" id="noiseW" min="0" max="1" step="0.01" value="0.8">
-            <div class="slider-hints"><span data-i18n="stable"></span><span data-i18n="varied"></span></div>
-        </div>
-        <div class="slider-row">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_pause"></span><span class="slider-value" id="sentenceSilenceVal">0.20s</span></div>
-            <input type="range" id="sentenceSilence" min="0" max="2" step="0.05" value="0.2">
-        </div>
-        <div class="slider-row">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="volumeVal">1.00</span></div>
-            <input type="range" id="ttsVolume" min="0.1" max="3.0" step="0.05" value="1.0">
-        </div>
-        <div id="speakerRow" class="slider-row hidden">
-            <div class="slider-header"><span class="slider-label" data-i18n="tts_speaker"></span><span class="slider-value" id="speakerVal">0</span></div>
-            <input type="range" id="ttsSpeaker" min="0" max="0" step="1" value="0">
+    <!-- ── Primary Voice ── -->
+    <div id="dualVoiceSection">
+        <div class="card-inner mb12" id="primaryVoiceCard">
+            <div class="row mb8">
+                <div>
+                    <div class="flex gap8">
+                        <span class="label-sm" style="font-weight:600" data-i18n="tts_primary"></span>
+                        <span id="primaryAccelBadge" class="badge badge-ac">CPU</span>
+                        <span id="primaryStatusBadge" class="badge badge-off"></span>
+                    </div>
+                    <div class="label-xs mono" id="primaryVoiceName" style="margin-top:2px">—</div>
+                </div>
+                <select id="primaryVoiceSelect" style="max-width:200px;font-size:12px"></select>
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="priSpeedVal">1.00</span></div>
+                <input type="range" id="priSpeed" min="0.5" max="2.0" step="0.05" value="1.0" data-role="primary" data-key="length_scale">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="priVolVal">1.00</span></div>
+                <input type="range" id="priVol" min="0.1" max="3.0" step="0.05" value="1.0" data-role="primary" data-key="volume">
+            </div>
+            <div class="flex gap8">
+                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                    <input type="checkbox" id="primaryCuda"> GPU (CUDA)
+                </label>
+            </div>
         </div>
 
-        <div class="mb8">
-            <input type="text" id="ttsTestText" style="width:100%" data-placeholder-i18n="tts_test_placeholder">
+        <!-- ── Fallback Voice ── -->
+        <div class="card-inner mb12" id="fallbackVoiceCard">
+            <div class="row mb8">
+                <div>
+                    <div class="flex gap8">
+                        <span class="label-sm" style="font-weight:600" data-i18n="tts_fallback"></span>
+                        <span class="badge badge-ac">CPU</span>
+                        <span id="fallbackStatusBadge" class="badge badge-off"></span>
+                    </div>
+                    <div class="label-xs mono" id="fallbackVoiceName" style="margin-top:2px">—</div>
+                </div>
+                <select id="fallbackVoiceSelect" style="max-width:200px;font-size:12px"></select>
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="fbSpeedVal">1.00</span></div>
+                <input type="range" id="fbSpeed" min="0.5" max="2.0" step="0.05" value="1.0" data-role="fallback" data-key="length_scale">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="fbVolVal">1.00</span></div>
+                <input type="range" id="fbVol" min="0.1" max="3.0" step="0.05" value="1.0" data-role="fallback" data-key="volume">
+            </div>
         </div>
-        <div class="flex gap8">
-            <button id="ttsTestBtn" class="btn btn-blue" data-i18n="test_voice"></button>
-            <button id="ttsSaveBtn" class="btn btn-green" data-i18n="save"></button>
+
+        <!-- ── Test & Save ── -->
+        <div class="flex gap8 mb8">
+            <button id="dualTestBtn" class="btn btn-blue" data-i18n="test_voice"></button>
+            <button id="dualSaveBtn" class="btn btn-green" data-i18n="save"></button>
         </div>
-        <pre id="ttsTimingLog" class="hidden" style="margin-top:8px;padding:8px 10px;background:var(--bg2,#1a1a2e);border-radius:6px;font-size:11px;line-height:1.6;color:var(--fg2,#ccc);max-height:160px;overflow-y:auto;white-space:pre-wrap;border:1px solid var(--border,#333)"></pre>
+        <div id="dualTestResult" class="hidden label-xs mono mb8" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
     </div>
 
     <!-- Catalog toggle -->
@@ -837,6 +861,16 @@
 
     <div class="flex gap8 mb12">
         <input type="text" id="testCmdInput" style="flex:1" data-placeholder-i18n="test_cmd_placeholder">
+        <select id="testCmdLang" style="width:70px;font-size:11px">
+            <option value="">Auto</option>
+            <option value="uk">UK</option>
+            <option value="en">EN</option>
+            <option value="de">DE</option>
+            <option value="fr">FR</option>
+            <option value="es">ES</option>
+            <option value="pl">PL</option>
+            <option value="ru">RU</option>
+        </select>
         <label class="flex gap4" style="font-size:11px;color:var(--tx2);white-space:nowrap;cursor:pointer">
             <input type="checkbox" id="testCmdSpeak" checked> <span data-i18n="test_cmd_speak"></span>
         </label>
@@ -904,6 +938,12 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Model switch snackbar -->
+<div id="sttSnackbar" class="stt-snack">
+    <div class="stt-snack-title" id="sttSnackTitle"></div>
+    <div id="sttSteps"></div>
+</div>
+
 <script>
 (function() {
     // ── i18n ──────────────────────────────────────────────────────
@@ -914,6 +954,11 @@
             subtitle: 'Manage STT, TTS, and LLM engines',
             stt_title: 'Speech-to-Text (STT)',
             tts_title: 'Text-to-Speech (TTS)',
+            tts_primary: 'Primary Voice',
+            tts_fallback: 'Fallback Voice (EN)',
+            tts_loaded: 'Loaded',
+            tts_not_loaded: 'Not loaded',
+            tts_test_mix: 'Test Mix',
             llm_title: 'LLM Router',
             llm_desc: 'Language model provider management',
             installed: 'Installed',
@@ -1044,12 +1089,26 @@
             test_cmd_params: 'Params',
             test_cmd_raw_llm: 'Raw LLM Response',
             test_cmd_spoken: 'Spoken Text (after rephrase)',
+
+            stt_switch_title: 'Switching STT model',
+            stt_step_check: 'Checking model file',
+            stt_step_download: 'Downloading model',
+            stt_step_config: 'Saving configuration',
+            stt_step_restart: 'Restarting STT server',
+            stt_step_verify: 'Verifying server',
+            stt_switch_done: 'Model activated',
+            stt_switch_error: 'Switch failed',
         },
         uk: {
             title: 'Голос та AI',
             subtitle: 'Керування STT, TTS та LLM движками',
             stt_title: 'Розпiзнавання мовлення (STT)',
             tts_title: 'Синтез мовлення (TTS)',
+            tts_primary: 'Основний голос',
+            tts_fallback: 'Резервний голос (EN)',
+            tts_loaded: 'Завантажено',
+            tts_not_loaded: 'Не завантажено',
+            tts_test_mix: 'Тест мікс',
             llm_title: 'LLM маршрутизатор',
             llm_desc: 'Керування провайдерами мовних моделей',
             installed: 'Встановлено',
@@ -1180,6 +1239,15 @@
             test_cmd_params: 'Параметри',
             test_cmd_raw_llm: 'Вiдповiдь LLM (raw)',
             test_cmd_spoken: 'Озвучений текст (пiсля rephrase)',
+
+            stt_switch_title: 'Змiна STT моделi',
+            stt_step_check: 'Перевiрка файлу моделi',
+            stt_step_download: 'Завантаження моделi',
+            stt_step_config: 'Збереження конфiгурацiї',
+            stt_step_restart: 'Перезапуск STT сервера',
+            stt_step_verify: 'Перевiрка сервера',
+            stt_switch_done: 'Модель активована',
+            stt_switch_error: 'Помилка змiни моделi',
         }
     };
 
@@ -1223,9 +1291,8 @@
     // ── State ─────────────────────────────────────────────────────
     var state = {
         hw: null,
-        // Vosk
-        voskInstalled: false, voskVersion: null, voskInstalling: false,
-        voskModels: [], voskActive: '', voskCatalog: [], voskCatalogOpen: false,
+        whisperAvailable: false, whisperProvider: 'none',
+        whisperModels: [], whisperActive: 'small',
         recording: false, recognizedText: '', recordedAudioB64: '', peakLevel: 0,
         aiResponse: '', aiProvider: '', aiModel: '',
         // Piper
@@ -1416,92 +1483,123 @@
     };
 
     // ══════════════════════════════════════════════════════════════
-    //  VOSK
+    //  WHISPER STT
     // ══════════════════════════════════════════════════════════════
-    async function loadVoskStatus() {
+    async function loadWhisperStatus() {
         try {
-            var res = await api('/setup/vosk/status');
-            state.voskInstalled = res.installed;
-            state.voskVersion = res.version;
-            $('voskStatus').textContent = res.installed ? t('installed') + ' v' + res.version : t('not_installed');
-            $('voskStatus').className = 'badge ' + (res.installed ? 'badge-ok' : 'badge-off');
+            var res = await api('/setup/whisper/status');
+            state.whisperAvailable = res.available;
+            state.whisperProvider = res.provider || 'none';
+            $('whisperStatus').textContent = res.available ? res.provider : t('not_installed');
+            $('whisperStatus').className = 'badge ' + (res.available ? 'badge-ok' : 'badge-off');
+            $('whisperProvider').textContent = res.provider;
         } catch(e) { /* ignore */ }
     }
 
-    async function loadVoskModels() {
+    async function loadWhisperModels() {
         try {
             var res = await api('/setup/stt/models');
-            state.voskModels = res.models || [];
-            state.voskActive = res.active || '';
-            renderVoskModels();
+            state.whisperModels = res.models || [];
+            state.whisperActive = res.active || 'small';
+            renderWhisperModels();
         } catch(e) { /* ignore */ }
     }
 
-    function renderVoskModels() {
-        var list = $('voskModelList');
-        if (state.voskModels.length === 0) { hide('voskInstalled'); return; }
-        show('voskInstalled');
-        list.innerHTML = state.voskModels.map(function(m) {
-            var isActive = m.id === state.voskActive;
+    function renderWhisperModels() {
+        var list = $('whisperModelList');
+        if (!list) return;
+        list.innerHTML = state.whisperModels.map(function(m) {
+            var isActive = m.id === state.whisperActive;
             return '<div class="model-item' + (isActive ? ' active' : '') + '">' +
                 '<div><div class="model-name">' + m.name + '</div>' +
-                (m.size_mb ? '<div class="model-meta">' + m.size_mb + ' MB</div>' : '') + '</div>' +
-                '<div class="flex gap8">' +
+                '<div class="model-meta">' + m.size_mb + ' MB · 99 languages</div></div>' +
                 '<button class="btn ' + (isActive ? 'btn-green' : 'btn-secondary') + '" ' + (isActive ? 'disabled' : '') +
-                ' onclick="window._voskSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
-                '<button class="btn btn-red" ' + (isActive ? 'disabled' : '') +
-                ' onclick="window._voskDelete(\'' + m.id + '\')">&#10005;</button>' +
-                '</div></div>';
+                ' onclick="window._whisperSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
+                '</div>';
         }).join('');
-
-        // Show test section always — tests work via /api/ui/setup endpoints
-        show('voskTestSection');
     }
 
-    window._voskSelect = async function(id) {
-        try { await postJson('/setup/stt/select', { model: id }); state.voskActive = id; renderVoskModels(); } catch(e) { /* ignore */ }
-    };
-    window._voskDelete = async function(id) {
-        try { await postJson('/setup/stt/delete', { model: id }); loadVoskModels(); } catch(e) { /* ignore */ }
-    };
+    window._whisperSelect = async function(id) {
+        var snack = $('sttSnackbar');
+        var stepsEl = $('sttSteps');
+        var titleEl = $('sttSnackTitle');
+        var modelName = 'Whisper ' + id.charAt(0).toUpperCase() + id.slice(1);
 
-    function renderVoskActions() {
-        var html = '';
-        if (!state.voskInstalled) {
-            html += '<button class="btn btn-green" id="voskInstallBtn">' + t('install_engine') + '</button>';
-        } else {
-            html += '<button class="btn btn-red" id="voskUninstallBtn">' + t('uninstall_engine') + '</button>';
+        var steps = ['stt_step_check', 'stt_step_download', 'stt_step_config', 'stt_step_restart', 'stt_step_verify'];
+
+        function renderSteps(activeIdx, errorIdx) {
+            stepsEl.innerHTML = steps.map(function(key, i) {
+                var cls = 'stt-step';
+                var icon = '<span style="opacity:.3">&#9679;</span>';
+                if (errorIdx === i) {
+                    cls += ' error';
+                    icon = '&#10007;';
+                } else if (i < activeIdx) {
+                    cls += ' done';
+                    icon = '&#10003;';
+                } else if (i === activeIdx) {
+                    cls += ' active';
+                    icon = '<span class="spinner"></span>';
+                }
+                return '<div class="' + cls + '"><span class="stt-step-icon">' + icon + '</span>' + t(key) + '</div>';
+            }).join('');
         }
-        html += '<button class="btn btn-ghost" onclick="loadVoskStatus();loadVoskModels();">' + t('refresh') + '</button>';
-        $('voskActions').innerHTML = html;
 
-        if ($('voskInstallBtn')) $('voskInstallBtn').onclick = function() { voskEngineAction('install'); };
-        if ($('voskUninstallBtn')) $('voskUninstallBtn').onclick = function() { voskEngineAction('uninstall'); };
-    }
+        function showSnack() { snack.classList.add('visible'); }
+        function hideSnack(delay) { setTimeout(function() { snack.classList.remove('visible'); }, delay || 0); }
 
-    async function voskEngineAction(action) {
-        state.voskInstalling = true;
-        show('voskProgress');
-        $('voskProgressText').textContent = action === 'install' ? 'pip install vosk...' : 'pip uninstall vosk...';
-        $('voskActions').querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+        titleEl.textContent = modelName;
+        renderSteps(0, -1);
+        showSnack();
+
         try {
-            await api('/setup/vosk/' + action, { method: 'POST' });
-            var poll = setInterval(async function() {
+            renderSteps(1, -1);
+
+            var resp = await fetch('/api/ui/setup/stt/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: id })
+            });
+            var data = await resp.json();
+
+            if (!resp.ok) {
+                renderSteps(1, 1);
+                titleEl.textContent = t('stt_switch_error');
+                stepsEl.innerHTML += '<div class="stt-step error" style="margin-top:6px;font-size:11px;word-break:break-word">' + (data.detail || 'Unknown error') + '</div>';
+                hideSnack(5000);
+                return;
+            }
+
+            renderSteps(3, -1);
+            await new Promise(function(r) { setTimeout(r, 1500); });
+
+            renderSteps(4, -1);
+            var ok = false;
+            for (var attempt = 0; attempt < 10; attempt++) {
+                await new Promise(function(r) { setTimeout(r, 1000); });
                 try {
-                    var res = await api('/setup/vosk/install-progress');
-                    if (res.output) $('voskProgressText').textContent = res.output.split('\n').filter(Boolean).pop() || '';
-                    if (!res.running) {
-                        clearInterval(poll);
-                        state.voskInstalling = false;
-                        hide('voskProgress');
-                        await loadVoskStatus();
-                        await loadVoskModels();
-                        renderVoskActions();
-                    }
-                } catch(e) { /* ignore */ }
-            }, 2000);
-        } catch(e) { state.voskInstalling = false; hide('voskProgress'); renderVoskActions(); }
-    }
+                    var st = await api('/setup/whisper/status');
+                    if (st.available) { ok = true; break; }
+                } catch(e) { /* retry */ }
+            }
+
+            if (ok) {
+                renderSteps(5, -1);
+                titleEl.textContent = t('stt_switch_done') + ' — ' + modelName;
+                state.whisperActive = id;
+                renderWhisperModels();
+            } else {
+                renderSteps(4, 4);
+                titleEl.textContent = t('stt_switch_error');
+            }
+        } catch(e) {
+            renderSteps(0, 0);
+            titleEl.textContent = t('stt_switch_error');
+            stepsEl.innerHTML += '<div class="stt-step error" style="margin-top:6px;font-size:11px">' + e.message + '</div>';
+        }
+
+        hideSnack(3000);
+    };
 
     // ── STT Test ──────────────────────────────────────────────────
     $('sttTestBtn').onclick = async function() {
@@ -1626,90 +1724,7 @@
         if (v) window._sendToAi(v);
     };
 
-    // ── Vosk Catalog ──────────────────────────────────────────────
-    $('voskCatalogToggle').onclick = function() {
-        if (state.voskCatalogOpen) {
-            state.voskCatalogOpen = false;
-            hide('voskCatalog');
-            this.textContent = t('show_catalog');
-        } else {
-            state.voskCatalogOpen = true;
-            show('voskCatalog');
-            this.textContent = t('hide_catalog');
-            loadVoskCatalog();
-        }
-    };
-
-    async function loadVoskCatalog() {
-        $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
-        try {
-            var res = await api('/setup/stt/catalog');
-            state.voskCatalog = res.models || [];
-            renderVoskCatalog();
-        } catch(e) { $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>'; }
-    }
-
-    function renderVoskCatalog() {
-        var installedIds = {};
-        state.voskModels.forEach(function(m) { installedIds[m.id] = true; });
-        var search = ($('voskSearch').value || '').toLowerCase();
-        var lang = $('voskLangFilter').value;
-
-        // Build language options
-        var langs = {};
-        state.voskCatalog.forEach(function(m) { if (m.lang) langs[m.lang] = true; });
-        var langOpts = '<option value="">' + t('all_languages') + '</option>';
-        Object.keys(langs).sort().forEach(function(l) { langOpts += '<option value="' + l + '"' + (l === lang ? ' selected' : '') + '>' + l + '</option>'; });
-        $('voskLangFilter').innerHTML = langOpts;
-
-        var filtered = state.voskCatalog.filter(function(m) {
-            if (installedIds[m.id]) return false;
-            if (lang && m.lang !== lang) return false;
-            if (search && !m.name.toLowerCase().includes(search)) return false;
-            return true;
-        });
-
-        if (filtered.length === 0) {
-            $('voskCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>';
-            return;
-        }
-
-        $('voskCatalogList').innerHTML = filtered.map(function(m) {
-            return '<div class="model-item">' +
-                '<div><div class="model-name">' + m.name + '</div>' +
-                '<div class="model-meta">' +
-                (m.lang ? m.lang.toUpperCase() : '') +
-                (m.size_mb ? ' &middot; ' + m.size_mb + ' MB' : '') +
-                (m.notes ? ' &middot; ' + m.notes : '') +
-                '</div></div>' +
-                '<button class="btn btn-secondary" onclick="window._voskDownload(\'' + m.id + '\',this)">' + t('download') + '</button>' +
-                '</div>';
-        }).join('');
-    }
-
-    $('voskSearch').oninput = renderVoskCatalog;
-    $('voskLangFilter').onchange = renderVoskCatalog;
-
-    window._voskDownload = async function(id, btn) {
-        btn.disabled = true;
-        btn.textContent = t('downloading');
-        try {
-            await postJson('/setup/stt/download', { model: id });
-            var poll = setInterval(async function() {
-                try {
-                    var res = await api('/setup/stt/download-progress/' + encodeURIComponent(id));
-                    if (res.progress) btn.textContent = res.progress;
-                    if (!res.running) {
-                        clearInterval(poll);
-                        btn.textContent = t('download');
-                        btn.disabled = false;
-                        loadVoskModels();
-                        renderVoskCatalog();
-                    }
-                } catch(e) { /* ignore */ }
-            }, 2000);
-        } catch(e) { btn.disabled = false; btn.textContent = t('download'); }
-    };
+    // Whisper models are built-in (tiny/base/small/medium), no catalog needed
 
     // ══════════════════════════════════════════════════════════════
     //  PIPER
@@ -1733,101 +1748,17 @@
         } catch(e) { /* ignore */ }
     }
 
-    async function loadTtsSettings() {
-        try {
-            var res = await api('/setup/tts/settings');
-            state.ttsSettings = {
-                length_scale: res.length_scale != null ? res.length_scale : 1.0,
-                noise_scale: res.noise_scale != null ? res.noise_scale : 0.667,
-                noise_w_scale: res.noise_w_scale != null ? res.noise_w_scale : 0.8,
-                sentence_silence: res.sentence_silence != null ? res.sentence_silence : 0.2,
-                volume: res.volume != null ? res.volume : 1.0,
-                speaker: res.speaker != null ? res.speaker : 0,
-            };
-            state.numSpeakers = res.num_speakers || 1;
-            applyTtsSliders();
-        } catch(e) { /* ignore */ }
-    }
+    // TTS settings now managed by dual voice UI (loadDualVoiceStatus)
+    async function loadTtsSettings() { /* replaced by loadDualVoiceStatus */ }
+    function applyTtsSliders() { /* replaced by renderDualVoice */ }
 
-    function applyTtsSliders() {
-        $('lengthScale').value = state.ttsSettings.length_scale;
-        $('lengthScaleVal').textContent = state.ttsSettings.length_scale.toFixed(2);
-        $('noiseScale').value = state.ttsSettings.noise_scale;
-        $('noiseScaleVal').textContent = state.ttsSettings.noise_scale.toFixed(3);
-        $('noiseW').value = state.ttsSettings.noise_w_scale;
-        $('noiseWVal').textContent = state.ttsSettings.noise_w_scale.toFixed(3);
-        $('sentenceSilence').value = state.ttsSettings.sentence_silence;
-        $('sentenceSilenceVal').textContent = state.ttsSettings.sentence_silence.toFixed(2) + 's';
-        $('ttsVolume').value = state.ttsSettings.volume;
-        $('volumeVal').textContent = state.ttsSettings.volume.toFixed(2);
-        $('ttsSpeaker').value = state.ttsSettings.speaker;
-        $('speakerVal').textContent = state.ttsSettings.speaker;
-        if (state.numSpeakers > 1) {
-            show('speakerRow');
-            $('ttsSpeaker').max = state.numSpeakers - 1;
-        } else {
-            hide('speakerRow');
-        }
-    }
-
-    // Wire slider events
-    ['lengthScale', 'noiseScale', 'noiseW', 'sentenceSilence', 'ttsVolume', 'ttsSpeaker'].forEach(function(id) {
-        $(id).oninput = function() {
-            var v = parseFloat(this.value);
-            switch(id) {
-                case 'lengthScale': state.ttsSettings.length_scale = v; $('lengthScaleVal').textContent = v.toFixed(2); break;
-                case 'noiseScale': state.ttsSettings.noise_scale = v; $('noiseScaleVal').textContent = v.toFixed(3); break;
-                case 'noiseW': state.ttsSettings.noise_w_scale = v; $('noiseWVal').textContent = v.toFixed(3); break;
-                case 'sentenceSilence': state.ttsSettings.sentence_silence = v; $('sentenceSilenceVal').textContent = v.toFixed(2) + 's'; break;
-                case 'ttsVolume': state.ttsSettings.volume = v; $('volumeVal').textContent = v.toFixed(2); break;
-                case 'ttsSpeaker': state.ttsSettings.speaker = parseInt(this.value); $('speakerVal').textContent = this.value; break;
-            }
-        };
-    });
-
-    $('ttsSaveBtn').onclick = async function() {
-        this.disabled = true;
-        try {
-            await postJson('/setup/tts/settings', state.ttsSettings);
-            showToast(t('saved'));
-        } catch(e) { /* ignore */ }
-        this.disabled = false;
-    };
-
-    $('ttsTestBtn').onclick = async function() {
-        this.disabled = true;
-        this.textContent = t('playing');
-        var log = $('ttsTimingLog');
-        log.className = ''; log.textContent = '';
-        var t0 = performance.now();
-        function ms() { return (performance.now() - t0).toFixed(0); }
-        function logLine(msg) { log.textContent += '[' + ms() + ' ms] ' + msg + '\n'; log.scrollTop = log.scrollHeight; }
-        logLine('Start');
-        try {
-            logLine('Saving settings...');
-            await postJson('/setup/tts/settings', state.ttsSettings);
-            logLine('Settings saved');
-
-            var text = $('ttsTestText').value.trim() || 'Hello, I am your voice assistant.';
-            logLine('Synthesize + play: "' + text.substring(0, 60) + (text.length > 60 ? '...' : '') + '"');
-            var r = await postJson('/setup/tts/test', { text: text, output_device: 'default' });
-            if (r.status === 'ok') {
-                logLine('Synthesis: ' + r.synth_ms + ' ms, ' + r.size_kb + ' KB');
-                logLine('Playback:  ' + r.play_ms + ' ms');
-                logLine('Total:     ' + r.total_ms + ' ms (' + r.voice + ')');
-            } else {
-                logLine('Error: ' + (r.detail || 'unknown'));
-            }
-        } catch(e) { logLine('Error: ' + e.message); }
-        this.disabled = false;
-        this.textContent = t('test_voice');
-    };
+    // Old TTS settings sliders removed — dual voice UI handles settings now
 
     function renderPiperVoices() {
         var list = $('piperVoiceList');
-        if (state.piperVoices.length === 0) { hide('piperInstalled'); hide('ttsSettingsSection'); return; }
+        if (!list) return;
+        if (state.piperVoices.length === 0) { hide('piperInstalled'); return; }
         show('piperInstalled');
-        if (state.piperInstalled) show('ttsSettingsSection');
 
         list.innerHTML = state.piperVoices.map(function(v) {
             var isActive = v.id === state.piperActive;
@@ -2645,7 +2576,10 @@
         hide('testCmdResult');
         try {
             var speak = $('testCmdSpeak').checked;
-            var res = await postJson('/modules/voice-core/test-command', { text: text, speak: speak });
+            var langSel = $('testCmdLang').value || undefined;
+            var payload = { text: text, speak: speak };
+            if (langSel) payload.lang = langSel;
+            var res = await postJson('/modules/voice-core/test-command', payload);
 
             // Input
             $('testResInput').textContent = res.input_text || text;
@@ -2722,20 +2656,143 @@
         await Promise.all([
             loadHardware(),
             loadWakeWordStatus(),
-            loadVoskStatus(),
-            loadVoskModels(),
+            loadWhisperStatus(),
+            loadWhisperModels(),
             loadPiperStatus(),
             loadPiperVoices(),
-            loadTtsSettings(),
+            loadDualVoiceStatus(),
             loadProviders(),
             loadOllamaStatus(),
             loadOllamaModels(),
             loadLlamacppStatus(),
         ]);
-        renderVoskActions();
+        // Whisper doesn't need install/uninstall actions
         renderPiperVoices();
         renderPiperActions();
+        renderDualVoice();
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  DUAL VOICE MANAGEMENT
+    // ══════════════════════════════════════════════════════════════
+    state.dualVoice = { primary: {}, fallback: {} };
+
+    async function loadDualVoiceStatus() {
+        try {
+            var res = await api('/setup/tts/dual-status');
+            state.dualVoice = res;
+            renderDualVoice();
+        } catch(e) { /* ignore */ }
+    }
+
+    function renderDualVoice() {
+        var dv = state.dualVoice;
+        if (!dv.primary || !dv.fallback) return;
+
+        // Primary
+        var p = dv.primary;
+        $('primaryVoiceName').textContent = p.voice || '—';
+        $('primaryStatusBadge').textContent = p.installed ? t('tts_loaded') : t('tts_not_loaded');
+        $('primaryStatusBadge').className = 'badge ' + (p.installed ? 'badge-ok' : 'badge-off');
+        $('primaryAccelBadge').textContent = p.cuda ? 'GPU' : 'CPU';
+        $('primaryAccelBadge').className = 'badge ' + (p.cuda ? 'badge-ok' : 'badge-ac');
+        if (p.settings) {
+            $('priSpeed').value = p.settings.length_scale || 1.0;
+            $('priSpeedVal').textContent = (p.settings.length_scale || 1.0).toFixed(2);
+            $('priVol').value = p.settings.volume || 1.0;
+            $('priVolVal').textContent = (p.settings.volume || 1.0).toFixed(2);
+        }
+        $('primaryCuda').checked = !!p.cuda;
+
+        // Fallback
+        var f = dv.fallback;
+        $('fallbackVoiceName').textContent = f.voice || '—';
+        $('fallbackStatusBadge').textContent = f.installed ? t('tts_loaded') : t('tts_not_loaded');
+        $('fallbackStatusBadge').className = 'badge ' + (f.installed ? 'badge-ok' : 'badge-off');
+        if (f.settings) {
+            $('fbSpeed').value = f.settings.length_scale || 1.0;
+            $('fbSpeedVal').textContent = (f.settings.length_scale || 1.0).toFixed(2);
+            $('fbVol').value = f.settings.volume || 1.0;
+            $('fbVolVal').textContent = (f.settings.volume || 1.0).toFixed(2);
+        }
+
+        // Populate voice selects
+        if (state.piperVoices && state.piperVoices.length > 0) {
+            ['primaryVoiceSelect', 'fallbackVoiceSelect'].forEach(function(selId) {
+                var sel = $(selId);
+                var current = selId === 'primaryVoiceSelect' ? p.voice : f.voice;
+                sel.innerHTML = state.piperVoices.map(function(v) {
+                    return '<option value="' + v.id + '"' + (v.id === current ? ' selected' : '') + '>' + v.id + '</option>';
+                }).join('');
+            });
+        }
+    }
+
+    // Slider events for dual voice
+    ['priSpeed', 'priVol', 'fbSpeed', 'fbVol'].forEach(function(id) {
+        $(id).oninput = function() {
+            var v = parseFloat(this.value);
+            var valId = id === 'priSpeed' ? 'priSpeedVal' : id === 'priVol' ? 'priVolVal' : id === 'fbSpeed' ? 'fbSpeedVal' : 'fbVolVal';
+            $(valId).textContent = v.toFixed(2);
+        };
+    });
+
+    // Save dual config
+    $('dualSaveBtn').onclick = async function() {
+        var cfg = {
+            primary: {
+                voice: $('primaryVoiceSelect').value,
+                lang: (($('primaryVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'uk',
+                cuda: $('primaryCuda').checked,
+                settings: {
+                    length_scale: parseFloat($('priSpeed').value),
+                    volume: parseFloat($('priVol').value),
+                    noise_scale: 0.667,
+                    noise_w_scale: 0.8,
+                    speaker: 0,
+                }
+            },
+            fallback: {
+                voice: $('fallbackVoiceSelect').value,
+                lang: (($('fallbackVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'en',
+                cuda: false,
+                settings: {
+                    length_scale: parseFloat($('fbSpeed').value),
+                    volume: parseFloat($('fbVol').value),
+                    noise_scale: 0.667,
+                    noise_w_scale: 0.8,
+                    speaker: 0,
+                }
+            }
+        };
+        try {
+            await postJson('/setup/tts/dual-config', cfg);
+            showToast(t('saved'), 'ok');
+            await loadDualVoiceStatus();
+        } catch(e) { showToast('Error: ' + e.message, 'error'); }
+    };
+
+    // Test mixed voice
+    $('dualTestBtn').onclick = async function() {
+        var btn = $('dualTestBtn');
+        btn.disabled = true;
+        try {
+            var res = await postJson('/setup/tts/test-mix', {});
+            var resultEl = $('dualTestResult');
+            if (res.status === 'ok') {
+                var segs = (res.segments || []).map(function(s) {
+                    return '<span style="color:' + (s.lang === 'en' ? 'var(--ac)' : 'var(--gr)') + '">[' + s.lang + '] ' + s.text + '</span>';
+                }).join(' ');
+                resultEl.innerHTML = segs;
+                show('dualTestResult');
+            } else {
+                resultEl.textContent = res.error || 'Error';
+                show('dualTestResult');
+            }
+        } catch(e) { /* ignore */ }
+        btn.disabled = false;
+    };
+
     init();
 })();
 </script>

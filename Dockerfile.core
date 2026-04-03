@@ -30,17 +30,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install voice engines: Vosk STT (Piper TTS runs natively on host via piper-server.py)
-RUN pip install --no-cache-dir vosk pathvalidate
+# Whisper STT runs natively on host (whisper-server or faster-whisper)
+# Piper TTS runs natively on host via piper-server.py
+# Ollama LLM runs natively on host
+RUN pip install --no-cache-dir pathvalidate
 
-# Ollama runs natively on host (not in container)
-
-# Create model directories
-RUN mkdir -p /var/lib/selena/models/vosk \
-             /var/lib/selena/models/piper \
+# Create data directories
+RUN mkdir -p /var/lib/selena/models/piper \
              /var/lib/selena/db \
-             /var/lib/selena/cache \
-             /var/lib/selena/smart_matcher
+             /var/lib/selena/cache
 
 COPY core/ ./core/
 COPY system_modules/ ./system_modules/

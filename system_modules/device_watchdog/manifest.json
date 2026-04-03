@@ -6,6 +6,9 @@
     "ui_profile": "ICON_SETTINGS",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "system",
+    "intents": ["device.query"],
+    "entities": ["device"],
     "permissions": [
         "device.read",
         "device.write",

@@ -39,7 +39,7 @@ sudo bash scripts/setup.sh
 
 Скрипт налаштування виконує наступні кроки по порядку:
 
-1. Встановлення системних пакетів (FFmpeg, PortAudio, VLC, ALSA, PulseAudio)
+1. Встановлення системних пакетів (FFmpeg, PortAudio, VLC, ALSA utils)
 2. Встановлення Docker та Docker Compose
 3. Встановлення Python 3.11 та pip
 4. Створення директорій даних (`/var/lib/selena`, `/secure`)
@@ -84,10 +84,10 @@ docker compose up -d
   - `/var/run/docker.sock` — Docker-сокет для керування контейнерами модулів
   - `selena_data:/var/lib/selena` — база даних, голосові моделі, резервні копії
   - `selena_secure:/secure` — зашифровані токени та ключі
-  - PulseAudio-сокет — аудіо вхід/вихід
+  - `/dev/snd` — ALSA звукові пристрої для аудіо вводу/виводу
   - Директорія моделей Ollama (якщо налаштовано)
 - **Перевірка стану:** `GET /api/v1/health` кожні 30 секунд
-- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk
+- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
 - **Зовнішні сервіси (нативно на хості):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
 
 ### selena-agent (агент цілісності)
@@ -279,7 +279,7 @@ ls /var/log/selena/
 | Шлях | Вміст |
 |------|-------|
 | `/var/lib/selena/` | База даних SQLite, голосові моделі, резервні копії |
-| `/var/lib/selena/models/vosk/` | Моделі Vosk STT |
+| `/var/lib/selena/models/whisper/` | Моделі Whisper STT |
 | `/var/lib/selena/models/piper/` | Моделі Piper TTS |
 | `/secure/` | Зашифровані токени, AES-ключі |
 | `/secure/module_tokens/` | Токени автентифікації модулів |
@@ -322,7 +322,7 @@ sudo cp -r /secure/ /path/to/backup/selena_secure/
 | Проблема | Рішення |
 |----------|---------|
 | **Порт 7070 зайнятий** | Змініть `CORE_PORT` у `.env` та перезапустіть |
-| **Немає аудіо виходу або входу** | Перевірте монтування PulseAudio-сокету в `docker-compose.yml`; переконайтеся, що PulseAudio запущено на хості |
+| **Немає аудіо виходу або входу** | Перевірте монтування `/dev/snd` в `docker-compose.yml`; перевірте пристрої через `aplay -l` та `arecord -l` в контейнері; використовуйте `plughw:X,Y` для ALSA |
 | **Модуль не підключається** | Переконайтеся, що `MODULE_TOKEN` та `SELENA_BUS_URL` правильно задані в середовищі модуля |
 | **Система увійшла в безпечний режим** | Перевірте логи агента цілісності (`docker compose logs selena-agent`); переконайтеся, що хеші файлів ядра відповідають очікуваним значенням |
 | **Docker: відмова в доступі** | Переконайтеся, що поточний користувач у групі `docker`, або запускайте з `sudo` |

@@ -11,9 +11,10 @@
 
 - **iptables:** UI routes (`/api/ui/*`) accessible only from localhost
 - **API routes** (`/api/v1/*`) require Bearer token
+- **Module Bus** (`ws://.../api/v1/bus?token=TOKEN`) — WebSocket auth with the same module token
 - Modules cannot access `/secure/` directory directly
 - `core.*` events can only be published by core
-- Module Bus ACL enforces permissions per module type
+- Module Bus ACL enforces permissions per module type (SYSTEM modules get full access)
 
 ## Rate Limiting
 

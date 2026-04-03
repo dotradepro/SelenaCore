@@ -4,6 +4,9 @@ system_modules/voice_core/audio_manager.py — audio device autodetection
 Priority order:
   Input:  usb > i2s_gpio > bluetooth > hdmi > builtin
   Output: usb > i2s_gpio > bluetooth > hdmi > jack > builtin
+
+ALSA fallback parses ``aplay -l`` / ``arecord -l`` to get real device numbers
+(not just card-level ``hw:X,0``) and filters out internal buses (tegra APE/ADMAIF).
 """
 from __future__ import annotations
 
@@ -16,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 PRIORITY_INPUT = ["usb", "i2s_gpio", "bluetooth", "hdmi", "builtin"]
 PRIORITY_OUTPUT = ["usb", "i2s_gpio", "bluetooth", "hdmi", "jack", "builtin"]
+
+# Internal virtual buses that should never appear in the user-facing list.
+_INTERNAL_DEVICE_RE = re.compile(r"admaif|xbar|tegra-dlink", re.IGNORECASE)
 
 
 @dataclass
@@ -38,58 +44,69 @@ def _priority_score(device_type: str, priority: list[str]) -> int:
         return len(priority)
 
 
-def _classify_card(card_name: str, driver: str = "") -> str:
-    name_lower = (card_name + " " + driver).lower()
-    if "usb" in name_lower:
+def _classify_device(card_name: str, device_name: str = "") -> str:
+    """Classify an ALSA device into a type using card + device names."""
+    combined = (card_name + " " + device_name).lower()
+    if "usb" in combined:
         return "usb"
-    if "i2s" in name_lower or "rpi" in name_lower or "simple" in name_lower:
+    if "i2s" in combined or "rpi" in combined or "simple" in combined:
         return "i2s_gpio"
-    if "hdmi" in name_lower:
+    if "hdmi" in combined or "hda" in combined:
         return "hdmi"
-    if "jack" in name_lower or "headphone" in name_lower:
+    if "jack" in combined or "headphone" in combined:
         return "jack"
     return "builtin"
 
 
-def _parse_alsa_cards() -> list[dict]:
-    """Parse /proc/asound/cards to get card list."""
+def _parse_aplay_arecord(cmd: str) -> list[dict]:
+    """Parse output of ``aplay -l`` or ``arecord -l``.
+
+    Returns a list of dicts with keys: card, device, card_name, device_name.
+    Filters out internal virtual buses (tegra APE ADMAIF channels).
+    """
     try:
-        content = open("/proc/asound/cards").read()
-    except OSError:
+        result = subprocess.run(
+            [cmd, "-l"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode != 0:
+            return []
+    except Exception:
         return []
 
-    cards = []
-    for line in content.splitlines():
-        m = re.match(r"\s*(\d+)\s+\[(\S+)\s*\]: (.+)", line)
-        if m:
-            cards.append({
-                "index": int(m.group(1)),
-                "id": m.group(2),
-                "name": m.group(3).strip(),
-            })
-    return cards
-
-
-def _card_has_capture(card_index: int) -> bool:
-    try:
-        result = subprocess.run(
-            ["arecord", "-l"],
-            capture_output=True, text=True, timeout=5
+    devices: list[dict] = []
+    for line in result.stdout.splitlines():
+        # "card 1: HDA [NVIDIA Jetson Orin Nano HDA], device 3: HDMI 0 [HDMI]"
+        m = re.match(
+            r"card\s+(\d+):\s+\S+\s+\[(.+?)\],\s+device\s+(\d+):\s+(.+)",
+            line,
         )
-        return f"card {card_index}" in result.stdout
-    except Exception:
-        return False
+        if not m:
+            continue
+        card_idx = int(m.group(1))
+        card_name = m.group(2).strip()
+        dev_idx = int(m.group(3))
+        dev_rest = m.group(4).strip()
 
+        # dev_rest is like "HDMI 0 [HDMI]" or "USB Audio [USB Audio]"
+        # Extract the part before the bracket as display name
+        bracket = dev_rest.find("[")
+        if bracket > 0:
+            device_name = dev_rest[:bracket].strip()
+        else:
+            device_name = dev_rest
 
-def _card_has_playback(card_index: int) -> bool:
-    try:
-        result = subprocess.run(
-            ["aplay", "-l"],
-            capture_output=True, text=True, timeout=5
-        )
-        return f"card {card_index}" in result.stdout
-    except Exception:
-        return False
+        # Skip internal virtual buses (tegra APE ADMAIF)
+        if _INTERNAL_DEVICE_RE.search(dev_rest):
+            continue
+
+        devices.append({
+            "card": card_idx,
+            "device": dev_idx,
+            "card_name": card_name,
+            "device_name": device_name,
+        })
+    return devices
 
 
 def _pulse_env() -> dict[str, str]:
@@ -160,7 +177,7 @@ def _classify_pulse_name(name: str) -> str:
         return "bluetooth"
     if "usb" in n:
         return "usb"
-    if "hdmi" in n:
+    if "hdmi" in n or "hda" in n:
         return "hdmi"
     return "builtin"
 
@@ -184,14 +201,18 @@ def detect_audio_devices() -> AudioDevices:
             desc = source.get("description", source["name"])
             devices.inputs.append(AudioDevice(id=source["name"], name=desc, type=dtype))
     else:
-        # Fallback: raw ALSA cards
-        for card in _parse_alsa_cards():
-            dtype = _classify_card(card["name"])
-            alsa_id = f"hw:{card['index']},0"
-            if _card_has_capture(card["index"]):
-                devices.inputs.append(AudioDevice(id=alsa_id, name=card["name"], type=dtype))
-            if _card_has_playback(card["index"]):
-                devices.outputs.append(AudioDevice(id=alsa_id, name=card["name"], type=dtype))
+        # Fallback: parse aplay -l / arecord -l for real device numbers
+        for dev in _parse_aplay_arecord("aplay"):
+            alsa_id = f"plughw:{dev['card']},{dev['device']}"
+            dtype = _classify_device(dev["card_name"], dev["device_name"])
+            display = f"{dev['device_name']} ({dev['card_name']})"
+            devices.outputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
+
+        for dev in _parse_aplay_arecord("arecord"):
+            alsa_id = f"plughw:{dev['card']},{dev['device']}"
+            dtype = _classify_device(dev["card_name"], dev["device_name"])
+            display = f"{dev['device_name']} ({dev['card_name']})"
+            devices.inputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
 
     # Sort by priority
     devices.inputs.sort(key=lambda d: _priority_score(d.type, PRIORITY_INPUT))

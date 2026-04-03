@@ -436,9 +436,23 @@ WebSocket-точка доступу для комунікації з Module Bus 
 | Маршрут | Опис |
 |---|---|
 | `POST /api/ui/setup/*` | Кроки майстра налаштування |
-| `GET /api/ui/setup/stt/catalog` | Каталог моделей Vosk для розпізнавання мовлення |
+| `GET /api/ui/setup/stt/catalog` | Каталог моделей Whisper для розпізнавання мовлення |
 | Точки доступу голосового рушія | Керування конфігурацією STT/TTS |
 | Маршрутизація UI модулів | Обслуговування файлів віджетів та іконок модулів |
+
+### Ендпоінти налаштування аудіо
+
+| Метод | Маршрут | Опис |
+|-------|---------|------|
+| GET | `/api/ui/setup/audio/devices` | Список виявлених ALSA пристроїв |
+| POST | `/api/ui/setup/audio/select` | Зберегти вибір пристроїв `{input, output}` |
+| POST | `/api/ui/setup/audio/test/output` | Тест динаміка (лівий/правий канал) |
+| POST | `/api/ui/setup/audio/test/input` | Запис 3с з мікрофона, вимірювання піку, відтворення |
+| GET | `/api/ui/setup/audio/mic-level` | Рівень мікрофона → `{level: 0.0-1.0}` |
+| GET | `/api/ui/setup/audio/levels` | Поточні `{output_volume, input_gain}` |
+| POST | `/api/ui/setup/audio/levels` | Встановити `{output_volume?, input_gain?}` |
+| GET | `/api/ui/setup/audio/sources` | Список аудіо-джерел → `{sources: [{module, name, volume}]}` |
+| POST | `/api/ui/setup/audio/sources/volume` | Гучність джерела `{module, volume}` |
 
 ---
 

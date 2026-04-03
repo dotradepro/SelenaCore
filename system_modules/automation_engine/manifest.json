@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "automation",
+    "intents": ["automation.run", "automation.list"],
+    "entities": ["automation", "rule", "scene"],
     "permissions": [
         "device.read",
         "device.write",

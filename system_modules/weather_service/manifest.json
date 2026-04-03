@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "weather",
+    "intents": ["weather.query"],
+    "entities": ["weather", "forecast", "temperature"],
     "permissions": [
         "events.publish"
     ],

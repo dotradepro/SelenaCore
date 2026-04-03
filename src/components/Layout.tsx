@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 
 /* ── Notification Bell ── */
@@ -7,6 +8,7 @@ interface NotifyEntry { message: string; level: string; ts: string; channels: st
 const LEVEL_COLOR: Record<string, string> = { info: '#60a5fa', warning: '#fbbf24', critical: '#f87171', error: '#f87171' };
 
 function NotificationBell() {
+  const { t } = useTranslation();
   const [items, setItems] = useState<NotifyEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [lastSeen, setLastSeen] = useState(0);
@@ -71,11 +73,11 @@ function NotificationBell() {
           borderRadius: 12, boxShadow: '0 8px 32px #0008', zIndex: 999,
         }}>
           <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--b)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notifications</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx2)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('layout.notifications')}</span>
             <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{items.length} total</span>
           </div>
           {items.length === 0 ? (
-            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 12, color: 'var(--tx3)' }}>No notifications</div>
+            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 12, color: 'var(--tx3)' }}>{t('layout.noNotifications')}</div>
           ) : [...items].reverse().map((n, i) => (
             <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid var(--b)', display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -93,6 +95,7 @@ function NotificationBell() {
 
 /* ── Clock hook ── */
 function useClock() {
+  const { t } = useTranslation();
   const [time, setTime] = useState('--:--');
   const [date, setDate] = useState('···');
   useEffect(() => {
@@ -100,14 +103,14 @@ function useClock() {
       const n = new Date();
       const p = (x: number) => String(x).padStart(2, '0');
       setTime(`${p(n.getHours())}:${p(n.getMinutes())}`);
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const mons = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const days = (t('layout.days', { returnObjects: true }) as string[]) || ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const mons = (t('layout.months', { returnObjects: true }) as string[]) || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       setDate(`${days[n.getDay()]} ${n.getDate()} ${mons[n.getMonth()]}`);
     };
     update();
     const id = setInterval(update, 15000);
     return () => clearInterval(id);
-  }, []);
+  }, [t]);
   return { time, date };
 }
 
@@ -282,6 +285,50 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
+      {/* ═══════════ TOAST ═══════════ */}
+      <ToastNotification />
+
+    </div>
+  );
+}
+
+/* ── Toast Notification ── */
+function ToastNotification() {
+  const toast = useStore((s) => s.toast);
+  if (!toast) return null;
+
+  const borderColor =
+    toast.type === 'success' ? '#10b981' :
+    toast.type === 'error' ? '#ef4444' : '#60a5fa';
+  const bgColor =
+    toast.type === 'success' ? 'rgba(16,185,129,.12)' :
+    toast.type === 'error' ? 'rgba(239,68,68,.12)' : 'rgba(96,165,250,.12)';
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 20,
+      right: 20,
+      zIndex: 9999,
+      padding: '10px 18px',
+      borderRadius: 10,
+      background: 'var(--sf)',
+      border: `1px solid ${borderColor}`,
+      boxShadow: `0 4px 24px #0006, 0 0 0 1px ${borderColor}33`,
+      fontSize: 13,
+      fontWeight: 500,
+      color: 'var(--tx)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      animation: 'toast-in .2s ease-out',
+      backgroundColor: bgColor,
+    }}>
+      <div style={{
+        width: 6, height: 6, borderRadius: '50%',
+        background: borderColor, flexShrink: 0,
+      }} />
+      {toast.message}
     </div>
   );
 }

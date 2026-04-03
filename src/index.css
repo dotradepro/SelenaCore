@@ -219,7 +219,7 @@ body,
 /* ── Hardware grid ── */
 .hwgrid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 6px;
   margin-top: 8px;
 }
@@ -254,6 +254,50 @@ body,
   border-radius: 2px;
   transition: width .5s;
 }
+
+/* ── Buttons ── */
+.btn {
+  background: var(--sf2);
+  color: var(--tx);
+  border: 1px solid var(--b);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font);
+  padding: 6px 12px;
+  font-size: 12px;
+  transition: background .15s, border-color .15s;
+}
+.btn:hover { background: var(--sf3); }
+.btn-xs { padding: 2px 8px; font-size: 10px; border-radius: 4px; }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+.btn-active { background: var(--ac); color: #fff; border-color: var(--ac); }
+.btn-active:hover { opacity: .85; }
+.btn-danger { color: var(--rd); border-color: var(--rd); background: transparent; }
+.btn-danger:hover { background: var(--rd); color: #fff; }
+
+/* ── Process table ── */
+.proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.proc-table th {
+  text-align: left;
+  font-size: 9px;
+  color: var(--tx3);
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--b);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.proc-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--sf2);
+  color: var(--tx2);
+}
+.proc-table tr:hover td { background: var(--sf2); }
 
 /* ── Widget shell (kernel) ── */
 .ws {
@@ -477,63 +521,6 @@ body,
   opacity: 0.9;
 }
 
-/* ── Add system module panel ── */
-.add-mod-panel {
-  position: absolute;
-  top: 36px;
-  right: 6px;
-  width: 200px;
-  background: var(--sf2);
-  border: 1px solid var(--b2);
-  border-radius: 10px;
-  padding: 10px;
-  z-index: 40;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
-}
-
-.add-mod-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--tx2);
-  transition: all .15s;
-}
-
-.add-mod-item:hover {
-  background: var(--sf3);
-  color: var(--tx);
-}
-
-/* ── Widget span classes ── */
-.sp-1x1 {
-  grid-column: span 1;
-  grid-row: span 1;
-}
-
-.sp-2x1 {
-  grid-column: span 2;
-  grid-row: span 1;
-}
-
-.sp-1x2 {
-  grid-column: span 1;
-  grid-row: span 2;
-}
-
-.sp-2x2 {
-  grid-column: span 2;
-  grid-row: span 2;
-}
-
-.sp-4x1 {
-  grid-column: span 4;
-  grid-row: span 1;
-}
-
 /* ── Edit toggle ── */
 .edit-toggle {
   padding: 4px 10px;
@@ -699,88 +686,6 @@ body,
 
 .wb.inactive {
   background: var(--tx3);
-}
-
-/* ── Voice overlay ── */
-.vov {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, .65);
-  z-index: 200;
-  align-items: center;
-  justify-content: center;
-}
-
-.vov.open {
-  display: flex;
-}
-
-.vmodal {
-  background: var(--sf);
-  border: 1px solid var(--b2);
-  border-radius: 18px;
-  width: 320px;
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-}
-
-.vring {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(79, 140, 247, .1);
-  border: 1.5px solid rgba(79, 140, 247, .25);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-}
-
-@keyframes rp {
-  0% {
-    transform: scale(1);
-    opacity: .7;
-  }
-
-  100% {
-    transform: scale(1.5);
-    opacity: 0;
-  }
-}
-
-.vring.listening::before,
-.vring.listening::after {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  border: 1.5px solid var(--ac);
-  animation: rp 1.6s ease-out infinite;
-}
-
-.vring.listening::after {
-  animation-delay: .55s;
-}
-
-.vsug {
-  font-size: 10px;
-  padding: 4px 10px;
-  border-radius: 16px;
-  background: var(--sf2);
-  border: 1px solid var(--b);
-  color: var(--tx3);
-  cursor: pointer;
-  transition: all .15s;
-}
-
-.vsug:hover {
-  color: var(--tx2);
-  border-color: var(--b2);
 }
 
 /* ── Topbar nav pill ── */
@@ -1020,6 +925,16 @@ html.light .numpad-key:active {
   40% { transform: translateX(8px); }
   60% { transform: translateX(-6px); }
   80% { transform: translateX(6px); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Wizard badge pills bg-zinc-800 text */

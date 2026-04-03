@@ -11,6 +11,10 @@ export interface Device {
   last_seen: number | null;
   module_id: string | null;
   meta: Record<string, unknown>;
+  entity_type?: string | null;
+  location?: string | null;
+  keywords_user?: string[];
+  keywords_en?: string[];
 }
 
 export interface Module {
@@ -30,14 +34,26 @@ export interface Module {
 
 export interface SystemStats {
   cpuTemp: number;
+  cpuLoad: [number, number, number];
+  cpuCount: number;
   ramUsedMb: number;
   ramTotalMb: number;
+  swapUsedMb: number;
+  swapTotalMb: number;
   diskUsedGb: number;
   diskTotalGb: number;
   uptime: number;
   integrity: string;
   mode: string;
   version: string;
+  ollama: {
+    installed: boolean;
+    running: boolean;
+    model: string | null;
+    modelLoaded: boolean;
+    loadedModel?: string;
+    models?: { name: string; size_mb: number }[];
+  };
 }
 
 export interface Health {
@@ -87,6 +103,11 @@ function saveWidgetLayout(layout: WidgetLayout) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(layout),
   }).catch(() => { /* ignore network errors */ });
+}
+
+export interface Toast {
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
 export type ThemeMode = 'auto' | 'light' | 'dark';
@@ -147,7 +168,7 @@ interface AppState {
   setSelectedLanguage: (lang: string) => void;
   fetchWizardStatus: () => Promise<void>;
   fetchWizardRequirements: () => Promise<void>;
-  fetchHealth: () => Promise<void>;
+
   fetchStats: () => Promise<void>;
   fetchDevices: () => Promise<void>;
   fetchModules: () => Promise<void>;
@@ -162,12 +183,14 @@ interface AppState {
   pinModule: (name: string, preferredSlot?: number) => void;
   unpinModule: (name: string) => void;
   setWidgetSize: (name: string, size: 'compact' | 'normal') => void;
-  moveWidget: (name: string, dir: -1 | 1) => void;
+
   swapWidgets: (nameA: string, nameB: string) => void;
   moveWidgetToSlot: (name: string, slot: number) => void;
   setWidgetSpan: (name: string, cols: number, rows: number) => void;
   addScreen: () => void;
   connectSyncStream: () => () => void;
+  toast: Toast | null;
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 // ── Request optimizations ─────────────────────────────────────────────────────
@@ -378,8 +401,6 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // fetchHealth is an alias for fetchStats — both use /api/ui/system
-  fetchHealth: async () => { await get().fetchStats(); },
 
   fetchStats: async () => {
     try {
@@ -387,18 +408,31 @@ export const useStore = create<AppState>((set, get) => ({
       if (data) {
         const hw = data.hardware ?? {};
         const core = data.core ?? {};
+        const ollama = data.ollama ?? {};
         set({
           health: core ?? get().health,
           stats: {
             cpuTemp: hw.cpu_temp ?? 0,
+            cpuLoad: hw.cpu_load ?? [0, 0, 0],
+            cpuCount: hw.cpu_count ?? 1,
             ramUsedMb: hw.ram_used_mb ?? 0,
             ramTotalMb: hw.ram_total_mb ?? 1,
+            swapUsedMb: hw.swap_used_mb ?? 0,
+            swapTotalMb: hw.swap_total_mb ?? 0,
             diskUsedGb: hw.disk_used_gb ?? 0,
             diskTotalGb: hw.disk_total_gb ?? 1,
             uptime: core.uptime ?? 0,
             integrity: core.integrity ?? 'ok',
             mode: core.mode ?? 'normal',
             version: core.version ?? '—',
+            ollama: {
+              installed: ollama.installed ?? false,
+              running: ollama.running ?? false,
+              model: ollama.model ?? null,
+              modelLoaded: ollama.model_loaded ?? false,
+              loadedModel: ollama.loaded_model,
+              models: ollama.models,
+            },
           },
         });
       }
@@ -543,20 +577,6 @@ export const useStore = create<AppState>((set, get) => ({
       return { widgetLayout: layout };
     });
   },
-  moveWidget: (name, dir) => {
-    // legacy: kept for compatibility
-    set(state => {
-      const pinned = [...state.widgetLayout.pinned];
-      const idx = pinned.indexOf(name);
-      if (idx < 0) return state;
-      const newIdx = idx + dir;
-      if (newIdx < 0 || newIdx >= pinned.length) return state;
-      [pinned[idx], pinned[newIdx]] = [pinned[newIdx], pinned[idx]];
-      const layout: WidgetLayout = { ...state.widgetLayout, pinned };
-      saveWidgetLayout(layout);
-      return { widgetLayout: layout };
-    });
-  },
   swapWidgets: (nameA, nameB) => {
     set(state => {
       const positions = state.widgetLayout.positions ?? {};
@@ -670,6 +690,12 @@ export const useStore = create<AppState>((set, get) => ({
       // Reconnect handled automatically by EventSource; nothing to do here.
     };
     return () => es.close();
+  },
+
+  toast: null,
+  showToast: (message, type = 'success') => {
+    set({ toast: { message, type } });
+    setTimeout(() => set({ toast: null }), 2500);
   },
 }));
 

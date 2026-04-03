@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "energy",
+    "intents": ["device.query"],
+    "entities": ["power", "energy", "consumption", "socket", "outlet"],
     "permissions": [
         "device.read",
         "events.subscribe",

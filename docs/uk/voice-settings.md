@@ -2,13 +2,13 @@
 
 ## Огляд конвеєра
 
-Wake word → Запис аудіо → Vosk STT → Ідентифікація мовця (resemblyzer) → Intent Router (6 рівнів) → Cloud LLM Rephrase → Piper TTS
+Wake word → Запис аудіо → Whisper STT → Ідентифікація мовця (resemblyzer) → Intent Router (6 рівнів) → Cloud LLM Rephrase → Piper TTS
 
 ```
-Мікрофон (parecord)
+Мікрофон (arecord, ALSA)
      │
      ▼
-  Vosk STT ──► текст
+  Whisper STT ──► текст
      │
      ▼
   Intent Router
@@ -26,15 +26,15 @@ Wake word → Запис аудіо → Vosk STT → Ідентифікація 
   Cloud LLM Rephrase (варіативний TTS)
      │
      ▼
-  Piper TTS (нативний сервер хоста, CPU/GPU) → Динамік
+  Piper TTS (нативний сервер хоста, CPU/GPU) → aplay (ALSA) → Динамік
 ```
 
-## STT - Vosk
+## STT - Whisper
 
-- Офлайн-розпізнавання мовлення (рушій Kaldi)
-- Оптимізовано для ARM на Raspberry Pi
-- Моделі: tiny, base, small, medium (у `/var/lib/selena/models/vosk/`)
-- Налаштовується в core.yaml: `voice.stt_model`
+- Розпізнавання мовлення через HTTP-сервер whisper.cpp на `http://localhost:9000`
+- Моделі: формат ggml (tiny, base, small, medium) у `whisper.cpp/models/`
+- Підтримує GPU-прискорення на NVIDIA Jetson (CUDA)
+- Налаштовується в core.yaml: `stt.whisper_cpp.host`
 
 ## TTS - Piper
 
@@ -92,7 +92,7 @@ sudo systemctl restart piper-tts
 
 ## Wake Word
 
-- openWakeWord / граматичний режим Vosk
+- openWakeWord
 - Чутливість: core.yaml `voice.wake_word_sensitivity` (від 0.0 до 1.0)
 
 ## Ідентифікація мовця
@@ -314,15 +314,139 @@ UI для дебагу голосових команд без необхідно
 | `voice.privacy_on` | Режим приватності увімкнено |
 | `voice.privacy_off` | Режим приватності вимкнено |
 
+## Аудіопідсистема
+
+### Огляд
+
+SelenaCore використовує **ALSA напряму** для всього аудіо вводу/виводу. PulseAudio не потрібен.
+
+```
+                         ┌──────────────────────────┐
+  USB Мікрофон (plughw:0,0)──►  arecord (voice loop) │
+                         │  s16le, 16kHz, mono       │
+                         └────────────┬──────────────┘
+                                      ▼
+                             Whisper STT сервер
+                                      │
+                           ┌──────────▼───────────┐
+                           │   Intent Router      │
+                           └──────────┬───────────┘
+                                      ▼
+               ┌────────────────┬─────┴────┬──────────────┐
+               ▼                ▼          ▼              ▼
+          Piper TTS        VLC (радіо)  Модуль       voice.speak
+               │                │       дія             подія
+               ▼                ▼
+     ┌─────────────────┐  ┌──────────────────┐
+     │ Програмна       │  │ VLC ALSA вивід   │
+     │ гучність (PCM)  │  │ (--aout=alsa)    │
+     └────────┬────────┘  └────────┬─────────┘
+              ▼                    ▼
+     ┌────────────────────────────────────────┐
+     │   HDMI вивід (plughw:1,3)              │
+     │   ALSA plughw авто-ресемплінг          │
+     └────────────────────────────────────────┘
+```
+
+### Виявлення пристроїв
+
+Аудіопристрої виявляються через `aplay -l` / `arecord -l` (ALSA fallback) або PulseAudio
+(`pactl list`), якщо доступний.
+
+1. Парсинг реальних номерів пристроїв з `aplay -l` (напр., `hw:1,3` для HDMI 0)
+2. Фільтрація внутрішніх віртуальних шин (tegra APE/ADMAIF на Jetson)
+3. Класифікація: `usb`, `i2s_gpio`, `bluetooth`, `hdmi`, `jack`, `builtin`
+4. Префікс `plughw:X,Y` для автоматичної конвертації формату/частоти/каналів
+
+**Пріоритет:**
+
+| Напрямок | Пріоритет (найвищий першим) |
+|----------|----------------------------|
+| Вхід     | usb > i2s_gpio > bluetooth > hdmi > builtin |
+| Вихід    | usb > i2s_gpio > bluetooth > hdmi > jack > builtin |
+
+### Конфігурація аудіо (core.yaml)
+
+```yaml
+voice:
+  audio_force_input: "plughw:0,0"     # ALSA пристрій захоплення (або null для авто)
+  audio_force_output: "plughw:1,3"    # ALSA пристрій відтворення (або null для авто)
+  output_volume: 100                   # Гучність TTS 0-150 (програмне масштабування PCM)
+  input_gain: 100                      # Підсилення мікрофона 0-150 (через amixer)
+```
+
+### Керування гучністю
+
+**TTS (voice-core):** Програмна гучність — PCM семпли масштабуються на `output_volume / 100`
+перед відправкою в `aplay`. Працює з будь-яким ALSA пристроєм, включаючи HDMI.
+
+**Підсилення мікрофона:** Застосовується через `amixer -c N sset 'Control' X%`.
+
+**Медіаплеєр (VLC):** Внутрішній `audio_set_volume()` VLC (0-100). Керується через
+UI "Джерела звуку" або голосовими командами.
+
+### Джерела звуку
+
+Системні модулі з аудіо-інтентами (`media.*` в `manifest.json`) автоматично
+виявляються як джерела звуку. Кожне джерело отримує незалежний повзунок гучності
+в **Налаштування → Аудіо → Джерела звуку**.
+
+| Джерело | Зберігання гучності | Метод керування |
+|---------|---------------------|-----------------|
+| Selena TTS | `voice.output_volume` в core.yaml | Програмне масштабування PCM |
+| Медіаплеєр | VLC runtime (скидається при перезапуску) | `player.audio_set_volume()` |
+
+### API ендпоінти аудіо
+
+| Метод | Шлях | Опис |
+|-------|------|------|
+| GET | `/api/ui/setup/audio/devices` | Список виявлених пристроїв |
+| POST | `/api/ui/setup/audio/select` | Зберегти вибір пристроїв |
+| POST | `/api/ui/setup/audio/test/output` | Тест динаміка (лівий/правий канал) |
+| POST | `/api/ui/setup/audio/test/input` | Запис 3с з мікрофона + відтворення |
+| GET | `/api/ui/setup/audio/mic-level` | Рівень мікрофона (0.0-1.0) |
+| GET | `/api/ui/setup/audio/levels` | Поточна гучність та підсилення |
+| POST | `/api/ui/setup/audio/levels` | Встановити гучність/підсилення |
+| GET | `/api/ui/setup/audio/sources` | Список аудіо-джерел з гучностями |
+| POST | `/api/ui/setup/audio/sources/volume` | Встановити гучність джерела |
+
+### Примітки для NVIDIA Jetson
+
+| Карта | Назва | Пристрої | Тип |
+|-------|-------|----------|-----|
+| 0 | UACDemoV1.0 (USB) | `hw:0,0` захоплення | USB мікрофон |
+| 1 | NVIDIA Jetson Orin Nano HDA | `hw:1,3` `hw:1,7` `hw:1,8` `hw:1,9` | HDMI виходи |
+| 2 | NVIDIA Jetson Orin Nano APE | 20× tegra-dlink ADMAIF | Внутрішня шина (відфільтровано) |
+
+- HDMI вимагає стерео та специфічні частоти — `plughw:` забезпечує автоконвертацію
+- Карта 2 (APE) — внутрішня шина NVIDIA з 20 віртуальними каналами (відфільтровано)
+- Назва HDA-карти не містить "hdmi", але класифікатор розпізнає `hda` як тип HDMI
+
+### Аудіо медіаплеєра
+
+Модуль media-player використовує python-vlc (libvlc) з виводом через ALSA:
+
+```python
+# VLC прапорці (встановлюються автоматично)
+--aout=alsa
+--alsa-audio-device=plughw:1,3    # з core.yaml audio_force_output
+```
+
+---
+
 ## Голосова конфігурація в core.yaml
 
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "vosk-model-small-uk-v3-nano"
+  stt_model: "ggml-small"
   stt_silence_timeout: 1.0            # секунди тиші перед обробкою (0.5-5.0)
   tts_voice: "uk_UA-ukrainian_tts-medium"
   rephrase_enabled: false              # LLM rephrase для відповідей модулів (додає затримку)
+  audio_force_input: "plughw:0,0"     # ALSA пристрій захоплення
+  audio_force_output: "plughw:1,3"    # ALSA пристрій відтворення
+  output_volume: 100                   # Програмна гучність TTS (0-150)
+  input_gain: 100                      # Підсилення мікрофона через amixer (0-150)
   tts_settings:
     length_scale: 1.0                  # швидкість мовлення (0.5=швидко, 2.0=повільно)
     noise_scale: 0.667                 # варіативність інтонації (0.0-1.0)

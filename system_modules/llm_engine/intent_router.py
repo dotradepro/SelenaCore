@@ -1,18 +1,19 @@
 """
-system_modules/llm_engine/intent_router.py — Multi-tier Intent Router
+system_modules/llm_engine/intent_router.py — Three-tier Intent Router
 
-Tier 1:   Fast Matcher (keyword/regex YAML rules) — zero latency
-Tier 1.5: System Module Intents (in-process regex) — microseconds
-Tier 2:   Module Bus (WebSocket intent routing) — milliseconds
-Tier 3:   LLM Intent Classification — any provider (Cloud/Ollama/llama.cpp)
+Tier 0: FastMatcher + IntentCompiler (regex from YAML vocabulary) — zero latency
+Tier 1: Local LLM (single call: intent JSON + response) — 300-800ms
+Tier 2: Cloud LLM (OpenAI-compatible API, optional) — 1-3s
 
 Orchestration:
-  1. Try Fast Matcher first
-  2. Try system module registered intents (in-process, no HTTP)
-  3. Try user module intents via Module Bus (WebSocket)
-  4. Try LLM intent classification (active provider: cloud, ollama, or llamacpp)
-  5. Fallback → "not understood"
-  6. Publish voice.intent event to EventBus
+  1. Try Fast Matcher first (keyword/regex YAML rules)
+  2. Try system module registered intents (in-process regex)
+  3. Try Module Bus (WebSocket user module intents)
+  4. Check IntentCache (SQLite cache of previous LLM results)
+  5. Try local LLM (single call with fixed system prompt)
+  6. Try cloud LLM fallback (if configured)
+  7. Fallback → "not understood"
+  8. Publish voice.intent event to EventBus
 """
 from __future__ import annotations
 
@@ -28,80 +29,150 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# ── Fixed LLM system prompt (KV cache stays hot between requests) ──────
+
+INTENT_SYSTEM_PROMPT = """\
+You are Selena, a smart home assistant.
+Analyze the user request. Reply ONLY with valid JSON, no extra text:
+{
+  "intent": "<intent_name or unknown>",
+  "entity": "<device/object or null>",
+  "location": "<room or null>",
+  "params": {},
+  "response": "<1-2 sentences in the user's language confirming the action>"
+}
+
+Known intents:
+  device.on, device.off, device.set, device.query,
+  media.play, media.stop, media.pause, media.resume, media.volume_set, media.next, media.prev,
+  climate.set, climate.query,
+  weather.query,
+  automation.run, automation.list,
+  presence.query,
+  unknown
+
+Rules:
+- intent MUST be from the known list above or from the registered intents list
+- entity, location — always in English (e.g. "light", "kitchen"), even if user speaks another language
+- params — extracted parameters (e.g. {"level": 50} for volume, {"genre": "jazz"} for music)
+- response — MUST be in the TTS language (specified at the end of this prompt), natural and concise
+- If you cannot determine the intent, use "unknown" and provide a helpful response
+"""
+
+
+# ── Template responses for regex hits (no LLM needed) ──────────────────
+
+_TEMPLATE_RESPONSES: dict[str, dict[str, str]] = {
+    "device.on": {
+        "en": "Turned on",
+        "uk": "Увімкнено",
+        "de": "Eingeschaltet",
+        "fr": "Allumé",
+        "es": "Encendido",
+    },
+    "device.off": {
+        "en": "Turned off",
+        "uk": "Вимкнено",
+        "de": "Ausgeschaltet",
+        "fr": "Éteint",
+        "es": "Apagado",
+    },
+    "media.play": {
+        "en": "Playing",
+        "uk": "Вмикаю",
+        "de": "Wird abgespielt",
+        "fr": "Lecture en cours",
+        "es": "Reproduciendo",
+    },
+    "media.stop": {
+        "en": "Stopped",
+        "uk": "Зупинено",
+        "de": "Gestoppt",
+        "fr": "Arrêté",
+        "es": "Detenido",
+    },
+    "media.pause": {
+        "en": "Paused",
+        "uk": "Пауза",
+        "de": "Pausiert",
+        "fr": "En pause",
+        "es": "En pausa",
+    },
+    "media.resume": {
+        "en": "Resuming",
+        "uk": "Продовжую",
+        "de": "Fortgesetzt",
+        "fr": "Reprise",
+        "es": "Reanudado",
+    },
+    "privacy_on": {
+        "en": "Privacy mode on",
+        "uk": "Режим приватності увімкнено",
+    },
+    "privacy_off": {
+        "en": "Privacy mode off",
+        "uk": "Режим приватності вимкнено",
+    },
+}
+
+_LANG_NAMES: dict[str, str] = {
+    "uk": "Ukrainian", "en": "English", "de": "German",
+    "fr": "French", "es": "Spanish", "pl": "Polish",
+    "it": "Italian", "pt": "Portuguese", "nl": "Dutch",
+    "cs": "Czech", "ja": "Japanese", "zh": "Chinese",
+    "ko": "Korean", "ru": "Russian", "tr": "Turkish",
+}
+
+
+# ── Param normalization: non-English captured values → English ─────────
+_PARAM_NORMALIZE: dict[str, dict[str, str]] = {
+    "genre": {
+        "рок": "rock", "джаз": "jazz", "класику": "classical",
+        "класичну": "classical", "ембієнт": "ambient", "поп": "pop",
+        "новини": "news",
+    },
+}
+
+
+def _get_template_response(intent: str, lang: str) -> str:
+    """Get a template response for a regex-matched intent, or empty string."""
+    templates = _TEMPLATE_RESPONSES.get(intent, {})
+    return templates.get(lang, templates.get("en", ""))
+
+
 @dataclass
 class IntentResult:
     intent: str
     response: str
     action: dict[str, Any] | None
-    source: str          # "fast_matcher" | "system_module" | "module_bus" | "llm" | "fallback"
+    source: str          # "fast_matcher" | "system_module" | "module_bus" | "llm" | "cloud" | "cache" | "fallback"
     latency_ms: int
+    lang: str = "en"
     user_id: str | None = None
     params: dict[str, Any] | None = None
     raw_llm: str | None = None  # raw LLM response before parsing (debug)
 
 
-@dataclass
-class SystemIntentEntry:
-    """In-process intent registration for SYSTEM modules."""
-    module: str                                    # e.g. "media-player"
-    intent: str                                    # e.g. "media.play_radio"
-    patterns: dict[str, list[str]]                 # {"uk": [...], "en": [...]}
-    description: str = ""
-    priority: int = 0                              # higher = checked first
+# Re-export for backward compatibility
+from system_modules.llm_engine.intent_compiler import SystemIntentEntry  # noqa: F401
 
 
 class IntentRouter:
-    """Orchestrates Fast Matcher + System Intents + Module Intents + LLM."""
+    """Intent router: DB regex → Module Bus → Cache → LLM → Cloud."""
 
     def __init__(self) -> None:
         self._system_prompt: str | None = None
-        self._system_intents: list[SystemIntentEntry] = []
+        self._prompt_cache: dict[str, str] = {}  # lang → cached prompt
 
-    # ── System module intent registration ──────────────────────────────
+    # ── Legacy registration (no-op, kept for backward compat) ────────
 
     def register_system_intent(self, entry: SystemIntentEntry) -> None:
-        """Register an in-process intent from a SYSTEM module."""
-        self._system_intents.append(entry)
-        self._system_intents.sort(key=lambda e: e.priority, reverse=True)
-        logger.info(
-            "IntentRouter: registered system intent '%s' from '%s'",
-            entry.intent, entry.module,
-        )
+        """No-op. Intents are now loaded from DB by IntentCompiler."""
+        pass
 
     def unregister_system_intents(self, module: str) -> None:
-        """Remove all intent registrations for a system module."""
-        before = len(self._system_intents)
-        self._system_intents = [e for e in self._system_intents if e.module != module]
-        removed = before - len(self._system_intents)
-        if removed:
-            logger.info("IntentRouter: unregistered %d intents from '%s'", removed, module)
-
-    def _match_system_intents(
-        self, text: str, lang: str,
-    ) -> tuple[SystemIntentEntry, dict[str, str]] | None:
-        """Try matching text against system module intent patterns.
-
-        Returns (entry, params) on match, None otherwise.
-        Tries requested language first, falls back to 'en'.
-        """
-        text_lower = text.lower().strip()
-        for entry in self._system_intents:
-            lang_patterns = entry.patterns.get(lang) or entry.patterns.get("en", [])
-            for pattern in lang_patterns:
-                try:
-                    m = re.search(pattern, text_lower, re.IGNORECASE)
-                    if m:
-                        logger.debug(
-                            "System intent match: '%s' → '%s' (module=%s)",
-                            pattern, entry.intent, entry.module,
-                        )
-                        return entry, m.groupdict() or {}
-                except re.error:
-                    logger.warning(
-                        "Invalid regex '%s' in system intent '%s'",
-                        pattern, entry.intent,
-                    )
-        return None
+        """No-op. Intents are now loaded from DB by IntentCompiler."""
+        pass
 
     # ── Main routing ────────────────────────────────────────────────────
 
@@ -111,110 +182,54 @@ class IntentRouter:
         user_id: str | None = None,
         lang: str = "en",
         *,
+        tts_lang: str | None = None,
         trace: bool = False,
     ) -> IntentResult | tuple[IntentResult, list[dict[str, Any]]]:
-        """Route user text to the appropriate intent handler.
+        """Route user text: DB regex → Module Bus → Cache → LLM → Cloud.
 
-        Resolution order:
-          Tier 1:   Fast Matcher (keyword/regex YAML rules) — zero latency
-          Tier 1.5: System Module Intents (in-process regex) — microseconds
-          Tier 2:   Module Bus (WebSocket intent routing) — milliseconds
-          Tier 3:   LLM fallback — dynamic understanding, disabled when RAM < 5GB
+        Args:
+            lang: STT-detected language (used for regex matching, cache key)
+            tts_lang: TTS output language (used for response generation).
+                      If None, defaults to lang.
 
         Returns IntentResult (or (IntentResult, trace_steps) when trace=True).
         """
+        if tts_lang is None:
+            tts_lang = lang
         start_ms = int(time.time() * 1000)
         steps: list[dict[str, Any]] = [] if trace else []
 
         def _elapsed() -> int:
             return int(time.time() * 1000) - start_ms
 
-        # Tier 1: Fast Matcher
-        from system_modules.llm_engine.fast_matcher import get_fast_matcher
-        match = get_fast_matcher().match(text, lang=lang)
+        # ── Tier 0: IntentCompiler (DB-driven regex, all patterns) ──
+        from system_modules.llm_engine.intent_compiler import get_intent_compiler
+        db_match = get_intent_compiler().match(text, lang=lang)
 
         if trace:
             steps.append({
-                "tier": "1", "name": "Fast Matcher",
-                "status": "hit" if match else "miss",
+                "tier": "0", "name": "IntentCompiler (DB)",
+                "status": "hit" if db_match else "miss",
                 "ms": _elapsed(),
-                "detail": match.intent if match else None,
+                "detail": db_match["intent"] if db_match else None,
             })
 
-        if match:
+        if db_match:
+            response = _get_template_response(db_match["intent"], tts_lang)
             result = IntentResult(
-                intent=match.intent,
-                response=match.response or "",
-                action=match.action,
-                source="fast_matcher",
-                latency_ms=_elapsed(),
-                user_id=user_id,
-                params=match.params or {},
-            )
-            await self._publish_event(result, raw_text=text)
-            return (result, steps) if trace else result
-
-        # Tier 1.5: System Module Intents — in-process, no HTTP
-        sys_match = self._match_system_intents(text, lang)
-
-        if trace:
-            steps.append({
-                "tier": "1.5", "name": "System Module Intents",
-                "status": "hit" if sys_match else "miss",
-                "ms": _elapsed(),
-                "detail": f"{sys_match[0].module}::{sys_match[0].intent}" if sys_match else None,
-                "registered": len(self._system_intents),
-            })
-
-        if sys_match is not None:
-            entry, params = sys_match
-            result = IntentResult(
-                intent=entry.intent,
-                response="",
+                intent=db_match["intent"],
+                response=response,
                 action=None,
                 source="system_module",
                 latency_ms=_elapsed(),
+                lang=lang,
                 user_id=user_id,
-                params=params,
+                params=db_match.get("params", {}),
             )
-            await self._publish_event(result, raw_text=text)
+            await self._publish_event(result, raw_text=text, lang=lang)
             return (result, steps) if trace else result
 
-        # Tier 1.7: SmartMatcher — TF-IDF cosine similarity
-        smart_result = None
-        try:
-            from system_modules.llm_engine.smart_matcher import get_smart_matcher
-            from system_modules.llm_engine.structure_extractor import extract_structure
-            matcher = get_smart_matcher()
-            if matcher.is_built:
-                struct = extract_structure(text)
-                smart_result = matcher.match(text, struct)
-        except Exception as exc:
-            logger.debug("SmartMatcher Tier 1.7 error: %s", exc)
-
-        if trace:
-            steps.append({
-                "tier": "1.7", "name": "SmartMatcher",
-                "status": "hit" if smart_result else "miss",
-                "ms": _elapsed(),
-                "detail": smart_result["intent"] if smart_result else None,
-                "score": smart_result.get("score") if smart_result else None,
-            })
-
-        if smart_result and not smart_result.get("uncertain"):
-            result = IntentResult(
-                intent=smart_result["intent"],
-                response="",
-                action=None,
-                source="smart_matcher",
-                latency_ms=_elapsed(),
-                user_id=user_id,
-                params=smart_result.get("params", {}),
-            )
-            await self._publish_event(result, raw_text=text)
-            return (result, steps) if trace else result
-
-        # Tier 2: Module Bus — route intent via WebSocket bus
+        # ── Tier 1: Module Bus (WebSocket user module intents) ──
         bus_hit = False
         bus_error = None
         try:
@@ -231,18 +246,19 @@ class IntentRouter:
                         action=bus_result.get("data"),
                         source="module_bus",
                         latency_ms=_elapsed(),
+                        lang=lang,
                         user_id=user_id,
                     )
                     if trace:
                         steps.append({
-                            "tier": "2", "name": "Module Bus",
+                            "tier": "0", "name": "Module Bus",
                             "status": "hit",
                             "ms": _elapsed(),
                             "detail": bus_result.get("module", "?"),
                         })
-                    await self._publish_event(result, raw_text=text)
+                    await self._publish_event(result, raw_text=text, lang=lang)
                     return (result, steps) if trace else result
-                # Bus matched but module unavailable (circuit_open/timeout/disconnected)
+                # Module unavailable
                 reason = bus_result.get("reason", "")
                 module_name = bus_result.get("module", "?")
                 if reason in ("circuit_open", "timeout", "disconnected"):
@@ -257,66 +273,153 @@ class IntentRouter:
                         action=None,
                         source="module_bus",
                         latency_ms=_elapsed(),
+                        lang=lang,
                         user_id=user_id,
                     )
                     if trace:
                         steps.append({
-                            "tier": "2", "name": "Module Bus",
+                            "tier": "0", "name": "Module Bus",
                             "status": "error",
                             "ms": _elapsed(),
                             "detail": bus_error,
                         })
-                    await self._publish_event(result, raw_text=text)
+                    await self._publish_event(result, raw_text=text, lang=lang)
                     return (result, steps) if trace else result
         except Exception as exc:
-            logger.warning("Module bus Tier 2 error: %s", exc)
+            logger.warning("Module bus error: %s", exc)
             bus_error = str(exc)
 
         if trace and not bus_hit:
             steps.append({
-                "tier": "2", "name": "Module Bus",
+                "tier": "0", "name": "Module Bus",
                 "status": "error" if bus_error else "miss",
                 "ms": _elapsed(),
                 "detail": bus_error,
             })
 
-        # Tier 3: LLM Intent Classification (any provider)
-        llm_result = None
-        llm_provider = ""
-        llm_error = None
+        # ── Check IntentCache (SQLite) before LLM ──
+        cached = None
         try:
-            llm_result, llm_provider = await self._try_llm_classification(text, lang)
-        except asyncio.TimeoutError:
-            llm_error = "timeout"
-            logger.warning("LLM classification timeout for: %s", text[:50])
-        except Exception as exc:
-            llm_error = str(exc)
-            logger.warning("LLM classification error: %s", exc)
+            from system_modules.llm_engine.intent_cache import get_intent_cache
+            cached = await get_intent_cache().get(text, lang)
+        except Exception:
+            pass
 
-        if trace:
-            tier_name = f"LLM ({llm_provider})" if llm_provider else "LLM"
-            if llm_result:
+        if cached:
+            if trace:
                 steps.append({
-                    "tier": "3", "name": tier_name,
+                    "tier": "cache", "name": "IntentCache",
                     "status": "hit",
                     "ms": _elapsed(),
-                    "detail": llm_result.intent,
+                    "detail": cached.get("intent"),
                 })
-            else:
-                steps.append({
-                    "tier": "3", "name": tier_name,
-                    "status": "error" if llm_error else "skip",
-                    "ms": _elapsed(),
-                    "detail": llm_error or llm_provider or None,
-                })
+            result = IntentResult(
+                intent=cached["intent"],
+                response=cached.get("response", ""),
+                action=None,
+                source="cache",
+                latency_ms=_elapsed(),
+                lang=lang,
+                user_id=user_id,
+                params=cached.get("params", {}),
+            )
+            await self._publish_event(result, raw_text=text, lang=lang)
+            return (result, steps) if trace else result
+        elif trace:
+            steps.append({
+                "tier": "cache", "name": "IntentCache",
+                "status": "miss",
+                "ms": _elapsed(),
+            })
+
+        # ── Tier 1: Local LLM (single call) ──
+        llm_result = None
+        llm_error = None
+        try:
+            llm_result = await self._local_llm_classify(text, lang, tts_lang=tts_lang)
+        except asyncio.TimeoutError:
+            llm_error = "timeout"
+            logger.warning("Local LLM timeout for: %s", text[:50])
+        except Exception as exc:
+            llm_error = str(exc)
+            logger.warning("Local LLM error: %s", exc)
+
+        if trace:
+            steps.append({
+                "tier": "1", "name": "Local LLM",
+                "status": "hit" if llm_result else ("error" if llm_error else "skip"),
+                "ms": _elapsed(),
+                "detail": llm_result.intent if llm_result else llm_error,
+            })
 
         if llm_result is not None:
             llm_result.latency_ms = _elapsed()
+            llm_result.lang = lang
             llm_result.user_id = user_id
-            await self._publish_event(llm_result, raw_text=text)
+            # Cache successful classification
+            if llm_result.intent not in ("unknown", "llm.response"):
+                try:
+                    from system_modules.llm_engine.intent_cache import get_intent_cache
+                    await get_intent_cache().put(
+                        text, lang, llm_result.intent,
+                        llm_result.params or {},
+                        llm_result.response,
+                    )
+                except Exception:
+                    pass
+            # Device disambiguation: resolve entity+location → device_id
+            llm_result = await self._disambiguate_device(llm_result, tts_lang)
+            await self._publish_event(llm_result, raw_text=text, lang=lang)
             return (llm_result, steps) if trace else llm_result
 
-        # Fallback — language-aware "not understood" via i18n
+        # ── Tier 2: Cloud LLM (if configured) ──
+        cloud_result = None
+        cloud_error = None
+        cloud_cfg = self._get_cloud_config()
+        if cloud_cfg:
+            try:
+                cloud_result = await self._cloud_llm_classify(text, lang, cloud_cfg, tts_lang=tts_lang)
+            except asyncio.TimeoutError:
+                cloud_error = "timeout"
+            except Exception as exc:
+                cloud_error = str(exc)
+                logger.warning("Cloud LLM error: %s", exc)
+
+            if trace:
+                steps.append({
+                    "tier": "2", "name": "Cloud LLM",
+                    "status": "hit" if cloud_result else ("error" if cloud_error else "skip"),
+                    "ms": _elapsed(),
+                    "detail": cloud_result.intent if cloud_result else cloud_error,
+                })
+
+            if cloud_result is not None:
+                cloud_result.latency_ms = _elapsed()
+                cloud_result.lang = lang
+                cloud_result.user_id = user_id
+                if cloud_result.intent not in ("unknown", "llm.response"):
+                    try:
+                        from system_modules.llm_engine.intent_cache import get_intent_cache
+                        await get_intent_cache().put(
+                            text, lang, cloud_result.intent,
+                            cloud_result.params or {},
+                            cloud_result.response,
+                        )
+                    except Exception:
+                        pass
+                # Device disambiguation
+                cloud_result = await self._disambiguate_device(cloud_result, tts_lang)
+                await self._publish_event(cloud_result, raw_text=text, lang=lang)
+                return (cloud_result, steps) if trace else cloud_result
+        elif trace:
+            steps.append({
+                "tier": "2", "name": "Cloud LLM",
+                "status": "skip",
+                "ms": _elapsed(),
+                "detail": "not configured",
+            })
+
+        # ── Fallback ──
         from core.i18n import t
         fallback_msg = t("intent.fallback", lang=lang)
 
@@ -325,7 +428,6 @@ class IntentRouter:
                 "tier": "—", "name": "Fallback",
                 "status": "used",
                 "ms": _elapsed(),
-                "detail": None,
             })
 
         result = IntentResult(
@@ -334,427 +436,449 @@ class IntentRouter:
             action=None,
             source="fallback",
             latency_ms=_elapsed(),
+            lang=lang,
             user_id=user_id,
         )
-        await self._publish_event(result, raw_text=text)
+        await self._publish_event(result, raw_text=text, lang=lang)
         return (result, steps) if trace else result
 
-    # ── Cloud LLM Intent Classification ──────────────────────────────
+    # ── Local LLM (single call) ────────────────────────────────────────
 
-    def _get_known_intent_names(self) -> set[str]:
-        """Collect all known intent names from fast matcher + system + bus intents."""
-        names: set[str] = set()
-        try:
-            from system_modules.llm_engine.fast_matcher import get_fast_matcher
-            for rule in get_fast_matcher()._rules:
-                name = rule.get("name", "")
-                if name:
-                    names.add(name)
-        except Exception:
-            pass
-        for entry in self._system_intents:
-            names.add(entry.intent)
-        # Module Bus intents
-        try:
-            from core.module_bus import get_module_bus
-            for item in get_module_bus()._intent_index:
-                if hasattr(item, "module") and hasattr(item, "description"):
-                    names.add(f"module.{item.module}")
-        except Exception:
-            pass
-        names.add("llm.response")
-        return names
-
-    def _build_intent_catalog(self, lang: str) -> str:
-        """Build a text catalog of all known intents for the classification prompt."""
-        seen: set[str] = set()
-        lines: list[str] = []
-
-        # System intents first (richer metadata)
-        for entry in self._system_intents:
-            if entry.intent in seen:
-                continue
-            seen.add(entry.intent)
-            # Extract param names from regex patterns
-            param_names: set[str] = set()
-            for patterns in entry.patterns.values():
-                for p in patterns:
-                    param_names.update(re.findall(r"\?P<(\w+)>", p))
-            params_str = ", ".join(sorted(param_names)) if param_names else "none"
-            desc = entry.description or entry.intent
-            lines.append(f"- {entry.intent}: {desc}. Params: {params_str}")
-
-        # Fast matcher rules
-        try:
-            from system_modules.llm_engine.fast_matcher import get_fast_matcher
-            for rule in get_fast_matcher()._rules:
-                name = rule.get("name", "")
-                if not name or name in seen:
-                    continue
-                seen.add(name)
-                keywords = rule.get("keywords", [])[:4]
-                examples = ", ".join(f'"{k}"' for k in keywords) if keywords else ""
-                lines.append(f"- {name}: Examples: {examples}. Params: none")
-        except Exception:
-            pass
-
-        # Module Bus intents (user modules)
-        try:
-            from core.module_bus import get_module_bus
-            for item in get_module_bus()._intent_index:
-                module_name = getattr(item, "module", "")
-                intent_key = f"module.{module_name}"
-                if intent_key in seen:
-                    continue
-                seen.add(intent_key)
-                desc = getattr(item, "description", module_name)
-                lines.append(f"- {intent_key}: {desc}. Params: none")
-        except Exception:
-            pass
-
-        return "\n".join(lines)
-
-    def _build_classification_prompt(self, text: str, lang: str) -> tuple[str, str]:
-        """Build (system_prompt, user_prompt) for LLM intent classification."""
-        lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish"}
-        lang_name = lang_names.get(lang, "English")
-        catalog = self._build_intent_catalog(lang)
-
-        # Load custom classification prompt from config, or use localized default
-        rules_block = ""
-        try:
-            from core.config_writer import read_config
-            rules_block = read_config().get("voice", {}).get("classification_prompt", "")
-        except Exception:
-            pass
-        if not rules_block:
-            try:
-                from core.api.routes.voice_engines import _get_default_classification
-                rules_block = _get_default_classification(lang)
-            except Exception:
-                from core.api.routes.voice_engines import DEFAULT_CLASSIFICATION_PROMPT
-                rules_block = DEFAULT_CLASSIFICATION_PROMPT
-
-        system_prompt = (
-            f"User language: {lang_name} ({lang}).\n\n"
-            f"Known intents:\n{catalog}\n\n"
-            f"{rules_block}\n"
-        )
-        return system_prompt, text
-
-    async def _try_llm_classification(self, text: str, lang: str) -> tuple[IntentResult | None, str]:
-        """Attempt intent classification via the active LLM provider (cloud, ollama, or llamacpp).
-
-        Returns (IntentResult | None, provider_name).
-        """
+    async def _local_llm_classify(self, text: str, lang: str, *, tts_lang: str | None = None) -> IntentResult | None:
+        """Single LLM call: returns intent JSON + response in TTS language."""
+        tts_lang = tts_lang or lang
         try:
             from core.config_writer import read_config
         except ImportError:
-            return None, ""
+            return None
 
         config = read_config()
+
+        # Read AI config (new format) or fall back to legacy voice/llm config
+        ai_cfg = config.get("ai", {}).get("conversation", {})
         voice_cfg = config.get("voice", {})
-        provider = voice_cfg.get("llm_provider", "ollama")
 
-        # Two-step LLM: classify noun_class first, then extract intent
-        if voice_cfg.get("llm_two_step"):
-            return await self._two_step_llm(text, lang, voice_cfg, provider)
+        # Determine provider and model
+        local_cfg = ai_cfg.get("local", {})
+        host = local_cfg.get("host") or voice_cfg.get("ollama_url", "http://localhost:11434")
+        model = local_cfg.get("model") or voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
+        # Legacy provider config override
+        p_model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
+        if p_model:
+            model = p_model
 
-        system_prompt, user_prompt = self._build_classification_prompt(text, lang)
+        options = local_cfg.get("options", {})
+        temperature = options.get("temperature", 0.1)
+        num_predict = options.get("num_predict", 80)
 
-        # Local models need extra language enforcement (they tend to respond in English)
-        if provider in ("ollama", "llamacpp"):
-            lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "pl": "Polish"}
-            lang_name = lang_names.get(lang, "English")
-            system_prompt += f"\nCRITICAL: Response language for llm.response MUST be {lang_name}. Never use English unless user language is English."
-            user_prompt = f"[{lang_name}] {user_prompt}"
+        # Build system prompt with registered intents catalog
+        system_prompt = self._build_system_prompt(tts_lang)
 
-        raw = ""
+        # Build user prompt with language tag for local models
+        lang_name = _LANG_NAMES.get(lang, "English")
+        tts_lang_name = _LANG_NAMES.get(tts_lang, "English")
+        user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
-        if provider == "ollama":
-            from system_modules.llm_engine.ollama_client import get_ollama_client
-            # Read model from UI config (same logic as /llm/chat)
-            model = voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
-            p_model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
-            if p_model:
-                model = p_model
-            client = get_ollama_client()
-            if not await client.is_available():
-                return None, "ollama (unavailable)"
-            raw = await asyncio.wait_for(
-                client.generate(prompt=user_prompt, system=system_prompt, model=model, temperature=0.0),
-                timeout=25.0,
-            )
+        # Call Ollama
+        from system_modules.llm_engine.ollama_client import get_ollama_client
+        client = get_ollama_client()
+        if not await client.is_available():
+            return None
 
-        elif provider == "llamacpp":
-            import httpx
-            llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-            async with httpx.AsyncClient(timeout=25) as http:
-                resp = await http.post(
-                    f"{llamacpp_url}/v1/chat/completions",
-                    json={"messages": messages, "temperature": 0.0, "max_tokens": 512},
-                )
-                resp.raise_for_status()
-                raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-
-        else:
-            # Cloud provider (openai, anthropic, google, groq)
-            providers_cfg = voice_cfg.get("providers", {})
-            p_cfg = providers_cfg.get(provider, {})
-            api_key = p_cfg.get("api_key", "")
-            model = p_cfg.get("model", "")
-            if not api_key or not model:
-                return None, provider
-            from system_modules.llm_engine.cloud_providers import generate
-            raw = await asyncio.wait_for(
-                generate(provider, api_key, model, user_prompt, system_prompt, temperature=0.0),
-                timeout=15.0,
-            )
+        raw = await asyncio.wait_for(
+            client.generate(
+                prompt=user_prompt, system=system_prompt,
+                model=model, temperature=temperature,
+            ),
+            timeout=25.0,
+        )
 
         if not raw:
-            return None, provider
+            return None
 
-        raw_debug = raw  # keep original for debug
+        return self._parse_llm_response(raw, source="llm")
 
-        # Parse JSON — strip code fences if present
+    # ── Cloud LLM ──────────────────────────────────────────────────────
+
+    def _get_cloud_config(self) -> dict | None:
+        """Get cloud LLM config if configured and enabled."""
+        try:
+            from core.config_writer import read_config
+            config = read_config()
+            ai_cfg = config.get("ai", {}).get("conversation", {})
+
+            # Check new ai.conversation.cloud config
+            cloud_cfg = ai_cfg.get("cloud", {})
+            url = cloud_cfg.get("url", "")
+            key = cloud_cfg.get("key") or os.environ.get("GROQ_API_KEY", "")
+            model = cloud_cfg.get("model", "")
+
+            if url and key and model:
+                return {"url": url, "key": key, "model": model}
+
+            # Fallback: check legacy voice.providers for cloud
+            voice_cfg = config.get("voice", {})
+            provider = voice_cfg.get("llm_provider", "")
+            if provider not in ("ollama", "llamacpp", ""):
+                providers_cfg = voice_cfg.get("providers", {})
+                p_cfg = providers_cfg.get(provider, {})
+                api_key = p_cfg.get("api_key", "")
+                p_model = p_cfg.get("model", "")
+                if api_key and p_model:
+                    return {
+                        "provider": provider,
+                        "key": api_key,
+                        "model": p_model,
+                    }
+        except Exception:
+            pass
+        return None
+
+    async def _cloud_llm_classify(
+        self, text: str, lang: str, cloud_cfg: dict, *, tts_lang: str | None = None,
+    ) -> IntentResult | None:
+        """Cloud LLM classification via OpenAI-compatible API or legacy providers."""
+        tts_lang = tts_lang or lang
+        lang_name = _LANG_NAMES.get(lang, "English")
+        tts_lang_name = _LANG_NAMES.get(tts_lang, "English")
+        system_prompt = self._build_system_prompt(tts_lang)
+        user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
+
+        # Legacy cloud providers
+        legacy_provider = cloud_cfg.get("provider")
+        if legacy_provider:
+            from system_modules.llm_engine.cloud_providers import generate
+            raw = await asyncio.wait_for(
+                generate(
+                    legacy_provider, cloud_cfg["key"], cloud_cfg["model"],
+                    user_prompt, system_prompt, temperature=0.1,
+                ),
+                timeout=15.0,
+            )
+            if raw:
+                return self._parse_llm_response(raw, source="cloud")
+            return None
+
+        # OpenAI-compatible API
+        import httpx
+        url = cloud_cfg["url"].rstrip("/")
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{url}/chat/completions",
+                headers={"Authorization": f"Bearer {cloud_cfg['key']}"},
+                json={
+                    "model": cloud_cfg["model"],
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 200,
+                },
+            )
+            resp.raise_for_status()
+            raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        if raw:
+            return self._parse_llm_response(raw, source="cloud")
+        return None
+
+    # ── Prompt building ────────────────────────────────────────────────
+
+    def _build_system_prompt(self, lang: str) -> str:
+        """Build system prompt with dynamic catalog from DB + in-memory intents.
+
+        Cached per lang. Invalidated by refresh_system_prompt().
+        """
+        if lang in self._prompt_cache:
+            return self._prompt_cache[lang]
+
+        lang_name = _LANG_NAMES.get(lang, "English")
+
+        # Start with fixed prompt
+        prompt = INTENT_SYSTEM_PROMPT
+
+        # Add known intents from IntentCompiler (DB-driven)
+        try:
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
+            extra_intents: list[str] = []
+            for ci in get_intent_compiler().get_all_intents():
+                desc = ci.description or ci.intent
+                params_keys = list(ci.params_schema.keys()) if ci.params_schema else []
+                params_str = ", ".join(params_keys) if params_keys else "none"
+                extra_intents.append(f"  {ci.intent}: {desc} (params: {params_str})")
+            if extra_intents:
+                prompt += "\nRegistered intents:\n" + "\n".join(extra_intents) + "\n"
+        except Exception:
+            pass
+
+        # Dynamic catalog from DB (registered_modules, devices, radio_stations, scenes)
+        db_catalog = self._load_db_catalog()
+        if db_catalog:
+            prompt += db_catalog
+
+        # Language enforcement
+        prompt += f"\nTTS language: {lang_name} ({lang}). Response MUST be in {lang_name}.\n"
+
+        self._prompt_cache[lang] = prompt
+        return prompt
+
+    def _load_db_catalog(self) -> str:
+        """Load dynamic catalog from DB (sync wrapper for startup speed).
+
+        Returns prompt section string or empty string.
+        """
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            sf = get_sandbox()._session_factory
+            if sf is None:
+                return ""
+
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return ""
+
+            # Use sync approach via thread to avoid nested async issues
+            import threading
+            result: list[str] = [""]
+
+            def _sync_load() -> None:
+                async def _inner() -> str:
+                    from sqlalchemy import select
+                    from core.registry.models import RegisteredModule, RadioStation, Scene, Device
+
+                    parts: list[str] = []
+
+                    async with sf() as session:
+                        # Registered modules (enabled + connected)
+                        stmt = select(RegisteredModule).where(
+                            RegisteredModule.enabled == True,
+                        )
+                        modules = list((await session.execute(stmt)).scalars().all())
+                        if modules:
+                            lines = []
+                            for m in modules:
+                                intents = m.get_intents()
+                                desc = m.description_en or m.name
+                                if intents:
+                                    lines.append(f"  {m.name}: {desc} (intents: {', '.join(intents)})")
+                                else:
+                                    lines.append(f"  {m.name}: {desc}")
+                            parts.append("\nConnected modules:\n" + "\n".join(lines))
+
+                        # Devices
+                        devices = list((await session.execute(select(Device))).scalars().all())
+                        if devices:
+                            names = [d.name for d in devices[:30]]
+                            parts.append(f"\nKnown devices: {', '.join(names)}")
+
+                        # Radio stations
+                        stmt = select(RadioStation).where(RadioStation.enabled == True)
+                        stations = list((await session.execute(stmt)).scalars().all())
+                        if stations:
+                            items = [f"{s.name_en} ({s.genre_en})" if s.genre_en else s.name_en for s in stations[:20]]
+                            parts.append(f"\nRadio stations: {', '.join(items)}")
+
+                        # Scenes
+                        stmt = select(Scene).where(Scene.enabled == True)
+                        scenes = list((await session.execute(stmt)).scalars().all())
+                        if scenes:
+                            names = [s.name_en for s in scenes[:15]]
+                            parts.append(f"\nScenes: {', '.join(names)}")
+
+                    return "\n".join(parts)
+
+                new_loop = asyncio.new_event_loop()
+                try:
+                    result[0] = new_loop.run_until_complete(_inner())
+                finally:
+                    new_loop.close()
+
+            t = threading.Thread(target=_sync_load, daemon=True)
+            t.start()
+            t.join(timeout=3.0)
+            return result[0]
+
+        except Exception as exc:
+            logger.debug("DB catalog load failed: %s", exc)
+            return ""
+
+    # ── Response parsing ───────────────────────────────────────────────
+
+    def _parse_llm_response(self, raw: str, source: str = "llm") -> IntentResult | None:
+        """Parse LLM JSON response into IntentResult."""
+        raw_debug = raw
+
+        # Strip code fences
         cleaned = raw.strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
+
         # Find JSON object
         start_idx = cleaned.find("{")
         end_idx = cleaned.rfind("}")
         if start_idx == -1 or end_idx == -1:
             return IntentResult(
                 intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0, raw_llm=raw_debug,
-            ), provider
+                source=source, latency_ms=0, raw_llm=raw_debug,
+            )
 
         try:
             data = json.loads(cleaned[start_idx:end_idx + 1])
         except json.JSONDecodeError:
             return IntentResult(
                 intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0, raw_llm=raw_debug,
-            ), provider
+                source=source, latency_ms=0, raw_llm=raw_debug,
+            )
 
         intent_name = data.get("intent", "")
         params = data.get("params") or {}
         response = data.get("response", "")
+        entity = data.get("entity")
+        location = data.get("location")
 
-        known = self._get_known_intent_names()
-        if intent_name and intent_name in known:
+        # Merge entity/location into params for module consumption
+        if entity and entity != "null":
+            params["entity"] = entity
+        if location and location != "null":
+            params["location"] = location
+
+        if intent_name and intent_name != "unknown":
             return IntentResult(
                 intent=intent_name, response=response, action=None,
-                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
-            ), provider
-        elif intent_name == "llm.response" or response:
+                source=source, latency_ms=0, params=params, raw_llm=raw_debug,
+            )
+        elif response:
             return IntentResult(
                 intent="llm.response", response=response, action=None,
-                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
-            ), provider
+                source=source, latency_ms=0, params=params, raw_llm=raw_debug,
+            )
 
-        return None, provider
+        return None
+
+    # ── Legacy compatibility ───────────────────────────────────────────
 
     def _get_system_prompt(self) -> str:
-        """Build system prompt — compact for local Ollama, via build_system_prompt()."""
+        """Build system prompt — compact for local Ollama."""
         if self._system_prompt:
             return self._system_prompt
-
-        # Intent router uses local Ollama → compact prompt for small models
         from core.api.routes.voice_engines import build_system_prompt
         return build_system_prompt(compact=True)
 
     def set_system_prompt(self, prompt: str) -> None:
-        """Override the LLM system prompt (manual override, bypasses config)."""
         self._system_prompt = prompt
 
     def refresh_system_prompt(self) -> None:
-        """Clear cached prompt so it re-reads from config on next call."""
         self._system_prompt = None
+        self._prompt_cache.clear()
 
-    # ── Two-step LLM classification ──────────────────────────────────────
-
-    async def _two_step_llm(
-        self, text: str, lang: str, voice_cfg: dict, provider: str,
-    ) -> tuple[IntentResult | None, str]:
-        """Two-step LLM: Step 1 classifies noun_class, Step 2 extracts intent.
-
-        Faster than single-step because each prompt is smaller:
-        - Step 1: ~6 noun_classes → one-word answer (~100ms)
-        - Step 2: ~5 intents within class → JSON answer (~400ms)
-        Total: ~500ms vs ~1500ms for single-step with full catalog.
-        """
-        # Get noun_classes from IntentCompiler
+    def _get_known_intent_names(self) -> set[str]:
+        """Collect all known intent names from DB compiler + module bus."""
+        names: set[str] = set()
         try:
             from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            compiler = get_intent_compiler()
-            all_classes = compiler.get_all_noun_classes()
+            for ci in get_intent_compiler().get_all_intents():
+                names.add(ci.intent)
         except Exception:
-            # Fallback to single-step if compiler unavailable
-            return None, provider
+            pass
+        try:
+            from core.module_bus import get_module_bus
+            for item in get_module_bus()._intent_index:
+                if hasattr(item, "module"):
+                    names.add(f"module.{item.module}")
+        except Exception:
+            pass
+        names.add("llm.response")
+        return names
 
-        if not all_classes:
-            return None, provider
+    # ── Device disambiguation ─────────────────────────────────────────
 
-        # Resolve model
-        model = voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
-        p_model = voice_cfg.get("providers", {}).get(provider, {}).get("model", "")
-        if p_model:
-            model = p_model
+    async def _disambiguate_device(
+        self, result: IntentResult, tts_lang: str,
+    ) -> IntentResult:
+        """If intent targets a device entity with >1 match, ask user to clarify.
 
-        # ── Step 1: Classify noun_class ──────────────────────────────────
-        step1_system = (
-            "You are a smart home intent classifier. "
-            "Classify the user's utterance into exactly ONE category. "
-            "Reply with ONLY the category name, nothing else."
-        )
-        step1_prompt = (
-            f"Categories: {', '.join(all_classes)}, UNKNOWN\n"
-            f"Utterance: \"{text}\"\n"
-            f"Category:"
-        )
+        Uses entity_type + location from params to query DeviceRegistry.
+        If exactly 1 device matches — injects device_id into params.
+        If >1 match — replaces response with a clarification question.
+        If 0 match — leaves result unchanged (module will handle).
+        """
+        params = result.params or {}
+        entity = params.get("entity")
+        location = params.get("location")
 
-        raw_class = await self._call_llm_provider(
-            provider, voice_cfg, model, step1_prompt, step1_system,
-        )
-        if not raw_class:
-            return None, provider
-
-        # Robust parsing: find first word matching a known class
-        noun_class = None
-        for word in raw_class.upper().split():
-            cleaned = word.strip(".,!?:\"'")
-            if cleaned in all_classes:
-                noun_class = cleaned
-                break
-
-        if not noun_class:
-            logger.debug("Two-step LLM: Step 1 failed to classify, raw=%r", raw_class)
-            return None, provider
-
-        # ── Step 2: Extract intent within class ──────────────────────────
-        class_intents = compiler.get_intents_for_noun_class(noun_class)
-        if not class_intents:
-            return None, provider
-
-        lang_names = {
-            "uk": "Ukrainian", "en": "English", "de": "German",
-            "fr": "French", "es": "Spanish", "pl": "Polish",
-        }
-        lang_name = lang_names.get(lang, "English")
-
-        step2_system = (
-            f"You are a smart home assistant. Category: {noun_class}.\n"
-            f"Allowed intents: {', '.join(class_intents)}\n"
-            f"Reply with valid JSON only. Response language: {lang_name}.\n"
-            f"Format: {{\"intent\": \"<from list>\", \"params\": {{}}, \"response\": \"<{lang_name} reply>\"}}"
-        )
-        step2_prompt = text
-
-        raw_intent = await self._call_llm_provider(
-            provider, voice_cfg, model, step2_prompt, step2_system,
-        )
-        if not raw_intent:
-            return None, provider
-
-        # Parse JSON response (reuse existing parsing logic)
-        raw_debug = raw_intent
-        cleaned = raw_intent.strip()
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-            cleaned = re.sub(r"\s*```$", "", cleaned)
-        start_idx = cleaned.find("{")
-        end_idx = cleaned.rfind("}")
-        if start_idx == -1 or end_idx == -1:
-            return IntentResult(
-                intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0, raw_llm=raw_debug,
-            ), provider
+        # Only disambiguate device-related intents with entity info
+        if not entity:
+            return result
 
         try:
-            data = json.loads(cleaned[start_idx:end_idx + 1])
-        except json.JSONDecodeError:
-            return IntentResult(
-                intent="llm.response", response=cleaned, action=None,
-                source="llm", latency_ms=0, raw_llm=raw_debug,
-            ), provider
+            from core.module_loader.sandbox import get_sandbox
+            sandbox = get_sandbox()
+            session_factory = sandbox._session_factory
+            if session_factory is None:
+                return result
 
-        intent_name = data.get("intent", "")
-        params = data.get("params") or {}
-        response = data.get("response", "")
+            from core.registry.service import DeviceRegistry
 
-        if intent_name and intent_name in class_intents:
-            return IntentResult(
-                intent=intent_name, response=response, action=None,
-                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
-            ), provider
-        elif response:
-            return IntentResult(
-                intent="llm.response", response=response, action=None,
-                source="llm", latency_ms=0, params=params, raw_llm=raw_debug,
-            ), provider
-
-        return None, provider
-
-    async def _call_llm_provider(
-        self,
-        provider: str,
-        voice_cfg: dict,
-        model: str,
-        prompt: str,
-        system: str,
-    ) -> str:
-        """Call the active LLM provider and return raw string response."""
-        try:
-            if provider == "ollama":
-                from system_modules.llm_engine.ollama_client import get_ollama_client
-                client = get_ollama_client()
-                if not await client.is_available():
-                    return ""
-                return await asyncio.wait_for(
-                    client.generate(prompt=prompt, system=system, model=model, temperature=0.0),
-                    timeout=15.0,
+            async with session_factory() as session:
+                registry = DeviceRegistry(session)
+                devices = await registry.query(
+                    entity_type=entity,
+                    location=location,
                 )
-            elif provider == "llamacpp":
-                import httpx
-                llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
-                messages = [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ]
-                async with httpx.AsyncClient(timeout=15) as http:
-                    resp = await http.post(
-                        f"{llamacpp_url}/v1/chat/completions",
-                        json={"messages": messages, "temperature": 0.0, "max_tokens": 128},
-                    )
-                    resp.raise_for_status()
-                    return resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-            else:
-                # Cloud provider
-                providers_cfg = voice_cfg.get("providers", {})
-                p_cfg = providers_cfg.get(provider, {})
-                api_key = p_cfg.get("api_key", "")
-                cloud_model = p_cfg.get("model", model)
-                if not api_key:
-                    return ""
-                from system_modules.llm_engine.cloud_providers import generate
-                return await asyncio.wait_for(
-                    generate(provider, api_key, cloud_model, prompt, system, temperature=0.0),
-                    timeout=15.0,
+
+            if len(devices) == 1:
+                # Single match — inject device_id
+                result.params = {**(result.params or {}), "device_id": devices[0].device_id}
+            elif len(devices) > 1:
+                # Multiple matches — ask for clarification
+                from core.i18n import t
+                device_names = ", ".join(d.name for d in devices[:5])
+                result.intent = "disambiguation"
+                result.response = t(
+                    "intent.disambiguation",
+                    lang=tts_lang,
+                    devices=device_names,
                 )
+                result.action = None
+                result.params = {
+                    **(result.params or {}),
+                    "candidates": [
+                        {"device_id": d.device_id, "name": d.name, "location": d.location}
+                        for d in devices[:5]
+                    ],
+                }
         except Exception as exc:
-            logger.warning("Two-step LLM provider call failed: %s", exc)
-            return ""
+            logger.debug("Disambiguation failed: %s", exc)
 
-    async def _publish_event(self, result: IntentResult, raw_text: str = "") -> None:
+        return result
+
+    # ── Event publishing ───────────────────────────────────────────────
+
+    @staticmethod
+    def _normalize_params(params: dict[str, Any] | None) -> dict[str, Any]:
+        """Normalize param values to English for internal EventBus communication.
+
+        E.g. Ukrainian genre names captured by regex → English equivalents.
+        """
+        if not params:
+            return {}
+        result: dict[str, Any] = {}
+        for key, val in params.items():
+            if isinstance(val, str) and key in _PARAM_NORMALIZE:
+                result[key] = _PARAM_NORMALIZE[key].get(val.lower(), val)
+            else:
+                result[key] = val
+        return result
+
+    async def _publish_event(self, result: IntentResult, raw_text: str = "", lang: str = "en") -> None:
         try:
             from core.eventbus.bus import get_event_bus
             from core.eventbus.types import VOICE_INTENT
+            normalized_params = self._normalize_params(result.params)
             await get_event_bus().publish(
                 type=VOICE_INTENT,
                 source="core.intent_router",
@@ -762,11 +886,12 @@ class IntentRouter:
                     "intent": result.intent,
                     "response": result.response,
                     "action": result.action,
-                    "params": result.params or {},
+                    "params": normalized_params,
                     "source": result.source,
                     "user_id": result.user_id,
                     "latency_ms": result.latency_ms,
                     "raw_text": raw_text,
+                    "lang": lang,
                 },
             )
         except Exception as e:

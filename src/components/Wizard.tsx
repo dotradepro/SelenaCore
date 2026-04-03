@@ -141,7 +141,7 @@ export default function Wizard() {
     wifiPassword: '',
     name: t('wizard.defaultHomeName'),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
-    stt: 'vosk-model-small-uk-v3-small',
+    stt: 'small',
     tts: 'uk_UA-ukrainian_tts-medium',
     username: 'admin',
     pin: '',
@@ -1071,13 +1071,10 @@ export default function Wizard() {
                       )}
                       <div className="space-y-2">
                         {(sttModels.length > 0 ? sttModels : [
-                          { id: 'vosk-model-small-uk-v3-nano', name: 'Ukrainian (nano)', lang: 'uk', ram_mb: 80, size_mb: 73, quality: 'ok', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-small-uk-v3-small', name: 'Ukrainian (small)', lang: 'uk', ram_mb: 150, size_mb: 133, quality: 'good', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-small-ru', name: 'Russian (small)', lang: 'ru', ram_mb: 150, size_mb: 45, quality: 'good', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-small-en-us', name: 'English (small)', lang: 'en', ram_mb: 150, size_mb: 40, quality: 'good', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-uk-v3-lgraph', name: 'Ukrainian (large)', lang: 'uk', ram_mb: 500, size_mb: 325, quality: 'high', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-ru', name: 'Russian (large)', lang: 'ru', ram_mb: 600, size_mb: 1800, quality: 'high', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-en-us', name: 'English (graph)', lang: 'en', ram_mb: 350, size_mb: 128, quality: 'good', installed: false, active: false, fits_ram: true },
+                          { id: 'tiny', name: 'Whisper Tiny', lang: 'auto', ram_mb: 150, size_mb: 75, quality: 'ok', installed: false, active: false, fits_ram: true },
+                          { id: 'base', name: 'Whisper Base', lang: 'auto', ram_mb: 250, size_mb: 150, quality: 'good', installed: false, active: false, fits_ram: true },
+                          { id: 'small', name: 'Whisper Small', lang: 'auto', ram_mb: 450, size_mb: 500, quality: 'high', installed: false, active: false, fits_ram: true },
+                          { id: 'medium', name: 'Whisper Medium', lang: 'auto', ram_mb: 1500, size_mb: 1500, quality: 'high', installed: false, active: false, fits_ram: true },
                         ]).map(m => (
                           <button
                             key={m.id}

@@ -504,26 +504,63 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
 
 @router.post("/audio/test/output")
 async def audio_test_output(body: dict[str, str]) -> dict[str, Any]:
-    """Play a short test tone on the selected output device."""
+    """Play speaker-test (left/right channel voice) on the selected output device."""
     device = body.get("device", "default")
     loop = asyncio.get_running_loop()
 
     def _play():
-        is_pulse = device and not device.startswith("hw:") and device != "default"
-        if is_pulse:
-            cmd = ["paplay", "--device=" + device, "/usr/share/sounds/alsa/Front_Center.wav"]
-        else:
-            cmd = ["speaker-test", "-t", "wav", "-c", "2", "-l", "1"]
-            if device and device != "default":
-                cmd += ["-D", device]
-        subprocess.run(cmd, timeout=6, capture_output=True)
+        vol_cfg = read_config().get("voice", {}).get("output_volume", 100)
+        vol_pct = max(1, min(150, int(vol_cfg)))
+        # speaker-test: -t wav plays "Front Left" / "Front Right" voice
+        # --scale sets amplitude (0.0-1.0)
+        scale = round(vol_pct / 100.0, 2)
+        cmd = ["speaker-test", "-t", "wav", "-c", "2", "-l", "1",
+               "--scale", str(scale)]
+        if device and device != "default":
+            cmd += ["-D", device]
+        subprocess.run(cmd, timeout=8, capture_output=True)
 
     try:
-        await asyncio.wait_for(loop.run_in_executor(None, _play), timeout=8)
+        await asyncio.wait_for(loop.run_in_executor(None, _play), timeout=10)
         return {"status": "ok"}
     except Exception as exc:
         logger.warning("Output test failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+def _pause_voice_loop() -> None:
+    """Pause voice loop to release mic device for testing.
+
+    Sets _mic_test_active flag and kills running arecord to free the device.
+    """
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc and hasattr(vc, "_mic_test_active"):
+            vc._mic_test_active = True
+            # Kill the running arecord process to release ALSA device
+            proc = getattr(vc, "_arecord_proc", None)
+            if proc and proc.poll() is None:
+                proc.kill()
+                try:
+                    proc.wait(timeout=2)
+                except Exception:
+                    pass
+            import time
+            time.sleep(0.3)
+    except Exception:
+        pass
+
+
+def _resume_voice_loop() -> None:
+    """Resume voice loop after mic test."""
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc and hasattr(vc, "_mic_test_active"):
+            vc._mic_test_active = False
+    except Exception:
+        pass
 
 
 @router.post("/audio/test/input")
@@ -538,56 +575,53 @@ async def audio_test_input(body: dict[str, str]) -> dict[str, Any]:
         import tempfile
         import wave
 
-        # --- Record ---
-        is_pulse_in = input_device and not input_device.startswith("hw:") and input_device != "default"
-        if is_pulse_in:
-            rec_cmd = ["timeout", "3",
-                       "parecord", "--raw", "--format=s16le", "--rate=16000",
-                       "--channels=1", "--device=" + input_device]
-        else:
+        # Pause voice loop to release mic
+        _pause_voice_loop()
+
+        try:
+            # --- Record via arecord (ALSA direct) ---
             rec_cmd = ["arecord", "-d", "3", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"]
             if input_device and input_device != "default":
                 rec_cmd += ["-D", input_device]
 
-        result = subprocess.run(rec_cmd, timeout=6, capture_output=True)
-        if result.returncode != 0 and not result.stdout:
-            raise RuntimeError(result.stderr.decode(errors="replace"))
+            result = subprocess.run(rec_cmd, timeout=6, capture_output=True)
+            if result.returncode != 0 and not result.stdout:
+                raise RuntimeError(result.stderr.decode(errors="replace"))
 
-        raw = result.stdout
-        if len(raw) < 2:
-            return {"peak_level": 0.0}
+            raw = result.stdout
+            if len(raw) < 2:
+                return {"peak_level": 0.0}
 
-        samples = struct.unpack(f"<{len(raw) // 2}h", raw)
-        peak = max(abs(s) for s in samples) if samples else 0
+            samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+            peak = max(abs(s) for s in samples) if samples else 0
 
-        # --- Write temp WAV ---
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        try:
-            with wave.open(tmp.name, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(16000)
-                wf.writeframes(raw)
+            # --- Write temp WAV ---
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            try:
+                with wave.open(tmp.name, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(16000)
+                    wf.writeframes(raw)
 
-            # --- Playback on output device ---
-            is_pulse_out = output_device and not output_device.startswith("hw:") and output_device != "default"
-            if is_pulse_out:
-                play_cmd = ["paplay", "--device=" + output_device, tmp.name]
-            else:
+                # --- Playback on output device via aplay ---
                 play_cmd = ["aplay"]
                 if output_device and output_device != "default":
                     play_cmd += ["-D", output_device]
                 play_cmd.append(tmp.name)
-            subprocess.run(play_cmd, timeout=6, capture_output=True)
-        finally:
-            os.unlink(tmp.name)
+                subprocess.run(play_cmd, timeout=6, capture_output=True)
+            finally:
+                os.unlink(tmp.name)
 
-        return {"peak_level": round(peak / 32768.0, 4)}
+            return {"peak_level": round(peak / 32768.0, 4)}
+        finally:
+            _resume_voice_loop()
 
     try:
-        data = await asyncio.wait_for(loop.run_in_executor(None, _record_and_playback), timeout=15)
+        data = await asyncio.wait_for(loop.run_in_executor(None, _record_and_playback), timeout=20)
         return {"status": "ok", **data}
     except Exception as exc:
+        _resume_voice_loop()
         logger.warning("Input test failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -607,11 +641,60 @@ async def audio_levels() -> dict[str, Any]:
     }
 
 
+def _card_index_from_device(device_id: str) -> int | None:
+    """Extract card index from ALSA device id like 'plughw:1,3' or 'hw:0,0'."""
+    m = re.match(r"(?:plug)?hw:(\d+)", device_id or "")
+    return int(m.group(1)) if m else None
+
+
+def _find_volume_control(card: int, direction: str = "playback") -> str | None:
+    """Find the first usable volume control on the given ALSA card.
+
+    *direction* is ``"playback"`` or ``"capture"``.
+    Returns the simple mixer control name or ``None``.
+    """
+    try:
+        result = subprocess.run(
+            ["amixer", "-c", str(card), "scontrols"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except Exception:
+        return None
+
+    for line in result.stdout.splitlines():
+        # "Simple mixer control 'Mic',0"
+        m = re.match(r"Simple mixer control '(.+?)',", line)
+        if not m:
+            continue
+        name = m.group(1)
+        # Check if this control has the right capability
+        try:
+            info = subprocess.run(
+                ["amixer", "-c", str(card), "sget", name],
+                capture_output=True, text=True, timeout=3,
+            )
+            caps = info.stdout.lower()
+            if direction == "capture" and "cvolume" in caps:
+                return name
+            if direction == "playback" and "pvolume" in caps:
+                return name
+        except Exception:
+            continue
+    return None
+
+
+def _apply_alsa_volume(card: int, control: str, pct: int) -> None:
+    """Set an ALSA mixer control to *pct* percent."""
+    subprocess.run(
+        ["amixer", "-c", str(card), "sset", control, f"{pct}%"],
+        timeout=3, capture_output=True,
+    )
+
+
 @router.post("/audio/levels")
 async def audio_set_levels(body: dict[str, Any]) -> dict[str, Any]:
-    """Set output volume and/or input gain. Persists to config + applies via pactl."""
+    """Set output volume and/or input gain. Persists to config + applies via amixer."""
     loop = asyncio.get_running_loop()
-    cfg = read_config().get("voice", {}) or {}
 
     out_vol = body.get("output_volume")
     in_gain = body.get("input_gain")
@@ -619,88 +702,171 @@ async def audio_set_levels(body: dict[str, Any]) -> dict[str, Any]:
     if out_vol is not None:
         out_vol = max(0, min(150, int(out_vol)))
         update_config("voice", "output_volume", out_vol)
-        # Apply via pactl to the configured output
-        out_device = cfg.get("audio_force_output")
-        if out_device:
-            def _set_vol():
-                subprocess.run(
-                    ["pactl", "set-sink-volume", out_device, f"{out_vol}%"],
-                    timeout=3, capture_output=True,
-                    env=_pulse_env(),
-                )
-            await loop.run_in_executor(None, _set_vol)
+        # Re-read config after save to get current device selection
+        out_device = read_config().get("voice", {}).get("audio_force_output")
+        card = _card_index_from_device(out_device)
+        if card is not None:
+            ctrl = _find_volume_control(card, "playback")
+            if ctrl:
+                await loop.run_in_executor(None, _apply_alsa_volume, card, ctrl, out_vol)
+            else:
+                logger.info("No playback volume control on card %d (HDMI) — volume stored in config", card)
 
     if in_gain is not None:
         in_gain = max(0, min(150, int(in_gain)))
         update_config("voice", "input_gain", in_gain)
-        # Apply via pactl to the configured input
-        in_device = cfg.get("audio_force_input")
-        if in_device:
-            def _set_gain():
-                subprocess.run(
-                    ["pactl", "set-source-volume", in_device, f"{in_gain}%"],
-                    timeout=3, capture_output=True,
-                    env=_pulse_env(),
-                )
-            await loop.run_in_executor(None, _set_gain)
+        in_device = read_config().get("voice", {}).get("audio_force_input")
+        card = _card_index_from_device(in_device)
+        if card is not None:
+            ctrl = _find_volume_control(card, "capture")
+            if ctrl:
+                await loop.run_in_executor(None, _apply_alsa_volume, card, ctrl, in_gain)
 
     return {"status": "ok", "output_volume": out_vol, "input_gain": in_gain}
 
 
-def _pulse_env() -> dict[str, str]:
-    """Return environment dict for pactl to reach PulseAudio."""
-    import glob as _glob
-    env = os.environ.copy()
-    if env.get("PULSE_SERVER") or env.get("PULSE_RUNTIME_PATH"):
-        return env
-    sockets = sorted(_glob.glob("/run/user/*/pulse/native"))
-    if sockets:
-        env["PULSE_SERVER"] = f"unix:{sockets[0]}"
-    return env
-
-
 @router.get("/audio/mic-level")
 async def audio_mic_level() -> dict[str, Any]:
-    """Read current mic level (peak) from a quick 200ms sample."""
+    """Read current mic level (peak) from a quick ~0.5s sample via arecord."""
     import struct
     cfg = read_config().get("voice", {}) or {}
     input_device = cfg.get("audio_force_input", "default")
     loop = asyncio.get_running_loop()
 
     def _sample() -> float:
-        is_pulse = input_device and not input_device.startswith("hw:") and input_device != "default"
-        if is_pulse:
-            cmd = ["timeout", "0.3",
-                   "parecord", "--raw", "--format=s16le", "--rate=16000",
-                   "--channels=1", "--device=" + input_device]
-        else:
+        _pause_voice_loop()
+        try:
             cmd = ["arecord", "-d", "1", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"]
             if input_device and input_device != "default":
                 cmd += ["-D", input_device]
-        result = subprocess.run(cmd, timeout=2, capture_output=True)
-        raw = result.stdout
-        if len(raw) < 2:
-            return 0.0
-        samples = struct.unpack(f"<{len(raw) // 2}h", raw)
-        peak = max(abs(s) for s in samples) if samples else 0
-        return round(peak / 32768.0, 4)
+            result = subprocess.run(cmd, timeout=3, capture_output=True)
+            raw = result.stdout
+            if len(raw) < 2:
+                return 0.0
+            samples = struct.unpack(f"<{len(raw) // 2}h", raw)
+            peak = max(abs(s) for s in samples) if samples else 0
+            return round(peak / 32768.0, 4)
+        finally:
+            _resume_voice_loop()
 
     try:
-        level = await asyncio.wait_for(loop.run_in_executor(None, _sample), timeout=3)
+        level = await asyncio.wait_for(loop.run_in_executor(None, _sample), timeout=8)
         return {"level": level}
     except Exception:
+        _resume_voice_loop()
         return {"level": 0.0}
 
 
 # ================================================================== #
-#  STT Models (Vosk)                                                   #
+#  Audio Sources — per-module volume sliders                           #
 # ================================================================== #
+
+
+@router.get("/audio/sources")
+async def audio_sources() -> dict[str, Any]:
+    """Return audio source modules with their current volumes.
+
+    Discovers system modules that have audio-related intents
+    (media.volume_set, media.play, etc.) and returns their volume state.
+    """
+    sources: list[dict[str, Any]] = []
+
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        sandbox = get_sandbox()
+
+        for mod_info in sandbox.list_modules():
+            if mod_info.status != "RUNNING":
+                continue
+            manifest = mod_info.manifest or {}
+            intents = manifest.get("intents", [])
+            # Check if module has audio intents (volume control)
+            has_audio = any(
+                i.startswith("media.") for i in intents
+            ) if isinstance(intents, list) else False
+
+            if not has_audio:
+                continue
+
+            # Get current volume from module instance
+            instance = sandbox.get_in_process_module(mod_info.name)
+            volume = 70  # default
+            if instance:
+                player = getattr(instance, "_player", None)
+                if player:
+                    volume = getattr(player, "_volume", 70)
+
+            # Use short display name: prefer manifest name, capitalize nicely
+            display_name = mod_info.name.replace("-", " ").replace("_", " ").title()
+            sources.append({
+                "module": mod_info.name,
+                "name": display_name,
+                "volume": volume,
+                "icon": manifest.get("ui", {}).get("icon", ""),
+            })
+    except Exception as exc:
+        logger.warning("audio/sources error: %s", exc)
+
+    # Always include TTS (voice-core) as a source
+    tts_vol = read_config().get("voice", {}).get("output_volume", 100)
+    sources.insert(0, {
+        "module": "voice-core",
+        "name": "Selena TTS",
+        "volume": tts_vol,
+        "icon": "",
+    })
+
+    return {"sources": sources}
+
+
+@router.post("/audio/sources/volume")
+async def audio_source_volume(body: dict[str, Any]) -> dict[str, Any]:
+    """Set volume for a specific audio source module."""
+    module = body.get("module", "")
+    volume = max(0, min(150, int(body.get("volume", 70))))
+
+    if module == "voice-core":
+        update_config("voice", "output_volume", volume)
+        return {"status": "ok", "module": module, "volume": volume}
+
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        instance = get_sandbox().get_in_process_module(module)
+        if instance:
+            player = getattr(instance, "_player", None)
+            if player and hasattr(player, "set_volume"):
+                await player.set_volume(volume)
+                return {"status": "ok", "module": module, "volume": volume}
+    except Exception as exc:
+        logger.warning("audio/sources/volume error: %s", exc)
+
+    raise HTTPException(status_code=404, detail=f"Module '{module}' not found or has no volume control")
+
+
+# ================================================================== #
+#  STT Models (Whisper)                                                #
+# ================================================================== #
+
+@router.get("/whisper/status")
+async def whisper_status() -> dict[str, Any]:
+    """Check if whisper.cpp STT server is reachable."""
+    import httpx as _httpx
+    host = "http://localhost:9000"
+    try:
+        resp = _httpx.get(f"{host}/", timeout=3.0)
+        available = resp.status_code == 200
+    except Exception:
+        available = False
+    return {
+        "available": available,
+        "provider": "whisper.cpp" if available else "none",
+    }
+
 
 @router.get("/stt/models")
 async def stt_models() -> dict[str, Any]:
-    """List installed Vosk STT models by scanning disk."""
-    models_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
-    active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk-v3-small"))
+    """List available Whisper STT models."""
+    active_model = get_value("voice", "stt_model", "small")
 
     ram_total_mb = 0
     ram_available_mb = 0
@@ -712,23 +878,26 @@ async def stt_models() -> dict[str, Any]:
     except ImportError:
         pass
 
-    result = []
-    if models_dir.is_dir():
-        for d in sorted(models_dir.iterdir()):
-            if d.is_dir() and d.name.startswith("vosk-model"):
-                size_mb = sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) // (1024 * 1024)
-                result.append({
-                    "id": d.name,
-                    "name": d.name,
-                    "installed": True,
-                    "active": d.name == active_model,
-                    "size_mb": size_mb,
-                    "fits_ram": True,
-                })
+    models = [
+        {"id": "tiny",   "name": "Whisper Tiny",   "size_mb": 75,   "installed": True, "active": active_model == "tiny",   "fits_ram": True},
+        {"id": "base",   "name": "Whisper Base",   "size_mb": 142,  "installed": True, "active": active_model == "base",   "fits_ram": True},
+        {"id": "small",  "name": "Whisper Small",  "size_mb": 466,  "installed": True, "active": active_model == "small",  "fits_ram": ram_available_mb > 600},
+        {"id": "medium", "name": "Whisper Medium", "size_mb": 1530, "installed": True, "active": active_model == "medium", "fits_ram": ram_available_mb > 2000},
+    ]
+
+    # Check STT provider status
+    try:
+        from core.stt import create_stt_provider
+        provider = create_stt_provider()
+        provider_name = type(provider).__name__
+    except Exception:
+        provider_name = "none"
 
     return {
-        "models": result,
+        "models": models,
         "active": active_model,
+        "provider": provider_name,
+        "auto_lang_detect": True,
         "ram_total_mb": ram_total_mb,
         "ram_available_mb": ram_available_mb,
     }
@@ -736,17 +905,60 @@ async def stt_models() -> dict[str, Any]:
 
 @router.post("/stt/select")
 async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
-    """Select and persist Vosk STT model choice, reload engine."""
-    update_config("voice", "stt_model", req.model)
-    os.environ["VOSK_MODEL"] = req.model
-    # Reload STT engine in voice-core module
+    """Select Whisper model size, download if needed, restart whisper-server."""
+    import asyncio as _aio
+
+    model_id = req.model  # tiny | base | small | medium
+    ggml_name = f"ggml-{model_id}"
+    whisper_dir = os.environ.get("WHISPER_DIR", "/opt/whisper.cpp")
+    models_dir = os.path.join(whisper_dir, "models")
+    model_path = os.path.join(models_dir, f"{ggml_name}.bin")
+
+    # 1. Download model if not present
+    if not os.path.isfile(model_path):
+        download_script = os.path.join(models_dir, "download-ggml-model.sh")
+        if os.path.isfile(download_script):
+            logger.info("Downloading whisper model %s ...", model_id)
+            proc = await _aio.create_subprocess_exec(
+                "bash", download_script, model_id,
+                cwd=models_dir,
+                stdout=_aio.subprocess.PIPE,
+                stderr=_aio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0 or not os.path.isfile(model_path):
+                detail = stderr.decode(errors="replace")[:300] if stderr else "download failed"
+                raise HTTPException(status_code=500, detail=f"Model download failed: {detail}")
+            logger.info("Model %s downloaded successfully", model_id)
+        else:
+            raise HTTPException(status_code=500, detail=f"Model {ggml_name}.bin not found and no download script at {download_script}")
+
+    # 2. Save config
+    update_config("voice", "stt_model", model_id)
+
+    # 3. Write env file + restart whisper-server via nsenter (container → host)
+    restart_script = (
+        f"echo 'WHISPER_MODEL={ggml_name}' > /var/lib/selena/whisper-server.env && "
+        "systemctl daemon-reload && "
+        "systemctl restart whisper-server"
+    )
     try:
-        from system_modules.voice_core.stt import reload_stt
-        reload_stt(req.model)
+        proc = await _aio.create_subprocess_exec(
+            "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+            "bash", "-c", restart_script,
+            stdout=_aio.subprocess.PIPE,
+            stderr=_aio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.warning("whisper-server restart failed (rc=%d): %s", proc.returncode, stderr.decode(errors="replace")[:200])
+        else:
+            logger.info("whisper-server restarted with model %s", ggml_name)
     except Exception as exc:
-        logger.warning("STT reload failed: %s", exc)
-    logger.info("STT model set to %s", req.model)
-    return {"status": "ok", "model": req.model}
+        logger.warning("Could not restart whisper-server: %s", exc)
+
+    logger.info("STT model set to %s", model_id)
+    return {"status": "ok", "model": model_id}
 
 
 # ================================================================== #
@@ -1017,21 +1229,6 @@ async def update_config_endpoint(req: ConfigUpdateRequest) -> dict[str, Any]:
 #  Provision — download models & apply configuration                   #
 # ================================================================== #
 
-def _build_vosk_download_url(model_id: str) -> str:
-    """Construct Vosk model download URL from catalog cache or default."""
-    cache_file = Path(os.environ.get("SELENA_CACHE_DIR", "/var/lib/selena/cache")) / "vosk_catalog.json"
-    if cache_file.exists():
-        try:
-            import json as _json
-            catalog = _json.loads(cache_file.read_text())
-            for m in catalog.get("models", []):
-                if m["id"] == model_id:
-                    return m.get("url", "")
-        except Exception:
-            pass
-    return f"https://alphacephei.com/vosk/models/{model_id}.zip"
-
-
 def _build_piper_download_urls(voice_id: str) -> list[str]:
     """Construct Piper voice download URLs from voice ID."""
     parts = voice_id.split("-", 1)
@@ -1056,7 +1253,7 @@ async def start_provision() -> dict[str, Any]:
         return {"status": "already_running", **_provision.to_dict()}
 
     config = read_config()
-    stt_model = config.get("voice", {}).get("stt_model", "vosk-model-small-uk-v3-small")
+    stt_model = config.get("voice", {}).get("stt_model", "small")
     tts_voice = config.get("voice", {}).get("tts_voice", "uk_UA-ukrainian_tts-medium")
     llm_model = config.get("llm", {}).get("default_model")
 
@@ -1067,10 +1264,8 @@ async def start_provision() -> dict[str, Any]:
     tasks: list[dict[str, Any]] = []
     tasks.append({"id": "apply_config", "label": "apply_config", "status": "pending"})
 
-    # Check if STT model needs downloading
-    vosk_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
-    if not (vosk_dir / stt_model).is_dir():
-        tasks.append({"id": "download_stt", "label": "download_stt", "status": "pending", "model": stt_model})
+    # Whisper models are managed by whisper.cpp server or faster-whisper (auto-downloaded)
+    # No manual download step needed
 
     # Check if TTS voice needs downloading
     piper_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
@@ -1151,52 +1346,6 @@ async def _provision_apply_config() -> None:
             pass
     # Small delay so the user sees the step
     await asyncio.sleep(1)
-
-
-async def _provision_download_stt(model_id: str) -> None:
-    """Download Vosk STT model."""
-    import httpx
-    import zipfile
-
-    url = _build_vosk_download_url(model_id)
-    if not url:
-        logger.warning("No download URL for STT model %s, skipping", model_id)
-        return
-
-    vosk_dir = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
-    vosk_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = vosk_dir / f"{model_id}.zip"
-
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
-            async with client.stream("GET", url, follow_redirects=True) as resp:
-                resp.raise_for_status()
-                with open(zip_path, "wb") as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        f.write(chunk)
-
-        # Extract zip
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _extract_vosk_zip, zip_path, vosk_dir, model_id)
-    finally:
-        zip_path.unlink(missing_ok=True)
-
-
-def _extract_vosk_zip(zip_path: Path, dest_dir: Path, model_id: str) -> None:
-    """Extract Vosk model zip and rename to expected directory name."""
-    import zipfile
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(dest_dir)
-
-    # Vosk zips often have a root folder with a different name — rename to model_id
-    extracted_dirs = [d for d in dest_dir.iterdir() if d.is_dir() and d.name != model_id]
-    target = dest_dir / model_id
-    if not target.exists() and extracted_dirs:
-        # Find the most likely match
-        for d in extracted_dirs:
-            if model_id.replace("-", "") in d.name.replace("-", "") or d.name.startswith("vosk-model"):
-                d.rename(target)
-                break
 
 
 async def _provision_download_tts(voice_id: str) -> None:

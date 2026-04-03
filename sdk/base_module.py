@@ -36,15 +36,25 @@ MODULE_DIR = os.environ.get("MODULE_DIR", "")
 # ── Decorators ──────────────────────────────────────────────────────────────
 
 
-def intent(pattern: str, order: int = 50):
+def intent(
+    pattern: str,
+    order: int = 50,
+    name: str = "",
+    description: str = "",
+):
     """Register an async handler for an intent pattern (regex).
 
     ``order`` controls priority in the bus intent index (lower = higher priority).
     Range: 0-29 system, 30-49 core, 50-99 user modules.
+
+    ``name`` — intent name for LLM prompt catalog (e.g. "email.check_inbox").
+    ``description`` — human-readable description for LLM context.
     """
     def decorator(func: F) -> F:
         func._intent_pattern = pattern   # type: ignore[attr-defined]
         func._intent_order = order       # type: ignore[attr-defined]
+        func._intent_name = name         # type: ignore[attr-defined]
+        func._intent_description = description  # type: ignore[attr-defined]
         return func
     return decorator
 
@@ -102,7 +112,8 @@ class SmartHomeModule:
         self._drain_ms = 0
 
         # Handlers discovered from decorators
-        self._intent_handlers: list[tuple[str, int, Callable]] = []  # (pattern, order, method)
+        # (pattern, order, method, name, description)
+        self._intent_handlers: list[tuple[str, int, Callable, str, str]] = []
         self._event_handlers: dict[str, Callable] = {}
         self._tasks: list[asyncio.Task] = []
 
@@ -129,7 +140,9 @@ class SmartHomeModule:
             if hasattr(method, "_intent_pattern"):
                 pattern = method._intent_pattern
                 order = getattr(method, "_intent_order", 50)
-                self._intent_handlers.append((pattern, order, method))
+                iname = getattr(method, "_intent_name", "")
+                idesc = getattr(method, "_intent_description", "")
+                self._intent_handlers.append((pattern, order, method, iname, idesc))
             if hasattr(method, "_event_type"):
                 self._event_handlers[method._event_type] = method
 
@@ -139,7 +152,7 @@ class SmartHomeModule:
 
     def _validate_intents(self) -> None:
         """Compile-check all intent regex patterns at init time."""
-        for pattern, _order, _method in self._intent_handlers:
+        for pattern, _order, _method, _name, _desc in self._intent_handlers:
             try:
                 re.compile(pattern, re.IGNORECASE)
             except re.error as exc:
@@ -364,13 +377,18 @@ class SmartHomeModule:
             caps["intents"] = manifest["intents"]
         elif self._intent_handlers:
             # Build from decorators
-            caps["intents"] = [
-                {
+            intents_list = []
+            for p, order, _method, iname, idesc in self._intent_handlers:
+                entry: dict[str, Any] = {
                     "patterns": {"en": [p], "uk": [p]},
                     "priority": order,
                 }
-                for p, order, _method in self._intent_handlers
-            ]
+                if iname:
+                    entry["name"] = iname
+                if idesc:
+                    entry["description"] = idesc
+                intents_list.append(entry)
+            caps["intents"] = intents_list
 
         # Subscriptions from event handlers
         subs = list(self._event_handlers.keys())
@@ -465,7 +483,7 @@ class SmartHomeModule:
     ) -> dict[str, Any] | None:
         """Match text against @intent handlers (local regex match)."""
         text_lower = text.lower().strip()
-        for pattern, _order, handler in self._intent_handlers:
+        for pattern, _order, handler, _name, _desc in self._intent_handlers:
             if re.search(pattern, text_lower, re.IGNORECASE):
                 try:
                     result = await handler(text, context)

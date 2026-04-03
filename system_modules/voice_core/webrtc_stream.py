@@ -3,18 +3,15 @@ system_modules/voice_core/webrtc_stream.py — WebRTC audio stream → Whisper S
 
 Provides a FastAPI WebSocket endpoint that:
   1. Accepts browser audio stream via WebSocket (raw PCM frames)
-  2. Pipes frames into the STT engine
+  2. Pipes frames into the STT provider (Whisper)
   3. Returns transcription results as JSON messages
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-
-from system_modules.voice_core.stt import get_stt
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/voice", tags=["voice"])
@@ -28,12 +25,13 @@ async def audio_stream_ws(websocket: WebSocket) -> None:
     """WebSocket endpoint for browser audio streaming.
 
     Browser sends: raw 16-bit PCM frames (mono, 16kHz)
-    Server sends:  JSON {"text": "...", "final": false/true}
+    Server sends:  JSON {"text": "...", "lang": "...", "final": false/true}
     """
     await websocket.accept()
     logger.info("WebRTC audio stream connected")
 
-    stt = get_stt()
+    from core.stt import create_stt_provider
+    provider = create_stt_provider()
     buffer = b""
     chunk_bytes = int(SAMPLE_RATE * CHUNK_DURATION_SEC * 2)  # 16-bit PCM
 
@@ -44,9 +42,9 @@ async def audio_stream_ws(websocket: WebSocket) -> None:
             if data == b"END":
                 # Client signals end of stream
                 if buffer:
-                    text = await stt.transcribe(buffer)
-                    if text:
-                        await websocket.send_json({"text": text, "final": True})
+                    result = await provider.transcribe(buffer, SAMPLE_RATE)
+                    if result.text:
+                        await websocket.send_json({"text": result.text, "lang": result.lang, "final": True})
                 break
 
             buffer += data
@@ -55,9 +53,9 @@ async def audio_stream_ws(websocket: WebSocket) -> None:
             while len(buffer) >= chunk_bytes:
                 chunk = buffer[:chunk_bytes]
                 buffer = buffer[chunk_bytes:]
-                text = await stt.transcribe(chunk)
-                if text:
-                    await websocket.send_json({"text": text, "final": False})
+                result = await provider.transcribe(chunk, SAMPLE_RATE)
+                if result.text:
+                    await websocket.send_json({"text": result.text, "lang": result.lang, "final": False})
 
     except WebSocketDisconnect:
         logger.info("WebRTC audio stream disconnected")

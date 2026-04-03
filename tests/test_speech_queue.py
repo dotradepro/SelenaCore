@@ -68,7 +68,7 @@ class TestSpeechQueueSerialization:
 
         original_stream_speak = None
 
-        async def mock_stream_speak(text: str) -> None:
+        async def mock_stream_speak(text: str, **kwargs) -> None:
             nonlocal active_count, max_concurrent
             active_count += 1
             max_concurrent = max(max_concurrent, active_count)
@@ -113,7 +113,7 @@ class TestSpeechQueueSerialization:
 
         played: list[str] = []
 
-        async def mock_stream_speak(text: str) -> None:
+        async def mock_stream_speak(text: str, **kwargs) -> None:
             played.append(text)
 
         m._stream_speak = mock_stream_speak
@@ -147,7 +147,7 @@ class TestSpeechQueueSerialization:
 
         call_count = 0
 
-        async def mock_stream_speak(text: str) -> None:
+        async def mock_stream_speak(text: str, **kwargs) -> None:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -438,7 +438,7 @@ class TestQueueWithDuckingIntegration:
         active = 0
         max_active = 0
 
-        async def mock_stream_speak(text):
+        async def mock_stream_speak(text, **kwargs):
             nonlocal active, max_active
             active += 1
             max_active = max(max_active, active)

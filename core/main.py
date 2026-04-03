@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
-from core.api.routes import devices, events, integrity, intents, modules, secrets, setup, system, ui
+from core.api.routes import devices, events, integrity, intents, modules, radio, scenes, secrets, setup, system, ui
 from core.config import get_settings
 from core.cloud_sync.sync import get_cloud_sync
 from core.eventbus.bus import get_event_bus
@@ -45,6 +45,68 @@ def _setup_logging() -> None:
     )
 
 
+def _migrate_keywords_columns(connection) -> None:
+    """Add keywords_user and keywords_en columns to devices table if missing."""
+    import sqlalchemy as sa
+    inspector = sa.inspect(connection)
+    columns = {c["name"] for c in inspector.get_columns("devices")}
+    if "keywords_user" not in columns:
+        connection.execute(sa.text("ALTER TABLE devices ADD COLUMN keywords_user TEXT DEFAULT '[]'"))
+        logger.info("Migration: added keywords_user column to devices")
+    if "keywords_en" not in columns:
+        connection.execute(sa.text("ALTER TABLE devices ADD COLUMN keywords_en TEXT DEFAULT '[]'"))
+        logger.info("Migration: added keywords_en column to devices")
+
+
+def _migrate_entity_location_columns(connection) -> None:
+    """Add entity_type and location columns to devices table if missing."""
+    import sqlalchemy as sa
+    inspector = sa.inspect(connection)
+    columns = {c["name"] for c in inspector.get_columns("devices")}
+    if "entity_type" not in columns:
+        connection.execute(sa.text("ALTER TABLE devices ADD COLUMN entity_type VARCHAR(50)"))
+        logger.info("Migration: added entity_type column to devices")
+    if "location" not in columns:
+        connection.execute(sa.text("ALTER TABLE devices ADD COLUMN location VARCHAR(100)"))
+        logger.info("Migration: added location column to devices")
+
+
+async def _preload_module_registry(session_factory) -> None:
+    """Load registered_modules from DB into in-memory ModuleRegistry.
+
+    Ensures the LLM prompt has module catalog from first request,
+    even before modules finish starting.
+    """
+    try:
+        from sqlalchemy import select
+        from core.registry.models import RegisteredModule
+        from core.module_registry import ModuleEntry, get_module_registry
+
+        registry = get_module_registry()
+        async with session_factory() as session:
+            result = await session.execute(
+                select(RegisteredModule).where(RegisteredModule.enabled == True)
+            )
+            modules = list(result.scalars().all())
+
+        for m in modules:
+            entry = ModuleEntry(
+                name=m.name,
+                group=m.group,
+                intents=m.get_intents(),
+                entities=m.get_entities(),
+                description=m.description_en or m.description_user,
+                type=m.module_type,
+                status="READY",
+            )
+            registry.register(entry)
+
+        if modules:
+            logger.info("Pre-loaded %d modules from DB into ModuleRegistry", len(modules))
+    except Exception as exc:
+        logger.debug("ModuleRegistry pre-load skipped: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — startup and shutdown logic."""
@@ -57,6 +119,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     engine = create_async_engine(settings.db_url, echo=settings.debug)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migration: add keywords columns if missing (v2.0 upgrade)
+        await conn.run_sync(_migrate_keywords_columns)
+        # Migration: add entity_type + location columns (Phase 6)
+        await conn.run_sync(_migrate_entity_location_columns)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     app.state.db_session_factory = session_factory
     app.state.db_engine = engine
@@ -82,6 +148,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start CloudSync
     cloud_sync = get_cloud_sync()
     await cloud_sync.start()
+
+    # Pre-load ModuleRegistry from DB (modules from previous run)
+    await _preload_module_registry(session_factory)
 
     # Auto-discover system modules (pre-installed, type=SYSTEM)
     from core.module_loader.loader import get_plugin_manager
@@ -156,6 +225,8 @@ def create_app() -> FastAPI:
     app.include_router(modules.router, prefix=api_prefix)
     app.include_router(secrets.router, prefix=api_prefix)
     app.include_router(intents.router, prefix=api_prefix)
+    app.include_router(radio.router, prefix=api_prefix)
+    app.include_router(scenes.router, prefix=api_prefix)
 
     # Module Bus — WebSocket endpoint for user modules
     from core.api.routes import bus as bus_routes

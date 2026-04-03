@@ -22,6 +22,7 @@
 
   "intent.fallback": "Вибачте, я не зрозумів запит. Спробуйте ще раз.",
   "intent.module_unavailable": "Модуль тимчасово недоступний. Спробуйте пізніше.",
+  "intent.disambiguation": "Який саме ви мали на увазі: {devices}?",
 
   "fast_matcher.light_on": "Вмикаю світло",
   "fast_matcher.light_off": "Вимикаю світло",
@@ -134,7 +135,7 @@
   "api.tts_failed": "Помилка синтезу TTS",
   "api.stt_error": "Помилка STT: {error}",
   "api.piper_not_installed": "Piper TTS не встановлено",
-  "api.vosk_not_installed": "Vosk STT не встановлено",
+  "api.stt_not_available": "STT недоступний — встановіть Whisper",
   "api.ollama_not_running": "Сервер Ollama не запущено",
   "api.ollama_not_available": "Сервер Ollama недоступний",
   "api.llamacpp_not_running": "Сервер llama.cpp не запущено",

@@ -265,6 +265,12 @@
             background: var(--rd);
         }
 
+        .btn:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            filter: none;
+        }
+
         /* Table */
         table {
             width: 100%;
@@ -748,6 +754,11 @@
                 mounting: 'Mounting…', mounted_ok: 'Mounted OK', mount_err: 'Mount failed',
                 no_results: 'No results',
                 scan_running: 'Scanning…', scan_done: 'Scan complete',
+                saving: 'Saving…', error: 'Error occurred', exported: 'Exported M3U8',
+                station_added: 'Station added', name_url_required: 'Name and URL required',
+                nothing_to_import: 'Nothing to import', testing: 'Testing…',
+                library_cleared: 'Library cleared', scanning: 'Scanning…',
+                searching: 'Searching…',
             },
             uk: {
                 tab_playback: 'Відтворення', tab_radio: 'Радіо', tab_usb: 'USB / Файли',
@@ -795,6 +806,11 @@
                 mounting: 'Підключення…', mounted_ok: 'Підключено', mount_err: 'Помилка підключення',
                 no_results: 'Результатів немає',
                 scan_running: 'Сканування…', scan_done: 'Сканування завершено',
+                saving: 'Збереження…', error: 'Помилка', exported: 'Експортовано M3U8',
+                station_added: 'Станцію додано', name_url_required: 'Потрібна назва та URL',
+                nothing_to_import: 'Нічого імпортувати', testing: 'Тестування…',
+                library_cleared: 'Бібліотеку очищено', scanning: 'Сканування…',
+                searching: 'Пошук…',
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -896,12 +912,23 @@
         }
 
         function savePlaybackConfig() {
+            var btn = document.querySelector('#pane-playback .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('saving');
             var body = {
                 stream_buffer_ms: parseInt(document.getElementById('selBuffer').value),
                 normalize_volume: document.getElementById('chkNormalize').checked,
                 default_volume: parseInt(document.getElementById('rngDefVol').value),
             };
-            apiPost('/config', body).then(function () { showToast(t('saved_ok')); });
+            apiPost('/config', body).then(function (r) {
+                showToast(r ? t('saved_ok') : t('error'));
+            }).catch(function () {
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
+            });
         }
 
         // ── Tab 2: Radio (local library, client-side filter) ──────────────────────
@@ -1058,32 +1085,56 @@
         function addStation() {
             var name = document.getElementById('inpStationName').value.trim();
             var url = document.getElementById('inpStationUrl').value.trim();
-            if (!name || !url) { showToast('Name and URL required'); return; }
+            if (!name || !url) { showToast(t('name_url_required')); return; }
+            var btn = document.querySelector('#addStationForm .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('saving');
             apiPost('/sources/radio/add', {
                 name: name, url: url,
                 genre: document.getElementById('inpStationGenre').value.trim(),
                 country: document.getElementById('inpStationCountry').value.trim(),
             }).then(function (r) {
                 if (r && r.id) {
-                    showToast(t('saved_ok'));
+                    showToast(t('station_added'));
                     document.getElementById('inpStationName').value = '';
                     document.getElementById('inpStationUrl').value = '';
                     document.getElementById('inpStationGenre').value = '';
                     document.getElementById('inpStationCountry').value = '';
                     document.getElementById('addStationForm').style.display = 'none';
                     loadRadioStats(); loadRadioLibrary();
+                } else {
+                    showToast(t('error'));
                 }
+            }).catch(function () {
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
         function importM3U() {
             var content = document.getElementById('inpM3UContent').value.trim();
-            if (!content) { showToast('Nothing to import'); return; }
+            if (!content) { showToast(t('nothing_to_import')); return; }
+            var btn = document.querySelector('#importM3UForm .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('importing');
             document.getElementById('importM3UResult').textContent = t('importing');
             apiPost('/sources/radio/import/m3u', { content: content }).then(function (r) {
                 document.getElementById('importM3UResult').textContent =
                     r ? '+' + r.added + ' / total: ' + r.total : t('no_results');
-                if (r && r.added > 0) { loadRadioStats(); loadRadioLibrary(); }
+                if (r && r.added > 0) {
+                    showToast('+' + r.added + ' stations');
+                    loadRadioStats(); loadRadioLibrary();
+                }
+            }).catch(function () {
+                showToast(t('error'));
+                document.getElementById('importM3UResult').textContent = t('error');
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
@@ -1224,15 +1275,18 @@
 
         function exportM3U() {
             window.location.href = BASE + '/sources/radio/export.m3u';
+            showToast(t('exported'));
         }
 
         function clearLibrary() {
             if (!confirm(t('confirm_clear'))) return;
             apiPost('/sources/radio/clear', {}).then(function (r) {
-                showToast((r && r.cleared) + ' ' + t('cleared'));
+                showToast(t('library_cleared') + (r && r.cleared ? ' (' + r.cleared + ')' : ''));
                 loadRadioStats(); loadRadioLibrary();
                 document.getElementById('radioResults').innerHTML = '';
                 document.getElementById('favStations').innerHTML = '<span style="color:var(--tx3);font-size:12px">—</span>';
+            }).catch(function () {
+                showToast(t('error'));
             });
         }
 
@@ -1256,10 +1310,15 @@
 
         function scanUSB() {
             var el = document.getElementById('usbResults');
+            var btn = document.querySelector('#pane-usb .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('scanning');
             el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('scan_running') + '</span>';
             apiGet('/sources/usb/scan').then(function (tracks) {
                 if (!tracks || !tracks.length) {
                     el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('no_results') + '</span>';
+                    showToast(t('scan_done') + ': 0');
                     return;
                 }
                 el.innerHTML = '';
@@ -1278,6 +1337,12 @@
                     el.appendChild(card);
                 });
                 if (tracks.length > 50) el.innerHTML += '<div style="color:var(--tx3);font-size:11px;padding:4px">+' + (tracks.length - 50) + ' more</div>';
+                showToast(t('scan_done') + ': ' + tracks.length);
+            }).catch(function () {
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
@@ -1297,6 +1362,8 @@
         function mountShare() {
             var type = document.getElementById('shareType').value;
             var btn = document.querySelector('#addShareForm .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
             btn.textContent = t('mounting');
             var p;
             if (type === 'smb') {
@@ -1313,20 +1380,29 @@
                 });
             }
             p.then(function (d) {
-                btn.textContent = t('btn_mount');
                 if (d && d.ok) {
                     showToast(t('mounted_ok') + ': ' + d.mount_point);
                     document.getElementById('addShareForm').style.display = 'none';
+                    loadMountedDevices();
                 } else {
                     showToast(t('mount_err') + (d && d.detail ? ': ' + d.detail : ''));
                 }
+            }).catch(function () {
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
         // ── Tab 5: Archive ────────────────────────────────────────────────────────────
         function searchArchive() {
             var el = document.getElementById('archiveResults');
-            el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('btn_search') + '…</span>';
+            var btn = document.querySelector('#pane-archive .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('searching');
+            el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('searching') + '</span>';
             var q = document.getElementById('archiveQuery').value;
             var col = document.getElementById('archiveCollection').value;
             apiGet('/sources/archive/search?q=' + encodeURIComponent(q) + '&collection=' + encodeURIComponent(col) + '&rows=10').then(function (items) {
@@ -1355,6 +1431,11 @@
                     };
                     el.appendChild(card);
                 });
+            }).catch(function () {
+                el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('error') + '</span>';
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
@@ -1371,30 +1452,52 @@
 
         function verifyLastfm() {
             var key = document.getElementById('inpLastfmKey').value.trim();
-            if (key) {
-                apiPost('/config', { lastfm_api_key: key }).then(function () {
-                    var st = document.getElementById('lastfmStatus');
-                    st.textContent = t('verifying');
-                    apiPost('/config/lastfm/verify').then(function (d) {
-                        st.className = d && d.ok ? 'chip chip-ok' : 'chip chip-err';
-                        st.textContent = d && d.ok ? t('key_ok') : t('key_err') + (d && d.error ? ' (' + d.error + ')' : '');
-                    });
-                });
-            }
+            if (!key) return;
+            var btn = document.querySelector('#pane-covers .row .btn');
+            var orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = t('verifying');
+            var st = document.getElementById('lastfmStatus');
+            st.textContent = t('verifying');
+            st.className = '';
+            apiPost('/config', { lastfm_api_key: key }).then(function () {
+                return apiPost('/config/lastfm/verify');
+            }).then(function (d) {
+                st.className = d && d.ok ? 'chip chip-ok' : 'chip chip-err';
+                st.textContent = d && d.ok ? t('key_ok') : t('key_err') + (d && d.error ? ' (' + d.error + ')' : '');
+                showToast(d && d.ok ? t('key_ok') : t('key_err'));
+            }).catch(function () {
+                st.className = 'chip chip-err';
+                st.textContent = t('error');
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
+            });
         }
 
         function clearCache() {
+            var btn = document.querySelector('#pane-covers .btn-danger');
+            var orig = btn.textContent;
+            btn.disabled = true;
             apiPost('/covers/cache/clear').then(function (d) {
                 showToast(t('cache_cleared') + (d ? ' (' + d.cleared + ')' : ''));
                 document.getElementById('cacheSize').textContent = '0.00 MB';
+            }).catch(function () {
+                showToast(t('error'));
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = orig;
             });
         }
 
         function testVoice() {
             var txt = document.getElementById('inpTestVoice').value.trim();
             if (!txt) return;
+            var btn = document.querySelector('#pane-covers .row:last-of-type .btn');
+            if (btn) { btn.disabled = true; var _origTest = btn.textContent; btn.textContent = t('testing'); }
             var out = document.getElementById('testVoiceResult');
-            out.textContent = '…';
+            out.textContent = t('testing');
             var intents = [
                 [/включи|запусти|поставь/i, /радио/, 'media.play_radio'],
                 [/включи|запусти|поставь/i, /рок|джаз|классик|ambient|lofi|поп|новости/i, 'media.play_genre'],
@@ -1415,6 +1518,7 @@
                 if (rule[0].test(txt) && (!rule[1] || rule[1].test(txt))) { matched = rule[2]; break; }
             }
             out.textContent = matched ? '→ intent: ' + matched : '→ no match (will fall back to LLM)';
+            if (btn) { btn.disabled = false; btn.textContent = t('btn_test'); }
         }
 
         // ── Time formatting ───────────────────────────────────────────────────────────

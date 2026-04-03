@@ -97,6 +97,9 @@ from .module import MyModule as module_class
     "version": "1.0.0",
     "type": "SYSTEM",
     "runtime_mode": "always_on",
+    "group": "system",
+    "intents": ["mymodule.do_action"],
+    "entities": ["mydevice"],
     "permissions": []
 }
 ```
@@ -107,9 +110,20 @@ from .module import MyModule as module_class
 | `version` | Yes | Semantic version string. |
 | `type` | Yes | Must be `"SYSTEM"` for system modules. |
 | `runtime_mode` | Yes | `"always_on"` (started at boot) or `"on_demand"` (started when needed). |
+| `group` | Yes | Functional category: `media`, `automation`, `voice`, `security`, `energy`, `weather`, `presence`, `notification`, `network`, `backup`, `system`. |
+| `intents` | Yes | List of intent names the module handles (e.g., `["media.play", "media.stop"]`). Used by ModuleRegistry for routing. |
+| `entities` | Yes | List of entity types the module works with (e.g., `["radio", "music"]`). Used for device disambiguation. |
 | `permissions` | No | List of permission strings the module requires (e.g., `["devices.read", "devices.write"]`). |
 
 System modules do **not** specify a `port` field. They share the core process and, if needed, mount a FastAPI router instead.
+
+### ModuleRegistry
+
+When a module is loaded, its `group`, `intents`, and `entities` from `manifest.json` are automatically registered in the **ModuleRegistry** (`core/module_registry.py`). This enables:
+
+- **Intent routing**: `get_module_for_intent("media.play")` returns `"media-player"`
+- **Entity resolution**: `get_modules_for_entity("radio")` returns `["media-player"]`
+- **Device disambiguation**: when an intent targets an entity type with multiple matching devices, the system asks the user to clarify
 
 ### `module.py`
 
@@ -645,7 +659,7 @@ SelenaCore ships with 22 system modules:
 
 | Module | Description |
 |---|---|
-| `voice_core` | STT (Vosk), TTS (Piper), wake word detection |
+| `voice_core` | STT (Whisper), TTS (Piper), wake word detection |
 | `llm_engine` | Ollama LLM client, intent router, fast matcher |
 | `ui_core` | Web dashboard UI server (:80) |
 | `user_manager` | User profiles, authentication, biometrics |

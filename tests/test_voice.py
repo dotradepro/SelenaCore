@@ -7,19 +7,43 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-# ── STT tests ────────────────────────────────────────────────────────────────
+# ── STT Provider tests ──────────────────────────────────────────────────────
 
-class TestSTT:
-    """Test voice_core/stt.py Vosk wrapper."""
+class TestSTTProvider:
+    """Test core/stt/ provider abstraction."""
 
-    def test_import_stt_module(self) -> None:
-        from system_modules.voice_core import stt
-        assert hasattr(stt, "STTEngine") or hasattr(stt, "WhisperSTT") or True
+    def test_import_stt_package(self) -> None:
+        from core.stt import STTProvider, STTResult, create_stt_provider
+        assert STTProvider is not None
+        assert STTResult is not None
 
-    def test_stt_model_names(self) -> None:
-        """STT should support standard Vosk model names."""
-        from system_modules.voice_core import stt
-        assert stt is not None
+    def test_stt_result_defaults(self) -> None:
+        from core.stt.base import STTResult
+        r = STTResult()
+        assert r.text == ""
+        assert r.lang == "en"
+        assert r.confidence == 0.0
+
+    def test_stt_result_with_values(self) -> None:
+        from core.stt.base import STTResult
+        r = STTResult(text="hello", lang="uk", confidence=0.95)
+        assert r.text == "hello"
+        assert r.lang == "uk"
+
+    def test_factory_returns_provider(self) -> None:
+        """Factory should return a provider (DummyProvider if nothing available)."""
+        from core.stt import create_stt_provider
+        from core.stt.base import STTProvider
+        provider = create_stt_provider({"provider": "auto"})
+        assert isinstance(provider, STTProvider)
+
+    @pytest.mark.asyncio
+    async def test_dummy_provider_returns_empty(self) -> None:
+        from core.stt.factory import _DummyProvider
+        p = _DummyProvider()
+        result = await p.transcribe(b"\x00" * 100, 16000)
+        assert result.text == ""
+        assert result.lang == "en"
 
 
 # ── TTS tests ────────────────────────────────────────────────────────────────
@@ -36,7 +60,6 @@ class TestTTS:
         from system_modules.voice_core import tts
         assert hasattr(tts, "TTSEngine")
         assert hasattr(tts, "sanitize_for_tts")
-        assert hasattr(tts, "TTSSettings")
 
     def test_sanitize_for_tts_removes_markdown(self) -> None:
         from system_modules.voice_core.tts import sanitize_for_tts
@@ -60,69 +83,51 @@ class TestTTS:
         assert sanitize_for_tts("") == ""
         assert sanitize_for_tts("   ") == ""
 
-    def test_tts_settings_defaults(self) -> None:
-        from system_modules.voice_core.tts import TTSSettings
-        s = TTSSettings()
-        assert s.length_scale == 1.0
-        assert s.noise_scale == 0.667
-        assert s.noise_w_scale == 0.8
-        assert s.sentence_silence == 0.2
-        assert s.volume == 1.0
-        assert s.speaker == 0
 
-    def test_tts_settings_custom(self) -> None:
-        from system_modules.voice_core.tts import TTSSettings
-        s = TTSSettings(length_scale=1.5, volume=0.5)
-        assert s.length_scale == 1.5
-        assert s.volume == 0.5
+# ── IntentCache tests ───────────────────────────────────────────────────────
+
+class TestIntentCache:
+    """Test intent_cache.py SQLite cache."""
 
     @pytest.mark.asyncio
-    async def test_gpu_server_is_primary_path(self) -> None:
-        """synthesize() should try GPU server first."""
-        from system_modules.voice_core.tts import TTSEngine
-        engine = TTSEngine(voice="test-voice")
-        fake_wav = b"RIFF" + b"\x00" * 40
-
-        with patch.object(engine, "_try_gpu_server", return_value=fake_wav) as mock_gpu:
-            result = await engine.synthesize("hello")
-            mock_gpu.assert_called_once()
-            assert result == fake_wav
+    async def test_cache_put_and_get(self, tmp_path) -> None:
+        from system_modules.llm_engine.intent_cache import IntentCache
+        cache = IntentCache(str(tmp_path / "test_cache.db"))
+        await cache.put("turn on light", "en", "device.on", {"entity": "light"}, "Light on")
+        result = await cache.get("turn on light", "en")
+        assert result is not None
+        assert result["intent"] == "device.on"
+        assert result["params"]["entity"] == "light"
 
     @pytest.mark.asyncio
-    async def test_gpu_server_payload_has_all_params(self) -> None:
-        """GPU server request must include all TTS settings."""
-        from system_modules.voice_core.tts import TTSEngine, TTSSettings
-        engine = TTSEngine(voice="test-voice")
+    async def test_cache_miss(self, tmp_path) -> None:
+        from system_modules.llm_engine.intent_cache import IntentCache
+        cache = IntentCache(str(tmp_path / "test_cache.db"))
+        result = await cache.get("unknown phrase", "en")
+        assert result is None
 
-        captured = {}
-        async def mock_post(url, json=None):
-            captured.update(json or {})
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.headers = {"content-type": "audio/wav"}
-            resp.content = b""
-            return resp
+    @pytest.mark.asyncio
+    async def test_cache_lang_separation(self, tmp_path) -> None:
+        from system_modules.llm_engine.intent_cache import IntentCache
+        cache = IntentCache(str(tmp_path / "test_cache.db"))
+        await cache.put("play music", "en", "media.play", {}, "Playing")
+        await cache.put("play music", "de", "media.play", {}, "Wird abgespielt")
+        en = await cache.get("play music", "en")
+        de = await cache.get("play music", "de")
+        assert en["response"] == "Playing"
+        assert de["response"] == "Wird abgespielt"
 
-        with patch("httpx.AsyncClient") as MockClient:
-            client = AsyncMock()
-            client.post = mock_post
-            client.__aenter__ = AsyncMock(return_value=client)
-            client.__aexit__ = AsyncMock(return_value=False)
-            MockClient.return_value = client
-
-            await engine._try_gpu_server("test", "voice", TTSSettings())
-
-            for key in ("text", "voice", "length_scale", "noise_scale",
-                        "noise_w_scale", "sentence_silence", "volume", "speaker"):
-                assert key in captured, f"Missing key: {key}"
-
-
-# ── Wake Word tests ──────────────────────────────────────────────────────────
-
-class TestWakeWord:
-    def test_import_wake_word(self) -> None:
-        from system_modules.voice_core import wake_word
-        assert wake_word is not None
+    @pytest.mark.asyncio
+    async def test_cache_hit_count(self, tmp_path) -> None:
+        from system_modules.llm_engine.intent_cache import IntentCache
+        cache = IntentCache(str(tmp_path / "test_cache.db"))
+        await cache.put("hello", "en", "greeting", {})
+        await cache.get("hello", "en")
+        await cache.get("hello", "en")
+        await cache.get("hello", "en")
+        frequent = await cache.get_frequent(min_count=3)
+        assert len(frequent) >= 1
+        assert frequent[0]["intent"] == "greeting"
 
 
 # ── Privacy Mode tests ───────────────────────────────────────────────────────
@@ -132,14 +137,6 @@ class TestPrivacy:
         from system_modules.voice_core import privacy
         assert privacy is not None
 
-    def test_privacy_has_toggle(self) -> None:
-        from system_modules.voice_core import privacy
-        has_toggle = any(
-            name for name in dir(privacy)
-            if "toggle" in name.lower() or "enable" in name.lower() or "mode" in name.lower()
-        )
-        assert has_toggle or True
-
 
 # ── Audio Manager tests ──────────────────────────────────────────────────────
 
@@ -147,15 +144,6 @@ class TestAudioManager:
     def test_import_audio_manager(self) -> None:
         from system_modules.voice_core import audio_manager
         assert audio_manager is not None
-
-    def test_priority_constants_defined(self) -> None:
-        from system_modules.voice_core import audio_manager
-        has_priority = (
-            hasattr(audio_manager, "PRIORITY_INPUT")
-            or hasattr(audio_manager, "PRIORITY_OUTPUT")
-            or True
-        )
-        assert has_priority
 
 
 # ── Speaker ID tests ─────────────────────────────────────────────────────────

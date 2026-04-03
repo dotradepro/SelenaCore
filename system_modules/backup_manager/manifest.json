@@ -6,6 +6,9 @@
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "backup",
+    "intents": ["backup.create", "backup.restore"],
+    "entities": ["backup"],
     "permissions": [
         "events.publish"
     ],

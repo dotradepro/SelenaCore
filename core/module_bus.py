@@ -226,6 +226,11 @@ class ModuleBus:
             len(capabilities.get("subscriptions", [])),
         )
 
+        # Persist to registered_modules DB
+        asyncio.ensure_future(
+            self._persist_module_connected(module_name, capabilities)
+        )
+
         # 4. Start writer + ping tasks
         writer_task = asyncio.create_task(self._connection_writer(conn))
         ping_task = asyncio.create_task(self._ping_loop(conn))
@@ -260,6 +265,7 @@ class ModuleBus:
             if conn:
                 self._rebuild_intent_index()
                 logger.info("Bus: module '%s' disconnected", module)
+                asyncio.ensure_future(self._persist_module_disconnected(module))
 
         # Cancel all pending futures for this module
         async with self._pending_lock:
@@ -806,6 +812,99 @@ class ModuleBus:
             raise TimeoutError(f"API request to '{module}' timed out") from None
 
         return result.get("payload", result.get("body", {}))
+
+    # ── DB persistence ────────────────────────────────────────────────────
+
+    async def _persist_module_connected(
+        self, module: str, capabilities: dict[str, Any],
+    ) -> None:
+        """Save module to registered_modules DB on connect."""
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            from core.registry.models import RegisteredModule
+            from sqlalchemy import select
+
+            sf = get_sandbox()._session_factory
+            if sf is None:
+                return
+
+            # Extract intent names and description from capabilities
+            intent_names: list[str] = []
+            for intent_def in capabilities.get("intents", []):
+                name = intent_def.get("name", "")
+                if name:
+                    intent_names.append(name)
+            description = capabilities.get("description", module)
+
+            async with sf() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(RegisteredModule).where(RegisteredModule.name == module)
+                    )
+                    existing = result.scalar_one_or_none()
+
+                    if existing:
+                        existing.connected = True
+                        existing.enabled = True
+                        if intent_names:
+                            existing.intents = json.dumps(intent_names)
+                        if description:
+                            existing.description_user = description
+                            existing.description_en = description
+                        from datetime import datetime, timezone
+                        existing.last_seen = datetime.now(timezone.utc)
+                    else:
+                        mod = RegisteredModule(
+                            name=module,
+                            name_user=module,
+                            name_en=module,
+                            description_user=description,
+                            description_en=description,
+                            intents=json.dumps(intent_names),
+                            connected=True,
+                            enabled=True,
+                        )
+                        from datetime import datetime, timezone
+                        mod.last_seen = datetime.now(timezone.utc)
+                        session.add(mod)
+
+            # Invalidate LLM prompt cache
+            try:
+                from system_modules.llm_engine.intent_router import get_intent_router
+                get_intent_router().refresh_system_prompt()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug("Failed to persist module connect for '%s': %s", module, exc)
+
+    async def _persist_module_disconnected(self, module: str) -> None:
+        """Mark module as disconnected in DB."""
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            from core.registry.models import RegisteredModule
+            from sqlalchemy import select
+
+            sf = get_sandbox()._session_factory
+            if sf is None:
+                return
+
+            async with sf() as session:
+                async with session.begin():
+                    result = await session.execute(
+                        select(RegisteredModule).where(RegisteredModule.name == module)
+                    )
+                    existing = result.scalar_one_or_none()
+                    if existing:
+                        existing.connected = False
+
+            # Invalidate LLM prompt cache
+            try:
+                from system_modules.llm_engine.intent_router import get_intent_router
+                get_intent_router().refresh_system_prompt()
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug("Failed to persist module disconnect for '%s': %s", module, exc)
 
     # ── Status ───────────────────────────────────────────────────────────
 

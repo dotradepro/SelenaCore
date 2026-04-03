@@ -2,7 +2,7 @@
 core/api/routes/voice_engines.py — Voice engine management API.
 
 Endpoints for:
-  - Vosk binary install/uninstall/status + dynamic model catalog
+  - Whisper STT model management
   - Piper binary install/uninstall/status + dynamic voice catalog
   - Ollama binary install/uninstall/start/stop/status
   - Cloud LLM provider management (key validation, model listing)
@@ -18,7 +18,6 @@ import logging
 import os
 import shutil
 import subprocess
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +32,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["voice-engines"])
 
 CACHE_DIR = Path(os.environ.get("SELENA_CACHE_DIR", "/var/lib/selena/cache"))
-VOSK_MODELS_DIR = Path(os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk"))
 PIPER_MODELS_DIR = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
 
 
@@ -110,7 +108,7 @@ class SttTtsTestRequest(BaseModel):
 
 @router.post("/stt/test")
 async def stt_test(req: SttTestRequest) -> dict[str, Any]:
-    """Record audio from mic, run Vosk STT, return recognized text + audio as base64."""
+    """Record audio from mic, run Whisper STT, return recognized text + audio as base64."""
     import base64
     import struct
     import wave
@@ -142,14 +140,13 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
         samples = struct.unpack(f"<{len(raw) // 2}h", raw)
         peak = max(abs(s) for s in samples) / 32768.0 if samples else 0
 
-        # STT
-        active_model = get_value("voice", "stt_model", os.environ.get("VOSK_MODEL", "vosk-model-small-uk-v3-small"))
+        # STT via provider abstraction (Whisper)
         try:
-            from system_modules.voice_core.stt import STTEngine
-            engine = STTEngine(model=active_model)
-            text = await engine.transcribe(raw, sample_rate=16000)
-        except ImportError:
-            return {"status": "error", "text": "", "error": t("api.vosk_not_installed")}
+            from core.stt import create_stt_provider
+            provider = create_stt_provider()
+            result = await provider.transcribe(raw, sample_rate=16000)
+            text = result.text
+            lang = result.lang
         except Exception as exc:
             return {"status": "error", "text": "", "error": t("api.stt_error", error=str(exc))}
 
@@ -168,6 +165,7 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
         return {
             "status": "ok",
             "text": text,
+            "lang": lang,
             "peak_level": round(peak, 4),
             "audio_b64": audio_b64,
             "duration": duration,
@@ -325,16 +323,10 @@ _STT_LANG_MAP: dict[str, str] = {
 
 
 def _detect_lang_from_stt(stt_model: str) -> str:
-    """Extract language from Vosk model name, e.g. 'vosk-model-small-uk-v3' → 'Ukrainian'."""
-    # Strip prefix: vosk-model-small-uk-0.15 → uk-0.15
-    name = stt_model.lower()
-    for prefix in ("vosk-model-small-", "vosk-model-big-", "vosk-model-"):
-        if name.startswith(prefix):
-            name = name[len(prefix):]
-            break
-    # Extract lang code: "uk-v3-small" → "uk", "en-us-0.15" → "en"
-    lang_code = name.split("-")[0]
-    return _STT_LANG_MAP.get(lang_code, "English")
+    """Detect language from STT config. Whisper auto-detects."""
+    if stt_model in ("tiny", "base", "small", "medium", "large"):
+        return "Auto-detect (Whisper)"
+    return "Auto-detect (Whisper)"
 
 
 def _extract_name_from_wake(wake_phrase: str) -> str:
@@ -730,6 +722,36 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
     }
 
 
+def _aplay_raw_pcm(pcm_data: bytes, device: str, sample_rate: int = 22050) -> None:
+    """Play raw PCM s16le mono via aplay (ALSA direct) with software volume."""
+    import struct
+
+    # Apply software volume from config
+    try:
+        vol_cfg = get_value("voice", "output_volume")
+        vol = max(0.0, min(1.5, int(vol_cfg) / 100.0)) if vol_cfg is not None else 1.0
+    except Exception:
+        vol = 1.0
+
+    if abs(vol - 1.0) > 0.01:
+        n = len(pcm_data) // 2
+        samples = struct.unpack(f"<{n}h", pcm_data)
+        pcm_data = struct.pack(f"<{n}h", *(
+            max(-32768, min(32767, int(s * vol))) for s in samples
+        ))
+
+    cmd = ["aplay", "-t", "raw", "-f", "S16_LE", "-r", str(sample_rate), "-c", "1"]
+    if device and device != "none" and device != "default":
+        cmd.extend(["-D", device])
+    try:
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc.stdin.write(pcm_data)
+        proc.stdin.close()
+        proc.wait(timeout=120)
+    except Exception as e:
+        logger.warning("aplay playback error: %s", e)
+
+
 def _play_raw_pcm(pcm_data: bytes, device: str) -> None:
     """Play raw PCM s16le 22050Hz mono via paplay."""
     cmd = ["paplay", "--raw", "--format=s16le", "--rate=22050", "--channels=1"]
@@ -827,6 +849,160 @@ TTS_DEFAULTS = {
     "volume": 1.0,
     "speaker": 0,
 }
+
+
+@router.get("/tts/dual-status")
+async def tts_dual_status() -> dict[str, Any]:
+    """Get dual-voice TTS status: primary + fallback voice info."""
+    config = read_config()
+
+    # New tts config format
+    tts_cfg = config.get("voice", {}).get("tts", {})
+
+    # Backward compat: old format → new
+    if not tts_cfg:
+        tts_cfg = {
+            "primary": {
+                "voice": config.get("voice", {}).get("tts_voice", "uk_UA-ukrainian_tts-medium"),
+                "lang": "uk",
+                "cuda": False,
+                "settings": config.get("voice", {}).get("tts_settings", TTS_DEFAULTS),
+            },
+            "fallback": {
+                "voice": config.get("voice", {}).get("tts_fallback_voice", "en_US-ryan-low"),
+                "lang": "en",
+                "cuda": False,
+                "settings": TTS_DEFAULTS.copy(),
+            },
+        }
+
+    result: dict[str, Any] = {"primary": {}, "fallback": {}}
+
+    for role in ("primary", "fallback"):
+        role_cfg = tts_cfg.get(role, {})
+        voice_id = role_cfg.get("voice", "")
+        lang = role_cfg.get("lang", "en" if role == "fallback" else "uk")
+        cuda = role_cfg.get("cuda", False)
+        settings = {**TTS_DEFAULTS, **role_cfg.get("settings", {})}
+
+        # Check if model file exists
+        model_exists = (PIPER_MODELS_DIR / f"{voice_id}.onnx").exists() if voice_id else False
+
+        # Read model info
+        num_speakers = 1
+        sample_rate = 22050
+        if voice_id:
+            json_file = PIPER_MODELS_DIR / f"{voice_id}.onnx.json"
+            if json_file.exists():
+                try:
+                    model_cfg = json.loads(json_file.read_text())
+                    num_speakers = model_cfg.get("num_speakers", 1)
+                    sample_rate = model_cfg.get("audio", {}).get("sample_rate", 22050)
+                except Exception:
+                    pass
+
+        result[role] = {
+            "voice": voice_id,
+            "lang": lang,
+            "cuda": cuda,
+            "installed": model_exists,
+            "num_speakers": num_speakers,
+            "sample_rate": sample_rate,
+            "settings": settings,
+        }
+
+    return result
+
+
+@router.post("/tts/dual-config")
+async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
+    """Save dual-voice TTS config (primary + fallback)."""
+    tts_cfg: dict[str, Any] = {}
+
+    for role in ("primary", "fallback"):
+        if role not in req:
+            continue
+        role_data = req[role]
+        role_cfg: dict[str, Any] = {}
+        if "voice" in role_data:
+            role_cfg["voice"] = str(role_data["voice"])
+        if "lang" in role_data:
+            role_cfg["lang"] = str(role_data["lang"])
+        if "cuda" in role_data:
+            role_cfg["cuda"] = bool(role_data["cuda"])
+        if "settings" in role_data:
+            s = role_data["settings"]
+            role_cfg["settings"] = {
+                "length_scale": round(max(0.1, min(3.0, float(s.get("length_scale", 1.0)))), 2),
+                "noise_scale": round(max(0.0, min(1.0, float(s.get("noise_scale", 0.667)))), 3),
+                "noise_w_scale": round(max(0.0, min(1.0, float(s.get("noise_w_scale", 0.8)))), 3),
+                "volume": round(max(0.1, min(3.0, float(s.get("volume", 1.0)))), 2),
+                "speaker": int(s.get("speaker", 0)),
+            }
+        tts_cfg[role] = role_cfg
+
+    update_config("voice", "tts", tts_cfg)
+    return {"status": "ok"}
+
+
+@router.post("/tts/test-mix")
+async def tts_test_mix() -> dict[str, Any]:
+    """Test dual-voice TTS with mixed language text — synthesize + play each segment."""
+    import time as _time
+
+    config = read_config()
+    tts_cfg = config.get("voice", {}).get("tts", {})
+    primary_lang = tts_cfg.get("primary", {}).get("lang", "uk")
+    primary_voice = tts_cfg.get("primary", {}).get("voice", get_value("voice", "tts_voice", "uk_UA-ukrainian_tts-medium"))
+    fallback_voice = tts_cfg.get("fallback", {}).get("voice", get_value("voice", "tts_fallback_voice", "en_US-amy-low"))
+
+    test_texts = {
+        "uk": "Привіт, я Селена. WiFi підключено. Status online.",
+        "en": "Hello, I am Selena. Testing voice switching.",
+    }
+    test_text = test_texts.get(primary_lang, test_texts["en"])
+
+    try:
+        from system_modules.voice_core.tts import sanitize_for_tts
+        from system_modules.voice_core.tts_preprocessor import split_by_language
+
+        clean = sanitize_for_tts(test_text)
+        segments = split_by_language(clean, primary_lang)
+        segment_info = [{"text": s.text, "lang": s.lang} for s in segments]
+
+        # Resolve output device
+        device = get_value("voice", "audio_force_output", "") or "default"
+        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+        loop = asyncio.get_event_loop()
+        t0 = _time.monotonic()
+
+        # Synthesize and play each segment with the correct voice
+        for seg in segments:
+            voice = fallback_voice if seg.lang == "en" else primary_voice
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.post(f"{gpu_url}/synthesize/raw", json={
+                        "text": seg.text, "voice": voice,
+                    })
+                    if resp.status_code == 200 and resp.content:
+                        sample_rate = int(resp.headers.get("X-Audio-Rate", "22050"))
+                        await loop.run_in_executor(
+                            None, _aplay_raw_pcm, resp.content, device, sample_rate,
+                        )
+            except Exception as exc:
+                logger.warning("Test-mix segment failed (%s): %s", seg.lang, exc)
+
+        total_ms = int((_time.monotonic() - t0) * 1000)
+
+        return {
+            "status": "ok",
+            "test_text": test_text,
+            "segments": segment_info,
+            "primary_lang": primary_lang,
+            "total_ms": total_ms,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 @router.get("/tts/settings")
@@ -941,65 +1117,30 @@ class _InstallState:
         }
 
 
-_vosk_install = _InstallState()
 _piper_install = _InstallState()
 _ollama_install = _InstallState()
 
 
 # ================================================================== #
-#  Vosk Binary Management                                              #
+#  Whisper STT Status                                                  #
 # ================================================================== #
 
-@router.get("/vosk/status")
-async def vosk_status() -> dict[str, Any]:
-    """Check if Vosk is installed."""
+@router.get("/whisper/status")
+async def whisper_status() -> dict[str, Any]:
+    """Check Whisper STT provider status."""
     try:
-        import vosk  # noqa: F401
-        version = getattr(vosk, "__version__", None)
-        if not version:
-            try:
-                result = subprocess.run(["pip", "show", "vosk"], capture_output=True, text=True, timeout=10)
-                for line in result.stdout.splitlines():
-                    if line.startswith("Version:"):
-                        version = line.split(":", 1)[1].strip()
-                        break
-            except Exception:
-                pass
-        return {"installed": True, "version": version or "installed"}
-    except ImportError:
-        return {"installed": False, "version": None}
-
-
-@router.post("/vosk/install")
-async def vosk_install() -> dict[str, Any]:
-    """Install Vosk via pip."""
-    if _vosk_install.running:
-        return {"status": "already_running", **_vosk_install.to_dict()}
-    _vosk_install.reset()
-    _vosk_install.running = True
-    _vosk_install.package = "vosk"
-    _vosk_install.action = "install"
-    asyncio.create_task(_pip_action(_vosk_install, "install", "vosk"))
-    return {"status": "started"}
-
-
-@router.post("/vosk/uninstall")
-async def vosk_uninstall() -> dict[str, Any]:
-    """Uninstall Vosk via pip."""
-    if _vosk_install.running:
-        return {"status": "already_running", **_vosk_install.to_dict()}
-    _vosk_install.reset()
-    _vosk_install.running = True
-    _vosk_install.package = "vosk"
-    _vosk_install.action = "uninstall"
-    asyncio.create_task(_pip_action(_vosk_install, "uninstall", "vosk"))
-    return {"status": "started"}
-
-
-@router.get("/vosk/install-progress")
-async def vosk_install_progress() -> dict[str, Any]:
-    """Poll Vosk install/uninstall progress."""
-    return _vosk_install.to_dict()
+        from core.stt import create_stt_provider
+        provider = create_stt_provider()
+        provider_name = type(provider).__name__
+        available = provider_name != "_DummyProvider"
+        return {
+            "available": available,
+            "provider": provider_name,
+            "auto_lang_detect": True,
+            "supported_languages": 99,
+        }
+    except Exception as exc:
+        return {"available": False, "provider": "none", "error": str(exc)}
 
 
 # ================================================================== #
@@ -1644,138 +1785,23 @@ async def ollama_delete_model(req: OllamaModelRequest) -> dict[str, Any]:
 
 
 # ================================================================== #
-#  Vosk Dynamic Model Catalog                                          #
+#  STT Model Catalog (Whisper)                                         #
 # ================================================================== #
-
-class _VoskHTMLParser(HTMLParser):
-    """Parse the Vosk models page HTML table."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.models: list[dict[str, Any]] = []
-        self._in_table = False
-        self._in_row = False
-        self._in_cell = False
-        self._cells: list[str] = []
-        self._current_link: str | None = None
-        self._current_text = ""
-
-    def handle_starttag(self, tag: str, attrs: list) -> None:
-        attrs_dict = dict(attrs)
-        if tag == "table":
-            self._in_table = True
-        elif tag == "tr" and self._in_table:
-            self._in_row = True
-            self._cells = []
-        elif tag in ("td", "th") and self._in_row:
-            self._in_cell = True
-            self._current_text = ""
-            self._current_link = None
-        elif tag == "a" and self._in_cell:
-            href = attrs_dict.get("href", "")
-            if href:
-                self._current_link = href
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "table":
-            self._in_table = False
-        elif tag == "tr" and self._in_row:
-            self._in_row = False
-            if len(self._cells) >= 2:
-                self._parse_row(self._cells)
-        elif tag in ("td", "th") and self._in_cell:
-            self._in_cell = False
-            self._cells.append(self._current_text.strip())
-
-    def handle_data(self, data: str) -> None:
-        if self._in_cell:
-            self._current_text += data
-
-    def _parse_row(self, cells: list[str]) -> None:
-        name = cells[0].strip()
-        if not name or name.lower() == "model" or not name.startswith("vosk-model"):
-            return
-
-        size_str = cells[1].strip() if len(cells) > 1 else ""
-        notes = cells[2].strip() if len(cells) > 2 else ""
-
-        # Parse size (e.g., "40M", "1.8G")
-        size_mb = 0
-        try:
-            if "G" in size_str.upper():
-                size_mb = int(float(size_str.upper().replace("G", "").strip()) * 1024)
-            elif "M" in size_str.upper():
-                size_mb = int(float(size_str.upper().replace("M", "").strip()))
-        except ValueError:
-            pass
-
-        # Extract language from model name
-        lang = "unknown"
-        parts = name.split("-")
-        for p in parts:
-            if len(p) == 2 and p.isalpha():
-                lang = p
-                break
-        # Handle country codes like "en-us", "en-in"
-        for i, p in enumerate(parts):
-            if p in ("en", "ru", "uk", "de", "fr", "es", "pt", "cn", "ja", "ko", "ar", "fa", "tr", "pl", "nl", "it", "ca", "hi", "vn", "kz"):
-                lang = p
-                break
-
-        url = f"https://alphacephei.com/vosk/models/{name}.zip"
-
-        self.models.append({
-            "id": name,
-            "name": name,
-            "lang": lang,
-            "size_mb": size_mb,
-            "notes": notes,
-            "url": url,
-        })
-
 
 @router.get("/stt/catalog")
 async def stt_catalog() -> dict[str, Any]:
-    """Fetch dynamic Vosk model catalog from alphacephei.com. Cached 24h."""
-    cache_file = CACHE_DIR / "vosk_catalog.json"
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    """Return available Whisper model sizes."""
+    return {
+        "models": [
+            {"id": "tiny",   "size_mb": 75,  "languages": 99, "description": "Fastest, lowest accuracy"},
+            {"id": "base",   "size_mb": 142, "languages": 99, "description": "Good balance for Raspberry Pi"},
+            {"id": "small",  "size_mb": 466, "languages": 99, "description": "Recommended for most hardware"},
+            {"id": "medium", "size_mb": 1530, "languages": 99, "description": "High accuracy, needs 4GB+ RAM"},
+        ],
+        "provider": "whisper",
+        "auto_lang_detect": True,
+    }
 
-    # Check cache
-    if cache_file.exists():
-        import time
-        age = time.time() - cache_file.stat().st_mtime
-        if age < 86400:  # 24h
-            try:
-                return json.loads(cache_file.read_text())
-            except Exception:
-                pass
-
-    # Fetch from remote
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get("https://alphacephei.com/vosk/models")
-            resp.raise_for_status()
-            html = resp.text
-
-        parser = _VoskHTMLParser()
-        parser.feed(html)
-        models = parser.models
-
-        result = {"models": models, "source": "remote"}
-        cache_file.write_text(json.dumps(result, ensure_ascii=False))
-        return result
-
-    except Exception as exc:
-        logger.warning("Vosk catalog fetch failed: %s", exc)
-        # Try cache even if expired
-        if cache_file.exists():
-            try:
-                data = json.loads(cache_file.read_text())
-                data["source"] = "cache"
-                return data
-            except Exception:
-                pass
-        return {"models": [], "source": "error", "error": str(exc)}
 
 
 # ================================================================== #
@@ -1844,92 +1870,6 @@ async def tts_catalog() -> dict[str, Any]:
 # ================================================================== #
 #  Model / Voice Download & Delete                                     #
 # ================================================================== #
-
-_download_state: dict[str, dict] = {}
-
-
-@router.post("/stt/download")
-async def stt_download(req: ModelIdRequest) -> dict[str, Any]:
-    """Download a Vosk STT model."""
-    model_id = req.model
-    if model_id in _download_state and _download_state[model_id].get("running"):
-        return {"status": "already_downloading"}
-
-    # Get URL from catalog cache or construct it
-    url = f"https://alphacephei.com/vosk/models/{model_id}.zip"
-    cache_file = CACHE_DIR / "vosk_catalog.json"
-    if cache_file.exists():
-        try:
-            catalog = json.loads(cache_file.read_text())
-            for m in catalog.get("models", []):
-                if m["id"] == model_id:
-                    url = m.get("url", url)
-                    break
-        except Exception:
-            pass
-
-    _download_state[model_id] = {"running": True, "progress": "starting"}
-    asyncio.create_task(_download_vosk_model(model_id, url))
-    return {"status": "started", "model": model_id}
-
-
-async def _download_vosk_model(model_id: str, url: str) -> None:
-    """Download and extract Vosk model zip."""
-    import zipfile
-    VOSK_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = VOSK_MODELS_DIR / f"{model_id}.zip"
-    try:
-        _download_state[model_id]["progress"] = "downloading"
-        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-            async with client.stream("GET", url, follow_redirects=True) as resp:
-                resp.raise_for_status()
-                with open(zip_path, "wb") as f:
-                    async for chunk in resp.aiter_bytes(chunk_size=65536):
-                        f.write(chunk)
-
-        _download_state[model_id]["progress"] = "extracting"
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _extract_vosk_zip, zip_path, VOSK_MODELS_DIR, model_id)
-
-        _download_state[model_id] = {"running": False, "progress": "done", "success": True}
-        logger.info("Vosk model %s downloaded successfully", model_id)
-    except Exception as exc:
-        logger.error("Vosk model download failed: %s", exc)
-        _download_state[model_id] = {"running": False, "progress": "error", "success": False, "error": str(exc)}
-    finally:
-        zip_path.unlink(missing_ok=True)
-
-
-def _extract_vosk_zip(zip_path: Path, dest_dir: Path, model_id: str) -> None:
-    """Extract Vosk model zip and rename to expected directory name."""
-    import zipfile
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(dest_dir)
-
-    target = dest_dir / model_id
-    if not target.exists():
-        extracted_dirs = [d for d in dest_dir.iterdir() if d.is_dir() and d.name != model_id]
-        for d in extracted_dirs:
-            if model_id.replace("-", "") in d.name.replace("-", "") or d.name.startswith("vosk-model"):
-                d.rename(target)
-                break
-
-
-@router.get("/stt/download-progress/{model_id}")
-async def stt_download_progress(model_id: str) -> dict[str, Any]:
-    """Check download progress for a Vosk model."""
-    return _download_state.get(model_id, {"running": False, "progress": "idle"})
-
-
-@router.post("/stt/delete")
-async def stt_delete(req: ModelIdRequest) -> dict[str, Any]:
-    """Delete an installed Vosk model."""
-    model_path = VOSK_MODELS_DIR / req.model
-    if model_path.is_dir():
-        shutil.rmtree(model_path)
-        return {"status": "ok"}
-    raise HTTPException(status_code=404, detail=t("api.model_not_found"))
-
 
 _tts_download_state: dict[str, dict] = {}
 

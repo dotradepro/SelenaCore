@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "presence",
+    "intents": ["presence.query"],
+    "entities": ["presence", "home", "person"],
     "permissions": [
         "device.read",
         "events.subscribe",

@@ -436,9 +436,23 @@ These routes are intended for the local web UI only. They are protected by iptab
 | Route | Description |
 |---|---|
 | `POST /api/ui/setup/*` | Onboarding wizard steps |
-| `GET /api/ui/setup/stt/catalog` | Vosk speech-to-text model catalog |
+| `GET /api/ui/setup/stt/catalog` | Whisper speech-to-text model catalog |
 | Voice engine endpoints | Manage STT/TTS engine configuration |
 | Module UI routing | Serve module widget files and icons |
+
+### Audio Setup Endpoints
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET | `/api/ui/setup/audio/devices` | List detected ALSA input/output devices |
+| POST | `/api/ui/setup/audio/select` | Save `{input, output}` device selection to core.yaml |
+| POST | `/api/ui/setup/audio/test/output` | Play speaker-test (L/R voice) at configured volume |
+| POST | `/api/ui/setup/audio/test/input` | Record 3s from mic `{device}`, measure peak, play back on `{output_device}` |
+| GET | `/api/ui/setup/audio/mic-level` | Quick 1s mic sample → `{level: 0.0-1.0}` |
+| GET | `/api/ui/setup/audio/levels` | Get `{output_volume, input_gain}` from config |
+| POST | `/api/ui/setup/audio/levels` | Set `{output_volume?, input_gain?}` — persists + applies via amixer |
+| GET | `/api/ui/setup/audio/sources` | List audio source modules → `{sources: [{module, name, volume}]}` |
+| POST | `/api/ui/setup/audio/sources/volume` | Set `{module, volume}` for a specific audio source |
 
 ---
 

@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "system",
+    "intents": ["update.check", "update.install"],
+    "entities": ["update", "firmware"],
     "permissions": [
         "events.publish"
     ],

@@ -33,12 +33,18 @@ class MediaPlayer:
         try:
             import vlc  # type: ignore[import-untyped]
             self._vlc = vlc
-            aout = os.getenv("MEDIA_AUDIO_OUTPUT", "pulse").strip()
+            aout = os.getenv("MEDIA_AUDIO_OUTPUT", "alsa").strip()
             vlc_args = ["--no-video", "--no-xlib", "--network-caching=3000",
                         "--http-reconnect", f"--aout={aout}",
                         "--no-spu", "--no-osd",
                         "--no-video-title-show", "--no-snapshot-preview"]
             alsa_dev = os.getenv("MEDIA_ALSA_DEVICE", "").strip()
+            if not alsa_dev and aout == "alsa":
+                try:
+                    from core.config_writer import get_value
+                    alsa_dev = get_value("voice", "audio_force_output") or ""
+                except Exception:
+                    pass
             if aout == "alsa" and alsa_dev:
                 vlc_args.append(f"--alsa-audio-device={alsa_dev}")
             self._instance = vlc.Instance(*vlc_args)

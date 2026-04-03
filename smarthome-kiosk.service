@@ -1,0 +1,25 @@
+[Unit]
+Description=SelenaCore Kiosk (autologin + cage + Chromium)
+After=network-online.target
+Wants=network-online.target
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+ExecStart=/sbin/agetty --autologin dotradepro --noclear tty1 $TERM
+Restart=on-failure
+RestartSec=5
+
+# TTY
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=selena-kiosk
+
+[Install]
+WantedBy=multi-user.target

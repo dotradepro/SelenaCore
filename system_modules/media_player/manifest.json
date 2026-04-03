@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "media",
+    "intents": ["media.play", "media.stop", "media.pause", "media.resume", "media.volume_set", "media.next", "media.prev"],
+    "entities": ["radio", "music", "audio", "track", "playlist"],
     "permissions": [
         "events.subscribe",
         "events.publish"

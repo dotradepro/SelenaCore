@@ -59,29 +59,12 @@ class WeatherServiceModule(SystemModule):
             self._on_event,
         )
 
-        # Register voice intent patterns with IntentRouter (Tier 1.5)
-        try:
-            from system_modules.llm_engine.intent_router import get_intent_router
-            from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            intent_router = get_intent_router()
-            entries = get_intent_compiler().get_intents_for_module("weather-service")
-            for entry in entries:
-                intent_router.register_system_intent(entry)
-            logger.info("WeatherService: registered %d voice intents", len(entries))
-        except Exception as exc:
-            logger.warning("WeatherService: failed to register intents: %s", exc)
-
         await self.publish("module.started", {"name": self.name})
 
     async def stop(self) -> None:
         if self._weather:
             await self._weather.stop()
         self._cleanup_subscriptions()
-        try:
-            from system_modules.llm_engine.intent_router import get_intent_router
-            get_intent_router().unregister_system_intents(self.name)
-        except Exception:
-            pass
         await self.publish("module.stopped", {"name": self.name})
 
     # ── EventBus handler ──────────────────────────────────────────────────────

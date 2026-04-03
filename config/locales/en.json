@@ -22,6 +22,7 @@
 
   "intent.fallback": "Sorry, I didn't understand. Please try again.",
   "intent.module_unavailable": "The module is temporarily unavailable. Please try again later.",
+  "intent.disambiguation": "Which one did you mean: {devices}?",
 
   "fast_matcher.light_on": "Turning on the light",
   "fast_matcher.light_off": "Turning off the light",
@@ -134,7 +135,7 @@
   "api.tts_failed": "TTS synthesis failed",
   "api.stt_error": "STT error: {error}",
   "api.piper_not_installed": "Piper TTS not installed",
-  "api.vosk_not_installed": "Vosk STT not installed",
+  "api.stt_not_available": "STT not available — install Whisper",
   "api.ollama_not_running": "Ollama server not running",
   "api.ollama_not_available": "Ollama server not available",
   "api.llamacpp_not_running": "llama.cpp server not running",

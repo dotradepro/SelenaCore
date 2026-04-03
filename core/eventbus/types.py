@@ -51,3 +51,8 @@ VOICE_SPEAK = "voice.speak"
 VOICE_SPEAK_DONE = "voice.speak_done"
 VOICE_TTS_START = "voice.tts_start"
 VOICE_TTS_DONE = "voice.tts_done"
+
+# Registry events
+REGISTRY_ENTITY_CHANGED = "registry.entity_changed"
+# payload: {"entity_type": "radio_station"|"device"|"scene"|"module",
+#           "entity_id": 42, "action": "created"|"updated"|"deleted"}

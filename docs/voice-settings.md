@@ -2,13 +2,13 @@
 
 ## Pipeline Overview
 
-Wake word → Audio recording → Vosk STT → Speaker ID (resemblyzer) → Intent Router (6-tier) → Cloud LLM Rephrase → Piper TTS
+Wake word → Audio recording → Whisper STT → Speaker ID (resemblyzer) → Intent Router (6-tier) → Cloud LLM Rephrase → Piper TTS
 
 ```
-Microphone (parecord)
+Microphone (arecord, ALSA)
      │
      ▼
-  Vosk STT ──► text
+  Whisper STT ──► text
      │
      ▼
   Intent Router
@@ -26,15 +26,15 @@ Microphone (parecord)
   Cloud LLM Rephrase (variative TTS)
      │
      ▼
-  Piper TTS (native host server, CPU/GPU) → Speaker
+  Piper TTS (native host server, CPU/GPU) → aplay (ALSA) → Speaker
 ```
 
-## STT - Vosk
+## STT - Whisper
 
-- Offline speech recognition (Kaldi engine)
-- ARM-optimized for Raspberry Pi
-- Models: tiny, base, small, medium (in `/var/lib/selena/models/vosk/`)
-- Configured in core.yaml: `voice.stt_model`
+- Speech recognition via whisper.cpp HTTP server running at `http://localhost:9000`
+- Models: ggml format (tiny, base, small, medium) in `whisper.cpp/models/`
+- Supports GPU acceleration on NVIDIA Jetson (CUDA)
+- Configured in core.yaml: `stt.whisper_cpp.host`
 
 ## TTS - Piper
 
@@ -61,7 +61,7 @@ sudo systemctl enable --now piper-tts
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/synthesize` | Text → WAV audio |
-| POST | `/synthesize/raw` | Text → raw PCM s16le (for streaming to paplay) |
+| POST | `/synthesize/raw` | Text → raw PCM s16le (for streaming to aplay) |
 | GET | `/health` | Status, device (cpu/gpu), loaded voices |
 | GET | `/voices` | List installed voice models |
 
@@ -92,7 +92,7 @@ sudo systemctl restart piper-tts
 
 ## Wake Word
 
-- openWakeWord / Vosk grammar-based
+- openWakeWord
 - Sensitivity: core.yaml `voice.wake_word_sensitivity` (0.0 to 1.0)
 
 ## Speaker ID
@@ -316,15 +316,172 @@ Features:
 | `voice.privacy_on` | Privacy mode enabled |
 | `voice.privacy_off` | Privacy mode disabled |
 
+## Audio Subsystem
+
+### Overview
+
+SelenaCore uses **ALSA direct** for all audio I/O. PulseAudio is not required.
+
+```
+                        ┌─────────────────────────┐
+  USB Mic (plughw:0,0)──►  arecord (voice loop)   │
+                        │  s16le, 16kHz, mono      │
+                        └───────────┬─────────────┘
+                                    ▼
+                           Whisper STT server
+                                    │
+                          ┌─────────▼──────────┐
+                          │   Intent Router    │
+                          └─────────┬──────────┘
+                                    ▼
+              ┌────────────────┬────┴────┬──────────────┐
+              ▼                ▼         ▼              ▼
+         Piper TTS        VLC (radio)  Module      voice.speak
+              │                │       action          event
+              ▼                ▼
+    ┌─────────────────┐  ┌──────────────────┐
+    │ Software volume │  │ VLC ALSA output  │
+    │ (PCM scaling)   │  │ (--aout=alsa)    │
+    └────────┬────────┘  └────────┬─────────┘
+             ▼                    ▼
+    ┌────────────────────────────────────────┐
+    │   HDMI output (plughw:1,3)             │
+    │   ALSA plughw auto-resampling          │
+    └────────────────────────────────────────┘
+```
+
+### Device Detection
+
+Audio devices are detected via `aplay -l` / `arecord -l` (ALSA fallback) or PulseAudio
+(`pactl list`) when available. Detection logic:
+
+1. Parse real device numbers from `aplay -l` (e.g., `hw:1,3` for HDMI 0)
+2. Filter out internal virtual buses (tegra APE/ADMAIF on Jetson)
+3. Classify devices: `usb`, `i2s_gpio`, `bluetooth`, `hdmi`, `jack`, `builtin`
+4. Use `plughw:X,Y` prefix for automatic format/rate/channel conversion
+
+**Priority order:**
+
+| Direction | Priority (highest first) |
+|-----------|--------------------------|
+| Input     | usb > i2s_gpio > bluetooth > hdmi > builtin |
+| Output    | usb > i2s_gpio > bluetooth > hdmi > jack > builtin |
+
+**Classification rules:**
+
+| Keyword in name | Type |
+|-----------------|------|
+| `usb`           | usb |
+| `i2s`, `rpi`, `simple` | i2s_gpio |
+| `hdmi`, `hda`   | hdmi |
+| `jack`, `headphone` | jack |
+| (other)         | builtin |
+
+### Audio Configuration (core.yaml)
+
+```yaml
+voice:
+  audio_force_input: "plughw:0,0"     # ALSA capture device (or null for auto)
+  audio_force_output: "plughw:1,3"    # ALSA playback device (or null for auto)
+  output_volume: 100                   # TTS output volume 0-150 (software PCM scaling)
+  input_gain: 100                      # Microphone gain 0-150 (applied via amixer)
+```
+
+### Volume Control
+
+**TTS (voice-core):** Software volume — PCM samples are scaled by `output_volume / 100`
+before being sent to `aplay`. Works with any ALSA device including HDMI (which has no
+hardware mixer).
+
+**Microphone gain:** Applied via `amixer -c N sset 'Control' X%` where `N` is the card
+number and `Control` is the first capture volume control found on that card.
+
+**Media Player (VLC):** VLC's internal `audio_set_volume()` (0-100). Controlled via
+the Audio Sources UI or voice commands (`media.volume_up`, `media.volume_down`,
+`media.volume_set`).
+
+### Audio Sources
+
+System modules that register audio intents (`media.*` in `manifest.json`) are
+automatically discovered as audio sources. Each source gets an independent volume slider
+in **Settings → Audio → Audio Sources**.
+
+**Auto-discovery:** On `GET /api/ui/setup/audio/sources`, the API iterates running
+modules and checks if their manifest `intents` list contains entries starting with
+`media.`. Matching modules appear as audio sources.
+
+**Built-in sources:**
+
+| Source | Volume storage | Control method |
+|--------|---------------|----------------|
+| Selena TTS | `voice.output_volume` in core.yaml | Software PCM scaling |
+| Media Player | VLC runtime (resets on restart) | `player.audio_set_volume()` |
+
+**Adding a new audio source:** Any system module with `media.*` intents in its
+`manifest.json` will automatically appear. The module must expose `_player._volume`
+attribute and `_player.set_volume(int)` async method.
+
+### Audio Test Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ui/setup/audio/devices` | List detected input/output devices |
+| POST | `/api/ui/setup/audio/select` | Save device selection to core.yaml |
+| POST | `/api/ui/setup/audio/test/output` | Play speaker-test (left/right voice) at configured volume |
+| POST | `/api/ui/setup/audio/test/input` | Record 3s from mic, measure peak, play back on speaker |
+| GET | `/api/ui/setup/audio/mic-level` | Quick 1s mic sample, return peak level (0.0-1.0) |
+| GET | `/api/ui/setup/audio/levels` | Get current output_volume and input_gain |
+| POST | `/api/ui/setup/audio/levels` | Set output_volume and/or input_gain |
+| GET | `/api/ui/setup/audio/sources` | List audio source modules with volumes |
+| POST | `/api/ui/setup/audio/sources/volume` | Set volume for a specific source |
+
+**Mic test concurrency:** The mic test automatically pauses the voice loop (kills the
+running `arecord` process), records the test, then resumes the voice loop.
+
+### NVIDIA Jetson Audio Notes
+
+On Jetson Orin Nano, the audio card layout is:
+
+| Card | Name | Devices | Type |
+|------|------|---------|------|
+| 0 | UACDemoV1.0 (USB) | `hw:0,0` capture | USB microphone |
+| 1 | NVIDIA Jetson Orin Nano HDA | `hw:1,3` `hw:1,7` `hw:1,8` `hw:1,9` | HDMI outputs |
+| 2 | NVIDIA Jetson Orin Nano APE | 20× tegra-dlink ADMAIF | Internal bus (filtered) |
+
+- HDMI audio requires stereo minimum and specific sample rates — use `plughw:` for
+  automatic format conversion
+- Card 2 (APE) is an internal NVIDIA audio bus with 20 virtual ADMAIF channels — these
+  are filtered from the device list as they are not real audio endpoints
+- The HDA card name does not contain "hdmi" but the classifier recognizes `hda` as HDMI type
+
+### Media Player Audio
+
+The media-player module uses python-vlc (libvlc) with ALSA output:
+
+```python
+# VLC flags (set automatically)
+--aout=alsa
+--alsa-audio-device=plughw:1,3    # from core.yaml audio_force_output
+```
+
+The output device is read from `voice.audio_force_output` in core.yaml at startup.
+To override, set `MEDIA_AUDIO_OUTPUT=alsa` and `MEDIA_ALSA_DEVICE=plughw:1,3` env vars.
+
+---
+
 ## Voice Config in core.yaml
 
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "vosk-model-small-uk-v3-nano"
+  stt_model: "ggml-small"
   stt_silence_timeout: 1.0            # seconds of silence before processing (0.5-5.0)
   tts_voice: "uk_UA-ukrainian_tts-medium"
   rephrase_enabled: false              # LLM rephrase for module responses (adds latency)
+  audio_force_input: "plughw:0,0"     # ALSA capture device
+  audio_force_output: "plughw:1,3"    # ALSA playback device
+  output_volume: 100                   # TTS software volume (0-150)
+  input_gain: 100                      # Mic gain via amixer (0-150)
   tts_settings:
     length_scale: 1.0                  # speech speed (0.5=fast, 2.0=slow)
     noise_scale: 0.667                 # intonation variability (0.0-1.0)

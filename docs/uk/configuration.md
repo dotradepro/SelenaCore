@@ -183,7 +183,7 @@ voice:
 | Ключ | Тип | За замовчуванням | Опис |
 |------|-----|-----------------|------|
 | `wake_word_sensitivity` | `float` | `0.5` | Поріг чутливості для слова активації (0.0-1.0). |
-| `stt_model` | `str` | `base` | Розмір моделі Vosk STT: `tiny`, `base`, `small`, `medium`. |
+| `stt_model` | `str` | `base` | Розмір моделі Whisper STT: `tiny`, `base`, `small`, `medium`. |
 | `stt_silence_timeout` | `float` | `1.0` | Секунди тиші перед обробкою команди (0.5-5.0). |
 | `tts_voice` | `str` | `uk_UA-lada-x_low` | Ідентифікатор голосу Piper TTS. |
 | `rephrase_enabled` | `bool` | `false` | LLM перефразування відповідей модулів. Додає 3-10 сек при локальному LLM. |
@@ -194,6 +194,10 @@ voice:
 | `tts_settings.volume` | `float` | `1.0` | Гучність (0.1-3.0). |
 | `tts_settings.speaker` | `int` | `0` | ID мовця для багатомовцевих моделей. |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO-пін для фізичного вимикача мікрофона. |
+| `audio_force_input` | `str\|null` | `null` | ALSA пристрій захоплення (напр., `plughw:0,0`). Авто якщо null. |
+| `audio_force_output` | `str\|null` | `null` | ALSA пристрій відтворення (напр., `plughw:1,3`). Авто якщо null. |
+| `output_volume` | `int` | `100` | Гучність TTS 0-150. Програмне масштабування PCM (працює з HDMI). |
+| `input_gain` | `int` | `100` | Підсилення мікрофона 0-150. Застосовується через `amixer`. |
 
 ### Змінні оточення (голос/TTS/LLM)
 

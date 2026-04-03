@@ -39,7 +39,7 @@ sudo bash scripts/setup.sh
 
 The setup script performs the following steps in order:
 
-1. Install system packages (FFmpeg, PortAudio, VLC, ALSA, PulseAudio)
+1. Install system packages (FFmpeg, PortAudio, VLC, ALSA utils)
 2. Install Docker and Docker Compose
 3. Install Python 3.11 and pip
 4. Create data directories (`/var/lib/selena`, `/secure`)
@@ -84,10 +84,10 @@ The primary container running the SelenaCore application.
   - `/var/run/docker.sock` — Docker socket for managing module containers
   - `selena_data:/var/lib/selena` — Database, voice models, backups
   - `selena_secure:/secure` — Encrypted tokens and keys
-  - PulseAudio socket — Audio input/output
+  - `/dev/snd` — ALSA sound devices for audio input/output
   - Ollama models directory (if configured)
 - **Health check:** `GET /api/v1/health` every 30 seconds
-- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA, PulseAudio, Vosk
+- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
 - **External services (native on host):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
 
 ### selena-agent (integrity agent)
@@ -219,7 +219,21 @@ sudo systemctl start smarthome-core.service
 |---------|---------|
 | `smarthome-agent.service` | Integrity monitoring agent |
 | `smarthome-modules.service` | Module bus gateway |
-| `selena-display.service` | UI kiosk mode (see [Kiosk Setup](kiosk-setup.md)) |
+| `getty@tty1` (with override) | Headless kiosk mode (see [Kiosk Setup](kiosk-setup.md)) |
+| `whisper-server.service` | Whisper.cpp STT server |
+| `piper-tts.service` | Piper TTS server (native, GPU) |
+
+### Headless Kiosk (Recommended for Production)
+
+For Jetson and Raspberry Pi deployments, disable the desktop environment and run Chromium via Xorg kiosk. This saves ~1 GB RAM.
+
+```bash
+# Disable desktop, enable kiosk
+sudo systemctl set-default multi-user.target
+sudo systemctl disable gdm3
+```
+
+See [Kiosk Setup](kiosk-setup.md) for full instructions including getty autologin, ALSA audio, and Xorg configuration.
 
 ---
 
@@ -281,7 +295,7 @@ ls /var/log/selena/
 | Path | Contents |
 |------|----------|
 | `/var/lib/selena/` | SQLite database, voice models, backups |
-| `/var/lib/selena/models/vosk/` | Vosk STT models |
+| `/var/lib/selena/models/whisper/` | Whisper STT models |
 | `/var/lib/selena/models/piper/` | Piper TTS models |
 | `/secure/` | Encrypted tokens, AES keys |
 | `/secure/module_tokens/` | Module authentication tokens |
@@ -324,7 +338,7 @@ sudo cp -r /secure/ /path/to/backup/selena_secure/
 | Problem | Solution |
 |---------|----------|
 | **Port 7070 in use** | Change `CORE_PORT` in `.env` and restart |
-| **No audio output or input** | Check the PulseAudio socket mount in `docker-compose.yml`; verify PulseAudio is running on the host |
+| **No audio output or input** | Check `/dev/snd` is mounted in `docker-compose.yml`; verify devices with `aplay -l` and `arecord -l` inside the container; use `plughw:X,Y` device IDs for ALSA |
 | **Module will not connect** | Verify `MODULE_TOKEN` and `SELENA_BUS_URL` are set correctly in the module environment |
 | **System entered Safe Mode** | Check integrity agent logs (`docker compose logs selena-agent`); verify core file hashes match expected values |
 | **Docker permission denied** | Ensure the current user is in the `docker` group, or run with `sudo` |

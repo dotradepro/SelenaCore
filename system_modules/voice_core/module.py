@@ -3,11 +3,11 @@ system_modules/voice_core/module.py — Voice Core SystemModule.
 
 Single audio loop architecture:
   - One parecord process (PulseAudio) captures mic continuously
-  - One Vosk KaldiRecognizer processes all audio in real-time
+  - STT provider processes audio (Whisper/OpenAI — auto-detected)
   - State machine: IDLE → LISTENING → PROCESSING
-    IDLE:       Vosk recognizes speech, checks for activation phrase
+    IDLE:       STT recognizes speech, checks for activation phrase
     LISTENING:  Collects user command after activation, stops on silence
-    PROCESSING: Sends to LLM, synthesizes TTS, plays response
+    PROCESSING: Sends to IntentRouter, synthesizes TTS, plays response
 """
 from __future__ import annotations
 
@@ -54,9 +54,64 @@ class SynthesizeRequest(BaseModel):
     voice: str | None = None
 
 
+def _detect_text_lang(text: str, primary_lang: str = "uk") -> str:
+    """Detect language from text using Unicode script + word heuristics.
+
+    Used by test-command when Whisper STT is not available.
+    """
+    import re as _re
+    import unicodedata
+
+    # Count characters by script
+    cyrillic = len(_re.findall(r'[А-Яа-яІіЇїЄєҐґЁёЎўЪъЫы]', text))
+    latin = len(_re.findall(r'[A-Za-zÀ-ÿ]', text))
+    arabic = len(_re.findall(r'[\u0600-\u06FF]', text))
+    cjk = len(_re.findall(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]', text))
+
+    if cyrillic > latin:
+        # Distinguish Cyrillic languages by specific letters/words
+        if _re.search(r'[ІіЇїЄєҐґ]', text):
+            return "uk"
+        if _re.search(r'[ЁёЫыЭэ]', text):
+            return "ru"
+        # Bulgarian: ъ or article suffixes (-та, -то, -те, какво, времето)
+        lower = text.lower()
+        if _re.search(r'[Ъъ]', text) or _re.search(r'\b\w+(?:та|то|те)\b', lower) or _re.search(r'\b(?:какво|колко|къде)\b', lower):
+            return "bg"
+        # Serbian Latin markers would be caught above; Cyrillic Serbian
+        if _re.search(r'[ЉљЊњЋћЏџЂђ]', text):
+            return "sr"
+        return primary_lang  # default Cyrillic → primary
+
+    if arabic > 0:
+        return "ar"
+    if cjk > 0:
+        return "zh"
+
+    if latin > 0:
+        lower = text.lower()
+        # German markers
+        if _re.search(r'\b(das|der|die|ist|ein|und|nicht|ich|mach|bitte)\b', lower):
+            return "de"
+        # French markers
+        if _re.search(r'\b(le|la|les|est|une|des|pas|que|sur|dans|fait)\b', lower):
+            return "fr"
+        # Spanish markers
+        if _re.search(r'\b(el|los|las|una|que|por|para|como|está)\b', lower):
+            return "es"
+        # Polish markers
+        if _re.search(r'[ąćęłńóśźż]', lower):
+            return "pl"
+        # Default Latin → English
+        return "en"
+
+    return "en"
+
+
 class TestCommandRequest(BaseModel):
     text: str
     speak: bool = True
+    lang: str | None = None  # auto-detect if not provided
 
 
 class EnrollSpeakerRequest(BaseModel):
@@ -102,6 +157,17 @@ STATE_LISTENING = "listening"  # recording user command
 STATE_PROCESSING = "processing"  # LLM + TTS
 
 
+def _rms_energy(pcm_data: bytes) -> float:
+    """Compute RMS energy of 16-bit signed PCM audio chunk."""
+    import struct as _struct
+    if len(pcm_data) < 2:
+        return 0.0
+    n_samples = len(pcm_data) // 2
+    samples = _struct.unpack(f"<{n_samples}h", pcm_data[:n_samples * 2])
+    sum_sq = sum(s * s for s in samples)
+    return (sum_sq / n_samples) ** 0.5
+
+
 class VoiceCoreModule(SystemModule):
     name = "voice-core"
 
@@ -122,15 +188,25 @@ class VoiceCoreModule(SystemModule):
         self._last_query: str = ""                 # last user query text
         self._last_spoken: str = ""                # last TTS text (after rephrase, for debug)
 
-        # Speech queue: serializes all TTS playback (priority, timestamp, text, done_event)
-        self._speech_queue: asyncio.PriorityQueue[tuple[int, float, str, asyncio.Event | None]] = (
+        # Speech queue: serializes all TTS playback (priority, timestamp, text, done_event, voice_override)
+        self._speech_queue: asyncio.PriorityQueue[tuple[int, float, str, asyncio.Event | None, str | None]] = (
             asyncio.PriorityQueue(maxsize=200)
         )
         self._speech_worker_task: asyncio.Task | None = None
 
+        # Mic test lock: when set, voice loop pauses to release the device
+        self._mic_test_active = False
+        # Current arecord process (for killing when mic test starts)
+        self._arecord_proc: subprocess.Popen | None = None
+
+        # Detected language from last STT result (auto-updated by Whisper)
+        self._lang: str = "en"
+        # STT provider (created in start())
+        self._stt_provider = None
+
         # Defaults from env, overridden by core.yaml
         defaults = {
-            "stt_model": os.getenv("VOSK_MODEL", "vosk-model-small-uk"),
+            "stt_model": os.getenv("STT_MODEL", "small"),
             "tts_voice": os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"),
             "wake_word_model": os.getenv("WAKE_WORD_MODEL", "привіт селена"),
             "privacy_mode": False,
@@ -208,112 +284,159 @@ class VoiceCoreModule(SystemModule):
     # ── Main audio loop ──────────────────────────────────────────────────
 
     async def _audio_loop(self) -> None:
-        """Single continuous loop: parecord → Vosk → state machine."""
-        loop = asyncio.get_running_loop()
+        """Single continuous loop: parecord → buffer → STT provider → state machine.
 
-        # Load Vosk
-        self._stt._load()
-        if self._stt._model is None:
-            logger.error("Voice loop: Vosk model not available, exiting")
+        Audio buffering strategy:
+        - IDLE: accumulate 2-3 sec segments, transcribe to detect wake phrase
+        - LISTENING: accumulate audio, on silence timeout send full buffer to STT
+        - PROCESSING: skip audio (TTS is playing)
+
+        Energy-based VAD: chunks with RMS below threshold are "silent".
+        """
+        loop = asyncio.get_running_loop()
+        provider = self._stt_provider
+        if provider is None:
+            logger.error("Voice loop: no STT provider available, exiting")
             return
 
-        from vosk import KaldiRecognizer
+        # Wait if mic test is running
+        while self._mic_test_active:
+            await asyncio.sleep(0.5)
 
         input_device = self._get_input_device()
-        cmd = ["parecord", "--raw", "--format=s16le", "--rate=16000", "--channels=1"]
+        cmd = ["arecord", "-t", "raw", "-f", "S16_LE", "-r", "16000", "-c", "1"]
         if input_device:
-            cmd.append("--device=" + input_device)
+            cmd.extend(["-D", input_device])
 
-        logger.info("Voice loop: starting parecord (input=%s)", input_device or "default")
+        logger.info("Voice loop: starting arecord (input=%s)", input_device or "default")
 
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self._arecord_proc = proc
         except Exception as e:
-            logger.error("Voice loop: cannot start parecord: %s", e)
+            logger.error("Voice loop: cannot start arecord: %s", e)
             return
 
-        rec = KaldiRecognizer(self._stt._model, SAMPLE_RATE)
-        rec.SetWords(False)
         wake_phrase = self._get_wake_phrase()
         self._state = STATE_IDLE
 
-        # Listening state vars
-        command_phrases: list[str] = []
+        # Audio buffer for STT
+        audio_buffer = bytearray()
         last_speech_time = 0.0
+        # IDLE: transcribe every N seconds to check wake phrase
+        idle_interval_sec = 2.5
+        idle_buffer_start = time.monotonic()
+        # Energy threshold for speech detection (RMS of 16-bit samples)
+        energy_threshold = 300
+
+        async def _safe_transcribe(buf: bytes) -> tuple[str, str]:
+            """Transcribe with error handling. Returns (text, lang)."""
+            try:
+                r = await provider.transcribe(buf, SAMPLE_RATE)
+                return r.text.strip(), r.lang or self._lang
+            except Exception as exc:
+                logger.warning("STT transcription error: %s", exc)
+                return "", self._lang
 
         logger.info("Voice loop: ready, wake phrase='%s'", wake_phrase)
 
         try:
             while True:
-                # Privacy mode — pause
-                if self._privacy_mode:
+                if self._privacy_mode or self._mic_test_active:
+                    if self._mic_test_active:
+                        logger.info("Voice loop: pausing for mic test")
+                        break
                     await asyncio.sleep(0.5)
                     continue
 
-                # Read audio chunk
                 data = await loop.run_in_executor(
                     None, proc.stdout.read, BYTES_PER_CHUNK
                 )
                 if not data or len(data) < BYTES_PER_CHUNK:
-                    logger.warning("Voice loop: parecord stream ended, restarting...")
+                    logger.warning("Voice loop: arecord stream ended, restarting...")
                     break
 
-                # ── STATE: PROCESSING — skip audio while TTS is playing ──
                 if self._state == STATE_PROCESSING:
                     continue
 
-                # ── Feed Vosk ──
-                is_final = rec.AcceptWaveform(data)
+                # Simple energy-based VAD
+                has_speech = _rms_energy(data) > energy_threshold
 
-                if is_final:
-                    result = json.loads(rec.Result())
-                    text = result.get("text", "").strip()
-                else:
-                    partial = json.loads(rec.PartialResult())
-                    text = partial.get("partial", "").strip()
-
-                if not text:
-                    # Check silence timeout in LISTENING state
-                    if self._state == STATE_LISTENING and command_phrases:
-                        if (time.monotonic() - last_speech_time) >= self._get_silence_timeout():
-                            # Silence detected — process command
-                            full_text = " ".join(command_phrases)
-                            command_phrases.clear()
-                            self._state = STATE_PROCESSING
-                            rec = KaldiRecognizer(self._stt._model, SAMPLE_RATE)
-                            rec.SetWords(False)
-                            asyncio.create_task(self._process_command(full_text))
-                    continue
-
-                # ── STATE: IDLE — looking for wake phrase ──
+                # ── STATE: IDLE — buffer and periodically check for wake phrase ──
                 if self._state == STATE_IDLE:
-                    wake_phrase = self._get_wake_phrase()
-                    if self._matches_phrase(text, wake_phrase):
-                        logger.info("Voice: wake phrase detected in '%s'", text)
-                        await self.publish("voice.wake_word", {"wake_word": wake_phrase})
-                        self._state = STATE_LISTENING
-                        command_phrases.clear()
-                        last_speech_time = time.monotonic()
-                        # Reset recognizer for clean command capture
-                        rec = KaldiRecognizer(self._stt._model, SAMPLE_RATE)
-                        rec.SetWords(False)
-                        # Play chime
-                        asyncio.create_task(self._play_chime())
-                    elif is_final:
-                        logger.debug("Voice idle heard: '%s'", text)
+                    audio_buffer.extend(data)
+                    elapsed = time.monotonic() - idle_buffer_start
 
-                # ── STATE: LISTENING — collecting command ──
+                    # Transcribe when we have enough audio or speech detected
+                    if elapsed >= idle_interval_sec or (has_speech and elapsed >= 1.0):
+                        if len(audio_buffer) > BYTES_PER_CHUNK * 2:
+                            text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
+                            self._lang = detected_lang
+
+                            if text:
+                                wake_phrase = self._get_wake_phrase()
+                                if self._matches_phrase(text, wake_phrase):
+                                    logger.info("Voice: wake phrase detected in '%s'", text)
+                                    await self.publish("voice.wake_word", {"wake_word": wake_phrase})
+                                    self._state = STATE_LISTENING
+                                    audio_buffer.clear()
+                                    last_speech_time = time.monotonic()
+                                    asyncio.create_task(self._play_chime())
+                                else:
+                                    logger.debug("Voice idle heard: '%s'", text)
+
+                        audio_buffer.clear()
+                        idle_buffer_start = time.monotonic()
+
+                # ── STATE: LISTENING — accumulate command audio ──
                 elif self._state == STATE_LISTENING:
-                    last_speech_time = time.monotonic()
-                    if is_final and text:
-                        command_phrases.append(text)
-                        logger.info("Voice: command phrase: '%s'", text)
+                    audio_buffer.extend(data)
+
+                    if has_speech:
+                        last_speech_time = time.monotonic()
+
+                    # Check silence timeout
+                    silence_dur = time.monotonic() - last_speech_time if last_speech_time else 0
+                    if last_speech_time and silence_dur >= self._get_silence_timeout():
+                        if len(audio_buffer) > BYTES_PER_CHUNK:
+                            # Transcribe the full command buffer
+                            text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
+                            self._lang = detected_lang
+
+                            if text:
+                                logger.info("Voice: command recognized: '%s' (lang=%s)", text, self._lang)
+                                self._state = STATE_PROCESSING
+                                audio_buffer.clear()
+                                asyncio.create_task(self._process_command(text))
+                            else:
+                                logger.debug("Voice: empty transcription, back to idle")
+                                self._state = STATE_IDLE
+                                audio_buffer.clear()
+                                idle_buffer_start = time.monotonic()
+                        else:
+                            self._state = STATE_IDLE
+                            audio_buffer.clear()
+                            idle_buffer_start = time.monotonic()
+
+                    # Safety: max 15 sec of listening
+                    elif len(audio_buffer) > SAMPLE_RATE * 2 * 15:
+                        text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
+                        self._lang = detected_lang
+                        if text:
+                            self._state = STATE_PROCESSING
+                            audio_buffer.clear()
+                            asyncio.create_task(self._process_command(text))
+                        else:
+                            self._state = STATE_IDLE
+                            audio_buffer.clear()
+                            idle_buffer_start = time.monotonic()
 
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error("Voice loop error: %s", e)
         finally:
+            self._arecord_proc = None
             try:
                 proc.kill()
                 proc.wait()
@@ -329,25 +452,41 @@ class VoiceCoreModule(SystemModule):
     # ── Language detection ──────────────────────────────────────────────
 
     def _detect_lang(self) -> str:
-        """Derive language code from STT model name."""
-        stt = self._config.get("stt_model", "")
-        code = (
-            stt.lower()
-            .replace("vosk-model-small-", "")
-            .replace("vosk-model-big-", "")
-            .replace("vosk-model-", "")
-            .split("-")[0]
-        )
-        return code if code in ("uk", "en") else "en"
+        """Return current language detected by STT provider.
+
+        For Whisper-based providers, this is auto-detected from speech.
+        For non-Whisper providers, this defaults to 'en'.
+        Updated automatically in _audio_loop() after each transcription.
+        """
+        return self._lang
+
+    def _get_tts_for_lang(self, stt_lang: str) -> tuple:
+        """Select TTS engine and response language based on STT-detected language.
+
+        Returns (tts_engine, tts_lang):
+          - If stt_lang matches primary Piper voice → primary engine + primary lang
+          - Otherwise → fallback engine + fallback lang (EN)
+        """
+        if stt_lang == self._tts_primary_lang:
+            return self._tts, self._tts_primary_lang
+        return self._tts_fallback, self._tts_fallback_lang
 
     @staticmethod
     def _is_system_module_intent(intent: str) -> bool:
-        """Check if intent belongs to a registered system module."""
+        """Check if intent belongs to a registered system module (DB-driven)."""
         try:
-            from system_modules.llm_engine.intent_router import get_intent_router
-            for entry in get_intent_router()._system_intents:
-                if entry.intent == intent:
-                    return True
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
+            defn = get_intent_compiler().get_definition(intent)
+            if defn and defn.module:
+                return True
+        except Exception:
+            pass
+        # Also check ModuleRegistry
+        try:
+            from core.module_registry import get_module_registry
+            module = get_module_registry().get_module_for_intent(intent)
+            if module:
+                return True
         except Exception:
             pass
         return False
@@ -369,9 +508,12 @@ class VoiceCoreModule(SystemModule):
             await self.publish("voice.recognized", {"text": text})
 
             # Route through IntentRouter (includes LLM as Tier 3 fallback)
-            lang = self._detect_lang()
+            stt_lang = self._detect_lang()
+            tts_engine, tts_lang = self._get_tts_for_lang(stt_lang)
             from system_modules.llm_engine.intent_router import get_intent_router
-            result = await get_intent_router().route(text, user_id=None, lang=lang)
+            result = await get_intent_router().route(
+                text, user_id=None, lang=stt_lang, tts_lang=tts_lang,
+            )
 
             logger.info(
                 "Voice pipeline: intent='%s' source='%s' latency=%dms",
@@ -402,11 +544,14 @@ class VoiceCoreModule(SystemModule):
                 except asyncio.TimeoutError:
                     logger.warning("Voice pipeline: system module TTS timeout (15s)")
             elif result.response:
-                tts_text = _numbers_to_words(result.response, self._detect_lang())
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+                tts_text = preprocess_for_tts(result.response, tts_lang)
+                # Use fallback voice if STT language != primary TTS language
+                use_voice = tts_engine.voice if tts_engine != self._tts else None
                 await self.publish("voice.response", {"text": tts_text, "query": text})
-                logger.info("Voice pipeline: speaking...")
+                logger.info("Voice pipeline: speaking (tts_lang=%s)...", tts_lang)
                 done = asyncio.Event()
-                await self._enqueue_speech(tts_text, priority=0, done_event=done)
+                await self._enqueue_speech(tts_text, priority=0, done_event=done, voice=use_voice)
                 await done.wait()
                 await self.publish("voice.speak_done", {"text": result.response})
 
@@ -449,7 +594,7 @@ class VoiceCoreModule(SystemModule):
         await done.wait()
 
     async def _play_chime_internal(self) -> None:
-        """Actually play the chime WAV via paplay (called from speech worker)."""
+        """Actually play the chime WAV via aplay (called from speech worker)."""
         chime_path = "/var/lib/selena/sounds/listen.wav"
         if not Path(chime_path).exists():
             return
@@ -457,9 +602,9 @@ class VoiceCoreModule(SystemModule):
         loop = asyncio.get_running_loop()
 
         def _play() -> None:
-            cmd = ["paplay"]
+            cmd = ["aplay"]
             if output_device:
-                cmd.append("--device=" + output_device)
+                cmd.extend(["-D", output_device])
             cmd.append(chime_path)
             subprocess.run(cmd, timeout=3, capture_output=True)
 
@@ -492,10 +637,13 @@ class VoiceCoreModule(SystemModule):
     # ── Speech Queue ────────────────────────────────────────────────────
 
     async def _enqueue_speech(self, text: str, priority: int = 1,
-                              done_event: asyncio.Event | None = None) -> None:
-        """Add text to the speech queue. priority=0 high, 1 normal."""
+                              done_event: asyncio.Event | None = None,
+                              voice: str | None = None) -> None:
+        """Add text to the speech queue. priority=0 high, 1 normal.
+        voice: override TTS voice (e.g. fallback EN voice for non-primary language).
+        """
         try:
-            self._speech_queue.put_nowait((priority, time.monotonic(), text, done_event))
+            self._speech_queue.put_nowait((priority, time.monotonic(), text, done_event, voice))
         except asyncio.QueueFull:
             logger.warning("Speech queue full, dropping: %s", text[:60])
             if done_event:
@@ -505,7 +653,7 @@ class VoiceCoreModule(SystemModule):
         """Long-running worker: pulls items from speech queue one at a time."""
         while True:
             try:
-                priority, _ts, text, done_event = await self._speech_queue.get()
+                priority, _ts, text, done_event, voice_override = await self._speech_queue.get()
 
                 await self.publish("voice.tts_start", {"text": text})
                 await asyncio.sleep(0.15)  # let ducking take effect
@@ -514,7 +662,7 @@ class VoiceCoreModule(SystemModule):
                     if text == "__CHIME__":
                         await self._play_chime_internal()
                     else:
-                        await self._stream_speak(text)
+                        await self._stream_speak(text, voice_override=voice_override)
                 except Exception as exc:
                     logger.error("Speech worker playback error: %s", exc)
                 finally:
@@ -530,11 +678,12 @@ class VoiceCoreModule(SystemModule):
 
     # ── TTS + Playback ───────────────────────────────────────────────────
 
-    async def _stream_speak(self, text: str) -> None:
+    async def _stream_speak(self, text: str, voice_override: str | None = None) -> None:
         """TTS playback: fetch raw PCM from Piper server → paplay.
 
         Primary: HTTP request to native Piper server (GPU-accelerated on host).
         Fallback: local piper binary pipe (if server unavailable).
+        voice_override: use specific voice (e.g. EN fallback) instead of config default.
         """
         from system_modules.voice_core.tts import sanitize_for_tts, PIPER_BIN, MODELS_DIR, _load_tts_settings
 
@@ -542,11 +691,34 @@ class VoiceCoreModule(SystemModule):
         if not clean:
             return
 
-        # Always read current voice from config (may change via UI without restart)
-        from core.config_writer import get_value
-        voice = get_value("voice", "tts_voice", None) or (
-            self._tts.voice if self._tts else os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
-        )
+        # Force lowercase — Piper VITS models garble uppercase letters
+        clean = clean.lower()
+
+        # Select voice: override > auto-detect from text language
+        if voice_override:
+            voice = voice_override
+        else:
+            # Auto-detect: if text is Latin → fallback EN voice, else → primary
+            import re as _re
+            has_cyrillic = bool(_re.search(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
+            if has_cyrillic:
+                from core.config_writer import get_value
+                voice = get_value("voice", "tts_voice", None) or (
+                    self._tts.voice if self._tts else os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
+                )
+            else:
+                # Latin text → use fallback EN voice
+                voice = self._tts_fallback_voice_name if hasattr(self, '_tts_fallback_voice_name') else "en_US-amy-low"
+                try:
+                    from core.config_writer import read_config
+                    cfg = read_config()
+                    tts_cfg = cfg.get("voice", {}).get("tts", {})
+                    if tts_cfg.get("fallback", {}).get("voice"):
+                        voice = tts_cfg["fallback"]["voice"]
+                    elif cfg.get("voice", {}).get("tts_fallback_voice"):
+                        voice = cfg["voice"]["tts_fallback_voice"]
+                except Exception:
+                    pass
         settings = _load_tts_settings()
         output_device = self._get_output_device()
         loop = asyncio.get_running_loop()
@@ -590,14 +762,41 @@ class VoiceCoreModule(SystemModule):
         return None
 
     @staticmethod
+    def _get_output_volume() -> float:
+        """Read output_volume from config (0-150) and return as a 0.0-1.5 multiplier."""
+        try:
+            from core.config_writer import get_value
+            vol = get_value("voice", "output_volume")
+            if vol is not None:
+                return max(0.0, min(1.5, int(vol) / 100.0))
+        except Exception:
+            pass
+        return 1.0
+
+    @staticmethod
+    def _scale_pcm(pcm_data: bytes, volume: float) -> bytes:
+        """Scale s16le PCM samples by a volume multiplier (software volume)."""
+        if abs(volume - 1.0) < 0.01:
+            return pcm_data
+        import struct
+        n = len(pcm_data) // 2
+        samples = struct.unpack(f"<{n}h", pcm_data)
+        scaled = struct.pack(f"<{n}h", *(
+            max(-32768, min(32767, int(s * volume))) for s in samples
+        ))
+        return scaled
+
+    @staticmethod
     def _play_raw_pcm(pcm_data: bytes, output_device: str | None, sample_rate: int = 22050) -> None:
-        """Play raw PCM s16le mono via paplay."""
+        """Play raw PCM s16le mono via aplay (ALSA direct) with software volume."""
+        volume = VoiceCoreModule._get_output_volume()
+        pcm_data = VoiceCoreModule._scale_pcm(pcm_data, volume)
         play_cmd = [
-            "paplay", "--raw",
-            "--format=s16le", f"--rate={sample_rate}", "--channels=1",
+            "aplay", "-t", "raw",
+            "-f", "S16_LE", "-r", str(sample_rate), "-c", "1",
         ]
         if output_device:
-            play_cmd.append("--device=" + output_device)
+            play_cmd.extend(["-D", output_device])
         try:
             proc = subprocess.Popen(
                 play_cmd,
@@ -620,7 +819,7 @@ class VoiceCoreModule(SystemModule):
 
     @staticmethod
     def _pipe_piper_local(text: str, model_path: str, settings, output_device: str | None) -> None:
-        """Fallback: local piper binary → paplay pipe."""
+        """Fallback: local piper binary → aplay with software volume."""
         from system_modules.voice_core.tts import PIPER_BIN
         piper_cmd = [
             PIPER_BIN, "--model", model_path, "--output-raw",
@@ -638,11 +837,11 @@ class VoiceCoreModule(SystemModule):
             pass
 
         play_cmd = [
-            "paplay", "--raw",
-            "--format=s16le", "--rate=22050", "--channels=1",
+            "aplay", "-t", "raw",
+            "-f", "S16_LE", "-r", "22050", "-c", "1",
         ]
         if output_device:
-            play_cmd.append("--device=" + output_device)
+            play_cmd.extend(["-D", output_device])
 
         piper_proc = None
         play_proc = None
@@ -653,20 +852,26 @@ class VoiceCoreModule(SystemModule):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
+            piper_proc.stdin.write(text.encode("utf-8"))
+            piper_proc.stdin.close()
+            pcm_data = piper_proc.stdout.read()
+            piper_proc.wait(timeout=30)
+
+            volume = VoiceCoreModule._get_output_volume()
+            pcm_data = VoiceCoreModule._scale_pcm(pcm_data, volume)
+
             play_proc = subprocess.Popen(
                 play_cmd,
-                stdin=piper_proc.stdout,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            piper_proc.stdout.close()
-            piper_proc.stdin.write(text.encode("utf-8"))
-            piper_proc.stdin.close()
+            play_proc.stdin.write(pcm_data)
+            play_proc.stdin.close()
             play_proc.wait(timeout=120)
-            piper_proc.wait(timeout=5)
             logger.info("Voice pipeline: playback complete")
         except FileNotFoundError as e:
-            logger.warning("piper or paplay not found: %s", e)
+            logger.warning("piper or aplay not found: %s", e)
         except subprocess.TimeoutExpired:
             logger.warning("TTS stream timed out")
         except Exception as e:
@@ -780,11 +985,13 @@ class VoiceCoreModule(SystemModule):
 
             rephrased = rephrased.strip().strip('"').strip("'")
             if rephrased and len(rephrased) < 300:
-                return _numbers_to_words(rephrased, lang)
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+                return preprocess_for_tts(rephrased, lang)
         except Exception as exc:
             logger.warning("Rephrase via LLM failed (provider=%s): %s", provider, exc)
 
-        return _numbers_to_words(default_text, self._detect_lang())
+        from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+        return preprocess_for_tts(default_text, self._detect_lang())
 
     def _is_rephrase_enabled(self) -> bool:
         """Check if LLM rephrase is enabled in config (default: off)."""
@@ -797,8 +1004,9 @@ class VoiceCoreModule(SystemModule):
                 # Rephrase module response via LLM (if enabled)
                 if self._is_rephrase_enabled():
                     text = await self._rephrase_via_llm(text)
-                # Always convert remaining numbers to words for TTS
-                text = _numbers_to_words(text, self._detect_lang())
+                # Full TTS preprocessing: lowercase + numbers
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+                text = preprocess_for_tts(text, self._tts_primary_lang).lower()
                 self._last_spoken = text  # capture for debug
 
                 done = asyncio.Event()
@@ -811,14 +1019,64 @@ class VoiceCoreModule(SystemModule):
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
-        from system_modules.voice_core.stt import get_stt
         from system_modules.voice_core.tts import get_tts
         from system_modules.voice_core.speaker_id import get_speaker_id
         from system_modules.voice_core.voice_history import get_voice_history
         from system_modules.voice_core.privacy import on_privacy_change
 
-        self._stt = get_stt(self._config["stt_model"])
-        self._tts = get_tts(self._config["tts_voice"])
+        # Create STT provider (Whisper — auto-detected from config)
+        try:
+            from core.stt import create_stt_provider
+            self._stt_provider = create_stt_provider()
+            logger.info("STT provider created: %s", type(self._stt_provider).__name__)
+        except Exception as e:
+            logger.warning("Failed to create STT provider: %s", e)
+            self._stt_provider = None
+
+        self._stt = None  # legacy field, kept for API compat
+
+        # Dual TTS: load primary + fallback PiperVoice via new TTSEngine
+        from system_modules.voice_core.tts import get_tts_engine
+        tts_engine = get_tts_engine()
+        primary_voice = self._config.get("tts_voice", "uk_UA-ukrainian_tts-medium")
+        fallback_voice = self._config.get("tts_fallback_voice", "en_US-ryan-low")
+
+        # Check for new tts config format (voice.tts.primary/fallback)
+        tts_cfg = {}
+        try:
+            from core.config_writer import read_config
+            cfg = read_config()
+            tts_cfg = cfg.get("voice", {}).get("tts", {})
+            if tts_cfg:
+                primary_voice = tts_cfg.get("primary", {}).get("voice", primary_voice)
+                fallback_voice = tts_cfg.get("fallback", {}).get("voice", fallback_voice)
+                primary_cuda = tts_cfg.get("primary", {}).get("cuda", False)
+                fallback_cuda = tts_cfg.get("fallback", {}).get("cuda", False)
+            else:
+                primary_cuda = False
+                fallback_cuda = False
+        except Exception:
+            primary_cuda = False
+            fallback_cuda = False
+
+        tts_engine.load_voices(
+            primary=primary_voice,
+            fallback=fallback_voice,
+            primary_cuda=primary_cuda,
+            fallback_cuda=fallback_cuda,
+        )
+        self._tts = tts_engine
+        self._tts_fallback = tts_engine  # same engine, dual voice inside
+        # Primary lang from Piper config (voice.tts.primary.lang), not UI
+        if tts_cfg and tts_cfg.get("primary", {}).get("lang"):
+            self._tts_primary_lang = tts_cfg["primary"]["lang"]
+        else:
+            self._tts_primary_lang = primary_voice.split("_")[0] if "_" in primary_voice else "uk"
+        if tts_cfg and tts_cfg.get("fallback", {}).get("lang"):
+            self._tts_fallback_lang = tts_cfg["fallback"]["lang"]
+        else:
+            self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else "en"
+
         self._speaker_id = get_speaker_id()
         self._voice_history = get_voice_history()
 
@@ -853,6 +1111,9 @@ class VoiceCoreModule(SystemModule):
             self._privacy_task.cancel()
             await asyncio.gather(self._privacy_task, return_exceptions=True)
             self._privacy_task = None
+        if self._stt_provider:
+            await self._stt_provider.close()
+            self._stt_provider = None
         self._cleanup_subscriptions()
         await self.publish("module.stopped", {"name": self.name})
         logger.info("VoiceCoreModule stopped")
@@ -888,11 +1149,16 @@ class VoiceCoreModule(SystemModule):
                     svc._config[k] = v
                     _persist("voice", k, v)
 
-            # Reload STT model if changed
+            # Reload STT provider if config changed
             if "stt_model" in updates:
-                from system_modules.voice_core.stt import reload_stt
-                svc._stt = reload_stt(updates["stt_model"])
-                # Restart audio loop with new model
+                try:
+                    from core.stt import create_stt_provider
+                    if svc._stt_provider:
+                        await svc._stt_provider.close()
+                    svc._stt_provider = create_stt_provider()
+                    logger.info("STT provider reloaded: %s", type(svc._stt_provider).__name__)
+                except Exception as e:
+                    logger.warning("STT provider reload failed: %s", e)
                 if svc._listen_task:
                     svc._listen_task.cancel()
                     await asyncio.sleep(0.5)
@@ -926,9 +1192,12 @@ class VoiceCoreModule(SystemModule):
 
         @router.get("/stt/status")
         async def stt_status() -> JSONResponse:
+            provider_name = type(svc._stt_provider).__name__ if svc._stt_provider else "none"
             return JSONResponse({
                 "model": svc._config["stt_model"],
-                "available": svc._stt is not None,
+                "provider": provider_name,
+                "lang": svc._lang,
+                "available": svc._stt_provider is not None,
             })
 
         @router.get("/tts/voices")
@@ -1047,9 +1316,14 @@ class VoiceCoreModule(SystemModule):
             if not text:
                 raise HTTPException(400, "Empty text")
 
-            lang = svc._detect_lang()
+            # Detect language: explicit param > auto-detect from text
+            if req.lang:
+                lang = req.lang
+            else:
+                lang = _detect_text_lang(text, svc._tts_primary_lang)
+            _tts_engine, tts_lang = svc._get_tts_for_lang(lang)
             result, trace_steps = await get_intent_router().route(
-                text, user_id=None, lang=lang, trace=True,
+                text, user_id=None, lang=lang, tts_lang=tts_lang, trace=True,
             )
 
             # Set session context for LLM rephrase
@@ -1071,7 +1345,8 @@ class VoiceCoreModule(SystemModule):
                 except asyncio.TimeoutError:
                     pass
             elif req.speak and result.response:
-                tts_text = _numbers_to_words(result.response, svc._detect_lang())
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+                tts_text = preprocess_for_tts(result.response, tts_lang)
                 await svc.publish("voice.response", {"text": tts_text, "query": text})
                 try:
                     await svc._stream_speak(tts_text)

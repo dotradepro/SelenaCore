@@ -56,14 +56,22 @@ function ModuleCard({ mod }: { mod: Module }) {
   const stopModule = useStore((s) => s.stopModule);
   const startModule = useStore((s) => s.startModule);
   const removeModule = useStore((s) => s.removeModule);
+  const showToast = useStore((s) => s.showToast);
   const [busy, setBusy] = useState(false);
 
   const isRunning = mod.status === 'RUNNING';
   const isSystem = mod.type === 'SYSTEM';
 
-  async function handle(fn: () => Promise<void>) {
+  async function handle(fn: () => Promise<void>, successKey: string, errorKey: string) {
     setBusy(true);
-    try { await fn(); } finally { setBusy(false); }
+    try {
+      await fn();
+      showToast?.(t(successKey), 'success');
+    } catch {
+      showToast?.(t(errorKey), 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   const installedDate = mod.installed_at
@@ -103,7 +111,7 @@ function ModuleCard({ mod }: { mod: Module }) {
           {isRunning ? (
             <button
               disabled={busy}
-              onClick={() => handle(() => stopModule(mod.name))}
+              onClick={() => handle(() => stopModule(mod.name), 'modules.stopped', 'modules.stopFailed')}
               title={t('modules.stop')}
               style={{
                 width: 26, height: 26, borderRadius: 6,
@@ -121,7 +129,7 @@ function ModuleCard({ mod }: { mod: Module }) {
           ) : (
             <button
               disabled={busy}
-              onClick={() => handle(() => startModule(mod.name))}
+              onClick={() => handle(() => startModule(mod.name), 'modules.started', 'modules.startFailed')}
               title={t('modules.start')}
               style={{
                 width: 26, height: 26, borderRadius: 6,
@@ -139,7 +147,7 @@ function ModuleCard({ mod }: { mod: Module }) {
           )}
           <button
             disabled={busy}
-            onClick={() => handle(() => removeModule(mod.name))}
+            onClick={() => handle(() => removeModule(mod.name), 'modules.removed', 'modules.removeFailed')}
             title={t('modules.remove')}
             style={{
               width: 26, height: 26, borderRadius: 6,
@@ -279,7 +287,9 @@ function Pagination({ page, total, onPage }: { page: number; total: number; onPa
 export default function Modules() {
   const { t } = useTranslation();
   const modules = useStore((s) => s.modules);
+  const modulesLoading = useStore((s) => s.modulesLoading);
   const fetchModules = useStore((s) => s.fetchModules);
+  const showToast = useStore((s) => s.showToast);
   const fileRef = useRef<HTMLInputElement>(null);
   const [installing, setInstalling] = useState(false);
   const [installMsg, setInstallMsg] = useState('');
@@ -299,19 +309,22 @@ export default function Modules() {
     const file = e.target.files?.[0];
     if (!file) return;
     setInstalling(true);
-    setInstallMsg('Uploading…');
+    setInstallMsg(t('modules.uploading'));
     const form = new FormData();
     form.append('module', file);
     try {
       const res = await fetch('/api/ui/modules/install', { method: 'POST', body: form });
       if (res.ok) {
-        setInstallMsg('✓ Module uploaded — validating…');
+        setInstallMsg(t('modules.uploadedValidating'));
+        showToast?.(t('modules.installed'), 'success');
         setTimeout(() => { fetchModules(); setInstallMsg(''); }, 3000);
       } else {
-        setInstallMsg('✗ Upload failed');
+        setInstallMsg('');
+        showToast?.(t('modules.installFailed'), 'error');
       }
     } catch {
-      setInstallMsg('✗ Network error');
+      setInstallMsg('');
+      showToast?.(t('modules.networkError'), 'error');
     } finally {
       setInstalling(false);
       e.target.value = '';
@@ -348,12 +361,19 @@ export default function Modules() {
         </div>
         <button
           onClick={() => fetchModules()}
+          disabled={modulesLoading}
           style={{
             padding: '5px 10px', borderRadius: 6,
             background: 'var(--sf2)', border: '1px solid var(--b)',
-            color: 'var(--tx2)', fontSize: 11, cursor: 'pointer',
+            color: 'var(--tx2)', fontSize: 11, cursor: modulesLoading ? 'default' : 'pointer',
+            opacity: modulesLoading ? 0.6 : 1, transition: 'opacity .15s',
+            display: 'flex', alignItems: 'center', gap: 4,
           }}
         >
+          <span style={{
+            display: 'inline-block',
+            animation: modulesLoading ? 'spin .8s linear infinite' : 'none',
+          }}>↺</span>
           {t('modules.refresh')}
         </button>
       </div>

@@ -30,7 +30,7 @@ Three principles:
 
 ### Requirements
 
-- Raspberry Pi 4/5 (4-8 GB RAM), Jetson Orin, or any Linux SBC (ARM64/x86_64)
+- Raspberry Pi 4/5 (4-8 GB RAM), NVIDIA Jetson Orin Nano (8 GB), or any Linux SBC (ARM64/x86_64)
 - Ubuntu 22.04+ (or Raspberry Pi OS)
 - Docker + Docker Compose (auto-installed by setup script)
 
@@ -120,7 +120,7 @@ selena-core/
     cloud_sync/              # Platform sync (HMAC)
     i18n.py                  # Internationalization
   system_modules/            # 22 built-in in-process modules
-    voice_core/              # STT (Vosk), TTS (Piper), wake-word
+    voice_core/              # STT (Whisper), TTS (Piper), wake-word
     llm_engine/              # Ollama, Fast Matcher, Intent Router
     ui_core/                 # Web UI server (:80)
     user_manager/            # Profiles, PIN, Face ID, audit log
@@ -179,7 +179,7 @@ Fully offline — STT and TTS work without internet.
 ```
 Wake-word (openWakeWord)
   → Audio recording
-  → Vosk STT              ~0.8-2 sec
+  → Whisper STT            ~0.8-2 sec
   → Speaker ID (resemblyzer)
   → Intent Router (4-tier):
       1. Fast Matcher (YAML)           ~0 ms

@@ -41,10 +41,22 @@ class DeviceRegistry:
         protocol: str,
         capabilities: list[str],
         meta: dict,
+        keywords_user: list[str] | None = None,
+        keywords_en: list[str] | None = None,
+        entity_type: str | None = None,
+        location: str | None = None,
     ) -> Device:
         device = Device(name=name, type=type, protocol=protocol)
         device.set_capabilities(capabilities)
         device.set_meta(meta)
+        if keywords_user:
+            device.set_keywords_user(keywords_user)
+        if keywords_en:
+            device.set_keywords_en(keywords_en)
+        if entity_type:
+            device.entity_type = entity_type
+        if location:
+            device.location = location
         self._session.add(device)
         await self._session.flush()
         logger.info("Device created: %s (%s)", device.device_id, name)
@@ -89,6 +101,30 @@ class DeviceRegistry:
         await self._session.delete(device)
         await self._session.flush()
         logger.info("Device deleted: %s", device_id)
+
+    async def query(
+        self,
+        entity_type: str | None = None,
+        location: str | None = None,
+        keyword: str | None = None,
+    ) -> list[Device]:
+        """Search devices by entity_type, location, and/or keyword.
+
+        Filters are AND-combined. keyword searches in name, keywords_en (JSON).
+        """
+        stmt = select(Device)
+        if entity_type:
+            stmt = stmt.where(Device.entity_type == entity_type)
+        if location:
+            stmt = stmt.where(Device.location == location)
+        if keyword:
+            kw_lower = f"%{keyword.lower()}%"
+            stmt = stmt.where(
+                Device.name.ilike(kw_lower)
+                | Device.keywords_en.ilike(kw_lower)
+            )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
 
     async def _trim_history(self, device_id: str) -> None:
         """Keep only the last STATE_HISTORY_LIMIT records for a device."""

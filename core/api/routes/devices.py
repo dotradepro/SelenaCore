@@ -32,6 +32,9 @@ class DeviceCreate(BaseModel):
     protocol: str = Field(..., min_length=1, max_length=50)
     capabilities: list[str] = Field(default_factory=list)
     meta: dict[str, Any] = Field(default_factory=dict)
+    keywords: list[str] = Field(default_factory=list)  # user-entered keywords in any language
+    entity_type: str | None = Field(None, max_length=50)   # e.g. "light", "thermostat"
+    location: str | None = Field(None, max_length=100)      # e.g. "kitchen", "bedroom"
 
 
 class StateUpdate(BaseModel):
@@ -48,6 +51,10 @@ class DeviceResponse(BaseModel):
     last_seen: float | None
     module_id: str | None
     meta: dict[str, Any]
+    keywords_user: list[str] = []
+    keywords_en: list[str] = []
+    entity_type: str | None = None
+    location: str | None = None
 
     @classmethod
     def from_orm(cls, device: Device) -> "DeviceResponse":
@@ -61,6 +68,10 @@ class DeviceResponse(BaseModel):
             last_seen=device.last_seen.timestamp() if device.last_seen else None,
             module_id=device.module_id,
             meta=device.get_meta(),
+            keywords_user=device.get_keywords_user(),
+            keywords_en=device.get_keywords_en(),
+            entity_type=device.entity_type,
+            location=device.location,
         )
 
 
@@ -85,6 +96,42 @@ async def get_registry(
     return DeviceRegistry(session)
 
 
+async def _translate_keywords_to_en(keywords: list[str]) -> list[str]:
+    """Auto-translate keywords to English using LLM. Falls back to original on error."""
+    if not keywords:
+        return []
+
+    # Check if keywords are already English (simple ASCII heuristic)
+    all_ascii = all(all(ord(c) < 128 for c in kw) for kw in keywords)
+    if all_ascii:
+        return [kw.lower().strip() for kw in keywords]
+
+    try:
+        from system_modules.llm_engine.ollama_client import get_ollama_client
+        client = get_ollama_client()
+        if not await client.is_available():
+            return [kw.lower().strip() for kw in keywords]
+
+        prompt = (
+            f"Translate these smart home keywords to English. "
+            f"Return ONLY a comma-separated list of translated words, nothing else.\n"
+            f"Keywords: {', '.join(keywords)}"
+        )
+        raw = await client.generate(
+            prompt=prompt,
+            system="You are a translator. Reply with ONLY comma-separated English words.",
+            temperature=0.0,
+        )
+        if raw:
+            translated = [w.strip().lower() for w in raw.split(",") if w.strip()]
+            if translated:
+                return translated
+    except Exception as exc:
+        logger.warning("Keywords translation failed: %s", exc)
+
+    return [kw.lower().strip() for kw in keywords]
+
+
 # --- Endpoints ---
 
 @router.get("", response_model=DeviceListResponse)
@@ -96,6 +143,23 @@ async def list_devices(
     return DeviceListResponse(devices=[DeviceResponse.from_orm(d) for d in devices])
 
 
+@router.get("/query", response_model=DeviceListResponse)
+async def query_devices(
+    entity_type: str | None = None,
+    location: str | None = None,
+    keyword: str | None = None,
+    registry: DeviceRegistry = Depends(get_registry),
+    _token: str = Depends(verify_module_token),
+) -> DeviceListResponse:
+    """Search devices by entity_type, location, and/or keyword."""
+    devices = await registry.query(
+        entity_type=entity_type,
+        location=location,
+        keyword=keyword,
+    )
+    return DeviceListResponse(devices=[DeviceResponse.from_orm(d) for d in devices])
+
+
 @router.post("", response_model=DeviceResponse, status_code=201)
 async def create_device(
     body: DeviceCreate,
@@ -103,6 +167,12 @@ async def create_device(
     _token: str = Depends(verify_module_token),
 ) -> DeviceResponse:
     from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    # Auto-translate keywords to EN if provided
+    keywords_en: list[str] = []
+    if body.keywords:
+        keywords_en = await _translate_keywords_to_en(body.keywords)
+
     factory: async_sessionmaker = request.app.state.db_session_factory
     async with factory() as session:
         async with session.begin():
@@ -113,6 +183,10 @@ async def create_device(
                 protocol=body.protocol,
                 capabilities=body.capabilities,
                 meta=body.meta,
+                keywords_user=body.keywords,
+                keywords_en=keywords_en,
+                entity_type=body.entity_type,
+                location=body.location,
             )
         bus = get_event_bus()
         await bus.publish(

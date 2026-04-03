@@ -1,14 +1,42 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 
 export default function ModuleDetail() {
     const { name } = useParams<{ name: string }>();
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const modules = useStore((s) => s.modules);
     const fetchModules = useStore((s) => s.fetchModules);
     const startModule = useStore((s) => s.startModule);
     const stopModule = useStore((s) => s.stopModule);
+    const showToast = useStore((s) => s.showToast);
+    const [busy, setBusy] = useState(false);
+
+    async function handleStart(modName: string) {
+        setBusy(true);
+        try {
+            await startModule(modName);
+            showToast?.(t('modules.started'), 'success');
+        } catch {
+            showToast?.(t('modules.startFailed'), 'error');
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    async function handleStop(modName: string) {
+        setBusy(true);
+        try {
+            await stopModule(modName);
+            showToast?.(t('modules.stopped'), 'success');
+        } catch {
+            showToast?.(t('modules.stopFailed'), 'error');
+        } finally {
+            setBusy(false);
+        }
+    }
 
     useEffect(() => { fetchModules(); }, [fetchModules]);
 
@@ -17,7 +45,7 @@ export default function ModuleDetail() {
     if (!mod) {
         return (
             <div style={{ padding: 24, color: 'var(--tx3)' }}>
-                <div style={{ fontSize: 13 }}>Module "{name}" not found.</div>
+                <div style={{ fontSize: 13 }}>{t('modules.notFound', { name })}</div>
                 <button
                     onClick={() => navigate('/modules')}
                     style={{
@@ -26,7 +54,7 @@ export default function ModuleDetail() {
                         color: 'var(--tx2)', cursor: 'pointer', fontSize: 12,
                     }}
                 >
-                    ← Back to Modules
+                    {t('modules.backToModules')}
                 </button>
             </div>
         );
@@ -72,25 +100,29 @@ export default function ModuleDetail() {
                 </div>
                 {!isRunning ? (
                     <button
-                        onClick={() => startModule(mod.name)}
+                        disabled={busy}
+                        onClick={() => handleStart(mod.name)}
                         style={{
                             padding: '4px 12px', borderRadius: 8, fontSize: 11,
                             background: 'rgba(46,201,138,.1)', border: '1px solid rgba(46,201,138,.2)',
-                            color: 'var(--gr)', cursor: 'pointer',
+                            color: 'var(--gr)', cursor: busy ? 'default' : 'pointer',
+                            opacity: busy ? 0.5 : 1, transition: 'opacity .15s',
                         }}
                     >
-                        Start
+                        {t('modules.start')}
                     </button>
                 ) : (
                     <button
-                        onClick={() => stopModule(mod.name)}
+                        disabled={busy}
+                        onClick={() => handleStop(mod.name)}
                         style={{
                             padding: '4px 12px', borderRadius: 8, fontSize: 11,
                             background: 'rgba(224,84,84,.1)', border: '1px solid rgba(224,84,84,.2)',
-                            color: 'var(--rd)', cursor: 'pointer',
+                            color: 'var(--rd)', cursor: busy ? 'default' : 'pointer',
+                            opacity: busy ? 0.5 : 1, transition: 'opacity .15s',
                         }}
                     >
-                        Stop
+                        {t('modules.stop')}
                     </button>
                 )}
             </div>
@@ -118,8 +150,8 @@ export default function ModuleDetail() {
                         </div>
                         <div style={{ fontSize: 12 }}>
                             {!isRunning
-                                ? 'Start the module to access settings'
-                                : 'No settings page available'}
+                                ? t('modules.startModuleForSettings')
+                                : t('modules.noSettingsPage')}
                         </div>
                     </div>
                 )}

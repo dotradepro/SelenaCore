@@ -287,34 +287,3 @@ class TestModuleValidator:
         }
         result = validate_manifest(manifest)
         assert result.valid is True
-
-
-# ---- FastMatcher ----
-
-class TestFastMatcher:
-    def test_built_in_light_rule(self):
-        from system_modules.llm_engine.fast_matcher import FastMatcher
-        matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
-        result = matcher.match("turn on light")
-        assert result is not None
-        assert result.intent == "turn_on_light"
-        assert result.action["type"] == "device.update_state"
-
-    def test_no_match_returns_none(self):
-        from system_modules.llm_engine.fast_matcher import FastMatcher
-        matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
-        result = matcher.match("what is the meaning of life")
-        assert result is None
-
-    def test_privacy_rule(self):
-        from system_modules.llm_engine.fast_matcher import FastMatcher
-        matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
-        result = matcher.match("privacy on")
-        assert result is not None
-        assert result.intent == "privacy_on"
-
-    def test_empty_string_returns_none(self):
-        from system_modules.llm_engine.fast_matcher import FastMatcher
-        matcher = FastMatcher(rules_file="/nonexistent/path.yaml")
-        assert matcher.match("") is None
-        assert matcher.match("   ") is None

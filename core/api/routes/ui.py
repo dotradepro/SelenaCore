@@ -99,6 +99,24 @@ def _device_to_dict(device: Device) -> dict[str, Any]:
 
 def _read_hw_metrics() -> dict[str, Any]:
     """Read hardware metrics using hw_monitor (best-effort)."""
+    cpu_load: list[float] = [0.0, 0.0, 0.0]
+    swap_used_mb = 0
+    swap_total_mb = 0
+    try:
+        load1, load5, load15 = os.getloadavg()
+        cpu_load = [round(load1, 2), round(load5, 2), round(load15, 2)]
+    except OSError:
+        pass
+    try:
+        for line in open("/proc/meminfo"):
+            parts = line.split()
+            if parts[0] == "SwapTotal:":
+                swap_total_mb = int(parts[1]) // 1024
+            elif parts[0] == "SwapFree:":
+                swap_used_mb = swap_total_mb - int(parts[1]) // 1024
+    except Exception:
+        pass
+
     try:
         from system_modules.hw_monitor.monitor import collect_metrics
         m = collect_metrics()
@@ -110,10 +128,15 @@ def _read_hw_metrics() -> dict[str, Any]:
             disk_used_gb = usage.used / 1e9
         except Exception:
             pass
+        cpu_count = os.cpu_count() or 1
         return {
             "cpu_temp": m.cpu_temp_c or 0,
+            "cpu_load": cpu_load,
+            "cpu_count": cpu_count,
             "ram_used_mb": round(m.ram_used_mb),
             "ram_total_mb": round(m.ram_total_mb),
+            "swap_used_mb": swap_used_mb,
+            "swap_total_mb": swap_total_mb,
             "disk_used_gb": round(disk_used_gb, 1),
             "disk_total_gb": round(disk_total_gb, 1),
         }
@@ -137,25 +160,147 @@ def _read_hw_metrics() -> dict[str, Any]:
             ram_used_mb = vm.used // (1024 * 1024)
         except Exception:
             pass
+        cpu_count = os.cpu_count() or 1
         return {
             "cpu_temp": 0,
+            "cpu_load": cpu_load,
+            "cpu_count": cpu_count,
             "ram_used_mb": ram_used_mb,
             "ram_total_mb": ram_total_mb,
+            "swap_used_mb": swap_used_mb,
+            "swap_total_mb": swap_total_mb,
             "disk_used_gb": round(disk_used_gb, 1),
             "disk_total_gb": round(disk_total_gb, 1),
         }
+
+
+def _read_ollama_status() -> dict[str, Any]:
+    """Read Ollama/LLM status (best-effort)."""
+    result: dict[str, Any] = {
+        "installed": False,
+        "running": False,
+        "model": None,
+        "model_loaded": False,
+        "url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+    }
+    try:
+        result["installed"] = shutil.which("ollama") is not None
+    except Exception:
+        pass
+    if not result["installed"]:
+        return result
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            f"{result['url']}/api/tags",
+            method="GET",
+        )
+        req.add_header("Accept", "application/json")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                result["running"] = True
+                data = json.loads(resp.read())
+                models = data.get("models", [])
+                result["models"] = [
+                    {"name": m.get("name", ""), "size_mb": round(m.get("size", 0) / 1e6)}
+                    for m in models
+                ]
+    except Exception:
+        pass
+    # Check active model from config
+    try:
+        from core.config import get_yaml_config
+        cfg = get_yaml_config()
+        voice_cfg = cfg.get("voice", {})
+        result["model"] = voice_cfg.get("llm_model") or os.environ.get("OLLAMA_MODEL", "phi3:mini")
+    except Exception:
+        result["model"] = os.environ.get("OLLAMA_MODEL", "phi3:mini")
+    # Check if model is actually loaded (ps endpoint)
+    if result["running"]:
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                f"{result['url']}/api/ps",
+                method="GET",
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read())
+                    running_models = data.get("models", [])
+                    result["model_loaded"] = len(running_models) > 0
+                    if running_models:
+                        result["loaded_model"] = running_models[0].get("name", "")
+        except Exception:
+            pass
+    return result
+
+
+def _read_processes(sort_by: str = "cpu", limit: int = 30) -> list[dict[str, Any]]:
+    """Read top processes sorted by cpu or memory."""
+    procs: list[dict[str, Any]] = []
+    # Try psutil first (works in Docker containers without procps)
+    try:
+        import psutil
+        total_ram = psutil.virtual_memory().total
+        for p in psutil.process_iter(["pid", "name", "memory_info", "username", "status"]):
+            try:
+                info = p.info
+                mem = info.get("memory_info")
+                rss = mem.rss if mem else 0
+                mem_pct = round(rss / total_ram * 100, 1) if total_ram else 0
+                # Use cpu_percent with interval=None for cached value
+                cpu_pct = p.cpu_percent(interval=None)
+                procs.append({
+                    "pid": info["pid"],
+                    "name": info.get("name", ""),
+                    "user": info.get("username", "") or "",
+                    "cpu": round(cpu_pct or 0, 1),
+                    "mem_pct": mem_pct,
+                    "ram_mb": round(rss / 1048576, 1),
+                    "status": info.get("status", ""),
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+    except ImportError:
+        # Fallback to ps command
+        sort_flag = "-%mem" if sort_by == "ram" else "-%cpu"
+        try:
+            result = subprocess.run(
+                ["ps", "-eo", "pid,user,%cpu,%mem,rss,stat,comm", f"--sort={sort_flag}"],
+                capture_output=True, text=True, timeout=5,
+            )
+            for line in result.stdout.strip().split("\n")[1:limit + 1]:
+                parts = line.split(None, 6)
+                if len(parts) >= 7:
+                    procs.append({
+                        "pid": int(parts[0]),
+                        "name": parts[6][:60],
+                        "user": parts[1],
+                        "cpu": float(parts[2]),
+                        "mem_pct": float(parts[3]),
+                        "ram_mb": round(int(parts[4]) / 1024, 1),
+                        "status": parts[5],
+                    })
+        except Exception as exc:
+            logger.debug("ps command failed: %s", exc)
+    if sort_by == "ram":
+        procs.sort(key=lambda p: p["ram_mb"], reverse=True)
+    else:
+        procs.sort(key=lambda p: p["cpu"], reverse=True)
+    return procs[:limit]
 
 
 # ---------- System ----------
 
 @router.get("/system")
 async def ui_system() -> dict[str, Any]:
-    """Combined system endpoint: core health + hardware metrics."""
+    """Combined system endpoint: core health + hardware metrics + LLM status."""
     from core.api.routes.system import _start_time as core_start_time
     from core.api.routes.system import get_system_mode
     mode = get_system_mode()
 
     hw = _read_hw_metrics()
+    ollama = _read_ollama_status()
 
     return {
         "core": {
@@ -166,7 +311,32 @@ async def ui_system() -> dict[str, Any]:
             "integrity": "ok",
         },
         "hardware": hw,
+        "ollama": ollama,
     }
+
+
+@router.get("/system/processes")
+async def ui_system_processes(sort: str = "cpu", limit: int = 30) -> dict[str, Any]:
+    """Return top processes sorted by cpu or ram."""
+    loop = asyncio.get_event_loop()
+    procs = await loop.run_in_executor(None, lambda: _read_processes(sort, limit))
+    return {"processes": procs}
+
+
+@router.post("/system/processes/{pid}/kill")
+async def ui_kill_process(pid: int) -> dict[str, Any]:
+    """Kill a process by PID. Refuses to kill PID 1 and core process."""
+    if pid <= 1:
+        raise HTTPException(status_code=403, detail="Cannot kill PID 0 or 1")
+    if pid == os.getpid():
+        raise HTTPException(status_code=403, detail="Cannot kill the core process")
+    try:
+        os.kill(pid, 15)  # SIGTERM
+        return {"ok": True, "pid": pid, "signal": "SIGTERM"}
+    except ProcessLookupError:
+        raise HTTPException(status_code=404, detail=f"Process {pid} not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied for PID {pid}")
 
 
 # ---------- Devices ----------

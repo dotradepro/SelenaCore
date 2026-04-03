@@ -6,6 +6,9 @@
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",
     "runtime_mode": "on_demand",
+    "group": "system",
+    "intents": ["import.scan", "import.start"],
+    "entities": ["import", "adapter"],
     "permissions": [
         "device.write",
         "events.publish"

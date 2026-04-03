@@ -213,7 +213,7 @@ class CoreApiProxyMiddleware:
             ]
             await send({"type": "http.response.start", "status": resp.status_code, "headers": resp_headers})
             await send({"type": "http.response.body", "body": resp.content, "more_body": False})
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout):
             await send({
                 "type": "http.response.start",
                 "status": 502,

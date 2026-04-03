@@ -6,6 +6,9 @@
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "group": "notification",
+    "intents": ["notification.send", "notification.list"],
+    "entities": ["notification", "alert"],
     "permissions": [
         "events.subscribe",
         "events.publish"

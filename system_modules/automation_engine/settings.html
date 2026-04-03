@@ -426,7 +426,9 @@
                 import_btn: 'Import YAML', imported_ok: '✓ Imported',
                 trigger_lbl: 'trigger: ', on: 'ON', off: 'OFF',
                 disable: 'Disable', enable: 'Enable', delete_confirm: 'Delete this rule?',
-                err_name: 'Enter a rule name'
+                err_name: 'Enter a rule name',
+                saving: 'Saving…', saved: 'Saved', deleted: 'Deleted', error: 'Error', loading_btn: 'Loading…',
+                rule_enabled: 'Rule enabled', rule_disabled: 'Rule disabled', importing: 'Importing…'
             },
             uk: {
                 title: '⚙️ Рушій автоматизації', subtitle: 'Тригери → умови → дії',
@@ -450,7 +452,9 @@
                 import_btn: 'Імпортувати YAML', imported_ok: '✓ Імпортовано',
                 trigger_lbl: 'тригер: ', on: 'ВКЛ', off: 'ВИКЛ',
                 disable: 'Вимкнути', enable: 'Увімкнути', delete_confirm: 'Видалити це правило?',
-                err_name: 'Введіть назву правила'
+                err_name: 'Введіть назву правила',
+                saving: 'Збереження…', saved: 'Збережено', deleted: 'Видалено', error: 'Помилка', loading_btn: 'Завантаження…',
+                rule_enabled: 'Правило увімкнено', rule_disabled: 'Правило вимкнено', importing: 'Імпортування…'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -474,6 +478,8 @@
         }
 
         async function loadRules() {
+            var refBtn = document.querySelector('[onclick="loadRules()"]');
+            if (refBtn) { refBtn.disabled = true; }
             try {
                 const r = await fetch(BASE + "/rules", { headers: h });
                 if (!r.ok) return;
@@ -498,7 +504,9 @@
         <button class="btn btn-danger btn-sm" onclick="deleteRule('${rule.id}')">✕</button>
       </div>
     `).join("");
-            } catch { }
+            } catch { } finally {
+                if (refBtn) { refBtn.disabled = false; }
+            }
         }
 
         async function toggleRule(id, enabled) {
@@ -506,18 +514,20 @@
                 await fetch(BASE + "/rules/" + id + "/enabled", {
                     method: "PATCH", headers: h, body: JSON.stringify({ enabled })
                 });
+                showToast(enabled ? t('rule_enabled') : t('rule_disabled'));
                 loadRules();
                 loadStatus();
-            } catch { }
+            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
         }
 
         async function deleteRule(id) {
             if (!confirm(t('delete_confirm'))) return;
             try {
                 await fetch(BASE + "/rules/" + id, { method: "DELETE", headers: h });
+                showToast(t('deleted'));
                 loadRules();
                 loadStatus();
-            } catch { }
+            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
         }
 
         function onTriggerChange() {
@@ -547,6 +557,10 @@
         async function addRule() {
             var name = document.getElementById('f-name').value.trim();
             if (!name) { showAddErr(t('err_name')); return; }
+            var addBtn = document.querySelector('[onclick="addRule()"]');
+            addBtn.disabled = true;
+            var origAddText = addBtn.textContent;
+            addBtn.textContent = t('saving');
 
             var trigType = document.getElementById('f-trigger').value;
             var actType = document.getElementById('f-action').value;
@@ -605,7 +619,10 @@
                     var e = await r.json();
                     showAddErr(e.detail || 'Error');
                 }
-            } catch (ex) { showAddErr(String(ex)); }
+            } catch (ex) { showAddErr(String(ex)); } finally {
+                addBtn.disabled = false;
+                addBtn.textContent = origAddText;
+            }
         }
 
         function showAddOk(msg) {
@@ -618,9 +635,20 @@
             document.getElementById('add-msg').textContent = '';
         }
 
+        function showToast(msg, ms) {
+            var el = document.getElementById('toast');
+            if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--sf2);color:var(--tx);padding:10px 20px;border-radius:8px;font-size:0.85rem;z-index:9999;opacity:0;transition:opacity .3s;border:1px solid var(--b2)'; document.body.appendChild(el); }
+            el.textContent = msg; el.style.opacity = '1';
+            setTimeout(function () { el.style.opacity = '0'; }, ms || 2500);
+        }
+
         async function importYaml() {
             var yaml_text = document.getElementById('yaml-input').value.trim();
             if (!yaml_text) return;
+            var impBtn = document.querySelector('[onclick="importYaml()"]');
+            impBtn.disabled = true;
+            var origImpText = impBtn.textContent;
+            impBtn.textContent = t('importing');
             try {
                 var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: h, body: JSON.stringify({ yaml_text: yaml_text }) });
                 if (r.ok) {
@@ -631,7 +659,10 @@
                     var e = await r.json();
                     showAddErr(e.detail || 'Import failed');
                 }
-            } catch (ex) { showAddErr(String(ex)); }
+            } catch (ex) { showAddErr(String(ex)); } finally {
+                impBtn.disabled = false;
+                impBtn.textContent = origImpText;
+            }
         }
 
         applyLang();

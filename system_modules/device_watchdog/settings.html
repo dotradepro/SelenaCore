@@ -142,8 +142,8 @@
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { title: '🔍 Device Watchdog', scan_settings: 'Scan Settings', check_interval: 'Check interval (seconds)', ping_timeout: 'Ping timeout (seconds)', mqtt_timeout: 'MQTT offline threshold (seconds)', protocol_timeout: 'Zigbee/Z-Wave offline threshold (seconds)', offline_threshold: 'Consecutive failures before marking offline', notify_offline: 'Publish device.offline event', save: 'Save', scan_now: 'Scan Now', saved: '✓ Saved', scan_done: 'Scan done: ', online_suffix: ' online, ', offline_suffix: ' offline' },
-            uk: { title: '🔍 Моніторинг пристроїв', scan_settings: 'Налаштування сканування', check_interval: 'Інтервал перевірки (секунди)', ping_timeout: 'Таймаут пінгу (секунди)', mqtt_timeout: 'Поріг MQTT офлайн (секунди)', protocol_timeout: 'Поріг Zigbee/Z-Wave офлайн (секунди)', offline_threshold: 'Послідовних помилок до позначення офлайн', notify_offline: 'Публікувати подію device.offline', save: 'Зберегти', scan_now: 'Сканувати зараз', saved: '✓ Збережено', scan_done: 'Скан завершено: ', online_suffix: ' онлайн, ', offline_suffix: ' офлайн' }
+            en: { title: '🔍 Device Watchdog', scan_settings: 'Scan Settings', check_interval: 'Check interval (seconds)', ping_timeout: 'Ping timeout (seconds)', mqtt_timeout: 'MQTT offline threshold (seconds)', protocol_timeout: 'Zigbee/Z-Wave offline threshold (seconds)', offline_threshold: 'Consecutive failures before marking offline', notify_offline: 'Publish device.offline event', save: 'Save', scan_now: 'Scan Now', saved: '✓ Saved', scan_done: 'Scan done: ', online_suffix: ' online, ', offline_suffix: ' offline', saving: 'Saving…', scanning: 'Scanning…', error: 'Error' },
+            uk: { title: '🔍 Моніторинг пристроїв', scan_settings: 'Налаштування сканування', check_interval: 'Інтервал перевірки (секунди)', ping_timeout: 'Таймаут пінгу (секунди)', mqtt_timeout: 'Поріг MQTT офлайн (секунди)', protocol_timeout: 'Поріг Zigbee/Z-Wave офлайн (секунди)', offline_threshold: 'Послідовних помилок до позначення офлайн', notify_offline: 'Публікувати подію device.offline', save: 'Зберегти', scan_now: 'Сканувати зараз', saved: '✓ Збережено', scan_done: 'Скан завершено: ', online_suffix: ' онлайн, ', offline_suffix: ' офлайн', saving: 'Збереження…', scanning: 'Сканування…', error: 'Помилка' }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
         function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
@@ -162,20 +162,46 @@
         }
 
         async function saveConfig() {
+            var btn = document.querySelector('[onclick="saveConfig()"]');
+            btn.disabled = true;
+            var origText = btn.textContent;
+            btn.textContent = t('saving');
             const body = {};
             ['check_interval_sec', 'ping_timeout_sec', 'mqtt_timeout_sec', 'protocol_timeout_sec', 'offline_threshold'].forEach(k => {
                 body[k] = parseFloat(document.getElementById(k).value);
             });
             body.notify_on_offline = document.getElementById('notify_on_offline').checked;
-            await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            document.getElementById('msg').textContent = t('saved');
+            try {
+                await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                document.getElementById('msg').textContent = t('saved');
+                document.getElementById('msg').style.color = 'var(--gr)';
+            } catch (e) {
+                document.getElementById('msg').textContent = t('error') + ': ' + e.message;
+                document.getElementById('msg').style.color = 'var(--rd)';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = origText;
+            }
             setTimeout(() => document.getElementById('msg').textContent = '', 3000);
         }
 
         async function scanNow() {
-            const r = await fetch(BASE + '/scan', { method: 'POST' });
-            const d = await r.json();
-            document.getElementById('msg').textContent = t('scan_done') + d.online + '/' + d.checked + t('online_suffix') + d.offline + t('offline_suffix');
+            var btn = document.querySelector('[onclick="scanNow()"]');
+            btn.disabled = true;
+            var origText = btn.textContent;
+            btn.textContent = t('scanning');
+            try {
+                const r = await fetch(BASE + '/scan', { method: 'POST' });
+                const d = await r.json();
+                document.getElementById('msg').textContent = t('scan_done') + d.online + '/' + d.checked + t('online_suffix') + d.offline + t('offline_suffix');
+                document.getElementById('msg').style.color = 'var(--gr)';
+            } catch (e) {
+                document.getElementById('msg').textContent = t('error') + ': ' + e.message;
+                document.getElementById('msg').style.color = 'var(--rd)';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = origText;
+            }
         }
 
         applyLang();
