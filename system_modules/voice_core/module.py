@@ -54,7 +54,7 @@ class SynthesizeRequest(BaseModel):
     voice: str | None = None
 
 
-def _detect_text_lang(text: str, primary_lang: str = "uk") -> str:
+def _detect_text_lang(text: str, primary_lang: str = "") -> str:
     """Detect language from text using Unicode script + word heuristics.
 
     Used by test-command when Whisper STT is not available.
@@ -204,8 +204,8 @@ class VoiceCoreModule(SystemModule):
         self._arecord_proc: subprocess.Popen | None = None
 
         # Detected language from last STT result (auto-updated by Whisper)
-        # Default language = primary Piper voice lang (set properly after config load)
-        self._lang: str = "uk"
+        # Default language — set properly in start() from Piper config
+        self._lang: str = ""
         # STT provider (created in start())
         self._stt_provider = None
 
@@ -739,9 +739,9 @@ class VoiceCoreModule(SystemModule):
                 if is_primary:
                     voice = tts_cfg.get("primary", {}).get("voice", "") or self._tts.voice
                 else:
-                    voice = tts_cfg.get("fallback", {}).get("voice", "") or "en_US-amy-low"
+                    voice = tts_cfg.get("fallback", {}).get("voice", "") or self._tts.voice
             except Exception:
-                voice = self._tts.voice if self._tts else "uk_UA-ukrainian_tts-medium"
+                voice = self._tts.voice if self._tts else ""
 
         # Load per-voice settings from config
         try:
@@ -1103,15 +1103,16 @@ class VoiceCoreModule(SystemModule):
         )
         self._tts = tts_engine
         self._tts_fallback = tts_engine  # same engine, dual voice inside
-        # Primary lang from Piper config (voice.tts.primary.lang), not UI
-        if tts_cfg and tts_cfg.get("primary", {}).get("lang"):
-            self._tts_primary_lang = tts_cfg["primary"]["lang"]
-        else:
-            self._tts_primary_lang = primary_voice.split("_")[0] if "_" in primary_voice else "uk"
-        if tts_cfg and tts_cfg.get("fallback", {}).get("lang"):
-            self._tts_fallback_lang = tts_cfg["fallback"]["lang"]
-        else:
-            self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else "en"
+        # Languages ONLY from Piper config (voice.tts.primary.lang / fallback.lang)
+        # No hardcoded defaults — everything from config
+        self._tts_primary_lang = tts_cfg.get("primary", {}).get("lang", "") if tts_cfg else ""
+        if not self._tts_primary_lang:
+            # Extract from voice name: "uk_UA-model" → "uk"
+            self._tts_primary_lang = primary_voice.split("_")[0] if "_" in primary_voice else primary_voice.split("-")[0]
+        self._tts_fallback_lang = tts_cfg.get("fallback", {}).get("lang", "") if tts_cfg else ""
+        if not self._tts_fallback_lang:
+            self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else fallback_voice.split("-")[0]
+        logger.info("TTS languages: primary=%s, fallback=%s (from config)", self._tts_primary_lang, self._tts_fallback_lang)
 
         # Set default lang from primary TTS voice (until Whisper detects actual language)
         self._lang = self._tts_primary_lang
