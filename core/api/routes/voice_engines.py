@@ -131,6 +131,20 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
         result = subprocess.run(cmd, timeout=duration + 3, capture_output=True)
         return result.stdout
 
+    # Pause voice loop to release microphone
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc and hasattr(vc, "_mic_test_active"):
+            vc._mic_test_active = True
+            proc_arecord = getattr(vc, "_arecord_proc", None)
+            if proc_arecord and proc_arecord.poll() is None:
+                proc_arecord.kill()
+                proc_arecord.wait(timeout=2)
+            import time; time.sleep(0.3)
+    except Exception:
+        pass
+
     try:
         raw = await asyncio.wait_for(loop.run_in_executor(None, _record), timeout=duration + 5)
         if len(raw) < 100:
@@ -173,6 +187,15 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.error("STT test failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        # Resume voice loop
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            vc = get_sandbox().get_in_process_module("voice-core")
+            if vc and hasattr(vc, "_mic_test_active"):
+                vc._mic_test_active = False
+        except Exception:
+            pass
 
 
 @router.post("/tts/speak")
@@ -186,9 +209,9 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
     voice = req.voice or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"))
 
     try:
-        from system_modules.voice_core.tts import TTSEngine
-        engine = TTSEngine(voice=voice)
-        wav_bytes = await engine.synthesize(req.text[:500])
+        from system_modules.voice_core.tts import get_tts_engine
+        engine = get_tts_engine()
+        wav_bytes = await engine.synthesize(req.text[:500], voice=voice)
         if not wav_bytes:
             raise HTTPException(status_code=503, detail=t("api.tts_failed"))
 
@@ -1157,20 +1180,36 @@ _ollama_install = _InstallState()
 
 @router.get("/whisper/status")
 async def whisper_status() -> dict[str, Any]:
-    """Check Whisper STT provider status."""
+    """Check Whisper STT provider status (faster-whisper CUDA or whisper.cpp)."""
+    import httpx as _httpx
+
+    host = "http://localhost:9000"
+    provider = "none"
+    device = "cpu"
+    model = ""
+    available = False
+
     try:
-        from core.stt import create_stt_provider
-        provider = create_stt_provider()
-        provider_name = type(provider).__name__
-        available = provider_name != "_DummyProvider"
-        return {
-            "available": available,
-            "provider": provider_name,
-            "auto_lang_detect": True,
-            "supported_languages": 99,
-        }
-    except Exception as exc:
-        return {"available": False, "provider": "none", "error": str(exc)}
+        resp = _httpx.get(f"{host}/", timeout=3.0)
+        available = resp.status_code == 200
+        try:
+            data = resp.json()
+            model = data.get("model", "")
+            provider = "faster-whisper"
+            device = "cuda"
+        except Exception:
+            provider = "whisper.cpp"
+    except Exception:
+        pass
+
+    return {
+        "available": available,
+        "provider": provider,
+        "device": device,
+        "model": model,
+        "auto_lang_detect": True,
+        "supported_languages": 99,
+    }
 
 
 # ================================================================== #

@@ -504,25 +504,62 @@ async def audio_select(body: dict[str, str]) -> dict[str, Any]:
 
 @router.post("/audio/test/output")
 async def audio_test_output(body: dict[str, str]) -> dict[str, Any]:
-    """Play speaker-test (left/right channel voice) on the selected output device."""
+    """Test speakers via Piper TTS with current software volume."""
     device = body.get("device", "default")
+
+    test_text = "sound check. left channel. right channel. volume test complete."
+
     loop = asyncio.get_running_loop()
 
-    def _play():
-        vol_cfg = read_config().get("voice", {}).get("output_volume", 100)
-        vol_pct = max(1, min(150, int(vol_cfg)))
-        # speaker-test: -t wav plays "Front Left" / "Front Right" voice
-        # --scale sets amplitude (0.0-1.0)
-        scale = round(vol_pct / 100.0, 2)
-        cmd = ["speaker-test", "-t", "wav", "-c", "2", "-l", "1",
-               "--scale", str(scale)]
-        if device and device != "default":
-            cmd += ["-D", device]
-        subprocess.run(cmd, timeout=8, capture_output=True)
-
     try:
-        await asyncio.wait_for(loop.run_in_executor(None, _play), timeout=10)
+        # Synthesize via Piper HTTP server (GPU, on host)
+        import httpx as _httpx
+        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+
+        voice = ""
+        try:
+            voice = read_config().get("voice", {}).get("tts", {}).get("fallback", {}).get("voice", "")
+        except Exception:
+            pass
+
+        async with _httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(f"{gpu_url}/synthesize", json={
+                "text": test_text, "voice": voice,
+            })
+            if resp.status_code != 200 or not resp.content:
+                raise RuntimeError("Piper returned empty")
+            wav_data = resp.content
+
+        # Extract raw PCM and sample rate from WAV
+        import io, wave, struct
+        with wave.open(io.BytesIO(wav_data), "rb") as wf:
+            sample_rate = wf.getframerate()
+            pcm_data = wf.readframes(wf.getnframes())
+
+        # Apply software volume
+        vol_cfg = read_config().get("voice", {}).get("output_volume", 100)
+        volume = max(0.0, min(1.5, int(vol_cfg) / 100.0))
+
+        if abs(volume - 1.0) > 0.01 and len(pcm_data) > 2:
+            n = len(pcm_data) // 2
+            samples = struct.unpack(f"<{n}h", pcm_data[:n * 2])
+            pcm_data = struct.pack(f"<{n}h", *(
+                max(-32768, min(32767, int(s * volume))) for s in samples
+            ))
+
+        def _play():
+            cmd = ["aplay", "-t", "raw", "-f", "S16_LE", "-r", str(sample_rate), "-c", "1"]
+            if device and device != "default":
+                cmd += ["-D", device]
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            proc.stdin.write(pcm_data)
+            proc.stdin.close()
+            proc.wait(timeout=15)
+
+        await asyncio.wait_for(loop.run_in_executor(None, _play), timeout=18)
         return {"status": "ok"}
+
     except Exception as exc:
         logger.warning("Output test failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -727,34 +764,16 @@ async def audio_set_levels(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/audio/mic-level")
 async def audio_mic_level() -> dict[str, Any]:
-    """Read current mic level (peak) from a quick ~0.5s sample via arecord."""
-    import struct
-    cfg = read_config().get("voice", {}) or {}
-    input_device = cfg.get("audio_force_input", "default")
-    loop = asyncio.get_running_loop()
-
-    def _sample() -> float:
-        _pause_voice_loop()
-        try:
-            cmd = ["arecord", "-d", "1", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "raw"]
-            if input_device and input_device != "default":
-                cmd += ["-D", input_device]
-            result = subprocess.run(cmd, timeout=3, capture_output=True)
-            raw = result.stdout
-            if len(raw) < 2:
-                return 0.0
-            samples = struct.unpack(f"<{len(raw) // 2}h", raw)
-            peak = max(abs(s) for s in samples) if samples else 0
-            return round(peak / 32768.0, 4)
-        finally:
-            _resume_voice_loop()
-
+    """Read current mic level from voice_core's live audio stream (no mic lock)."""
     try:
-        level = await asyncio.wait_for(loop.run_in_executor(None, _sample), timeout=8)
-        return {"level": level}
+        from core.module_loader.sandbox import get_sandbox
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc:
+            energy = getattr(vc, "_last_energy", 0.0)
+            return {"level": round(min(1.0, energy / 5000.0), 4)}
     except Exception:
-        _resume_voice_loop()
-        return {"level": 0.0}
+        pass
+    return {"level": 0.0}
 
 
 # ================================================================== #
@@ -790,11 +809,14 @@ async def audio_sources() -> dict[str, Any]:
 
             # Get current volume from module instance
             instance = sandbox.get_in_process_module(mod_info.name)
-            volume = 70  # default
+            # Load saved volume from config, fallback to runtime, fallback to 70
+            volume = read_config().get("voice", {}).get(f"media_volume_{mod_info.name}", 70)
             if instance:
                 player = getattr(instance, "_player", None)
                 if player:
-                    volume = getattr(player, "_volume", 70)
+                    runtime_vol = getattr(player, "_volume", None)
+                    if runtime_vol is not None:
+                        volume = runtime_vol
 
             # Use short display name: prefer manifest name, capitalize nicely
             display_name = mod_info.name.replace("-", " ").replace("_", " ").title()
@@ -829,6 +851,9 @@ async def audio_source_volume(body: dict[str, Any]) -> dict[str, Any]:
         update_config("voice", "output_volume", volume)
         return {"status": "ok", "module": module, "volume": volume}
 
+    # Save media volume to config so it survives restarts
+    update_config("voice", f"media_volume_{module}", volume)
+
     try:
         from core.module_loader.sandbox import get_sandbox
         instance = get_sandbox().get_in_process_module(module)
@@ -849,17 +874,33 @@ async def audio_source_volume(body: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/whisper/status")
 async def whisper_status() -> dict[str, Any]:
-    """Check if whisper.cpp STT server is reachable."""
+    """Check if Whisper STT server is reachable (faster-whisper or whisper.cpp)."""
     import httpx as _httpx
     host = "http://localhost:9000"
+    provider = "none"
+    device = "cpu"
+    model = ""
+    available = False
     try:
         resp = _httpx.get(f"{host}/", timeout=3.0)
         available = resp.status_code == 200
+        # Try JSON health response (faster-whisper server)
+        try:
+            data = resp.json()
+            model = data.get("model", "")
+            provider = "faster-whisper"
+            device = "cuda"
+        except Exception:
+            # whisper.cpp returns HTML page
+            provider = "whisper.cpp"
+            device = "cpu"
     except Exception:
-        available = False
+        pass
     return {
         "available": available,
-        "provider": "whisper.cpp" if available else "none",
+        "provider": provider,
+        "device": device,
+        "model": model,
     }
 
 
@@ -905,42 +946,25 @@ async def stt_models() -> dict[str, Any]:
 
 @router.post("/stt/select")
 async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
-    """Select Whisper model size, download if needed, restart whisper-server."""
+    """Select Whisper model size — restarts faster-whisper Docker container."""
     import asyncio as _aio
 
     model_id = req.model  # tiny | base | small | medium
-    ggml_name = f"ggml-{model_id}"
-    whisper_dir = os.environ.get("WHISPER_DIR", "/opt/whisper.cpp")
-    models_dir = os.path.join(whisper_dir, "models")
-    model_path = os.path.join(models_dir, f"{ggml_name}.bin")
 
-    # 1. Download model if not present
-    if not os.path.isfile(model_path):
-        download_script = os.path.join(models_dir, "download-ggml-model.sh")
-        if os.path.isfile(download_script):
-            logger.info("Downloading whisper model %s ...", model_id)
-            proc = await _aio.create_subprocess_exec(
-                "bash", download_script, model_id,
-                cwd=models_dir,
-                stdout=_aio.subprocess.PIPE,
-                stderr=_aio.subprocess.PIPE,
-            )
-            _, stderr = await proc.communicate()
-            if proc.returncode != 0 or not os.path.isfile(model_path):
-                detail = stderr.decode(errors="replace")[:300] if stderr else "download failed"
-                raise HTTPException(status_code=500, detail=f"Model download failed: {detail}")
-            logger.info("Model %s downloaded successfully", model_id)
-        else:
-            raise HTTPException(status_code=500, detail=f"Model {ggml_name}.bin not found and no download script at {download_script}")
-
-    # 2. Save config
+    # 1. Save config
     update_config("voice", "stt_model", model_id)
 
-    # 3. Write env file + restart whisper-server via nsenter (container → host)
+    # 2. Restart selena-stt Docker container with new model
     restart_script = (
-        f"echo 'WHISPER_MODEL={ggml_name}' > /var/lib/selena/whisper-server.env && "
-        "systemctl daemon-reload && "
-        "systemctl restart whisper-server"
+        "docker rm -f selena-stt 2>/dev/null; "
+        "docker run -d "
+        "  --name selena-stt "
+        "  --runtime nvidia "
+        "  --network host "
+        "  --restart unless-stopped "
+        "  -v /home/dotradepro/Downloads/SelenaCore/scripts:/app:ro "
+        "  dustynv/faster-whisper:r36.4.0-cu128-24.04 "
+        f"  python3 /app/faster-whisper-server.py --model {model_id} --port 9000"
     )
     try:
         proc = await _aio.create_subprocess_exec(
@@ -949,16 +973,89 @@ async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
             stdout=_aio.subprocess.PIPE,
             stderr=_aio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
+        stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            logger.warning("whisper-server restart failed (rc=%d): %s", proc.returncode, stderr.decode(errors="replace")[:200])
+            logger.warning(
+                "selena-stt restart failed (rc=%d): %s",
+                proc.returncode, stderr.decode(errors="replace")[:200],
+            )
         else:
-            logger.info("whisper-server restarted with model %s", ggml_name)
+            logger.info("selena-stt restarted with model %s (CUDA)", model_id)
     except Exception as exc:
-        logger.warning("Could not restart whisper-server: %s", exc)
+        logger.warning("Could not restart selena-stt: %s", exc)
+
+    # 3. Reload STT provider in voice_core
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc and hasattr(vc, "_stt_provider"):
+            # Wait for new container to start
+            await _aio.sleep(15)
+            from core.stt import create_stt_provider
+            if vc._stt_provider:
+                await vc._stt_provider.close()
+            vc._stt_provider = create_stt_provider()
+            logger.info("STT provider reloaded: %s", type(vc._stt_provider).__name__)
+    except Exception as exc:
+        logger.warning("STT provider reload failed: %s", exc)
 
     logger.info("STT model set to %s", model_id)
     return {"status": "ok", "model": model_id}
+
+
+# ── STT Settings ────────────────────────────────────────────────────
+
+STT_DEFAULTS = {
+    "beam_size": 5,
+    "temperature": 0.0,
+    "no_speech_threshold": 0.6,
+    "vad_filter": True,
+    "vad_min_silence_ms": 500,
+    "vad_speech_pad_ms": 400,
+    "vad_threshold": 0.5,
+    "condition_on_previous_text": False,
+}
+
+
+@router.get("/stt/settings")
+async def stt_settings_get() -> dict[str, Any]:
+    """Get current STT (Whisper) processing settings."""
+    saved = read_config().get("stt", {}).get("settings", {})
+    settings = {**STT_DEFAULTS, **saved}
+
+    # Show language hint from TTS primary (read-only info)
+    try:
+        lang = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("lang")
+        if lang:
+            settings["language"] = lang
+    except Exception:
+        settings["language"] = "auto"
+
+    return settings
+
+
+@router.post("/stt/settings")
+async def stt_settings_save(body: dict[str, Any]) -> dict[str, Any]:
+    """Save STT settings. Restarts STT container to apply."""
+    import asyncio as _aio
+
+    settings = {}
+    for key in STT_DEFAULTS:
+        if key in body:
+            val = body[key]
+            if isinstance(STT_DEFAULTS[key], bool):
+                settings[key] = bool(val)
+            elif isinstance(STT_DEFAULTS[key], int):
+                settings[key] = int(val)
+            elif isinstance(STT_DEFAULTS[key], float):
+                settings[key] = float(val)
+            else:
+                settings[key] = str(val)
+
+    update_config("stt", "settings", settings)
+
+    logger.info("STT settings saved (applied per-request): %s", settings)
+    return {"status": "ok", "settings": settings}
 
 
 # ================================================================== #
