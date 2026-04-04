@@ -2,7 +2,10 @@
 system_modules/llm_engine/pattern_generator.py — Auto-generate intent patterns from entity data.
 
 When a user adds a radio station, device, or scene — this generator creates
-regex patterns in the intent_patterns DB table so they match at 0ms (no LLM).
+English-only regex patterns in the intent_patterns DB table so they match at 0ms (no LLM).
+
+All patterns are in English regardless of system language. LLM is used to generate
+natural English command phrases, with hardcoded templates as fallback.
 
 Entity types supported:
   radio_station → media.play_radio_name patterns
@@ -19,11 +22,20 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from system_modules.llm_engine.pattern_utils import (
+    deduplicate_pattern,
+    phrase_to_regex,
+    validate_pattern,
+)
+
 logger = logging.getLogger(__name__)
+
+# Max patterns per entity (prevent unbounded growth)
+MAX_PATTERNS_PER_ENTITY = 5
 
 
 class PatternGenerator:
-    """Generates intent_patterns rows from entity data in the DB."""
+    """Generates English-only intent_patterns rows from entity data in the DB."""
 
     def __init__(self, session_factory) -> None:
         self._sf = session_factory
@@ -87,10 +99,84 @@ class PatternGenerator:
         logger.info("Regenerated %d auto-entity patterns (type=%s)", total, entity_type or "all")
         return total
 
+    # ── LLM pattern generation ─────────────────────────────────────────────
+
+    async def _generate_patterns_via_llm(
+        self, entity_type: str, name: str, context: str = "",
+    ) -> list[str]:
+        """Call LLM to generate 2-3 natural English voice command phrases.
+
+        Returns list of English phrases (not regex). Empty list on failure.
+        """
+        prompts_by_type = {
+            "radio_station": (
+                f"Generate 2-3 short English voice commands to play the radio station \"{name}\".\n"
+                f"Examples: \"play hit fm\", \"turn on bbc radio 1\"\n"
+                f"{context}"
+                f"Reply ONLY with a JSON array of lowercase strings, no extra text."
+            ),
+            "device": (
+                f"Generate 2-3 short English voice commands to control the device \"{name}\".\n"
+                f"Include both 'turn on' and 'turn off' variants.\n"
+                f"{context}"
+                f"Reply ONLY with a JSON array of lowercase strings, no extra text."
+            ),
+            "scene": (
+                f"Generate 2-3 short English voice commands to activate the scene \"{name}\".\n"
+                f"Examples: \"activate movie night\", \"run morning routine\"\n"
+                f"{context}"
+                f"Reply ONLY with a JSON array of lowercase strings, no extra text."
+            ),
+        }
+
+        prompt = prompts_by_type.get(entity_type)
+        if not prompt:
+            return []
+
+        try:
+            from system_modules.llm_engine.ollama_client import get_ollama_client
+            client = get_ollama_client()
+            if not await client.is_available():
+                return []
+
+            raw = await client.generate(
+                prompt=prompt,
+                system="You generate short English voice commands for a smart home system. Reply ONLY with a JSON array.",
+                temperature=0.1,
+            )
+            if not raw:
+                return []
+
+            # Parse JSON array from response
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+                cleaned = re.sub(r"\s*```$", "", cleaned)
+
+            start = cleaned.find("[")
+            end = cleaned.rfind("]")
+            if start == -1 or end == -1:
+                return []
+
+            phrases = json.loads(cleaned[start:end + 1])
+            if not isinstance(phrases, list):
+                return []
+
+            # Filter and clean
+            result: list[str] = []
+            for p in phrases[:MAX_PATTERNS_PER_ENTITY]:
+                if isinstance(p, str) and len(p.strip()) >= 3:
+                    result.append(p.strip().lower())
+            return result
+
+        except Exception as exc:
+            logger.debug("LLM pattern generation failed for %s '%s': %s", entity_type, name, exc)
+            return []
+
     # ── Radio stations ──────────────────────────────────────────────────
 
     async def _gen_radio_station(self, session: AsyncSession, station_id: int) -> int:
-        """Generate patterns for one radio station."""
+        """Generate English patterns for one radio station."""
         from core.registry.models import RadioStation, IntentPattern, IntentDefinition
 
         station = await session.get(RadioStation, station_id)
@@ -109,30 +195,35 @@ class PatternGenerator:
             delete(IntentPattern).where(IntentPattern.entity_ref == ref)
         )
 
-        # Load verbs from vocab
-        verbs_en = await self._get_vocab_words(session, "en", "verb", "play")
-        verbs_uk = await self._get_vocab_words(session, "uk", "verb", "play")
+        # Use name_en for pattern generation (already translated by radio API)
+        name = station.name_en or station.name_user
+        if not name:
+            return 0
 
         count = 0
 
-        # EN patterns
-        if station.name_en:
-            name_esc = re.escape(station.name_en.lower())
+        # Try LLM-generated patterns first
+        llm_phrases = await self._generate_patterns_via_llm("radio_station", name)
+
+        if llm_phrases:
+            existing: list[str] = []
+            for phrase in llm_phrases:
+                regex = phrase_to_regex(phrase)
+                if regex and validate_pattern(regex) and not deduplicate_pattern(regex, existing):
+                    session.add(IntentPattern(
+                        intent_id=idef.id, lang="en", pattern=regex,
+                        source="auto_entity", entity_ref=ref,
+                    ))
+                    existing.append(regex)
+                    count += 1
+        else:
+            # Fallback: hardcoded English template
+            verbs_en = await self._get_vocab_words(session, "en", "verb", "play")
+            name_esc = re.escape(name.lower())
             verb_alt = "|".join(re.escape(v) for v in verbs_en) if verbs_en else "play|put on|turn on"
             pattern = f"(?:{verb_alt})\\s+(?:radio\\s+)?(?:station\\s+)?{name_esc}"
             session.add(IntentPattern(
                 intent_id=idef.id, lang="en", pattern=pattern,
-                source="auto_entity", entity_ref=ref,
-            ))
-            count += 1
-
-        # UK patterns
-        if station.name_user:
-            name_esc = re.escape(station.name_user.lower())
-            verb_alt = "|".join(re.escape(v) for v in verbs_uk) if verbs_uk else "увімкни|включи|постав"
-            pattern = f"(?:{verb_alt})\\s+(?:радіо\\s+)?(?:станцію\\s+)?{name_esc}"
-            session.add(IntentPattern(
-                intent_id=idef.id, lang="uk", pattern=pattern,
                 source="auto_entity", entity_ref=ref,
             ))
             count += 1
@@ -159,7 +250,7 @@ class PatternGenerator:
     # ── Devices ─────────────────────────────────────────────────────────
 
     async def _gen_device(self, session: AsyncSession, device_id: str) -> int:
-        """Generate patterns for one device."""
+        """Generate English patterns for one device."""
         from core.registry.models import Device, IntentPattern, IntentDefinition
 
         device = await session.get(Device, device_id)
@@ -171,10 +262,8 @@ class PatternGenerator:
             delete(IntentPattern).where(IntentPattern.entity_ref == ref)
         )
 
-        # Get device name(s)
         name = device.name.lower()
         name_esc = re.escape(name)
-        keywords_en = device.get_keywords_en()
 
         # Location suffix
         loc_part = ""
@@ -184,18 +273,15 @@ class PatternGenerator:
 
         verbs_on_en = await self._get_vocab_words(session, "en", "verb", "on")
         verbs_off_en = await self._get_vocab_words(session, "en", "verb", "off")
-        verbs_on_uk = await self._get_vocab_words(session, "uk", "verb", "on")
-        verbs_off_uk = await self._get_vocab_words(session, "uk", "verb", "off")
 
         count = 0
 
-        # device.on
+        # device.on — English only
         idef_on = await self._ensure_definition(
             session, "device.on", "", "DEVICE", "on", 100,
             "Turn on a device",
         )
 
-        # EN
         verb_alt = "|".join(re.escape(v) for v in verbs_on_en) if verbs_on_en else "turn on|switch on"
         pattern = f"(?:{verb_alt})\\s+(?:the\\s+)?{name_esc}{loc_part}"
         session.add(IntentPattern(
@@ -204,18 +290,7 @@ class PatternGenerator:
         ))
         count += 1
 
-        # UK — use keywords_user if available
-        keywords_user = device.get_keywords_user()
-        uk_name = re.escape(keywords_user[0].lower()) if keywords_user else name_esc
-        verb_alt_uk = "|".join(re.escape(v) for v in verbs_on_uk) if verbs_on_uk else "увімкни|включи"
-        pattern_uk = f"(?:{verb_alt_uk})\\s+{uk_name}"
-        session.add(IntentPattern(
-            intent_id=idef_on.id, lang="uk", pattern=pattern_uk,
-            source="auto_entity", entity_ref=ref,
-        ))
-        count += 1
-
-        # device.off
+        # device.off — English only
         idef_off = await self._ensure_definition(
             session, "device.off", "", "DEVICE", "off", 100,
             "Turn off a device",
@@ -225,14 +300,6 @@ class PatternGenerator:
         pattern = f"(?:{verb_alt})\\s+(?:the\\s+)?{name_esc}{loc_part}"
         session.add(IntentPattern(
             intent_id=idef_off.id, lang="en", pattern=pattern,
-            source="auto_entity", entity_ref=ref,
-        ))
-        count += 1
-
-        verb_alt_uk = "|".join(re.escape(v) for v in verbs_off_uk) if verbs_off_uk else "вимкни"
-        pattern_uk = f"(?:{verb_alt_uk})\\s+{uk_name}"
-        session.add(IntentPattern(
-            intent_id=idef_off.id, lang="uk", pattern=pattern_uk,
             source="auto_entity", entity_ref=ref,
         ))
         count += 1
@@ -259,7 +326,7 @@ class PatternGenerator:
     # ── Scenes ──────────────────────────────────────────────────────────
 
     async def _gen_scene(self, session: AsyncSession, scene_id: int) -> int:
-        """Generate patterns for one scene."""
+        """Generate English patterns for one scene."""
         from core.registry.models import Scene, IntentPattern
 
         scene = await session.get(Scene, scene_id)
@@ -276,22 +343,32 @@ class PatternGenerator:
             delete(IntentPattern).where(IntentPattern.entity_ref == ref)
         )
 
+        name = scene.name_en or scene.name_user
+        if not name:
+            return 0
+
         count = 0
 
-        if scene.name_en:
-            name_esc = re.escape(scene.name_en.lower())
+        # Try LLM-generated patterns
+        llm_phrases = await self._generate_patterns_via_llm("scene", name)
+
+        if llm_phrases:
+            existing: list[str] = []
+            for phrase in llm_phrases:
+                regex = phrase_to_regex(phrase)
+                if regex and validate_pattern(regex) and not deduplicate_pattern(regex, existing):
+                    session.add(IntentPattern(
+                        intent_id=idef.id, lang="en", pattern=regex,
+                        source="auto_entity", entity_ref=ref,
+                    ))
+                    existing.append(regex)
+                    count += 1
+        else:
+            # Fallback: hardcoded English template
+            name_esc = re.escape(name.lower())
             pattern = f"(?:activate|run|start|launch)\\s+(?:scene\\s+)?{name_esc}"
             session.add(IntentPattern(
                 intent_id=idef.id, lang="en", pattern=pattern,
-                source="auto_entity", entity_ref=ref,
-            ))
-            count += 1
-
-        if scene.name_user:
-            name_esc = re.escape(scene.name_user.lower())
-            pattern = f"(?:увімкни|запусти|активуй)\\s+(?:сцену\\s+)?{name_esc}"
-            session.add(IntentPattern(
-                intent_id=idef.id, lang="uk", pattern=pattern,
                 source="auto_entity", entity_ref=ref,
             ))
             count += 1

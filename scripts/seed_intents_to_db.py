@@ -65,14 +65,12 @@ async def main() -> None:
 
     defs = _load_yaml(defs_path)
     vocab_en = _load_yaml(vocab_en_path) if vocab_en_path.exists() else {}
-    vocab_uk = _load_yaml(vocab_uk_path) if vocab_uk_path.exists() else {}
 
     async with session_factory() as session:
         async with session.begin():
-            # 1. Seed intent_vocab
+            # 1. Seed intent_vocab (English only — all patterns are English)
             vocab_count = await _seed_vocab(session, "en", vocab_en)
-            vocab_count += await _seed_vocab(session, "uk", vocab_uk)
-            logger.info("Seeded %d vocab entries", vocab_count)
+            logger.info("Seeded %d vocab entries (English only)", vocab_count)
 
             # 2. Seed intent_definitions + intent_patterns
             intents = defs.get("intents", {})
@@ -200,16 +198,17 @@ async def _seed_patterns_for_intent(session, idef, data: dict) -> int:
 
     count = 0
     overrides = data.get("overrides", {})
-    for lang, patterns in overrides.items():
-        for pattern in patterns:
-            p = IntentPattern(
-                intent_id=idef.id,
-                lang=lang,
-                pattern=pattern,
-                source="manual",
-            )
-            session.add(p)
-            count += 1
+    # Only seed English patterns — all patterns are English-only
+    en_patterns = overrides.get("en", [])
+    for pattern in en_patterns:
+        p = IntentPattern(
+            intent_id=idef.id,
+            lang="en",
+            pattern=pattern,
+            source="manual",
+        )
+        session.add(p)
+        count += 1
 
     return count
 
@@ -219,7 +218,8 @@ async def _seed_fast_matcher_rules(session) -> int:
     from sqlalchemy import select, delete
     from core.registry.models import IntentDefinition, IntentPattern
 
-    # FastMatcher rules with both keywords and regex
+    # FastMatcher rules — English-only patterns
+    # All patterns are in English. Non-English input falls through to LLM.
     rules = [
         {
             "intent": "device.on",
@@ -231,9 +231,6 @@ async def _seed_fast_matcher_rules(session) -> int:
             "patterns": {
                 "en": [
                     r"(?:turn on|switch on)\s+(?:the\s+)?(?:light|lamp|lights)",
-                ],
-                "uk": [
-                    r"(?:у?вімкни|включи)\s+(?:світло|лампу|лампочку)",
                 ],
             },
         },
@@ -248,9 +245,6 @@ async def _seed_fast_matcher_rules(session) -> int:
                 "en": [
                     r"(?:turn off|switch off)\s+(?:the\s+)?(?:light|lamp|lights)",
                 ],
-                "uk": [
-                    r"вимкни\s+(?:світло|лампу|лампочку)",
-                ],
             },
         },
         {
@@ -262,7 +256,6 @@ async def _seed_fast_matcher_rules(session) -> int:
             "description": "Enable privacy mode (stop listening)",
             "patterns": {
                 "en": [r"(?:privacy on|stop listening|enable.*privac)"],
-                "uk": [r"(?:не слухай|режим приватності|у?вімкни.*приват)"],
             },
         },
         {
@@ -274,7 +267,53 @@ async def _seed_fast_matcher_rules(session) -> int:
             "description": "Disable privacy mode (start listening)",
             "patterns": {
                 "en": [r"(?:privacy off|start listening|disable.*privac)"],
-                "uk": [r"(?:вимкни.*приват|вийди з приватного)"],
+            },
+        },
+        {
+            "intent": "weather.current",
+            "module": "weather-service",
+            "noun_class": "WEATHER",
+            "verb": "query",
+            "priority": 5,
+            "description": "Get current weather",
+            "patterns": {
+                "en": [
+                    r"(?:current|right now)\s+weather",
+                    r"(?:what(?:'s| is))\s+(?:the\s+)?weather",
+                    r"weather\s+(?:right )?now",
+                    r"how(?:'s| is)\s+(?:the\s+)?weather",
+                ],
+            },
+        },
+        {
+            "intent": "weather.today",
+            "module": "weather-service",
+            "noun_class": "WEATHER",
+            "verb": "query",
+            "priority": 5,
+            "description": "Get weather forecast for today",
+            "patterns": {
+                "en": [
+                    r"weather\s+today",
+                    r"today(?:'s| is)?\s+(?:weather|forecast)",
+                    r"weather\s+forecast\s+(?:for\s+)?today",
+                ],
+            },
+        },
+        {
+            "intent": "weather.forecast",
+            "module": "weather-service",
+            "noun_class": "WEATHER",
+            "verb": "query",
+            "priority": 5,
+            "description": "Get weather forecast for multiple days",
+            "patterns": {
+                "en": [
+                    r"weather\s+(?:for\s+)?(?:3|three)\s+days",
+                    r"weather\s+forecast",
+                    r"weekly\s+(?:weather|forecast)",
+                    r"(?:3|three)\s+day\s+(?:weather|forecast)",
+                ],
             },
         },
     ]

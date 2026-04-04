@@ -45,9 +45,10 @@ class SceneResponse(BaseModel):
     actions: list[dict[str, Any]]
     trigger: str
     enabled: bool
+    patterns_en: list[str] = []
 
     @classmethod
-    def from_orm(cls, s: Scene) -> "SceneResponse":
+    def from_orm(cls, s: Scene, patterns: list[str] | None = None) -> "SceneResponse":
         return cls(
             id=s.id,
             name_user=s.name_user,
@@ -55,6 +56,7 @@ class SceneResponse(BaseModel):
             actions=s.get_actions(),
             trigger=s.trigger,
             enabled=s.enabled,
+            patterns_en=patterns or [],
         )
 
 
@@ -93,7 +95,25 @@ async def _translate_to_en(text: str) -> str:
         return text
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────
+# ── Pattern helper ────────────────��─────────────────────────────────────
+
+async def _get_entity_patterns(factory, entity_ref: str) -> list[str]:
+    """Fetch generated English patterns for an entity from DB."""
+    try:
+        from core.registry.models import IntentPattern
+        async with factory() as session:
+            result = await session.execute(
+                select(IntentPattern.pattern).where(
+                    IntentPattern.entity_ref == entity_ref,
+                    IntentPattern.lang == "en",
+                )
+            )
+            return [r[0] for r in result.all()]
+    except Exception:
+        return []
+
+
+#── Endpoints ────────────────────────────────────────────────────────────
 
 @router.get("", response_model=SceneListResponse)
 async def list_scenes(
@@ -131,7 +151,8 @@ async def create_scene(
         await session.refresh(scene)
 
     await _on_entity_changed("scene", scene.id, "created")
-    return SceneResponse.from_orm(scene)
+    patterns = await _get_entity_patterns(factory, f"scene:{scene.id}")
+    return SceneResponse.from_orm(scene, patterns=patterns)
 
 
 @router.put("/{scene_id}", response_model=SceneResponse)
@@ -164,7 +185,8 @@ async def update_scene(
         await session.refresh(scene)
 
     await _on_entity_changed("scene", scene.id, "updated")
-    return SceneResponse.from_orm(scene)
+    patterns = await _get_entity_patterns(factory, f"scene:{scene.id}")
+    return SceneResponse.from_orm(scene, patterns=patterns)
 
 
 @router.delete("/{scene_id}")

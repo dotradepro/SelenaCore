@@ -55,9 +55,10 @@ class RadioStationResponse(BaseModel):
     logo_url: str
     enabled: bool
     favourite: bool
+    patterns_en: list[str] = []
 
     @classmethod
-    def from_orm(cls, s: RadioStation) -> "RadioStationResponse":
+    def from_orm(cls, s: RadioStation, patterns: list[str] | None = None) -> "RadioStationResponse":
         return cls(
             id=s.id,
             name_user=s.name_user,
@@ -69,6 +70,7 @@ class RadioStationResponse(BaseModel):
             logo_url=s.logo_url,
             enabled=s.enabled,
             favourite=s.favourite,
+            patterns_en=patterns or [],
         )
 
 
@@ -106,6 +108,24 @@ async def _translate_to_en(text: str) -> str:
         return raw.strip().strip('"').strip("'") if raw else text
     except Exception:
         return text
+
+
+# ── Pattern helper ──────────────────────────────────────────────────────
+
+async def _get_entity_patterns(factory, entity_ref: str) -> list[str]:
+    """Fetch generated English patterns for an entity from DB."""
+    try:
+        from core.registry.models import IntentPattern
+        async with factory() as session:
+            result = await session.execute(
+                select(IntentPattern.pattern).where(
+                    IntentPattern.entity_ref == entity_ref,
+                    IntentPattern.lang == "en",
+                )
+            )
+            return [r[0] for r in result.all()]
+    except Exception:
+        return []
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -161,7 +181,8 @@ async def create_station(
 
     await _on_entity_changed("radio_station", station.id, "created")
 
-    return RadioStationResponse.from_orm(station)
+    patterns = await _get_entity_patterns(factory, f"radio_station:{station.id}")
+    return RadioStationResponse.from_orm(station, patterns=patterns)
 
 
 @router.put("/{station_id}", response_model=RadioStationResponse)
@@ -201,7 +222,8 @@ async def update_station(
         await session.refresh(station)
 
     await _on_entity_changed("radio_station", station.id, "updated")
-    return RadioStationResponse.from_orm(station)
+    patterns = await _get_entity_patterns(factory, f"radio_station:{station.id}")
+    return RadioStationResponse.from_orm(station, patterns=patterns)
 
 
 @router.delete("/{station_id}")

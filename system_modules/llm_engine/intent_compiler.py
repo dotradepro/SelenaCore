@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class _PatternEntry:
+    """Single compiled pattern with optional entity reference."""
+    regex: re.Pattern
+    entity_ref: str | None = None  # e.g. "radio_station:42"
+
+
+@dataclass
 class CompiledIntent:
     """In-memory compiled intent with regex patterns."""
     intent: str
@@ -35,7 +42,7 @@ class CompiledIntent:
     verb: str
     priority: int
     description: str
-    patterns: dict[str, list[re.Pattern]]  # lang → compiled regex list
+    patterns: dict[str, list[_PatternEntry]]  # lang → compiled pattern entries
     params_schema: dict = field(default_factory=dict)
 
 
@@ -97,7 +104,10 @@ class IntentCompiler:
         await self._async_load()
 
     def match(self, text: str, lang: str = "en") -> dict[str, Any] | None:
-        """Match text against compiled patterns. Returns dict or None.
+        """Match text against compiled English patterns. Returns dict or None.
+
+        All patterns are English-only. Non-English input naturally falls through
+        to LLM tier which handles translation and returns English patterns.
 
         Thread-safe: reads a snapshot reference of _compiled.
         """
@@ -107,14 +117,14 @@ class IntentCompiler:
         text_lower = text.lower().strip()
         compiled = self._compiled  # snapshot reference
 
-        # Pass 1: try requested language patterns
+        # Match against English patterns (all patterns are lang="en")
         for entry in compiled:
-            patterns = entry.patterns.get(lang, [])
-            for pattern in patterns:
-                m = pattern.search(text_lower)
+            patterns = entry.patterns.get("en", [])
+            for pe in patterns:
+                m = pe.regex.search(text_lower)
                 if m:
                     params = {k: v for k, v in m.groupdict().items() if v is not None}
-                    return {
+                    result: dict[str, Any] = {
                         "intent": entry.intent,
                         "module": entry.module,
                         "noun_class": entry.noun_class,
@@ -122,24 +132,9 @@ class IntentCompiler:
                         "params": params,
                         "source": "system_module",
                     }
-
-        # Pass 2: try ALL languages (text may be in a different lang than detected)
-        for entry in compiled:
-            for plang, patterns in entry.patterns.items():
-                if plang == lang:
-                    continue  # already tried
-                for pattern in patterns:
-                    m = pattern.search(text_lower)
-                    if m:
-                        params = {k: v for k, v in m.groupdict().items() if v is not None}
-                        return {
-                            "intent": entry.intent,
-                            "module": entry.module,
-                            "noun_class": entry.noun_class,
-                            "verb": entry.verb,
-                            "params": params,
-                            "source": "system_module",
-                        }
+                    if pe.entity_ref:
+                        result["entity_ref"] = pe.entity_ref
+                    return result
 
         return None
 
@@ -153,7 +148,7 @@ class IntentCompiler:
                 # Convert compiled patterns back to string patterns
                 str_patterns: dict[str, list[str]] = {}
                 for lang, pats in c.patterns.items():
-                    str_patterns[lang] = [p.pattern for p in pats]
+                    str_patterns[lang] = [pe.regex.pattern for pe in pats]
                 result.append(SystemIntentEntry(
                     module=c.module,
                     intent=c.intent,
@@ -207,22 +202,27 @@ class IntentCompiler:
             result = await session.execute(select(IntentPattern))
             all_patterns = list(result.scalars().all())
 
-        # Group patterns by intent_id
-        patterns_by_id: dict[int, dict[str, list[str]]] = {}
+        # Group patterns by intent_id: {id: {lang: [(pattern_str, entity_ref), ...]}}
+        patterns_by_id: dict[int, dict[str, list[tuple[str, str | None]]]] = {}
         for p in all_patterns:
-            patterns_by_id.setdefault(p.intent_id, {}).setdefault(p.lang, []).append(p.pattern)
+            patterns_by_id.setdefault(p.intent_id, {}).setdefault(p.lang, []).append(
+                (p.pattern, p.entity_ref)
+            )
 
         # Compile
         new_compiled: list[CompiledIntent] = []
         for defn in definitions:
             lang_patterns = patterns_by_id.get(defn.id, {})
-            compiled_patterns: dict[str, list[re.Pattern]] = {}
+            compiled_patterns: dict[str, list[_PatternEntry]] = {}
 
-            for lang, pattern_strings in lang_patterns.items():
-                compiled_list = []
-                for ps in pattern_strings:
+            for lang, pattern_tuples in lang_patterns.items():
+                compiled_list: list[_PatternEntry] = []
+                for ps, eref in pattern_tuples:
                     try:
-                        compiled_list.append(re.compile(ps, re.IGNORECASE))
+                        compiled_list.append(_PatternEntry(
+                            regex=re.compile(ps, re.IGNORECASE),
+                            entity_ref=eref,
+                        ))
                     except re.error as exc:
                         logger.warning(
                             "IntentCompiler: bad regex '%s' for %s/%s: %s",

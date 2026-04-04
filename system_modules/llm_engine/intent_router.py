@@ -39,6 +39,7 @@ Analyze the user request. Reply ONLY with valid JSON, no extra text:
   "entity": "<device/object or null>",
   "location": "<room or null>",
   "params": {},
+  "pattern": "<short English command phrase (2-5 words) that would trigger this intent>",
   "response": "<1-2 sentences in the user's language confirming the action>"
 }
 
@@ -55,6 +56,7 @@ Rules:
 - intent MUST be from the known list above or from the registered intents list
 - entity, location — always in English (e.g. "light", "kitchen"), even if user speaks another language
 - params — extracted parameters (e.g. {"level": 50} for volume, {"genre": "jazz"} for music)
+- pattern — MUST be in English, a short natural voice command (e.g. "play jazz radio", "turn on kitchen light", "current weather"). This is used for future voice recognition
 - response — MUST be in the TTS language (specified at the end of this prompt), natural and concise
 - If you cannot determine the intent, use "unknown" and provide a helpful response
 """
@@ -150,7 +152,8 @@ class IntentResult:
     lang: str = "en"
     user_id: str | None = None
     params: dict[str, Any] | None = None
-    raw_llm: str | None = None  # raw LLM response before parsing (debug)
+    pattern: str | None = None    # English pattern phrase from LLM (for saving to DB)
+    raw_llm: str | None = None    # raw LLM response before parsing (debug)
 
 
 # Re-export for backward compatibility
@@ -216,6 +219,11 @@ class IntentRouter:
 
         if db_match:
             response = _get_template_response(db_match["intent"], tts_lang)
+            params = db_match.get("params", {})
+            # Inject entity_ref into params so handlers can resolve by ID
+            entity_ref = db_match.get("entity_ref")
+            if entity_ref:
+                params["entity_ref"] = entity_ref
             result = IntentResult(
                 intent=db_match["intent"],
                 response=response,
@@ -224,7 +232,7 @@ class IntentRouter:
                 latency_ms=_elapsed(),
                 lang=lang,
                 user_id=user_id,
-                params=db_match.get("params", {}),
+                params=params,
             )
             await self._publish_event(result, raw_text=text, lang=lang)
             return (result, steps) if trace else result
@@ -323,6 +331,8 @@ class IntentRouter:
                 user_id=user_id,
                 params=cached.get("params", {}),
             )
+            # Resolve entity_ref for cached results (may lack it)
+            result = await self._resolve_entity_ref(result)
             await self._publish_event(result, raw_text=text, lang=lang)
             return (result, steps) if trace else result
         elif trace:
@@ -356,6 +366,8 @@ class IntentRouter:
             llm_result.latency_ms = _elapsed()
             llm_result.lang = lang
             llm_result.user_id = user_id
+            # Resolve entity_ref BEFORE caching (so cache stores it)
+            llm_result = await self._resolve_entity_ref(llm_result)
             # Cache successful classification
             if llm_result.intent not in ("unknown", "llm.response"):
                 try:
@@ -367,6 +379,12 @@ class IntentRouter:
                     )
                 except Exception:
                     pass
+                # Save LLM-generated English pattern to DB for future 0ms matching
+                if llm_result.pattern:
+                    try:
+                        await self._save_llm_pattern(llm_result.intent, llm_result.pattern)
+                    except Exception:
+                        pass
             # Device disambiguation: resolve entity+location → device_id
             llm_result = await self._disambiguate_device(llm_result, tts_lang)
             await self._publish_event(llm_result, raw_text=text, lang=lang)
@@ -397,6 +415,8 @@ class IntentRouter:
                 cloud_result.latency_ms = _elapsed()
                 cloud_result.lang = lang
                 cloud_result.user_id = user_id
+                # Resolve entity_ref BEFORE caching
+                cloud_result = await self._resolve_entity_ref(cloud_result)
                 if cloud_result.intent not in ("unknown", "llm.response"):
                     try:
                         from system_modules.llm_engine.intent_cache import get_intent_cache
@@ -407,6 +427,12 @@ class IntentRouter:
                         )
                     except Exception:
                         pass
+                    # Save Cloud LLM-generated English pattern to DB
+                    if cloud_result.pattern:
+                        try:
+                            await self._save_llm_pattern(cloud_result.intent, cloud_result.pattern)
+                        except Exception:
+                            pass
                 # Device disambiguation
                 cloud_result = await self._disambiguate_device(cloud_result, tts_lang)
                 await self._publish_event(cloud_result, raw_text=text, lang=lang)
@@ -739,6 +765,7 @@ class IntentRouter:
         response = data.get("response", "")
         entity = data.get("entity")
         location = data.get("location")
+        pattern = data.get("pattern", "")
 
         # Merge entity/location into params for module consumption
         if entity and entity != "null":
@@ -749,12 +776,16 @@ class IntentRouter:
         if intent_name and intent_name != "unknown":
             return IntentResult(
                 intent=intent_name, response=response, action=None,
-                source=source, latency_ms=0, params=params, raw_llm=raw_debug,
+                source=source, latency_ms=0, params=params,
+                pattern=pattern if pattern else None,
+                raw_llm=raw_debug,
             )
         elif response:
             return IntentResult(
                 intent="llm.response", response=response, action=None,
-                source=source, latency_ms=0, params=params, raw_llm=raw_debug,
+                source=source, latency_ms=0, params=params,
+                pattern=pattern if pattern else None,
+                raw_llm=raw_debug,
             )
 
         return None
@@ -793,6 +824,152 @@ class IntentRouter:
             pass
         names.add("llm.response")
         return names
+
+    # ── Resolve entity_ref for named entities ────────────────────────────
+
+    async def _resolve_entity_ref(self, result: IntentResult) -> IntentResult:
+        """Resolve entity_ref from DB for intents that reference named entities.
+
+        When LLM or cache returns e.g. media.play_radio_name with station_name="Люкс ФМ",
+        look up RadioStation by name (name_user or name_en) and inject entity_ref.
+        Same for scenes and devices.
+        """
+        params = result.params or {}
+        if params.get("entity_ref"):
+            return result  # already resolved
+
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            sf = get_sandbox()._session_factory
+            if sf is None:
+                return result
+
+            from sqlalchemy import select, func
+
+            intent = result.intent
+
+            if intent == "media.play_radio_name":
+                name = params.get("station_name", "")
+                if not name:
+                    return result
+                from core.registry.models import RadioStation
+                async with sf() as session:
+                    # Try exact match on name_user or name_en (case-insensitive)
+                    name_lower = name.lower()
+                    stmt = select(RadioStation).where(
+                        RadioStation.enabled == True
+                    )
+                    rows = list((await session.execute(stmt)).scalars().all())
+                    match = None
+                    for row in rows:
+                        if (row.name_user and row.name_user.lower() == name_lower) or \
+                           (row.name_en and row.name_en.lower() == name_lower):
+                            match = row
+                            break
+                    # Fallback: substring match
+                    if not match:
+                        for row in rows:
+                            if (row.name_user and name_lower in row.name_user.lower()) or \
+                               (row.name_en and name_lower in row.name_en.lower()):
+                                match = row
+                                break
+                    if match:
+                        result.params = {**params, "entity_ref": f"radio_station:{match.id}"}
+
+            elif intent == "automation.run_scene":
+                name = params.get("scene_name", params.get("entity", ""))
+                if not name:
+                    return result
+                from core.registry.models import Scene
+                async with sf() as session:
+                    name_lower = name.lower()
+                    stmt = select(Scene).where(Scene.enabled == True)
+                    rows = list((await session.execute(stmt)).scalars().all())
+                    for row in rows:
+                        if (row.name_user and row.name_user.lower() == name_lower) or \
+                           (row.name_en and row.name_en.lower() == name_lower):
+                            result.params = {**params, "entity_ref": f"scene:{row.id}"}
+                            break
+
+        except Exception as exc:
+            logger.debug("Entity ref resolution failed: %s", exc)
+
+        return result
+
+    # ── Save LLM-generated pattern to DB ────────────────────────────────
+
+    async def _save_llm_pattern(self, intent_name: str, pattern_phrase: str) -> None:
+        """Save an LLM-generated English pattern to intent_patterns DB.
+
+        Converts phrase to regex, checks for duplicates, caps at 20 per intent.
+        """
+        from system_modules.llm_engine.pattern_utils import (
+            deduplicate_pattern,
+            phrase_to_regex,
+            validate_pattern,
+        )
+
+        regex = phrase_to_regex(pattern_phrase)
+        if not regex or not validate_pattern(regex):
+            return
+
+        try:
+            from core.module_loader.sandbox import get_sandbox
+            sf = get_sandbox()._session_factory
+            if sf is None:
+                return
+
+            from sqlalchemy import select, func
+            from core.registry.models import IntentDefinition, IntentPattern
+
+            async with sf() as session:
+                async with session.begin():
+                    # Find intent definition
+                    result = await session.execute(
+                        select(IntentDefinition).where(IntentDefinition.intent == intent_name)
+                    )
+                    idef = result.scalar_one_or_none()
+                    if idef is None:
+                        return
+
+                    # Check pattern count cap (max 20 per intent)
+                    count_result = await session.execute(
+                        select(func.count()).where(
+                            IntentPattern.intent_id == idef.id,
+                            IntentPattern.source == "llm_generated",
+                        )
+                    )
+                    count = count_result.scalar() or 0
+                    if count >= 20:
+                        return
+
+                    # Check for duplicates
+                    existing_result = await session.execute(
+                        select(IntentPattern.pattern).where(
+                            IntentPattern.intent_id == idef.id,
+                            IntentPattern.lang == "en",
+                        )
+                    )
+                    existing_patterns = [r[0] for r in existing_result.all()]
+
+                    if deduplicate_pattern(regex, existing_patterns):
+                        return
+
+                    # Save new pattern
+                    session.add(IntentPattern(
+                        intent_id=idef.id,
+                        lang="en",
+                        pattern=regex,
+                        source="llm_generated",
+                    ))
+
+            # Hot-reload compiler
+            from system_modules.llm_engine.intent_compiler import get_intent_compiler
+            await get_intent_compiler().full_reload()
+            logger.info("Saved LLM pattern for '%s': %s", intent_name, regex)
+
+        except Exception as exc:
+            logger.debug("Failed to save LLM pattern: %s", exc)
 
     # ── Device disambiguation ─────────────────────────────────────────
 
