@@ -40,11 +40,20 @@ class MediaPlayer:
                         "--no-video-title-show", "--no-snapshot-preview"]
             alsa_dev = os.getenv("MEDIA_ALSA_DEVICE", "").strip()
             if not alsa_dev and aout == "alsa":
+                # Prefer mixer device (dmix for concurrent playback with TTS)
                 try:
-                    from core.config_writer import get_value
-                    alsa_dev = get_value("voice", "audio_force_output") or ""
+                    from core.audio_mixer import get_mixer
+                    mixer = get_mixer()
+                    if mixer.is_initialized():
+                        alsa_dev = mixer.get_device("media-player") or ""
                 except Exception:
                     pass
+                if not alsa_dev:
+                    try:
+                        from core.config_writer import get_value
+                        alsa_dev = get_value("voice", "audio_force_output") or ""
+                    except Exception:
+                        pass
             if aout == "alsa" and alsa_dev:
                 vlc_args.append(f"--alsa-audio-device={alsa_dev}")
             self._instance = vlc.Instance(*vlc_args)

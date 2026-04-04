@@ -785,11 +785,18 @@ async def audio_mic_level() -> dict[str, Any]:
 async def audio_sources() -> dict[str, Any]:
     """Return audio source modules with their current volumes.
 
-    Discovers system modules that have audio-related intents
-    (media.volume_set, media.play, etc.) and returns their volume state.
+    Uses AudioMixerService if available, falls back to manual discovery.
     """
-    sources: list[dict[str, Any]] = []
+    try:
+        from core.audio_mixer import get_mixer
+        mixer = get_mixer()
+        if mixer.is_initialized():
+            return {"sources": mixer.get_sources()}
+    except Exception:
+        pass
 
+    # Fallback: manual discovery
+    sources: list[dict[str, Any]] = []
     try:
         from core.module_loader.sandbox import get_sandbox
         sandbox = get_sandbox()
@@ -799,7 +806,6 @@ async def audio_sources() -> dict[str, Any]:
                 continue
             manifest = mod_info.manifest or {}
             intents = manifest.get("intents", [])
-            # Check if module has audio intents (volume control)
             has_audio = any(
                 i.startswith("media.") for i in intents
             ) if isinstance(intents, list) else False
@@ -807,9 +813,7 @@ async def audio_sources() -> dict[str, Any]:
             if not has_audio:
                 continue
 
-            # Get current volume from module instance
             instance = sandbox.get_in_process_module(mod_info.name)
-            # Load saved volume from config, fallback to runtime, fallback to 70
             volume = read_config().get("voice", {}).get(f"media_volume_{mod_info.name}", 70)
             if instance:
                 player = getattr(instance, "_player", None)
@@ -818,7 +822,6 @@ async def audio_sources() -> dict[str, Any]:
                     if runtime_vol is not None:
                         volume = runtime_vol
 
-            # Use short display name: prefer manifest name, capitalize nicely
             display_name = mod_info.name.replace("-", " ").replace("_", " ").title()
             sources.append({
                 "module": mod_info.name,
@@ -829,7 +832,6 @@ async def audio_sources() -> dict[str, Any]:
     except Exception as exc:
         logger.warning("audio/sources error: %s", exc)
 
-    # Always include TTS (voice-core) as a source
     tts_vol = read_config().get("voice", {}).get("output_volume", 100)
     sources.insert(0, {
         "module": "voice-core",
@@ -847,11 +849,22 @@ async def audio_source_volume(body: dict[str, Any]) -> dict[str, Any]:
     module = body.get("module", "")
     volume = max(0, min(150, int(body.get("volume", 70))))
 
+    # Route through mixer if available
+    try:
+        from core.audio_mixer import get_mixer
+        mixer = get_mixer()
+        if mixer.is_initialized():
+            source_name = "tts" if module == "voice-core" else module
+            mixer.set_source_volume(source_name, volume)
+            return {"status": "ok", "module": module, "volume": volume}
+    except Exception:
+        pass
+
+    # Fallback: direct config + module control
     if module == "voice-core":
         update_config("voice", "output_volume", volume)
         return {"status": "ok", "module": module, "volume": volume}
 
-    # Save media volume to config so it survives restarts
     update_config("voice", f"media_volume_{module}", volume)
 
     try:

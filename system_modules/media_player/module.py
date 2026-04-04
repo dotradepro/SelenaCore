@@ -165,26 +165,30 @@ class MediaPlayerModule(SystemModule):
             if intent.startswith("media."):
                 await self._voice.handle(intent, payload.get("params", {}))
 
-    # ── Audio ducking (lower volume during TTS) ────────────────────────────────
+    # ── Audio ducking (mute media during TTS) ───────────────────────────────────
 
     async def _on_tts_start(self, event: Any) -> None:
-        """Duck media volume when TTS begins."""
+        """Mute media when TTS begins so assistant is clearly heard.
+
+        With dmix, both sources can play simultaneously — we just
+        set media volume to 0 so only TTS is audible.
+        """
         if self._player.get_state() == "playing":
             if self._pre_duck_volume is None:
                 self._pre_duck_volume = self._player._volume
             self._duck_generation += 1
-            await self._player.set_volume(self._duck_volume)
-            logger.debug("Audio ducking: %d → %d", self._pre_duck_volume, self._duck_volume)
+            await self._player.set_volume(0)
+            logger.debug("Audio ducking: muted media (was vol=%d)", self._pre_duck_volume)
 
     async def _on_tts_done(self, event: Any) -> None:
         """Restore media volume when TTS ends."""
         if self._pre_duck_volume is not None:
             gen = self._duck_generation
-            # Grace period: if another TTS starts within 300ms, stay ducked
+            # Grace period: if another TTS starts within 300ms, stay muted
             await asyncio.sleep(0.3)
             if self._pre_duck_volume is not None and self._duck_generation == gen:
                 await self._player.set_volume(self._pre_duck_volume)
-                logger.debug("Audio ducking restored: → %d", self._pre_duck_volume)
+                logger.debug("Audio ducking restored: vol=%d", self._pre_duck_volume)
                 self._pre_duck_volume = None
 
     # ── Background tasks ──────────────────────────────────────────────────────

@@ -51,6 +51,14 @@ update_config('hardware', 'gpu_detected', os.environ.get('SELENA_GPU_AVAILABLE')
 update_config('hardware', 'gpu_type', os.environ.get('SELENA_GPU_TYPE', 'none'))
 " 2>/dev/null || true
 
+# --- Audio Mixer Setup ---
+echo "[start.sh] Configuring ALSA audio mixer..."
+python -c "
+from core.audio_mixer import get_mixer
+mixer = get_mixer()
+mixer.initialize()
+" 2>/dev/null && echo "[start.sh] Audio mixer OK" || echo "[start.sh] WARNING: audio mixer setup failed"
+
 echo "[start.sh] Starting Core API on :7070..."
 python -m uvicorn core.main:app --host 0.0.0.0 --port 7070 --no-access-log &
 CORE_PID=$!

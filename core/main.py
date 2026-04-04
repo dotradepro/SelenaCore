@@ -149,6 +149,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cloud_sync = get_cloud_sync()
     await cloud_sync.start()
 
+    # Initialize audio mixer (generates ALSA dmix config for concurrent playback)
+    try:
+        from core.audio_mixer import get_mixer
+        mixer = get_mixer()
+        mixer.initialize()
+    except Exception as exc:
+        logger.warning("Audio mixer init failed: %s", exc)
+
+    # Initialize prompt store (seed from en.json, cache from DB)
+    try:
+        from core.prompt_store import get_prompt_store
+        ps = get_prompt_store()
+        ps.set_session_factory(session_factory)
+        await ps.initialize()
+    except Exception as exc:
+        logger.warning("Prompt store init failed: %s", exc)
+
     # Pre-load ModuleRegistry from DB (modules from previous run)
     await _preload_module_registry(session_factory)
 
