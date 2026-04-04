@@ -196,6 +196,8 @@ class VoiceCoreModule(SystemModule):
 
         # Mic test lock: when set, voice loop pauses to release the device
         self._mic_test_active = False
+        # Last RMS energy from audio loop (for mic-level monitoring without lock)
+        self._last_energy: float = 0.0
 
         # Live debug log: ring buffer of recent STT events for UI terminal
         self._live_log: list[dict] = []
@@ -359,12 +361,13 @@ class VoiceCoreModule(SystemModule):
         last_speech_time = 0.0
         speech_chunks_in_buffer = 0  # count of chunks with speech energy
         # IDLE: transcribe every N seconds to check wake phrase
-        idle_interval_sec = 2.5
+        # 4 sec minimum for reliable Whisper language detection
+        idle_interval_sec = 4.0
         idle_buffer_start = time.monotonic()
         # Energy threshold for speech detection (RMS of 16-bit samples)
         energy_threshold = 300
         # Minimum speech chunks required before sending to STT (filters background noise)
-        min_speech_chunks = 3  # ~750ms of speech needed
+        min_speech_chunks = 6  # ~1.5s of speech needed for reliable language detection
 
         async def _safe_transcribe(buf: bytes) -> tuple[str, str]:
             """Transcribe with error handling. Returns (text, lang)."""
@@ -400,7 +403,11 @@ class VoiceCoreModule(SystemModule):
                     continue
 
                 # Simple energy-based VAD
-                has_speech = _rms_energy(data) > energy_threshold
+                rms = _rms_energy(data)
+                has_speech = rms > energy_threshold
+
+                # Store energy for mic-level monitoring (no mic lock needed)
+                self._last_energy = rms
 
                 # ── STATE: IDLE — buffer and check for wake phrase ──
                 if self._state == STATE_IDLE:
@@ -1093,6 +1100,25 @@ class VoiceCoreModule(SystemModule):
         from system_modules.voice_core.voice_history import get_voice_history
         from system_modules.voice_core.privacy import on_privacy_change
 
+        # Apply saved ALSA levels (mic gain, output volume) — survives container restarts
+        try:
+            from core.config_writer import read_config as _rc
+            _voice = _rc().get("voice", {})
+            _input_dev = _voice.get("audio_force_input", "")
+            _gain = _voice.get("input_gain")
+            if _input_dev and _gain is not None:
+                import re as _re
+                _m = _re.match(r"(?:plug)?hw:(\d+)", _input_dev)
+                if _m:
+                    _card = _m.group(1)
+                    subprocess.run(
+                        ["amixer", "-c", _card, "sset", "Mic", f"{_gain}%"],
+                        timeout=3, capture_output=True,
+                    )
+                    logger.info("Applied mic gain %s%% on card %s", _gain, _card)
+        except Exception as exc:
+            logger.debug("ALSA gain apply: %s", exc)
+
         # Create STT provider (Whisper — auto-detected from config)
         try:
             from core.stt import create_stt_provider
@@ -1331,63 +1357,62 @@ class VoiceCoreModule(SystemModule):
 
         @router.get("/intents")
         async def list_intents() -> JSONResponse:
-            """List all registered voice intents from all sources."""
-            import re as _re
-            from system_modules.llm_engine.intent_router import get_intent_router
-            router = get_intent_router()
+            """List all registered intent definitions from DB."""
             intents: list[dict] = []
-
-            # System module intents (Tier 1.5)
-            for entry in router._system_intents:
-                param_names: list[str] = []
-                for patterns in entry.patterns.values():
-                    for p in patterns:
-                        param_names.extend(_re.findall(r"\?P<(\w+)>", p))
-                intents.append({
-                    "module": entry.module,
-                    "intent": entry.intent,
-                    "description": entry.description or "",
-                    "priority": entry.priority,
-                    "params": sorted(set(param_names)),
-                    "source": "system_module",
-                })
-
-            # Fast matcher rules (Tier 1)
             try:
-                from system_modules.llm_engine.fast_matcher import get_fast_matcher
-                for rule in get_fast_matcher()._rules:
-                    name = rule.get("name", "")
-                    if not name:
-                        continue
-                    intents.append({
-                        "module": "fast-matcher",
-                        "intent": name,
-                        "description": ", ".join(rule.get("keywords", [])[:3]),
-                        "priority": 0,
-                        "params": [],
-                        "source": "fast_matcher",
-                    })
-            except Exception:
-                pass
-
-            # Module Bus intents (Tier 2)
-            try:
-                from core.module_bus import get_module_bus
-                for item in get_module_bus()._intent_index:
-                    module_name = getattr(item, "module", "")
-                    desc = getattr(item, "description", "")
-                    intents.append({
-                        "module": module_name,
-                        "intent": f"module.{module_name}",
-                        "description": desc,
-                        "priority": getattr(item, "priority", 0),
-                        "params": [],
-                        "source": "module_bus",
-                    })
-            except Exception:
-                pass
-
+                from core.registry.models import IntentDefinition
+                from sqlalchemy import select
+                async with svc._db_session() as session:
+                    result = await session.execute(
+                        select(IntentDefinition).where(IntentDefinition.enabled == True)
+                        .order_by(IntentDefinition.priority.desc())
+                    )
+                    for row in result.scalars():
+                        import json as _json
+                        intents.append({
+                            "module": row.module or "",
+                            "intent": row.intent,
+                            "description": row.description or "",
+                            "priority": row.priority,
+                            "params": list(_json.loads(row.params_schema).keys()) if row.params_schema else [],
+                            "source": row.source or "system",
+                        })
+            except Exception as exc:
+                logger.warning("intents list error: %s", exc)
             return JSONResponse({"intents": intents, "total": len(intents)})
+
+        @router.get("/patterns")
+        async def list_patterns() -> JSONResponse:
+            """List all regex patterns from DB."""
+            patterns: list[dict] = []
+            try:
+                from core.registry.models import IntentPattern, IntentDefinition
+                from sqlalchemy import select
+                async with svc._db_session() as session:
+                    result = await session.execute(
+                        select(
+                            IntentPattern.lang,
+                            IntentPattern.pattern,
+                            IntentPattern.source,
+                            IntentDefinition.intent,
+                            IntentDefinition.module,
+                            IntentDefinition.priority,
+                        )
+                        .join(IntentDefinition, IntentPattern.intent_id == IntentDefinition.id)
+                        .order_by(IntentDefinition.priority.desc(), IntentPattern.lang)
+                    )
+                    for row in result:
+                        patterns.append({
+                            "intent": row.intent or "",
+                            "module": row.module or "",
+                            "lang": row.lang,
+                            "pattern": row.pattern,
+                            "source": row.source or "system",
+                            "priority": row.priority,
+                        })
+            except Exception as exc:
+                logger.warning("patterns list error: %s", exc)
+            return JSONResponse({"patterns": patterns, "total": len(patterns)})
 
         @router.post("/test-command")
         async def test_command(req: TestCommandRequest) -> JSONResponse:
