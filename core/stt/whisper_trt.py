@@ -75,15 +75,6 @@ class WhisperTRTProvider(STTProvider):
         self._model = None
 
 
-_LANG_NAMES: dict[str, str] = {
-    "ukrainian": "uk", "english": "en", "german": "de",
-    "french": "fr", "spanish": "es", "polish": "pl",
-    "italian": "it", "portuguese": "pt", "dutch": "nl",
-    "czech": "cs", "japanese": "ja", "chinese": "zh",
-    "korean": "ko", "russian": "ru", "turkish": "tr",
-    "arabic": "ar", "hindi": "hi", "swedish": "sv",
-}
-
-
 def _lang_name_to_code(name: str) -> str:
-    return _LANG_NAMES.get(name.lower().strip(), name[:2].lower())
+    from core.lang_utils import lang_name_to_code
+    return lang_name_to_code(name)

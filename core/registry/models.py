@@ -242,6 +242,24 @@ class IntentVocab(Base):
         self.stems = json.dumps(items, ensure_ascii=False)
 
 
+class SystemPrompt(Base):
+    """Stores LLM prompts per language. Seeded from JSON, editable via UI."""
+    __tablename__ = "system_prompts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lang: Mapped[str] = mapped_column(String(10), nullable=False)
+    key: Mapped[str] = mapped_column(String(50), nullable=False)  # user_prompt, compact_user, classification_prompt, rephrase_prompt
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False)  # True = user-edited or LLM-translated
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("lang", "key", name="uq_prompt_lang_key"),
+    )
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

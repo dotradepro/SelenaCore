@@ -117,13 +117,7 @@ _TEMPLATE_RESPONSES: dict[str, dict[str, str]] = {
     },
 }
 
-_LANG_NAMES: dict[str, str] = {
-    "uk": "Ukrainian", "en": "English", "de": "German",
-    "fr": "French", "es": "Spanish", "pl": "Polish",
-    "it": "Italian", "pt": "Portuguese", "nl": "Dutch",
-    "cs": "Czech", "ja": "Japanese", "zh": "Chinese",
-    "ko": "Korean", "ru": "Russian", "tr": "Turkish",
-}
+from core.lang_utils import lang_code_to_name as _lang_name
 
 
 # ── Param normalization: non-English captured values → English ─────────
@@ -501,8 +495,8 @@ class IntentRouter:
         system_prompt = self._build_system_prompt(tts_lang)
 
         # Build user prompt with language tag for local models
-        lang_name = _LANG_NAMES.get(lang, "English")
-        tts_lang_name = _LANG_NAMES.get(tts_lang, "English")
+        lang_name = _lang_name(lang)
+        tts_lang_name = _lang_name(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
         # Call Ollama
@@ -565,8 +559,8 @@ class IntentRouter:
     ) -> IntentResult | None:
         """Cloud LLM classification via OpenAI-compatible API or legacy providers."""
         tts_lang = tts_lang or lang
-        lang_name = _LANG_NAMES.get(lang, "English")
-        tts_lang_name = _LANG_NAMES.get(tts_lang, "English")
+        lang_name = _lang_name(lang)
+        tts_lang_name = _lang_name(tts_lang)
         system_prompt = self._build_system_prompt(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
@@ -619,10 +613,29 @@ class IntentRouter:
         if lang in self._prompt_cache:
             return self._prompt_cache[lang]
 
-        lang_name = _LANG_NAMES.get(lang, "English")
+        lang_name = _lang_name(lang)
 
-        # Start with fixed prompt
-        prompt = INTENT_SYSTEM_PROMPT
+        # Load intent system prompt from DB (editable via UI)
+        try:
+            from core.prompt_store import get_prompt_store
+            cache = get_prompt_store()._cache
+            # Try TTS lang first, fallback to en
+            from core.api.routes.voice_engines import _get_prompt_context
+            _, _, tts_lang = _get_prompt_context()
+            intent_tpl = (cache.get(tts_lang, {}).get("intent_system")
+                          or cache.get("en", {}).get("intent_system")
+                          or INTENT_SYSTEM_PROMPT)
+            # Fill template variables
+            from core.api.routes.voice_engines import _extract_name_from_wake
+            from core.config_writer import read_config as _rc
+            _wake = _rc().get("voice", {}).get("wake_word_model", "")
+            _name = _extract_name_from_wake(_wake) if _wake else "Selena"
+            try:
+                prompt = intent_tpl.format(name=_name, lang=_lang_name(lang))
+            except (KeyError, IndexError):
+                prompt = intent_tpl
+        except Exception:
+            prompt = INTENT_SYSTEM_PROMPT
 
         # Add known intents from IntentCompiler (DB-driven)
         try:

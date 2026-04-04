@@ -229,23 +229,22 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ── Hidden system prompt (auto-generated, NOT editable) ──────────────
-# Injected: {name} from wake word, {lang} from STT model
-HIDDEN_FULL = (
-    "You are {name}. "
-    "CRITICAL: Reply ONLY in {lang}. Every word MUST be in {lang}. "
-    "Do NOT insert words from other languages in any combination. "
-    "NEVER say you are AI, a language model, or neural network. "
-    "NEVER mention model names, versions, or developers (Google, OpenAI, Meta, Anthropic, etc.). "
-    "If asked who you are — say: I am {name}, your home assistant. "
-    "If asked who created you — say: the SelenaCore team. "
-    "Response will be read by TTS — plain text only, no markdown/URLs/emoji."
-)
-
-HIDDEN_COMPACT = (
-    "You are {name}. {lang} only, no other languages. "
-    "Never say you are AI or mention model names."
-)
+def _get_hidden_prompt(compact: bool = False) -> str:
+    """Load hidden system prompt template from DB (editable via UI)."""
+    key = "hidden_compact" if compact else "hidden_system"
+    try:
+        from core.prompt_store import get_prompt_store
+        cache = get_prompt_store()._cache
+        # Check TTS lang first, fallback to en
+        name, lang, tts_lang = _get_prompt_context()
+        for check_lang in (tts_lang, "en"):
+            if check_lang in cache and key in cache[check_lang]:
+                return cache[check_lang][key]
+    except Exception:
+        pass
+    # Hardcoded fallback
+    from core.prompt_store import _EN_FALLBACK
+    return _EN_FALLBACK.get(key, "")
 
 # ── Default intent classification prompt ─────────────────────────────
 DEFAULT_CLASSIFICATION_PROMPT = (
@@ -271,78 +270,38 @@ DEFAULT_REPHRASE_PROMPT = (
 
 MAX_REPHRASE_PROMPT = 400
 
-# ── Default USER prompts loaded from config/prompts/{lang}.json ───────
-_PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
-_prompts_cache: dict[str, dict[str, str]] = {}
+# ── Prompt loading (DB-backed via PromptStore) ───────────────────────
+_prompts_cache: dict[str, dict[str, str]] = {}  # kept for backward compat with _prompts_cache.clear()
 
 
 def _load_prompt_locale(lang: str) -> dict[str, str]:
-    """Load prompt defaults from config/prompts/{lang}.json with cache."""
-    if lang in _prompts_cache:
-        return _prompts_cache[lang]
-    path = _PROMPTS_DIR / f"{lang}.json"
-    if path.is_file():
+    """Load prompts from PromptStore (DB). Sync wrapper for async store."""
+    import asyncio
+    try:
+        from core.prompt_store import get_prompt_store
+        store = get_prompt_store()
+        # Check cache directly (avoids event loop issues in sync context)
+        if lang in store._cache:
+            return store._cache[lang]
+        # Try running async get_all
         try:
-            import json as _json
-            data = _json.loads(path.read_text(encoding="utf-8"))
-            _prompts_cache[lang] = data
-            return data
-        except Exception:
+            loop = asyncio.get_running_loop()
+            # Already in async context — can't await here, use cache
+        except RuntimeError:
             pass
-    # Fallback to English
-    if lang != "en":
-        return _load_prompt_locale("en")
-    # Hardcoded ultimate fallback
-    return {"user_prompt": "Keep answers short and helpful.", "compact_user": "Short answers, plain text."}
+    except Exception:
+        pass
+    # Fallback to hardcoded English
+    return {
+        "user_prompt": "Keep answers short and helpful.",
+        "compact_user": "Short answers, plain text.",
+    }
 
 # Character limits
 MAX_USER_PROMPT = 300
 MAX_COMPACT_USER = 120
 
-# STT model name → language code mapping
-_STT_LANG_MAP: dict[str, str] = {
-    "uk": "Ukrainian",
-    "ru": "Russian",
-    "en": "English",
-    "de": "German",
-    "fr": "French",
-    "es": "Spanish",
-    "it": "Italian",
-    "pl": "Polish",
-    "pt": "Portuguese",
-    "nl": "Dutch",
-    "tr": "Turkish",
-    "ja": "Japanese",
-    "zh": "Chinese",
-    "ko": "Korean",
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "cs": "Czech",
-    "el": "Greek",
-    "fi": "Finnish",
-    "sv": "Swedish",
-    "da": "Danish",
-    "hu": "Hungarian",
-    "ro": "Romanian",
-    "sk": "Slovak",
-    "bg": "Bulgarian",
-    "hr": "Croatian",
-    "lt": "Lithuanian",
-    "lv": "Latvian",
-    "et": "Estonian",
-    "sl": "Slovenian",
-    "sr": "Serbian",
-    "ca": "Catalan",
-    "eu": "Basque",
-    "gl": "Galician",
-    "ka": "Georgian",
-    "fa": "Persian",
-    "he": "Hebrew",
-    "id": "Indonesian",
-    "ms": "Malay",
-    "th": "Thai",
-    "vi": "Vietnamese",
-}
+from core.lang_utils import lang_code_to_name
 
 
 def _detect_lang_from_stt(stt_model: str) -> str:
@@ -364,19 +323,23 @@ def _extract_name_from_wake(wake_phrase: str) -> str:
 
 
 def _get_prompt_context() -> tuple[str, str, str]:
-    """Return (assistant_name, response_language, ui_lang_code) from config.
+    """Return (assistant_name, response_language, tts_lang_code) from config.
 
-    Response language is derived from UI language (system.language),
-    NOT from STT model — there is no multilingual recognition.
+    Response language is derived from TTS primary voice language
+    (voice.tts.primary.lang), so prompts match the voice output language.
+    Falls back to system.language if TTS lang not configured.
     """
     config = read_config()
     voice_cfg = config.get("voice", {})
     sys_cfg = config.get("system", {})
     wake = voice_cfg.get("wake_word_model", "")
     name = _extract_name_from_wake(wake) if wake else "Selena"
-    ui_lang = sys_cfg.get("language", "en")
-    lang = _STT_LANG_MAP.get(ui_lang, "English")
-    return name, lang, ui_lang
+    # TTS language takes priority over UI language for prompt context
+    tts_lang = voice_cfg.get("tts", {}).get("primary", {}).get("lang", "")
+    if not tts_lang:
+        tts_lang = sys_cfg.get("language", "en")
+    lang = lang_code_to_name(tts_lang)
+    return name, lang, tts_lang
 
 
 def _get_default_user_prompt(ui_lang: str) -> str:
@@ -396,60 +359,77 @@ def _get_default_rephrase(ui_lang: str) -> str:
 
 
 def build_system_prompt(compact: bool = False) -> str:
-    """Build the full prompt: hidden system part + user part.
+    """Build the full prompt: hidden system part + user part from DB.
 
     Args:
         compact: If True, use short prompt for local models (ollama/llamacpp).
     """
-    config = read_config()
-    voice_cfg = config.get("voice", {})
-    name, lang, ui_lang = _get_prompt_context()
+    name, lang, tts_lang = _get_prompt_context()
+
+    # Read from prompt_store cache (sync-safe, loaded at startup)
+    try:
+        from core.prompt_store import get_prompt_store
+        cache = get_prompt_store()._cache
+        lang_prompts = cache.get(tts_lang, cache.get("en", {}))
+    except Exception:
+        lang_prompts = {}
 
     if compact:
-        hidden = HIDDEN_COMPACT.format(name=name, lang=lang)
-        user = voice_cfg.get("compact_user_prompt", "") or _get_default_compact_user(ui_lang)
+        hidden = _get_hidden_prompt(compact=True).format(name=name, lang=lang)
+        user = lang_prompts.get("compact_user", "Short answers, plain text.")
         return hidden + " " + user
 
-    hidden = HIDDEN_FULL.format(name=name, lang=lang)
-    user = voice_cfg.get("user_prompt", "") or _get_default_user_prompt(ui_lang)
+    hidden = _get_hidden_prompt(compact=False).format(name=name, lang=lang)
+    user = lang_prompts.get("user_prompt", "Keep answers short and helpful.")
     return hidden + "\n" + user
 
 
 @router.get("/llm/system-prompt")
 async def get_system_prompt() -> dict[str, Any]:
-    """Get prompt settings: hidden preview + editable user prompts."""
-    config = read_config()
-    voice_cfg = config.get("voice", {})
-    name, lang, ui_lang = _get_prompt_context()
+    """Get prompt settings: hidden preview + editable user prompts from DB."""
+    from core.prompt_store import get_prompt_store
+    store = get_prompt_store()
+    name, lang, tts_lang = _get_prompt_context()
 
-    saved_user = voice_cfg.get("user_prompt", "")
-    saved_compact = voice_cfg.get("compact_user_prompt", "")
-    default_user = _get_default_user_prompt(ui_lang)
-    default_compact = _get_default_compact_user(ui_lang)
+    # Load ALL prompts + custom flags from DB
+    prompts_meta: dict[str, dict] = {}
+    for key in ("user_prompt", "compact_user", "classification_prompt", "rephrase_prompt",
+                "hidden_system", "hidden_compact", "intent_system", "rephrase_system"):
+        prompts_meta[key] = await store.get_meta(tts_lang, key)
 
-    saved_classification = voice_cfg.get("classification_prompt", "")
-    saved_rephrase = voice_cfg.get("rephrase_prompt", "")
-    default_classification = _get_default_classification(ui_lang)
-    default_rephrase = _get_default_rephrase(ui_lang)
+    en_prompts = await store.get_all("en")
 
     return {
         "name": name,
         "lang": lang,
-        "ui_lang": ui_lang,
-        "hidden_full": HIDDEN_FULL.format(name=name, lang=lang),
-        "hidden_compact": HIDDEN_COMPACT.format(name=name, lang=lang),
-        "user_prompt": saved_user or default_user,
-        "is_custom_user": bool(saved_user),
-        "default_user": default_user,
-        "compact_user": saved_compact or default_compact,
-        "is_custom_compact": bool(saved_compact),
-        "default_compact": default_compact,
-        "classification_prompt": saved_classification or default_classification,
-        "is_custom_classification": bool(saved_classification),
-        "default_classification": default_classification,
-        "rephrase_prompt": saved_rephrase or default_rephrase,
-        "is_custom_rephrase": bool(saved_rephrase),
-        "default_rephrase": default_rephrase,
+        "ui_lang": tts_lang,
+        # Preview (hidden_system with variables filled)
+        "hidden_full": prompts_meta["hidden_system"]["value"].format(name=name, lang=lang)
+            if prompts_meta["hidden_system"]["value"] else "",
+        "hidden_compact": prompts_meta["hidden_compact"]["value"].format(name=name, lang=lang)
+            if prompts_meta["hidden_compact"]["value"] else "",
+        # All editable prompts
+        "prompts": {
+            key: {
+                "value": meta["value"],
+                "is_custom": meta["is_custom"],
+                "default": en_prompts.get(key, ""),
+            }
+            for key, meta in prompts_meta.items()
+        },
+        # Backward compat: flat fields for existing UI
+        "user_prompt": prompts_meta["user_prompt"]["value"],
+        "is_custom_user": prompts_meta["user_prompt"]["is_custom"],
+        "default_user": en_prompts.get("user_prompt", ""),
+        "compact_user": prompts_meta["compact_user"]["value"],
+        "is_custom_compact": prompts_meta["compact_user"]["is_custom"],
+        "default_compact": en_prompts.get("compact_user", ""),
+        "classification_prompt": prompts_meta["classification_prompt"]["value"],
+        "is_custom_classification": prompts_meta["classification_prompt"]["is_custom"],
+        "default_classification": en_prompts.get("classification_prompt", ""),
+        "rephrase_prompt": prompts_meta["rephrase_prompt"]["value"],
+        "is_custom_rephrase": prompts_meta["rephrase_prompt"]["is_custom"],
+        "default_rephrase": en_prompts.get("rephrase_prompt", ""),
         "limits": {
             "user_prompt": MAX_USER_PROMPT,
             "compact_user": MAX_COMPACT_USER,
@@ -463,35 +443,31 @@ async def get_system_prompt() -> dict[str, Any]:
 
 @router.post("/llm/user-prompt")
 async def save_user_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom user prompt (cloud models)."""
+    """Save custom user prompt (cloud models) to DB."""
+    from core.prompt_store import get_prompt_store
     prompt = req.prompt.strip()[:MAX_USER_PROMPT]
-    _, _, ui_lang = _get_prompt_context()
-    if prompt == _get_default_user_prompt(ui_lang):
-        prompt = ""
-    update_config("voice", "user_prompt", prompt)
+    _, _, tts_lang = _get_prompt_context()
+    await get_prompt_store().set(tts_lang, "user_prompt", prompt, is_custom=True)
     return {"status": "ok"}
 
 
 @router.post("/llm/compact-prompt")
 async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom compact user prompt (local models)."""
+    """Save custom compact user prompt (local models) to DB."""
+    from core.prompt_store import get_prompt_store
     prompt = req.prompt.strip()[:MAX_COMPACT_USER]
-    _, _, ui_lang = _get_prompt_context()
-    if prompt == _get_default_compact_user(ui_lang):
-        prompt = ""
-    update_config("voice", "compact_user_prompt", prompt)
+    _, _, tts_lang = _get_prompt_context()
+    await get_prompt_store().set(tts_lang, "compact_user", prompt, is_custom=True)
     return {"status": "ok"}
 
 
 @router.post("/llm/classification-prompt")
 async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom intent classification prompt."""
+    """Save custom intent classification prompt to DB."""
+    from core.prompt_store import get_prompt_store
     prompt = req.prompt.strip()[:MAX_CLASSIFICATION_PROMPT]
-    _, _, ui_lang = _get_prompt_context()
-    if prompt == _get_default_classification(ui_lang):
-        prompt = ""
-    update_config("voice", "classification_prompt", prompt)
-    # Clear intent router cached prompt
+    _, _, tts_lang = _get_prompt_context()
+    await get_prompt_store().set(tts_lang, "classification_prompt", prompt, is_custom=True)
     try:
         from system_modules.llm_engine.intent_router import get_intent_router
         get_intent_router().refresh_system_prompt()
@@ -502,32 +478,55 @@ async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]
 
 @router.post("/llm/rephrase-prompt")
 async def save_rephrase_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom rephrase prompt."""
+    """Save custom rephrase prompt to DB."""
+    from core.prompt_store import get_prompt_store
     prompt = req.prompt.strip()[:MAX_REPHRASE_PROMPT]
-    _, _, ui_lang = _get_prompt_context()
-    if prompt == _get_default_rephrase(ui_lang):
-        prompt = ""
-    update_config("voice", "rephrase_prompt", prompt)
+    _, _, tts_lang = _get_prompt_context()
+    await get_prompt_store().set(tts_lang, "rephrase_prompt", prompt, is_custom=True)
     return {"status": "ok"}
+
+
+@router.post("/llm/prompt")
+async def save_any_prompt(body: dict[str, Any]) -> dict[str, Any]:
+    """Save any prompt by key. Universal endpoint for all prompt types."""
+    from core.prompt_store import get_prompt_store, PROMPT_KEYS
+    key = body.get("key", "")
+    value = body.get("value", "").strip()
+    if key not in PROMPT_KEYS:
+        raise HTTPException(400, f"Unknown prompt key: {key}")
+    _, _, tts_lang = _get_prompt_context()
+    await get_prompt_store().set(tts_lang, key, value, is_custom=True)
+    # Refresh caches
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        get_intent_router().refresh_system_prompt()
+    except Exception:
+        pass
+    return {"status": "ok", "key": key}
 
 
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
-    """Reset user prompts to i18n defaults."""
-    update_many([
-        ("voice", "user_prompt", ""),
-        ("voice", "compact_user_prompt", ""),
-        ("voice", "classification_prompt", ""),
-        ("voice", "rephrase_prompt", ""),
-        ("voice", "system_prompt", ""),       # clean up old config keys
-        ("voice", "compact_prompt", ""),
-        ("voice", "tts_rules", ""),
-    ])
-    _, _, ui_lang = _get_prompt_context()
+    """Reset prompts: regenerate for TTS language from English via LLM."""
+    from core.prompt_store import get_prompt_store
+    store = get_prompt_store()
+    _, _, tts_lang = _get_prompt_context()
+
+    if tts_lang == "en":
+        # English: reset to JSON defaults
+        await store.reset("en")
+    else:
+        # Other languages: regenerate from English via LLM
+        success = await store.generate_for_language(tts_lang)
+        if not success:
+            # Fallback: copy English as-is
+            await store.reset(tts_lang)
+
+    prompts = await store.get_all(tts_lang)
     return {
         "status": "ok",
-        "user_prompt": _get_default_user_prompt(ui_lang),
-        "compact_user": _get_default_compact_user(ui_lang),
+        "user_prompt": prompts.get("user_prompt", ""),
+        "compact_user": prompts.get("compact_user", ""),
     }
 
 
@@ -535,11 +534,17 @@ async def reset_system_prompt() -> dict[str, Any]:
 async def rebuild_prompts() -> dict[str, Any]:
     """Rebuild prompts after any settings change (language, name, STT model, etc.).
 
-    Call this after: language change, wake word change, user prompt save, STT model change.
-    Clears caches so next LLM call uses fresh prompt.
+    Reloads prompt cache from DB. Call after language or wake word change.
     """
-    # Clear prompt locale cache (language may have changed)
-    _prompts_cache.clear()
+    # Reload prompt store cache from DB
+    try:
+        from core.prompt_store import get_prompt_store
+        store = get_prompt_store()
+        if store._session_factory:
+            async with store._session_factory() as session:
+                await store._load_cache(session)
+    except Exception:
+        pass
 
     # Clear intent_router cached prompt
     try:
@@ -548,15 +553,37 @@ async def rebuild_prompts() -> dict[str, Any]:
     except Exception:
         pass
 
-    name, lang, ui_lang = _get_prompt_context()
+    name, lang, tts_lang = _get_prompt_context()
     return {
         "status": "ok",
         "name": name,
         "lang": lang,
-        "ui_lang": ui_lang,
+        "ui_lang": tts_lang,
         "full_preview": build_system_prompt(compact=False),
         "compact_preview": build_system_prompt(compact=True),
     }
+
+
+async def _translate_prompts_on_lang_change(old_lang: str, new_lang: str) -> None:
+    """Handle TTS language change: translate custom prompts, generate defaults.
+
+    1. Custom (user-edited) prompts → translated via LLM to new language
+    2. Default prompts → generated from English via LLM for new language
+    """
+    from core.prompt_store import get_prompt_store
+    store = get_prompt_store()
+
+    # First: translate any custom prompts
+    await store.translate_custom_prompts(old_lang, new_lang)
+
+    # Then: ensure default prompts exist for new language
+    # (generate from English if not already in DB)
+    prompts = await store.get_all(new_lang)
+    has_prompts = any(v for v in prompts.values())
+    if not has_prompts:
+        await store.generate_for_language(new_lang)
+
+    logger.info("Prompts updated for TTS language change: %s → %s", old_lang, new_lang)
 
 
 @router.post("/llm/chat")
@@ -983,7 +1010,19 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
             }
         tts_cfg[role] = role_cfg
 
+    # Detect if primary TTS language changed
+    old_cfg = read_config().get("voice", {}).get("tts", {})
+    old_lang = old_cfg.get("primary", {}).get("lang", "")
+    new_lang = tts_cfg.get("primary", {}).get("lang", old_lang)
+
     update_config("voice", "tts", tts_cfg)
+
+    # If TTS language changed → translate custom prompts + reset defaults
+    if new_lang and old_lang and new_lang != old_lang:
+        logger.info("TTS language changed: %s → %s, updating prompts", old_lang, new_lang)
+        _prompts_cache.clear()  # reload locale defaults for new lang
+        asyncio.create_task(_translate_prompts_on_lang_change(old_lang, new_lang))
+
     return {"status": "ok"}
 
 
