@@ -311,6 +311,7 @@ run_profile_jetson() {
     install_whisper_cpp "ON"
     install_ollama "qwen2.5:3b"
     install_piper
+
     install_selenacore
     install_systemd_services
     generate_config "jetson"
@@ -325,6 +326,7 @@ run_profile_raspberry() {
     fi
     install_ollama "$model"
     install_piper
+
     install_selenacore
     generate_config "raspberry"
 }
@@ -334,6 +336,7 @@ run_profile_linux_cuda() {
     install_whisper_cpp "ON"
     install_ollama "qwen2.5:3b"
     install_piper
+
     install_selenacore
     install_systemd_services
     generate_config "linux_cuda"
@@ -344,6 +347,7 @@ run_profile_linux_cpu() {
     install_faster_whisper
     install_ollama "qwen2.5:3b"
     install_piper
+
     install_selenacore
     generate_config "linux_cpu"
 }

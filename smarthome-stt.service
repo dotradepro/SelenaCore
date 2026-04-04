@@ -1,0 +1,17 @@
+[Unit]
+Description=SelenaCore Faster-Whisper STT Server (GPU)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dotradepro
+Environment=PATH=/usr/local/cuda-12/bin:/usr/local/bin:/usr/bin:/bin
+Environment=LD_LIBRARY_PATH=/usr/local/cuda-12/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu/nvidia
+WorkingDirectory=/home/dotradepro/Downloads/SelenaCore
+ExecStart=/usr/bin/python3 scripts/faster-whisper-server.py --model small --port 9000 --device cpu --compute-type int8
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -28,7 +28,9 @@ modules:
   sandbox_image: "smarthome-sandbox:latest"
 
 stt:
-  provider: "auto"                     # auto | whisper_cpp | faster_whisper | openai
+  provider: "auto"                     # auto | whisper_trt | whisper_cpp | faster_whisper | openai
+  whisper_trt:
+    model: "small"                     # tiny | base | small (multilingual = auto lang detect)
   whisper_cpp:
     host: "http://localhost:9000"
   faster_whisper:
