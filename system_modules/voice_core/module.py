@@ -43,6 +43,8 @@ class VoiceConfigRequest(BaseModel):
     privacy_mode: bool | None = None
     speaker_threshold: float | None = Field(None, ge=0.3, le=1.0)
     stt_silence_timeout: float | None = Field(None, ge=0.5, le=5.0)
+    energy_threshold: int | None = Field(None, ge=10, le=10000)
+    min_speech_chunks: int | None = Field(None, ge=1, le=30)
 
 
 class TranscribeRequest(BaseModel):
@@ -157,6 +159,146 @@ STATE_LISTENING = "listening"  # recording user command
 STATE_PROCESSING = "processing"  # LLM + TTS
 
 
+def generate_wake_variants(phrase: str) -> list[str]:
+    """Generate phonetic variants of a wake phrase for robust STT matching.
+
+    Whisper often misrecognizes names as similar-sounding words.
+    Uses rule-based substitutions as a fast fallback.
+    """
+    phrase = phrase.lower().strip()
+    if not phrase:
+        return []
+
+    variants: set[str] = {phrase}
+
+    # Cyrillic phonetic substitutions (common Whisper misrecognitions)
+    _CYR_SUBS: list[tuple[str, list[str]]] = [
+        ("е", ["и", "є", "э"]),
+        ("и", ["е", "і", "ы"]),
+        ("і", ["и", "е", "ї"]),
+        ("о", ["а"]),
+        ("а", ["о"]),
+        ("с", ["з", "ц"]),
+        ("з", ["с"]),
+        ("г", ["х", "ґ"]),
+        ("к", ["г"]),
+        ("д", ["т"]),
+        ("т", ["д"]),
+        ("б", ["п"]),
+        ("п", ["б"]),
+        ("в", ["ф"]),
+        ("л", ["р"]),
+        ("ц", ["с"]),
+        ("ж", ["ш"]),
+        ("ш", ["щ"]),
+    ]
+    _LAT_SUBS: list[tuple[str, list[str]]] = [
+        ("e", ["a", "i"]),
+        ("a", ["e", "o"]),
+        ("i", ["e", "y"]),
+        ("s", ["z", "c"]),
+        ("c", ["s", "k"]),
+        ("k", ["c", "g"]),
+        ("g", ["k"]),
+        ("v", ["w", "f"]),
+        ("th", ["t"]),
+    ]
+
+    import re
+    is_cyrillic = bool(re.search(r'[а-яіїєґ]', phrase))
+    subs = _CYR_SUBS if is_cyrillic else _LAT_SUBS
+
+    for pattern, replacements in subs:
+        if pattern in phrase:
+            for repl in replacements:
+                variants.add(phrase.replace(pattern, repl, 1))
+
+    # Truncated forms (Whisper sometimes drops last character)
+    for word in phrase.split():
+        if len(word) >= 4:
+            variants.add(word[:-1])
+
+    variants = {v for v in variants if len(v) >= 3}
+    return sorted(variants)
+
+
+async def generate_wake_variants_llm(phrase: str, lang: str = "uk") -> list[str]:
+    """Generate phonetic variants via LLM (cloud provider).
+
+    Asks the LLM to produce words that Whisper STT might output when
+    someone says the wake phrase. Returns list of variants or empty.
+    """
+    try:
+        from system_modules.llm_engine.cloud_providers import generate as llm_generate
+        from core.config_writer import read_config
+        cfg = read_config()
+
+        # Find available cloud provider (config → env)
+        api_key = ""
+        provider = ""
+        model = ""
+        llm_cfg = cfg.get("llm", {})
+        _env_keys = {
+            "google": ("GEMINI_API_KEY", "gemini-2.0-flash"),
+            "openai": ("OPENAI_API_KEY", "gpt-4o-mini"),
+            "anthropic": ("ANTHROPIC_API_KEY", "claude-sonnet-4-20250514"),
+            "groq": ("GROQ_API_KEY", "llama-3.1-8b-instant"),
+        }
+        for prov_name, (env_name, default_model) in _env_keys.items():
+            key = llm_cfg.get(f"{prov_name}_api_key", "") or os.getenv(env_name, "")
+            if key:
+                api_key = key
+                provider = prov_name
+                models = llm_cfg.get(f"{prov_name}_models", [])
+                model = models[0] if models else llm_cfg.get(f"{prov_name}_model", default_model)
+                break
+
+        if not api_key or not provider:
+            return []
+
+        from core.lang_utils import lang_code_to_name
+        lang_name = lang_code_to_name(lang)
+
+        prompt = (
+            f'The word "{phrase}" is a voice assistant wake word in {lang_name}. '
+            f"When someone says this word, speech recognition (Whisper) sometimes "
+            f"transcribes it incorrectly as a similar-sounding word.\n\n"
+            f"Generate 15-20 common misrecognition variants that Whisper STT might "
+            f"produce when someone says \"{phrase}\". Include:\n"
+            f"- Words with similar vowel sounds (е↔и, о↔а, i↔e)\n"
+            f"- Words with similar consonant sounds (с↔з, д↔т, г↔х)\n"
+            f"- Truncated or slightly different endings\n"
+            f"- Common phonetic confusions in {lang_name}\n\n"
+            f"Output ONLY the variants, one per line, lowercase, no numbering, "
+            f"no explanations. Include the original word first."
+        )
+
+        result = await llm_generate(
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            prompt=prompt,
+            temperature=0.3,
+        )
+
+        if not result:
+            return []
+
+        # Parse LLM response: one variant per line
+        variants = []
+        for line in result.strip().splitlines():
+            word = line.strip().lower().strip("- •·0123456789.)")
+            if word and len(word) >= 3 and len(word) <= 30:
+                variants.append(word)
+
+        logger.info("LLM generated %d wake variants for '%s'", len(variants), phrase)
+        return variants
+
+    except Exception as e:
+        logger.warning("LLM wake variant generation failed: %s", e)
+        return []
+
+
 def _rms_energy(pcm_data: bytes) -> float:
     """Compute RMS energy of 16-bit signed PCM audio chunk."""
     import struct as _struct
@@ -198,6 +340,27 @@ class VoiceCoreModule(SystemModule):
         self._mic_test_active = False
         # Last RMS energy from audio loop (for mic-level monitoring without lock)
         self._last_energy: float = 0.0
+        self._last_has_speech: bool = False
+
+        # Audio loop state (promoted from locals for API observability)
+        _default_thr = int(os.getenv("VOICE_ENERGY_THRESHOLD", "300"))
+        _default_chunks = int(os.getenv("VOICE_MIN_SPEECH_CHUNKS", "6"))
+        try:
+            from core.config_writer import read_config as _rc
+            _vc = _rc().get("voice", {})
+            _default_thr = int(_vc.get("energy_threshold", _default_thr))
+            _default_chunks = int(_vc.get("min_speech_chunks", _default_chunks))
+        except Exception:
+            pass
+        self._energy_threshold: int = _default_thr
+        self._min_speech_chunks: int = _default_chunks
+        self._speech_chunks_in_buffer: int = 0
+        self._idle_buffer_start: float = 0.0
+        self._audio_debug_counter: int = 0
+
+        # Audio preprocessor (noise reduction, AGC, speaker gate)
+        from system_modules.voice_core.audio_preprocessor import get_audio_preprocessor
+        self._preprocessor = get_audio_preprocessor(SAMPLE_RATE, CHUNK_SAMPLES)
 
         # Live debug log: ring buffer of recent STT events for UI terminal
         self._live_log: list[dict] = []
@@ -243,6 +406,21 @@ class VoiceCoreModule(SystemModule):
         if len(self._live_log) > self._live_log_max:
             self._live_log = self._live_log[-self._live_log_max:]
 
+    async def _capture_active_speaker(self, audio_bytes: bytes) -> None:
+        """Capture speaker embedding from wake word audio for voice focus."""
+        try:
+            if self._speaker_id is None:
+                return
+            loop = asyncio.get_running_loop()
+            audio_float = self._speaker_id._audio_to_float(audio_bytes)
+            embedding = await loop.run_in_executor(
+                None, self._speaker_id._compute_embedding, audio_float,
+            )
+            if embedding is not None:
+                self._preprocessor.set_active_speaker(embedding)
+        except Exception as e:
+            logger.debug("Speaker capture failed: %s", e)
+
     async def _speak_wake_response(self) -> None:
         """Speak a short confirmation after wake phrase detected, then listen."""
         try:
@@ -286,6 +464,14 @@ class VoiceCoreModule(SystemModule):
         return None
 
     def _get_output_device(self) -> str | None:
+        # Prefer mixer device (routes through dmix for concurrent playback)
+        try:
+            from core.audio_mixer import get_mixer
+            mixer = get_mixer()
+            if mixer.is_initialized():
+                return mixer.get_device("tts")
+        except Exception:
+            pass
         try:
             from core.config_writer import get_value
             dev = get_value("voice", "audio_force_output")
@@ -302,18 +488,56 @@ class VoiceCoreModule(SystemModule):
             pass
         return None
 
-    @staticmethod
-    def _matches_phrase(text: str, phrase: str) -> bool:
-        """Fuzzy match: first 3 chars of each wake word in some text word."""
+    def _matches_phrase(self, text: str, phrase: str) -> bool:
+        """Match wake word with phonetic variant tolerance.
+
+        Uses generated variants (common STT misrecognitions) + fuzzy matching.
+        """
+        from difflib import SequenceMatcher
+
         t = text.lower().strip()
+        # Exact substring match
         if phrase in t:
             return True
+
         text_words = t.split()
-        for pw in phrase.split():
-            prefix = pw[:3]
-            if not any(tw.startswith(prefix) for tw in text_words):
-                return False
-        return True
+        # Get pre-generated variants (includes the original phrase)
+        variants = self._get_wake_variants()
+
+        for variant in variants:
+            variant_words = variant.split()
+            # For single-word variants: check each text word
+            if len(variant_words) == 1:
+                for tw in text_words:
+                    # Exact match
+                    if tw == variant:
+                        return True
+                    # Fuzzy match: SequenceMatcher ratio >= 0.75
+                    if len(tw) >= 3 and SequenceMatcher(None, tw, variant).ratio() >= 0.75:
+                        return True
+            else:
+                # Multi-word variant: check as substring
+                if variant in t:
+                    return True
+
+        return False
+
+    def _get_wake_variants(self) -> list[str]:
+        """Return wake phrase + phonetic variants from config cache."""
+        if not hasattr(self, "_wake_variants_cache"):
+            self._wake_variants_cache = []
+        phrase = self._get_wake_phrase()
+        if self._wake_variants_cache and self._wake_variants_cache[0] == phrase:
+            return self._wake_variants_cache[1]
+        # Load from config or generate
+        variants = self._config.get("wake_word_variants", [])
+        if not variants or not isinstance(variants, list):
+            variants = generate_wake_variants(phrase)
+        # Always include original
+        if phrase and phrase not in variants:
+            variants.insert(0, phrase)
+        self._wake_variants_cache = [phrase, variants]
+        return variants
 
     # ── Main audio loop ──────────────────────────────────────────────────
 
@@ -359,15 +583,11 @@ class VoiceCoreModule(SystemModule):
         # Audio buffer for STT
         audio_buffer = bytearray()
         last_speech_time = 0.0
-        speech_chunks_in_buffer = 0  # count of chunks with speech energy
+        self._speech_chunks_in_buffer = 0
         # IDLE: transcribe every N seconds to check wake phrase
         # 4 sec minimum for reliable Whisper language detection
         idle_interval_sec = 4.0
-        idle_buffer_start = time.monotonic()
-        # Energy threshold for speech detection (RMS of 16-bit samples)
-        energy_threshold = 300
-        # Minimum speech chunks required before sending to STT (filters background noise)
-        min_speech_chunks = 6  # ~1.5s of speech needed for reliable language detection
+        self._idle_buffer_start = time.monotonic()
 
         async def _safe_transcribe(buf: bytes) -> tuple[str, str]:
             """Transcribe with error handling. Returns (text, lang)."""
@@ -402,23 +622,38 @@ class VoiceCoreModule(SystemModule):
                 if self._state == STATE_PROCESSING:
                     continue
 
-                # Simple energy-based VAD
-                rms = _rms_energy(data)
-                has_speech = rms > energy_threshold
+                # Audio preprocessing (noise reduction, AGC)
+                raw_data = data  # keep raw for noise profiling
+                data, rms = self._preprocessor.process(data)
+                has_speech = rms > self._energy_threshold
+
+                # Update noise profile from RAW audio during silence
+                if not has_speech:
+                    self._preprocessor.update_noise_profile(raw_data)
 
                 # Store energy for mic-level monitoring (no mic lock needed)
                 self._last_energy = rms
+                self._last_has_speech = has_speech
+
+                # Periodic debug logging (~every 4 sec)
+                self._audio_debug_counter += 1
+                if self._audio_debug_counter % 16 == 0:
+                    logger.debug(
+                        "Audio: energy=%.0f thr=%d speech=%s chunks=%d/%d state=%s",
+                        rms, self._energy_threshold, has_speech,
+                        self._speech_chunks_in_buffer, self._min_speech_chunks, self._state,
+                    )
 
                 # ── STATE: IDLE — buffer and check for wake phrase ──
                 if self._state == STATE_IDLE:
                     audio_buffer.extend(data)
                     if has_speech:
-                        speech_chunks_in_buffer += 1
-                    elapsed = time.monotonic() - idle_buffer_start
+                        self._speech_chunks_in_buffer += 1
+                    elapsed = time.monotonic() - self._idle_buffer_start
 
                     # Transcribe ONLY if there was enough speech energy (not just background noise)
                     if elapsed >= idle_interval_sec or (has_speech and elapsed >= 1.0):
-                        if speech_chunks_in_buffer >= min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK * 2:
+                        if self._speech_chunks_in_buffer >= self._min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK * 2:
                             text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
                             self._lang = detected_lang
 
@@ -429,24 +664,32 @@ class VoiceCoreModule(SystemModule):
                                     logger.info("Voice: wake phrase detected in '%s'", text)
                                     self._log_live("wake", {"phrase": wake_phrase})
                                     await self.publish("voice.wake_word", {"wake_word": wake_phrase})
+                                    # Capture speaker embedding for voice focus
+                                    await self._capture_active_speaker(bytes(audio_buffer))
                                     # Respond with "listening?" then switch to LISTENING
                                     await self._speak_wake_response()
                                     self._state = STATE_LISTENING
                                     audio_buffer.clear()
-                                    speech_chunks_in_buffer = 0
+                                    self._speech_chunks_in_buffer = 0
                                     last_speech_time = 0.0  # reset — wait for new speech
                                 else:
                                     logger.debug("Voice idle heard: '%s'", text)
 
                         audio_buffer.clear()
-                        speech_chunks_in_buffer = 0
-                        idle_buffer_start = time.monotonic()
+                        self._speech_chunks_in_buffer = 0
+                        self._idle_buffer_start = time.monotonic()
 
                 # ── STATE: LISTENING — accumulate command audio ──
                 elif self._state == STATE_LISTENING:
+                    # Speaker gate: check if current voice matches wake word speaker
+                    speaker_ok = await self._preprocessor.check_speaker_async(data)
+                    if not speaker_ok and has_speech:
+                        # Different speaker — skip this chunk
+                        continue
+
                     if has_speech:
                         audio_buffer.extend(data)
-                        speech_chunks_in_buffer += 1
+                        self._speech_chunks_in_buffer += 1
                         last_speech_time = time.monotonic()
                     elif last_speech_time:
                         # Keep buffering silence after speech (for natural pauses)
@@ -455,7 +698,7 @@ class VoiceCoreModule(SystemModule):
                     # Check silence timeout — only if we had speech before
                     silence_dur = time.monotonic() - last_speech_time if last_speech_time else 0
                     if last_speech_time and silence_dur >= self._get_silence_timeout():
-                        if speech_chunks_in_buffer >= min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK:
+                        if self._speech_chunks_in_buffer >= self._min_speech_chunks and len(audio_buffer) > BYTES_PER_CHUNK:
                             # Transcribe the full command buffer
                             text, detected_lang = await _safe_transcribe(bytes(audio_buffer))
                             self._lang = detected_lang
@@ -465,21 +708,24 @@ class VoiceCoreModule(SystemModule):
                                 logger.info("Voice: command recognized: '%s' (lang=%s)", text, self._lang)
                                 self._state = STATE_PROCESSING
                                 audio_buffer.clear()
-                                speech_chunks_in_buffer = 0
+                                self._speech_chunks_in_buffer = 0
+                                self._preprocessor.clear_active_speaker()
                                 asyncio.create_task(self._process_command(text))
                             else:
                                 logger.debug("Voice: empty transcription, back to idle")
                                 self._state = self._idle_state()
                                 audio_buffer.clear()
-                                speech_chunks_in_buffer = 0
-                                idle_buffer_start = time.monotonic()
+                                self._speech_chunks_in_buffer = 0
+                                self._idle_buffer_start = time.monotonic()
+                                self._preprocessor.clear_active_speaker()
                         else:
                             # Not enough speech — discard and reset
                             self._state = self._idle_state()
                             audio_buffer.clear()
-                            speech_chunks_in_buffer = 0
+                            self._speech_chunks_in_buffer = 0
                             last_speech_time = 0.0
-                            idle_buffer_start = time.monotonic()
+                            self._idle_buffer_start = time.monotonic()
+                            self._preprocessor.clear_active_speaker()
 
                     # Safety: max 15 sec of listening
                     elif len(audio_buffer) > SAMPLE_RATE * 2 * 15:
@@ -488,14 +734,16 @@ class VoiceCoreModule(SystemModule):
                         if text:
                             self._state = STATE_PROCESSING
                             audio_buffer.clear()
-                            speech_chunks_in_buffer = 0
+                            self._speech_chunks_in_buffer = 0
+                            self._preprocessor.clear_active_speaker()
                             asyncio.create_task(self._process_command(text))
                         else:
                             self._state = self._idle_state()
                             audio_buffer.clear()
-                            speech_chunks_in_buffer = 0
+                            self._speech_chunks_in_buffer = 0
                             last_speech_time = 0.0
-                            idle_buffer_start = time.monotonic()
+                            self._idle_buffer_start = time.monotonic()
+                            self._preprocessor.clear_active_speaker()
 
         except asyncio.CancelledError:
             pass
@@ -530,11 +778,14 @@ class VoiceCoreModule(SystemModule):
         """Select TTS engine and response language based on STT-detected language.
 
         Returns (tts_engine, tts_lang):
-          - If stt_lang matches primary Piper voice → primary engine + primary lang
-          - Otherwise → fallback engine + fallback lang (EN)
+          - Default: primary TTS voice + primary lang (always the main voice)
+          - Fallback to EN voice ONLY when STT explicitly detects English
+            AND primary TTS is NOT English
         """
-        if stt_lang == self._tts_primary_lang:
+        # Always prefer primary TTS voice for the main response language
+        if not self._tts_fallback_lang or stt_lang != self._tts_fallback_lang:
             return self._tts, self._tts_primary_lang
+        # STT detected the fallback language (e.g. English) explicitly
         return self._tts_fallback, self._tts_fallback_lang
 
     @staticmethod
@@ -989,27 +1240,43 @@ class VoiceCoreModule(SystemModule):
             voice_cfg = config.get("voice", {})
             provider = voice_cfg.get("llm_provider", "ollama")
 
-            lang = self._detect_lang()
-            lang_names = {"uk": "Ukrainian", "en": "English", "de": "German", "fr": "French", "es": "Spanish", "pl": "Polish"}
-            lang_name = lang_names.get(lang, "English")
+            # Use TTS language (not STT) — response must match the voice output
+            lang = self._tts_primary_lang or self._detect_lang()
+            from core.lang_utils import lang_code_to_name
+            lang_name = lang_code_to_name(lang)
 
-            # Load custom rephrase prompt or localized default
-            rephrase_rules = voice_cfg.get("rephrase_prompt", "")
+            # Load rephrase prompt from DB (prompt_store)
+            rephrase_rules = ""
+            try:
+                from core.prompt_store import get_prompt_store
+                rephrase_rules = await get_prompt_store().get(lang, "rephrase_prompt")
+            except Exception:
+                pass
             if not rephrase_rules:
-                try:
-                    from core.api.routes.voice_engines import _get_default_rephrase
-                    rephrase_rules = _get_default_rephrase(lang)
-                except Exception:
-                    from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
-                    rephrase_rules = DEFAULT_REPHRASE_PROMPT
+                from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
+                rephrase_rules = DEFAULT_REPHRASE_PROMPT
 
-            system = (
-                f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-                f"{rephrase_rules}\n"
-                f"CRITICAL: All numbers MUST be spelled out as words in {lang_name} (e.g. 15.4 → п'ятнадцять і чотири).\n"
-                f"CRITICAL: Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
-                f"Output will be read aloud by TTS — no digits, no Latin letters, no symbols."
-            )
+            # Load rephrase_system template from DB (editable via UI)
+            rephrase_system_tpl = ""
+            try:
+                from core.prompt_store import get_prompt_store
+                rephrase_system_tpl = await get_prompt_store().get(lang, "rephrase_system")
+            except Exception:
+                pass
+            if rephrase_system_tpl and "{rephrase_rules}" in rephrase_system_tpl:
+                try:
+                    system = rephrase_system_tpl.format(
+                        lang_name=lang_name, rephrase_rules=rephrase_rules)
+                except (KeyError, IndexError):
+                    system = rephrase_system_tpl
+            else:
+                system = (
+                    f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
+                    f"{rephrase_rules}\n"
+                    f"CRITICAL: All numbers MUST be spelled out as words in {lang_name}.\n"
+                    f"CRITICAL: Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
+                    f"Output will be read aloud by TTS — no digits, no Latin letters, no symbols."
+                )
 
             # Build context
             messages_ctx = ""
@@ -1067,7 +1334,7 @@ class VoiceCoreModule(SystemModule):
             logger.warning("Rephrase via LLM failed (provider=%s): %s", provider, exc)
 
         from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-        return preprocess_for_tts(default_text, self._detect_lang())
+        return preprocess_for_tts(default_text, self._tts_primary_lang or self._detect_lang())
 
     def _is_rephrase_enabled(self) -> bool:
         """Check if LLM rephrase is enabled in config (default: off)."""
@@ -1271,6 +1538,33 @@ class VoiceCoreModule(SystemModule):
                 import system_modules.voice_core.speaker_id as sid
                 sid.SIMILARITY_THRESHOLD = updates["speaker_threshold"]
 
+            # Apply audio loop thresholds at runtime (no restart needed)
+            if "energy_threshold" in updates:
+                svc._energy_threshold = updates["energy_threshold"]
+            if "min_speech_chunks" in updates:
+                svc._min_speech_chunks = updates["min_speech_chunks"]
+
+            # Auto-generate wake word phonetic variants when name changes
+            if "wake_word_model" in updates:
+                phrase = updates["wake_word_model"].replace("_", " ").lower().strip()
+                # Start with rule-based variants (instant)
+                variants = generate_wake_variants(phrase)
+                # Try LLM for better variants (async, language from TTS config)
+                tts_lang = svc._tts_primary_lang or "uk"
+                try:
+                    llm_variants = await generate_wake_variants_llm(phrase, tts_lang)
+                    if llm_variants:
+                        # Merge: LLM variants + rule-based, deduplicated
+                        combined = list(dict.fromkeys(llm_variants + variants))
+                        variants = combined
+                except Exception:
+                    pass
+                svc._config["wake_word_variants"] = variants
+                _persist("voice", "wake_word_variants", variants)
+                if hasattr(svc, "_wake_variants_cache"):
+                    svc._wake_variants_cache = []
+                logger.info("Wake word '%s': %d variants", phrase, len(variants))
+
             return JSONResponse({"ok": True, "config": svc._config})
 
         @router.get("/privacy")
@@ -1341,6 +1635,26 @@ class VoiceCoreModule(SystemModule):
                 "running": svc._listen_task is not None and not svc._listen_task.done(),
             })
 
+        @router.get("/audio/debug")
+        async def audio_debug() -> JSONResponse:
+            """Real-time audio pipeline debug: energy, VAD, state."""
+            now = time.monotonic()
+            idle_elapsed = now - svc._idle_buffer_start if svc._idle_buffer_start else 0.0
+            return JSONResponse({
+                "energy": round(svc._last_energy, 1),
+                "energy_threshold": svc._energy_threshold,
+                "has_speech": svc._last_has_speech,
+                "speech_chunks": svc._speech_chunks_in_buffer,
+                "min_speech_chunks": svc._min_speech_chunks,
+                "state": svc._state,
+                "idle_elapsed": round(idle_elapsed, 2),
+                "privacy_mode": svc._privacy_mode,
+                "arecord_running": svc._arecord_proc is not None,
+                "stt_provider": type(svc._stt_provider).__name__ if svc._stt_provider else "none",
+                "wake_enabled": svc._config.get("wake_word_enabled", True),
+                "wake_phrase": svc._get_wake_phrase(),
+            })
+
         @router.get("/live-log")
         async def live_log(since: float = 0) -> JSONResponse:
             """Get live STT/intent debug log entries since timestamp."""
@@ -1350,6 +1664,15 @@ class VoiceCoreModule(SystemModule):
                 "state": svc._state,
                 "lang": svc._lang,
                 "wake_enabled": svc._config.get("wake_word_enabled", True),
+                "wake_phrase": svc._get_wake_phrase(),
+                "energy": round(svc._last_energy, 1),
+                "energy_threshold": svc._energy_threshold,
+                "has_speech": svc._last_has_speech,
+                "speech_chunks": svc._speech_chunks_in_buffer,
+                "min_speech_chunks": svc._min_speech_chunks,
+                "arecord_running": svc._arecord_proc is not None,
+                "stt_provider": type(svc._stt_provider).__name__ if svc._stt_provider else "none",
+                "privacy_mode": svc._privacy_mode,
             })
 
         @router.get("/history")

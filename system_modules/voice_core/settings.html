@@ -871,15 +871,62 @@
         </div>
     </div>
 
-    <!-- Reset + hidden preview -->
+    <!-- 5. System identity prompt (cloud) — template: {name}, {lang} -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="hidden_system_label_edit"></span>
+            <span id="customHiddenBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="hidden_system_desc"></div>
+        <textarea id="hiddenSystemText" rows="4" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveHiddenBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- 6. System identity prompt (local/compact) -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="hidden_compact_label"></span>
+            <span id="customHiddenCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="hidden_compact_desc"></div>
+        <textarea id="hiddenCompactText" rows="2" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveHiddenCompactBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- 7. Intent router prompt — template: {name}, {lang} -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="intent_system_label"></span>
+            <span id="customIntentSysBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="intent_system_desc"></div>
+        <textarea id="intentSystemText" rows="6" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveIntentSysBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- 8. Rephrase system wrapper — template: {lang_name}, {rephrase_rules} -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="rephrase_system_label"></span>
+            <span id="customRephraseSysBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="rephrase_system_desc"></div>
+        <textarea id="rephraseSystemText" rows="4" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveRephraseSysBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- Reset -->
     <div style="padding-top:14px;border-top:1px solid var(--b)">
         <div class="flex gap8 mb8">
             <button id="resetPromptsBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
-            <button id="previewToggle" class="btn-link" style="margin-left:auto;font-size:12px" data-i18n="show_hidden"></button>
-        </div>
-        <div id="hiddenPreview" class="hidden" style="background:var(--bg);padding:8px;border-radius:6px;font-size:11px;opacity:.7;white-space:pre-wrap;word-break:break-word">
-            <div class="label-xs mb4" style="opacity:.5" data-i18n="hidden_system_label"></div>
-            <div id="hiddenPreviewText"></div>
         </div>
     </div>
 </div>
@@ -995,6 +1042,47 @@
             <button id="liveClearBtn" class="btn btn-ghost" style="font-size:11px" data-i18n="live_clear"></button>
         </div>
     </div>
+
+    <!-- Audio debug panel — VU meter + pipeline status -->
+    <div id="audioDebugPanel" style="display:none;margin-bottom:10px">
+        <!-- Energy VU meter -->
+        <div style="margin-bottom:8px">
+            <div class="flex" style="justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:3px">
+                <span data-i18n="live_energy"></span>
+                <span id="adEnergyVal">0 / 300</span>
+            </div>
+            <div style="background:var(--bg);border:1px solid var(--b2);border-radius:4px;height:18px;position:relative;overflow:hidden">
+                <div id="adEnergyBar" style="height:100%;width:0%;background:var(--rd);transition:width .2s,background .2s;border-radius:3px"></div>
+                <div id="adThreshLine" style="position:absolute;top:0;bottom:0;width:2px;background:var(--am);opacity:.8" title="threshold"></div>
+            </div>
+        </div>
+        <!-- Speech chunks -->
+        <div style="margin-bottom:8px">
+            <div class="flex" style="justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:3px">
+                <span data-i18n="live_chunks"></span>
+                <span id="adChunksVal">0 / 6</span>
+            </div>
+            <div style="background:var(--bg);border:1px solid var(--b2);border-radius:4px;height:10px;overflow:hidden">
+                <div id="adChunksBar" style="height:100%;width:0%;background:var(--ac);transition:width .2s;border-radius:3px"></div>
+            </div>
+        </div>
+        <!-- Status row -->
+        <div class="flex gap8" style="flex-wrap:wrap;font-size:11px">
+            <span class="badge badge-off" id="adArecord">arecord: ?</span>
+            <span class="badge badge-off" id="adStt">STT: ?</span>
+            <span class="badge badge-off" id="adWake">wake: ?</span>
+            <span id="adDiag" style="color:var(--tx3);font-style:italic"></span>
+        </div>
+        <!-- Threshold controls -->
+        <div class="flex gap8" style="margin-top:8px;align-items:center">
+            <label style="font-size:11px;color:var(--tx3);white-space:nowrap" data-i18n="live_threshold"></label>
+            <input type="range" id="adThreshSlider" min="10" max="2000" value="300" style="flex:1;height:4px">
+            <span id="adThreshNum" style="font-size:11px;color:var(--tx2);min-width:32px;text-align:right">300</span>
+            <label style="font-size:11px;color:var(--tx3);white-space:nowrap;margin-left:12px" data-i18n="live_min_chunks"></label>
+            <input type="number" id="adMinChunks" min="1" max="30" value="6" style="width:48px;font-size:11px;text-align:center">
+        </div>
+    </div>
+
     <pre id="liveTerminal" style="
         background:var(--bg);border:1px solid var(--b2);border-radius:8px;
         padding:10px;font-size:11px;line-height:1.7;color:var(--tx2);
@@ -1177,6 +1265,14 @@
             compact_user_label: 'Your instructions (local models)',
             compact_user_desc: 'Short instructions for Ollama / llama.cpp',
             hidden_system_label: 'Auto-generated system prompt (name, language, rules):',
+            hidden_system_label_edit: 'System identity (cloud models)',
+            hidden_system_desc: 'Core identity and rules. Template variables: {name}, {lang}. Applied before user prompt.',
+            hidden_compact_label: 'System identity (local models)',
+            hidden_compact_desc: 'Short identity for Ollama/llama.cpp. Template: {name}, {lang}.',
+            intent_system_label: 'Intent router prompt',
+            intent_system_desc: 'Instructions for LLM to classify commands into intents (JSON). Template: {name}, {lang}. Intent catalog is injected automatically.',
+            rephrase_system_label: 'Rephrase system wrapper',
+            rephrase_system_desc: 'Wraps the rephrase rules above with TTS instructions. Template: {lang_name}, {rephrase_rules}.',
             show_hidden: 'Show system prompt',
             custom: 'Custom',
             reset_default: 'Reset to default',
@@ -1248,6 +1344,16 @@
             live_start: 'Start',
             live_stop: 'Stop',
             live_clear: 'Clear',
+            live_energy: 'Mic Energy (RMS)',
+            live_chunks: 'Speech Chunks',
+            live_threshold: 'Threshold:',
+            live_min_chunks: 'Min chunks:',
+            live_diag_silent: 'SILENT — check mic connection or device',
+            live_diag_quiet: 'BELOW THRESHOLD — increase mic gain or lower threshold',
+            live_diag_speech: 'Speech detected, accumulating chunks...',
+            live_diag_ready: 'ENOUGH SPEECH — sending to STT',
+            live_diag_privacy: 'PRIVACY MODE — mic disabled',
+            live_diag_no_arecord: 'arecord not running — audio capture stopped',
             test_cmd_title: 'Command Test Console',
             test_cmd_desc: 'Simulate a voice command via text — full intent pipeline with trace',
             test_cmd_placeholder: 'Type a command (e.g. "turn on the light")...',
@@ -1344,6 +1450,14 @@
             compact_user_label: 'Вашi iнструкцiї (локальнi моделi)',
             compact_user_desc: 'Короткi iнструкцiї для Ollama / llama.cpp',
             hidden_system_label: 'Автоматичний системний промпт (iм\'я, мова, правила):',
+            hidden_system_label_edit: 'Системна iдентичнiсть (хмарнi моделi)',
+            hidden_system_desc: 'Основна iдентичнiсть та правила. Шаблон: {name}, {lang}. Додається перед промптом користувача.',
+            hidden_compact_label: 'Системна iдентичнiсть (локальнi моделi)',
+            hidden_compact_desc: 'Коротка iдентичнiсть для Ollama/llama.cpp. Шаблон: {name}, {lang}.',
+            intent_system_label: 'Промпт маршрутизатора iнтентiв',
+            intent_system_desc: 'Iнструкцiї для LLM щодо класифiкацiї команд у iнтенти (JSON). Шаблон: {name}, {lang}. Каталог iнтентiв додається автоматично.',
+            rephrase_system_label: 'Системна обгортка перефразування',
+            rephrase_system_desc: 'Обгортає правила перефразування iнструкцiями для TTS. Шаблон: {lang_name}, {rephrase_rules}.',
             show_hidden: 'Показати системний промпт',
             custom: 'Кастомний',
             reset_default: 'Скинути за замовч.',
@@ -1415,6 +1529,16 @@
             live_start: 'Старт',
             live_stop: 'Стоп',
             live_clear: 'Очистити',
+            live_energy: 'Енергiя мiкрофону (RMS)',
+            live_chunks: 'Чанки з мовленням',
+            live_threshold: 'Порiг:',
+            live_min_chunks: 'Мiн. чанки:',
+            live_diag_silent: 'ТИША — перевiрте пiдключення мiкрофону',
+            live_diag_quiet: 'НИЖЧЕ ПОРОГУ — збiльшiть гучнiсть мiкрофону або знизьте порiг',
+            live_diag_speech: 'Мовлення виявлено, накопичую чанки...',
+            live_diag_ready: 'ДОСТАТНЬО МОВЛЕННЯ — вiдправляю в STT',
+            live_diag_privacy: 'ПРИВАТНИЙ РЕЖИМ — мiкрофон вимкнено',
+            live_diag_no_arecord: 'arecord не працює — захоплення аудiо зупинено',
             test_cmd_title: 'Консоль тестування команд',
             test_cmd_desc: 'Iмiтацiя голосової команди текстом — повний пайплайн з трейсом',
             test_cmd_placeholder: 'Введiть команду (напр. "увiмкни свiтло")...',
@@ -2309,8 +2433,20 @@
             state._updatePromptBadges = updateBadges;
             updateBadges();
 
+            // New prompts from res.prompts (all 8 keys)
+            var pm = res.prompts || {};
+            if (pm.hidden_system) $('hiddenSystemText').value = pm.hidden_system.value || '';
+            if (pm.hidden_compact) $('hiddenCompactText').value = pm.hidden_compact.value || '';
+            if (pm.intent_system) $('intentSystemText').value = pm.intent_system.value || '';
+            if (pm.rephrase_system) $('rephraseSystemText').value = pm.rephrase_system.value || '';
+
+            // Custom badges for new prompts
+            if (pm.hidden_system && pm.hidden_system.is_custom) show('customHiddenBadge'); else hide('customHiddenBadge');
+            if (pm.hidden_compact && pm.hidden_compact.is_custom) show('customHiddenCompactBadge'); else hide('customHiddenCompactBadge');
+            if (pm.intent_system && pm.intent_system.is_custom) show('customIntentSysBadge'); else hide('customIntentSysBadge');
+            if (pm.rephrase_system && pm.rephrase_system.is_custom) show('customRephraseSysBadge'); else hide('customRephraseSysBadge');
+
             $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
-            $('hiddenPreviewText').textContent = res.hidden_full || '';
 
             charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
             charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
@@ -2318,8 +2454,6 @@
             charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt);
         } catch(e) { /* ignore */ }
     }
-
-    $('previewToggle').onclick = function() { $('hiddenPreview').classList.toggle('hidden'); };
 
     $('userPromptText').oninput = function() { charCount('userPromptText', 'userCharCount', state.limits.user_prompt); };
     $('compactUserText').oninput = function() { charCount('compactUserText', 'compactCharCount', state.limits.compact_user); };
@@ -2345,6 +2479,23 @@
     _savePrompt('saveCompactBtn', '/setup/llm/compact-prompt', 'compactUserText', 'compactUser', 'defaultCompact', 'isCustomCompact');
     _savePrompt('saveClassBtn', '/setup/llm/classification-prompt', 'classificationPromptText', 'classPrompt', 'defaultClass', 'isCustomClass');
     _savePrompt('saveRephraseBtn', '/setup/llm/rephrase-prompt', 'rephrasePromptText', 'rephrasePrompt', 'defaultRephrase', 'isCustomRephrase');
+
+    // Universal save for new prompt fields (hidden_system, hidden_compact, intent_system, rephrase_system)
+    function _saveUniversalPrompt(btnId, textId, key) {
+        $(btnId).onclick = async function() {
+            this.disabled = true;
+            try {
+                await postJson('/setup/llm/prompt', { key: key, value: $(textId).value });
+                rebuildPrompts().then(loadSystemPrompt);
+                showToast(t('saved'));
+            } catch(e) { showToast('Error', 'error'); }
+            this.disabled = false;
+        };
+    }
+    _saveUniversalPrompt('saveHiddenBtn', 'hiddenSystemText', 'hidden_system');
+    _saveUniversalPrompt('saveHiddenCompactBtn', 'hiddenCompactText', 'hidden_compact');
+    _saveUniversalPrompt('saveIntentSysBtn', 'intentSystemText', 'intent_system');
+    _saveUniversalPrompt('saveRephraseSysBtn', 'rephraseSystemText', 'rephrase_system');
 
     // Reset all
     $('resetPromptsBtn').onclick = async function() {
@@ -3185,11 +3336,12 @@
     };
 
     // ══════════════════════════════════════════════════════════════
-    //  LIVE STT TERMINAL
+    //  LIVE STT TERMINAL + AUDIO DEBUG
     // ══════════════════════════════════════════════════════════════
     var liveTimer = null;
     var liveSince = 0;
     var liveRunning = false;
+    var adThreshDebounce = null;
 
     var EVENT_COLORS = {
         stt: 'var(--tx3)',
@@ -3220,6 +3372,68 @@
         return '<span style="color:var(--tx3)">' + time + '</span> ' + JSON.stringify(e);
     }
 
+    function updateAudioDebug(d) {
+        if (!d || d.energy === undefined) return;
+        var energy = d.energy || 0;
+        var thr = d.energy_threshold || 300;
+        var chunks = d.speech_chunks || 0;
+        var minC = d.min_speech_chunks || 6;
+
+        // Energy bar — scale to 2x threshold for visual range
+        var maxE = Math.max(thr * 2, 1000);
+        var pct = Math.min(energy / maxE * 100, 100);
+        var bar = $('adEnergyBar');
+        bar.style.width = pct + '%';
+        bar.style.background = energy > thr ? 'var(--gr)' : energy > 50 ? 'var(--am)' : 'var(--rd)';
+        $('adEnergyVal').textContent = Math.round(energy) + ' / ' + thr;
+
+        // Threshold marker position
+        var thrPct = Math.min(thr / maxE * 100, 100);
+        $('adThreshLine').style.left = thrPct + '%';
+
+        // Chunks bar
+        var cPct = Math.min(chunks / minC * 100, 100);
+        $('adChunksBar').style.width = cPct + '%';
+        $('adChunksBar').style.background = chunks >= minC ? 'var(--gr)' : 'var(--ac)';
+        $('adChunksVal').textContent = chunks + ' / ' + minC;
+
+        // Status badges
+        var arecEl = $('adArecord');
+        if (d.arecord_running !== undefined) {
+            arecEl.textContent = 'arecord: ' + (d.arecord_running ? 'OK' : 'OFF');
+            arecEl.className = 'badge ' + (d.arecord_running ? 'badge-ok' : 'badge-off');
+        }
+
+        var sttEl = $('adStt');
+        if (d.stt_provider !== undefined) {
+            sttEl.textContent = 'STT: ' + (d.stt_provider || '?');
+            sttEl.className = 'badge ' + (d.stt_provider && d.stt_provider !== 'none' ? 'badge-ok' : 'badge-off');
+        }
+
+        var wakeEl = $('adWake');
+        if (d.wake_enabled !== undefined) {
+            wakeEl.textContent = 'wake: ' + (d.wake_enabled ? (d.wake_phrase || '?') : 'OFF');
+            wakeEl.className = 'badge ' + (d.wake_enabled ? 'badge-ac' : 'badge-off');
+        }
+
+        // Diagnostic message
+        var diag = '';
+        if (d.privacy_mode) diag = t('live_diag_privacy');
+        else if (d.arecord_running === false) diag = t('live_diag_no_arecord');
+        else if (energy < 50) diag = t('live_diag_silent');
+        else if (energy < thr) diag = t('live_diag_quiet');
+        else if (chunks < minC) diag = t('live_diag_speech');
+        else diag = t('live_diag_ready');
+        $('adDiag').textContent = diag;
+
+        // Sync slider/input to server values (only when not actively adjusting)
+        if (!adThreshDebounce) {
+            $('adThreshSlider').value = thr;
+            $('adThreshNum').textContent = thr;
+            $('adMinChunks').value = minC;
+        }
+    }
+
     async function pollLive() {
         try {
             var res = await moduleApi('/live-log?since=' + liveSince);
@@ -3227,6 +3441,9 @@
             $('liveStateBadge').textContent = res.state || 'idle';
             $('liveStateBadge').className = 'badge ' + (res.state === 'listening' ? 'badge-ok' : res.state === 'processing' ? 'badge-am' : 'badge-off');
             $('liveLangBadge').textContent = res.lang || '?';
+
+            // Update audio debug panel from live-log response
+            updateAudioDebug(res);
 
             if (res.entries && res.entries.length > 0) {
                 var html = res.entries.map(formatLiveEntry).join('\n');
@@ -3244,18 +3461,41 @@
             liveRunning = false;
             this.textContent = t('live_start');
             this.className = 'btn btn-green';
+            $('audioDebugPanel').style.display = 'none';
         } else {
             liveRunning = true;
             this.textContent = t('live_stop');
             this.className = 'btn btn-red';
+            $('audioDebugPanel').style.display = '';
             pollLive();
-            liveTimer = setInterval(pollLive, 1000);
+            liveTimer = setInterval(pollLive, 300);
         }
     };
 
     $('liveClearBtn').onclick = function() {
         $('liveTerminal').innerHTML = '';
         liveSince = Date.now() / 1000;
+    };
+
+    // Threshold slider — update server config in real-time
+    $('adThreshSlider').oninput = function() {
+        $('adThreshNum').textContent = this.value;
+    };
+    $('adThreshSlider').onchange = function() {
+        var val = parseInt(this.value);
+        adThreshDebounce = true;
+        modulePost('/config', { energy_threshold: val })
+            .then(function() { setTimeout(function() { adThreshDebounce = null; }, 2000); })
+            .catch(function() { adThreshDebounce = null; });
+    };
+    $('adMinChunks').onchange = function() {
+        var val = parseInt(this.value);
+        if (val >= 1 && val <= 30) {
+            adThreshDebounce = true;
+            modulePost('/config', { min_speech_chunks: val })
+                .then(function() { setTimeout(function() { adThreshDebounce = null; }, 2000); })
+                .catch(function() { adThreshDebounce = null; });
+        }
     };
 
     init();

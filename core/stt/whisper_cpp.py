@@ -66,9 +66,14 @@ class WhisperCppProvider(STTProvider):
             data = resp.json()
 
             text = data.get("text", "").strip()
-            # Filter Whisper artifacts
+            # Filter Whisper artifacts and hallucinations
             if text in ("[BLANK_AUDIO]", "(BLANK_AUDIO)", "[silence]"):
                 text = ""
+            # Filter repetitive hallucinations (e.g. "Кхммммм...", "ааааааа...")
+            if text and len(text) > 15:
+                unique_chars = len(set(text.replace(" ", "")))
+                if unique_chars <= 3:
+                    text = ""
             # verbose_json returns detected_language / language fields
             lang = data.get("detected_language") or data.get("language") or "en"
             # whisper.cpp returns full language name (e.g. "english", "ukrainian")
@@ -102,16 +107,7 @@ def _pcm_to_wav(pcm: bytes, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-_LANG_NAMES: dict[str, str] = {
-    "ukrainian": "uk", "english": "en", "german": "de",
-    "french": "fr", "spanish": "es", "polish": "pl",
-    "italian": "it", "portuguese": "pt", "dutch": "nl",
-    "czech": "cs", "japanese": "ja", "chinese": "zh",
-    "korean": "ko", "russian": "ru", "turkish": "tr",
-    "arabic": "ar", "hindi": "hi", "swedish": "sv",
-}
-
-
 def _lang_name_to_code(name: str) -> str:
     """Convert full language name to ISO 639-1 code."""
-    return _LANG_NAMES.get(name.lower().strip(), name[:2].lower())
+    from core.lang_utils import lang_name_to_code
+    return lang_name_to_code(name)
