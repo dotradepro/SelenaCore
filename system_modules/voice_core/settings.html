@@ -381,6 +381,7 @@
     <button class="settings-tab active" data-tab="engines" data-i18n="tab_engines"></button>
     <button class="settings-tab" data-tab="prompts" data-i18n="tab_prompts"></button>
     <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
+    <button class="settings-tab" data-tab="patterns" data-i18n="tab_patterns"></button>
     <button class="settings-tab" data-tab="test" data-i18n="tab_test"></button>
 </div>
 
@@ -425,6 +426,64 @@
     <div id="whisperModels" class="mb12">
         <div class="label-sm" data-i18n="installed_models"></div>
         <div id="whisperModelList"></div>
+    </div>
+
+    <!-- STT Settings -->
+    <div class="card-inner mb12">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px" data-i18n="stt_settings"></div>
+
+        <div class="slider-row">
+            <div class="slider-header">
+                <span class="slider-label">Beam Size</span>
+                <span class="slider-value" id="sttBeamVal">5</span>
+            </div>
+            <input type="range" id="sttBeam" min="1" max="10" step="1" value="5">
+        </div>
+
+        <div class="slider-row">
+            <div class="slider-header">
+                <span class="slider-label">No Speech Threshold</span>
+                <span class="slider-value" id="sttNoSpeechVal">0.60</span>
+            </div>
+            <input type="range" id="sttNoSpeech" min="0.1" max="1.0" step="0.05" value="0.6">
+        </div>
+
+        <div class="slider-row">
+            <div class="slider-header">
+                <span class="slider-label">VAD Threshold</span>
+                <span class="slider-value" id="sttVadThreshVal">0.50</span>
+            </div>
+            <input type="range" id="sttVadThresh" min="0.1" max="1.0" step="0.05" value="0.5">
+        </div>
+
+        <div class="slider-row">
+            <div class="slider-header">
+                <span class="slider-label">VAD Min Silence (ms)</span>
+                <span class="slider-value" id="sttVadSilenceVal">500</span>
+            </div>
+            <input type="range" id="sttVadSilence" min="100" max="2000" step="50" value="500">
+        </div>
+
+        <div class="slider-row">
+            <div class="slider-header">
+                <span class="slider-label">VAD Speech Pad (ms)</span>
+                <span class="slider-value" id="sttVadPadVal">400</span>
+            </div>
+            <input type="range" id="sttVadPad" min="100" max="1000" step="50" value="400">
+        </div>
+
+        <div class="row" style="margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="sttVadFilter" checked> VAD Filter
+            </label>
+        </div>
+        <div class="row">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+                <input type="checkbox" id="sttCondPrev"> Condition on Previous Text
+            </label>
+        </div>
+
+        <button class="btn btn-green" id="sttSettingsSave" style="margin-top:10px" data-i18n="save">Save</button>
     </div>
 
     <!-- Voice Pipeline Test -->
@@ -863,6 +922,43 @@
 </div><!-- /tabIntents -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Patterns (Voice Commands)                                   -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabPatterns">
+<div class="card">
+    <div class="mb12">
+        <div class="flex gap8">
+            <span class="section-title" data-i18n="patterns_title"></span>
+            <span class="badge badge-ac" id="patternsCountBadge">0</span>
+        </div>
+        <div class="section-sub" data-i18n="patterns_desc"></div>
+    </div>
+    <div class="flex gap8 mb12">
+        <input type="text" id="patternsSearch" style="flex:1" data-placeholder-i18n="patterns_search">
+        <select id="patternsLangFilter" style="min-width:80px">
+            <option value="">All</option>
+            <option value="uk">UK</option>
+            <option value="en">EN</option>
+            <option value="ru">RU</option>
+        </select>
+    </div>
+    <div style="overflow-x:auto">
+        <table class="intent-table" id="patternsTable">
+            <thead>
+                <tr>
+                    <th data-i18n="patterns_col_intent">Intent</th>
+                    <th data-i18n="patterns_col_lang">Lang</th>
+                    <th data-i18n="patterns_col_pattern">Pattern</th>
+                    <th data-i18n="patterns_col_source">Source</th>
+                </tr>
+            </thead>
+            <tbody id="patternsBody"></tbody>
+        </table>
+    </div>
+</div>
+</div><!-- /tabPatterns -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  TAB: Test Console                                                -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabTest">
@@ -1015,6 +1111,7 @@
             uninstalling: 'Uninstalling...',
             refresh: 'Refresh',
             installed_models: 'Installed Models',
+            stt_settings: 'STT Settings',
             installed_voices: 'Installed Voices',
             activate: 'Activate',
             show_catalog: 'Show catalog',
@@ -1103,7 +1200,15 @@
 
             tab_engines: 'Engines',
             tab_prompts: 'AI Prompts',
-            tab_intents: 'Voice Commands',
+            tab_intents: 'Intents',
+            tab_patterns: 'Patterns',
+            patterns_title: 'Registered Patterns',
+            patterns_desc: 'Regex patterns used for voice command matching',
+            patterns_search: 'Search patterns...',
+            patterns_col_intent: 'Intent',
+            patterns_col_lang: 'Lang',
+            patterns_col_pattern: 'Pattern',
+            patterns_col_source: 'Source',
             tab_test: 'Test Console',
             prompts_tab_desc: 'Customize prompts for conversation, intent classification, and response rephrase',
             classification_prompt_label: 'Intent classification rules',
@@ -1171,6 +1276,7 @@
             uninstalling: 'Видалення...',
             refresh: 'Оновити',
             installed_models: 'Встановленi моделi',
+            stt_settings: 'Налаштування STT',
             installed_voices: 'Встановленi голоси',
             activate: 'Активувати',
             show_catalog: 'Показати каталог',
@@ -1259,7 +1365,15 @@
 
             tab_engines: 'Движки',
             tab_prompts: 'Промпти AI',
-            tab_intents: 'Голосові команди',
+            tab_intents: 'Iнтенти',
+            tab_patterns: 'Патерни',
+            patterns_title: 'Зареєстрованi патерни',
+            patterns_desc: 'Regex патерни для розпiзнавання голосових команд',
+            patterns_search: 'Шукати патерни...',
+            patterns_col_intent: 'Iнтент',
+            patterns_col_lang: 'Мова',
+            patterns_col_pattern: 'Патерн',
+            patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
             prompts_tab_desc: 'Налаштування промптів для діалогу, класифікації інтентів та перефразування відповідей',
             classification_prompt_label: 'Правила класифікації інтентів',
@@ -1560,6 +1674,51 @@
         } catch(e) { /* ignore */ }
     }
 
+    // ── STT Settings ──
+    async function loadSttSettings() {
+        try {
+            var s = await api('/setup/stt/settings');
+            if ($('sttBeam')) $('sttBeam').value = s.beam_size || 5;
+            if ($('sttBeamVal')) $('sttBeamVal').textContent = s.beam_size || 5;
+            if ($('sttNoSpeech')) { $('sttNoSpeech').value = s.no_speech_threshold || 0.6; $('sttNoSpeechVal').textContent = (s.no_speech_threshold || 0.6).toFixed(2); }
+            if ($('sttVadThresh')) { $('sttVadThresh').value = s.vad_threshold || 0.5; $('sttVadThreshVal').textContent = (s.vad_threshold || 0.5).toFixed(2); }
+            if ($('sttVadSilence')) { $('sttVadSilence').value = s.vad_min_silence_ms || 500; $('sttVadSilenceVal').textContent = s.vad_min_silence_ms || 500; }
+            if ($('sttVadPad')) { $('sttVadPad').value = s.vad_speech_pad_ms || 400; $('sttVadPadVal').textContent = s.vad_speech_pad_ms || 400; }
+            if ($('sttVadFilter')) $('sttVadFilter').checked = s.vad_filter !== false;
+            if ($('sttCondPrev')) $('sttCondPrev').checked = !!s.condition_on_previous_text;
+        } catch(e) { /* ignore */ }
+    }
+
+    // Slider live update
+    ['sttBeam','sttNoSpeech','sttVadThresh','sttVadSilence','sttVadPad'].forEach(function(id) {
+        var el = $(id);
+        if (!el) return;
+        var valId = id + 'Val';
+        el.oninput = function() {
+            var v = parseFloat(this.value);
+            $(valId).textContent = (id === 'sttBeam' || id === 'sttVadSilence' || id === 'sttVadPad') ? String(parseInt(v)) : v.toFixed(2);
+        };
+    });
+
+    if ($('sttSettingsSave')) $('sttSettingsSave').onclick = async function() {
+        var body = {
+            beam_size: parseInt($('sttBeam').value),
+            temperature: 0.0,
+            no_speech_threshold: parseFloat($('sttNoSpeech').value),
+            vad_filter: $('sttVadFilter').checked,
+            vad_min_silence_ms: parseInt($('sttVadSilence').value),
+            vad_speech_pad_ms: parseInt($('sttVadPad').value),
+            vad_threshold: parseFloat($('sttVadThresh').value),
+            condition_on_previous_text: $('sttCondPrev').checked,
+        };
+        try {
+            await postJson('/setup/stt/settings', body);
+            showToast(t('saved'));
+        } catch(e) {
+            showToast('Error: ' + e.message, 3000);
+        }
+    };
+
     function renderWhisperModels() {
         var list = $('whisperModelList');
         if (!list) return;
@@ -1630,8 +1789,8 @@
 
             renderSteps(4, -1);
             var ok = false;
-            for (var attempt = 0; attempt < 10; attempt++) {
-                await new Promise(function(r) { setTimeout(r, 1000); });
+            for (var attempt = 0; attempt < 30; attempt++) {
+                await new Promise(function(r) { setTimeout(r, 2000); });
                 try {
                     var st = await api('/setup/whisper/status');
                     if (st.available) { ok = true; break; }
@@ -2526,7 +2685,7 @@
     // ══════════════════════════════════════════════════════════════
     //  Tab Navigation
     // ══════════════════════════════════════════════════════════════
-    var tabMap = { engines: 'tabEngines', prompts: 'tabPrompts', intents: 'tabIntents', test: 'tabTest' };
+    var tabMap = { engines: 'tabEngines', prompts: 'tabPrompts', intents: 'tabIntents', patterns: 'tabPatterns', test: 'tabTest' };
     document.querySelectorAll('.settings-tab').forEach(function(btn) {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.settings-tab').forEach(function(b) { b.classList.remove('active'); });
@@ -2535,6 +2694,7 @@
             var panel = $(tabMap[btn.getAttribute('data-tab')]);
             if (panel) panel.classList.add('active');
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
+            if (btn.getAttribute('data-tab') === 'patterns' && !state.patternsLoaded) loadPatterns();
             if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadSystemPrompt();
         });
     });
@@ -2594,6 +2754,60 @@
 
     $('intentsSearch').addEventListener('input', renderIntents);
     $('intentsModuleFilter').addEventListener('change', renderIntents);
+
+    // ══════════════════════════════════════════════════════════════
+    //  Patterns
+    // ══════════════════════════════════════════════════════════════
+    state.patterns = [];
+    state.patternsLoaded = false;
+
+    async function loadPatterns() {
+        $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">Loading...</td></tr>';
+        try {
+            var res = await api('/modules/voice-core/patterns');
+            state.patterns = res.patterns || [];
+            state.patternsLoaded = true;
+            $('patternsCountBadge').textContent = state.patterns.length;
+            renderPatterns();
+        } catch(e) {
+            $('patternsBody').innerHTML = '<tr><td colspan="4" style="color:var(--rd)">Error: ' + e.message + '</td></tr>';
+        }
+    }
+
+    function renderPatterns() {
+        var search = ($('patternsSearch').value || '').toLowerCase();
+        var langFilter = $('patternsLangFilter').value;
+        var filtered = state.patterns.filter(function(p) {
+            if (langFilter && p.lang !== langFilter) return false;
+            if (search) {
+                var hay = (p.intent + ' ' + p.pattern + ' ' + p.source).toLowerCase();
+                return hay.indexOf(search) !== -1;
+            }
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">No patterns found</td></tr>';
+            return;
+        }
+
+        $('patternsBody').innerHTML = filtered.map(function(p) {
+            var srcBadge = p.source === 'auto_entity' ? '<span class="badge badge-ac">auto</span>' :
+                           p.source === 'system' ? '<span class="badge badge-ok">system</span>' :
+                           '<span class="badge">' + (p.source || '—') + '</span>';
+            return '<tr>' +
+                '<td style="font-weight:500;white-space:nowrap">' + p.intent + '</td>' +
+                '<td><span class="badge badge-ac">' + p.lang + '</span></td>' +
+                '<td style="font-family:monospace;font-size:11px;word-break:break-all;max-width:400px">' + _esc(p.pattern) + '</td>' +
+                '<td>' + srcBadge + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    if ($('patternsSearch')) $('patternsSearch').addEventListener('input', renderPatterns);
+    if ($('patternsLangFilter')) $('patternsLangFilter').addEventListener('change', renderPatterns);
 
     // ══════════════════════════════════════════════════════════════
     //  Command Test Console
@@ -2713,6 +2927,7 @@
             loadWakeWordStatus(),
             loadWhisperStatus(),
             loadWhisperModels(),
+            loadSttSettings(),
             loadPiperStatus(),
             loadPiperVoices(),
             loadDualVoiceStatus(),
