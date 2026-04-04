@@ -1,6 +1,6 @@
 """core.stt — STT provider abstraction for SelenaCore.
 
-Supports multiple Whisper backends: whisper.cpp server, faster-whisper, OpenAI API.
+Supports multiple Whisper backends: WhisperTRT (Jetson), whisper.cpp, faster-whisper, OpenAI API.
 Provider is selected via core.yaml `stt.provider` or auto-detected from hardware.
 """
 from core.stt.base import STTProvider, STTResult

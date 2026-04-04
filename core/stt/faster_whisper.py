@@ -80,16 +80,27 @@ class FasterWhisperProvider(STTProvider):
             segments, info = self._model.transcribe(
                 wav_buf,
                 language=None,  # auto-detect
-                beam_size=3,
+                beam_size=5,
                 best_of=1,
                 temperature=0.0,
                 vad_filter=True,
+                vad_parameters=dict(
+                    min_silence_duration_ms=500,
+                    speech_pad_ms=400,
+                    threshold=0.5,
+                ),
+                condition_on_previous_text=False,
+                no_speech_threshold=0.6,
             )
 
             text_parts = [seg.text.strip() for seg in segments]
             text = " ".join(text_parts).strip()
+
+            # Filter Whisper hallucination artifacts
+            if text in ("[BLANK_AUDIO]", "(BLANK_AUDIO)", "[silence]", ""):
+                return STTResult()
+
             lang = info.language if info.language else "en"
-            confidence = 1.0 - info.language_probability if hasattr(info, "language_probability") else 0.0
             confidence = info.language_probability if hasattr(info, "language_probability") else 0.9
 
             return STTResult(text=text, lang=lang, confidence=confidence)

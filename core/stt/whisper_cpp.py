@@ -23,19 +23,44 @@ logger = logging.getLogger(__name__)
 class WhisperCppProvider(STTProvider):
     """STT via whisper.cpp HTTP server."""
 
-    def __init__(self, host: str = "http://localhost:9000") -> None:
+    def __init__(self, host: str = "http://localhost:9000", language: str | None = None) -> None:
         self._host = host.rstrip("/")
+        self._language = language
         self._client = httpx.AsyncClient(timeout=30.0)
+
+    def _load_stt_settings(self) -> dict[str, str]:
+        """Load STT settings from config for each request."""
+        form_data: dict[str, str] = {
+            "response_format": "verbose_json",
+        }
+        if self._language:
+            form_data["language"] = self._language
+        try:
+            from core.config_writer import read_config
+            s = read_config().get("stt", {}).get("settings", {})
+            if s:
+                for key in ("beam_size", "temperature", "no_speech_threshold",
+                             "vad_filter", "vad_min_silence_ms", "vad_speech_pad_ms",
+                             "vad_threshold", "condition_on_previous_text"):
+                    if key in s:
+                        form_data[key] = str(s[key])
+                lang = s.get("language")
+                if lang and lang != "auto":
+                    form_data["language"] = lang
+        except Exception:
+            pass
+        return form_data
 
     async def transcribe(self, audio_bytes: bytes, sample_rate: int = 16000) -> STTResult:
         """Send PCM audio to whisper-server, get text + detected language."""
         wav_bytes = _pcm_to_wav(audio_bytes, sample_rate)
+        form_data = self._load_stt_settings()
 
         try:
             resp = await self._client.post(
                 f"{self._host}/inference",
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
-                data={"response_format": "verbose_json", "temperature": "0.0"},
+                data=form_data,
             )
             resp.raise_for_status()
             data = resp.json()

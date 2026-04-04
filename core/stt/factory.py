@@ -39,6 +39,8 @@ def create_stt_provider(config: dict | None = None) -> STTProvider:
 
     if provider == "auto":
         return _auto_detect(config)
+    elif provider == "whisper_trt":
+        return _create_whisper_trt(config)
     elif provider == "whisper_cpp":
         return _create_whisper_cpp(config)
     elif provider == "faster_whisper":
@@ -58,13 +60,21 @@ def _auto_detect(config: dict) -> STTProvider:
     2. faster-whisper with CUDA if GPU available
     3. faster-whisper CPU
     """
-    # 1. Check whisper.cpp server
+    # 1. Check WhisperTRT (best for Jetson, ~3x faster)
+    try:
+        import whisper_trt  # noqa: F401
+        logger.info("STT auto-detect: WhisperTRT available (TensorRT accelerated)")
+        return _create_whisper_trt(config)
+    except ImportError:
+        pass
+
+    # 2. Check whisper.cpp server
     whisper_host = config.get("whisper_cpp", {}).get("host", "http://localhost:9000")
     if _is_whisper_cpp_running(whisper_host):
         logger.info("STT auto-detect: whisper.cpp server found at %s", whisper_host)
         return _create_whisper_cpp(config)
 
-    # 2. Check faster-whisper availability
+    # 3. Check faster-whisper availability
     try:
         import faster_whisper  # noqa: F401
         logger.info("STT auto-detect: faster-whisper available")
@@ -91,15 +101,33 @@ def _is_whisper_cpp_running(host: str) -> bool:
         return False
 
 
+def _create_whisper_trt(config: dict) -> STTProvider:
+    from core.stt.whisper_trt import WhisperTRTProvider
+    trt_cfg = config.get("whisper_trt", {})
+    return WhisperTRTProvider(
+        model=trt_cfg.get("model", "small"),
+    )
+
+
 def _create_whisper_cpp(config: dict) -> STTProvider:
     from core.stt.whisper_cpp import WhisperCppProvider
     host = config.get("whisper_cpp", {}).get("host", "http://localhost:9000")
-    return WhisperCppProvider(host=host)
+
+    # Language hint from primary TTS voice
+    language = None
+    try:
+        from core.config_writer import read_config
+        language = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("lang")
+    except Exception:
+        pass
+
+    return WhisperCppProvider(host=host, language=language)
 
 
 def _create_faster_whisper(config: dict) -> STTProvider:
     from core.stt.faster_whisper import FasterWhisperProvider
     fw_cfg = config.get("faster_whisper", {})
+
     return FasterWhisperProvider(
         model=fw_cfg.get("model", "small"),
         device=fw_cfg.get("device", "auto"),
