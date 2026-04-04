@@ -918,6 +918,13 @@
             <tbody id="intentsBody"></tbody>
         </table>
     </div>
+    <div class="flex gap8 mt8" style="justify-content:space-between;align-items:center">
+        <span id="intentsPageInfo" style="color:var(--tx3);font-size:11px"></span>
+        <div class="flex gap8">
+            <button class="btn btn-ghost" id="intentsPrev" style="font-size:11px" disabled>&larr; Prev</button>
+            <button class="btn btn-ghost" id="intentsNext" style="font-size:11px" disabled>Next &rarr;</button>
+        </div>
+    </div>
 </div>
 </div><!-- /tabIntents -->
 
@@ -935,25 +942,32 @@
     </div>
     <div class="flex gap8 mb12">
         <input type="text" id="patternsSearch" style="flex:1" data-placeholder-i18n="patterns_search">
-        <select id="patternsLangFilter" style="min-width:80px">
-            <option value="">All</option>
-            <option value="uk">UK</option>
-            <option value="en">EN</option>
-            <option value="ru">RU</option>
+        <select id="patternsModuleFilter" style="min-width:120px">
+            <option value="" data-i18n="patterns_all_modules"></option>
+        </select>
+        <select id="patternsSourceFilter" style="min-width:100px">
+            <option value="" data-i18n="patterns_all_sources"></option>
         </select>
     </div>
     <div style="overflow-x:auto">
         <table class="intent-table" id="patternsTable">
             <thead>
                 <tr>
+                    <th data-i18n="patterns_col_module">Module</th>
                     <th data-i18n="patterns_col_intent">Intent</th>
-                    <th data-i18n="patterns_col_lang">Lang</th>
                     <th data-i18n="patterns_col_pattern">Pattern</th>
                     <th data-i18n="patterns_col_source">Source</th>
                 </tr>
             </thead>
             <tbody id="patternsBody"></tbody>
         </table>
+    </div>
+    <div class="flex gap8 mt8" style="justify-content:space-between;align-items:center">
+        <span id="patternsPageInfo" style="color:var(--tx3);font-size:11px"></span>
+        <div class="flex gap8">
+            <button class="btn btn-ghost" id="patternsPrev" style="font-size:11px" disabled>&larr; Prev</button>
+            <button class="btn btn-ghost" id="patternsNext" style="font-size:11px" disabled>Next &rarr;</button>
+        </div>
     </div>
 </div>
 </div><!-- /tabPatterns -->
@@ -1203,10 +1217,12 @@
             tab_intents: 'Intents',
             tab_patterns: 'Patterns',
             patterns_title: 'Registered Patterns',
-            patterns_desc: 'Regex patterns used for voice command matching',
+            patterns_desc: 'English regex patterns used for voice command matching (all patterns are English-only)',
             patterns_search: 'Search patterns...',
+            patterns_all_modules: 'All modules',
+            patterns_all_sources: 'All sources',
+            patterns_col_module: 'Module',
             patterns_col_intent: 'Intent',
-            patterns_col_lang: 'Lang',
             patterns_col_pattern: 'Pattern',
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
@@ -1368,10 +1384,12 @@
             tab_intents: 'Iнтенти',
             tab_patterns: 'Патерни',
             patterns_title: 'Зареєстрованi патерни',
-            patterns_desc: 'Regex патерни для розпiзнавання голосових команд',
+            patterns_desc: 'Англiйськi regex патерни для розпiзнавання голосових команд (усi патерни тiльки англiйською)',
             patterns_search: 'Шукати патерни...',
+            patterns_all_modules: 'Усi модулi',
+            patterns_all_sources: 'Усi джерела',
+            patterns_col_module: 'Модуль',
             patterns_col_intent: 'Iнтент',
-            patterns_col_lang: 'Мова',
             patterns_col_pattern: 'Патерн',
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
@@ -2704,6 +2722,8 @@
     // ══════════════════════════════════════════════════════════════
     state.intentsLoaded = false;
     state.intents = [];
+    state.intentsPage = 0;
+    var INTENTS_PER_PAGE = 20;
 
     async function loadIntents() {
         $('intentsBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--tx3)">' + t('intents_loading') + '</td></tr>';
@@ -2718,16 +2738,17 @@
             modules.sort();
             $('intentsModuleFilter').innerHTML = '<option value="">' + t('intents_all_modules') + '</option>' +
                 modules.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+            state.intentsPage = 0;
             renderIntents();
         } catch(e) {
             $('intentsBody').innerHTML = '<tr><td colspan="5" style="color:var(--rd)">Error: ' + e.message + '</td></tr>';
         }
     }
 
-    function renderIntents() {
+    function getFilteredIntents() {
         var search = ($('intentsSearch').value || '').toLowerCase();
         var modFilter = $('intentsModuleFilter').value;
-        var filtered = state.intents.filter(function(i) {
+        return state.intents.filter(function(i) {
             if (modFilter && i.module !== modFilter) return false;
             if (search) {
                 var hay = (i.module + ' ' + i.intent + ' ' + i.description + ' ' + (i.params || []).join(' ')).toLowerCase();
@@ -2735,8 +2756,18 @@
             }
             return true;
         });
+    }
+
+    function renderIntents() {
+        var filtered = getFilteredIntents();
+        var totalPages = Math.max(1, Math.ceil(filtered.length / INTENTS_PER_PAGE));
+        if (state.intentsPage >= totalPages) state.intentsPage = totalPages - 1;
+        if (state.intentsPage < 0) state.intentsPage = 0;
+        var start = state.intentsPage * INTENTS_PER_PAGE;
+        var page = filtered.slice(start, start + INTENTS_PER_PAGE);
+
         var sourceColors = { system_module: 'var(--gr)', fast_matcher: 'var(--ac)', module_bus: 'var(--am)' };
-        $('intentsBody').innerHTML = filtered.map(function(i) {
+        $('intentsBody').innerHTML = page.map(function(i) {
             var params = (i.params && i.params.length) ? i.params.join(', ') : '—';
             var srcColor = sourceColors[i.source] || 'var(--tx3)';
             return '<tr>' +
@@ -2747,19 +2778,28 @@
                 '<td><span class="badge" style="background:rgba(79,140,247,.1);color:' + srcColor + '">' + i.source + '</span></td>' +
                 '</tr>';
         }).join('');
-        if (!filtered.length) {
+        if (!page.length) {
             $('intentsBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--tx3)">—</td></tr>';
         }
+
+        // Pagination controls
+        $('intentsPageInfo').textContent = filtered.length ? ((start + 1) + '–' + Math.min(start + INTENTS_PER_PAGE, filtered.length) + ' / ' + filtered.length) : '';
+        $('intentsPrev').disabled = state.intentsPage <= 0;
+        $('intentsNext').disabled = state.intentsPage >= totalPages - 1;
     }
 
-    $('intentsSearch').addEventListener('input', renderIntents);
-    $('intentsModuleFilter').addEventListener('change', renderIntents);
+    $('intentsSearch').addEventListener('input', function() { state.intentsPage = 0; renderIntents(); });
+    $('intentsModuleFilter').addEventListener('change', function() { state.intentsPage = 0; renderIntents(); });
+    $('intentsPrev').addEventListener('click', function() { state.intentsPage--; renderIntents(); });
+    $('intentsNext').addEventListener('click', function() { state.intentsPage++; renderIntents(); });
 
     // ══════════════════════════════════════════════════════════════
     //  Patterns
     // ══════════════════════════════════════════════════════════════
     state.patterns = [];
     state.patternsLoaded = false;
+    state.patternsPage = 0;
+    var PATTERNS_PER_PAGE = 25;
 
     async function loadPatterns() {
         $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">Loading...</td></tr>';
@@ -2768,46 +2808,88 @@
             state.patterns = res.patterns || [];
             state.patternsLoaded = true;
             $('patternsCountBadge').textContent = state.patterns.length;
+            // Populate module filter
+            var modules = [];
+            state.patterns.forEach(function(p) {
+                var mod = p.module || '';
+                if (mod && modules.indexOf(mod) === -1) modules.push(mod);
+            });
+            modules.sort();
+            $('patternsModuleFilter').innerHTML = '<option value="">' + t('patterns_all_modules') + '</option>' +
+                modules.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
+            // Populate source filter
+            var sources = [];
+            state.patterns.forEach(function(p) {
+                var s = p.source || '';
+                if (s && sources.indexOf(s) === -1) sources.push(s);
+            });
+            sources.sort();
+            $('patternsSourceFilter').innerHTML = '<option value="">' + t('patterns_all_sources') + '</option>' +
+                sources.map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+            state.patternsPage = 0;
             renderPatterns();
         } catch(e) {
             $('patternsBody').innerHTML = '<tr><td colspan="4" style="color:var(--rd)">Error: ' + e.message + '</td></tr>';
         }
     }
 
-    function renderPatterns() {
+    function getFilteredPatterns() {
         var search = ($('patternsSearch').value || '').toLowerCase();
-        var langFilter = $('patternsLangFilter').value;
-        var filtered = state.patterns.filter(function(p) {
-            if (langFilter && p.lang !== langFilter) return false;
+        var modFilter = $('patternsModuleFilter').value;
+        var srcFilter = $('patternsSourceFilter').value;
+        return state.patterns.filter(function(p) {
+            if (modFilter && (p.module || '') !== modFilter) return false;
+            if (srcFilter && (p.source || '') !== srcFilter) return false;
             if (search) {
-                var hay = (p.intent + ' ' + p.pattern + ' ' + p.source).toLowerCase();
+                var hay = ((p.module || '') + ' ' + p.intent + ' ' + p.pattern + ' ' + p.source).toLowerCase();
                 return hay.indexOf(search) !== -1;
             }
             return true;
         });
+    }
 
-        if (filtered.length === 0) {
+    function renderPatterns() {
+        var filtered = getFilteredPatterns();
+        var totalPages = Math.max(1, Math.ceil(filtered.length / PATTERNS_PER_PAGE));
+        if (state.patternsPage >= totalPages) state.patternsPage = totalPages - 1;
+        if (state.patternsPage < 0) state.patternsPage = 0;
+        var start = state.patternsPage * PATTERNS_PER_PAGE;
+        var page = filtered.slice(start, start + PATTERNS_PER_PAGE);
+
+        if (page.length === 0) {
             $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">No patterns found</td></tr>';
+            $('patternsPageInfo').textContent = '';
+            $('patternsPrev').disabled = true;
+            $('patternsNext').disabled = true;
             return;
         }
 
-        $('patternsBody').innerHTML = filtered.map(function(p) {
+        $('patternsBody').innerHTML = page.map(function(p) {
             var srcBadge = p.source === 'auto_entity' ? '<span class="badge badge-ac">auto</span>' :
                            p.source === 'system' ? '<span class="badge badge-ok">system</span>' :
+                           p.source === 'llm_generated' ? '<span class="badge" style="background:rgba(168,85,247,.15);color:var(--pr)">llm</span>' :
                            '<span class="badge">' + (p.source || '—') + '</span>';
             return '<tr>' +
+                '<td class="intent-module">' + (p.module || '—') + '</td>' +
                 '<td style="font-weight:500;white-space:nowrap">' + p.intent + '</td>' +
-                '<td><span class="badge badge-ac">' + p.lang + '</span></td>' +
                 '<td style="font-family:monospace;font-size:11px;word-break:break-all;max-width:400px">' + _esc(p.pattern) + '</td>' +
                 '<td>' + srcBadge + '</td>' +
                 '</tr>';
         }).join('');
+
+        // Pagination controls
+        $('patternsPageInfo').textContent = (start + 1) + '–' + Math.min(start + PATTERNS_PER_PAGE, filtered.length) + ' / ' + filtered.length;
+        $('patternsPrev').disabled = state.patternsPage <= 0;
+        $('patternsNext').disabled = state.patternsPage >= totalPages - 1;
     }
 
     function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-    if ($('patternsSearch')) $('patternsSearch').addEventListener('input', renderPatterns);
-    if ($('patternsLangFilter')) $('patternsLangFilter').addEventListener('change', renderPatterns);
+    if ($('patternsSearch')) $('patternsSearch').addEventListener('input', function() { state.patternsPage = 0; renderPatterns(); });
+    if ($('patternsModuleFilter')) $('patternsModuleFilter').addEventListener('change', function() { state.patternsPage = 0; renderPatterns(); });
+    if ($('patternsSourceFilter')) $('patternsSourceFilter').addEventListener('change', function() { state.patternsPage = 0; renderPatterns(); });
+    if ($('patternsPrev')) $('patternsPrev').addEventListener('click', function() { state.patternsPage--; renderPatterns(); });
+    if ($('patternsNext')) $('patternsNext').addEventListener('click', function() { state.patternsPage++; renderPatterns(); });
 
     // ══════════════════════════════════════════════════════════════
     //  Command Test Console

@@ -212,9 +212,7 @@ class MediaPlayerModule(SystemModule):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus → voice-core."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     def _load_config_from_env(self) -> dict[str, Any]:
         return {
@@ -378,6 +376,8 @@ class MediaPlayerModule(SystemModule):
                 "logo": body.logo,
                 "homepage": body.homepage,
             })
+            # Sync to core DB RadioStation → generate English patterns
+            await _sync_station_to_db(station, action="created")
             return station
 
         @router.post("/sources/radio/add-many")
@@ -387,9 +387,14 @@ class MediaPlayerModule(SystemModule):
 
         @router.delete("/sources/radio/station/{station_id}")
         async def radio_remove(station_id: str) -> dict:
+            # Find station before removal to get its DB id
+            station = next((s for s in svc._library.all() if s.get("id") == station_id), None)
             ok = svc._library.remove(station_id)
             if not ok:
                 raise HTTPException(status_code=404, detail="Station not found")
+            # Remove from core DB + delete patterns
+            if station:
+                await _sync_station_to_db(station, action="deleted")
             return {"ok": True}
 
         @router.post("/sources/radio/clear")
@@ -600,5 +605,105 @@ class MediaPlayerModule(SystemModule):
                 "version": "0.1.0",
                 "player_state": svc._player.get_state(),
             }
+
+        # ── DB sync helper ─────────────────────────────────────────────────
+
+        async def _sync_station_to_db(station: dict, action: str = "created") -> None:
+            """Sync local library station to core DB RadioStation + generate patterns.
+
+            This ensures voice patterns are created for every station added
+            through the media-player module (not just via core /radio API).
+            """
+            try:
+                from core.module_loader.sandbox import get_sandbox
+                sf = get_sandbox()._session_factory
+                if sf is None:
+                    return
+
+                from sqlalchemy import select, delete as sa_delete
+                from core.registry.models import RadioStation
+
+                name = station.get("name", "")
+                url = station.get("url", "")
+
+                if action == "deleted":
+                    # Find and delete by stream_url
+                    async with sf() as session:
+                        async with session.begin():
+                            result = await session.execute(
+                                select(RadioStation).where(RadioStation.stream_url == url)
+                            )
+                            db_station = result.scalar_one_or_none()
+                            if db_station:
+                                station_id = db_station.id
+                                await session.delete(db_station)
+                    # Delete patterns
+                    if db_station:
+                        try:
+                            from system_modules.llm_engine.pattern_generator import get_pattern_generator
+                            await get_pattern_generator().delete_for_entity("radio_station", station_id)
+                        except Exception:
+                            pass
+                else:
+                    # Translate name to English
+                    from core.api.routes.radio import _translate_to_en
+                    name_en = await _translate_to_en(name)
+                    genre = station.get("genre", "")
+                    genre_en = await _translate_to_en(genre) if genre else ""
+
+                    # Check if already exists (by URL)
+                    async with sf() as session:
+                        async with session.begin():
+                            result = await session.execute(
+                                select(RadioStation).where(RadioStation.stream_url == url)
+                            )
+                            db_station = result.scalar_one_or_none()
+                            if db_station:
+                                # Update existing
+                                db_station.name_user = name
+                                db_station.name_en = name_en
+                                db_station.genre_user = genre
+                                db_station.genre_en = genre_en
+                                db_station.country = station.get("country", "")
+                                db_station.logo_url = station.get("logo", "")
+                                db_station.enabled = True
+                            else:
+                                # Create new
+                                db_station = RadioStation(
+                                    name_user=name,
+                                    name_en=name_en,
+                                    stream_url=url,
+                                    genre_user=genre,
+                                    genre_en=genre_en,
+                                    country=station.get("country", ""),
+                                    logo_url=station.get("logo", ""),
+                                    enabled=True,
+                                    favourite=station.get("favourite", False),
+                                )
+                                session.add(db_station)
+                        await session.refresh(db_station)
+                        station_id = db_station.id
+
+                    # Generate English voice patterns via LLM
+                    try:
+                        from system_modules.llm_engine.pattern_generator import get_pattern_generator
+                        await get_pattern_generator().generate_for_entity("radio_station", station_id)
+                    except Exception as exc:
+                        logger.debug("Pattern generation failed for station '%s': %s", name, exc)
+
+                # Reload intent compiler + prompt cache
+                try:
+                    from system_modules.llm_engine.intent_compiler import get_intent_compiler
+                    await get_intent_compiler().full_reload()
+                except Exception:
+                    pass
+                try:
+                    from system_modules.llm_engine.intent_router import get_intent_router
+                    get_intent_router().refresh_system_prompt()
+                except Exception:
+                    pass
+
+            except Exception as exc:
+                logger.debug("DB sync for station failed: %s", exc)
 
         return router
