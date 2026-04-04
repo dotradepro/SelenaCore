@@ -1076,6 +1076,7 @@ class VoiceCoreModule(SystemModule):
     async def _on_voice_event(self, event: Any) -> None:
         if event.type == "voice.speak" and self._tts:
             text = event.payload.get("text", "")
+            speech_id = event.payload.get("speech_id")
             if text:
                 # Rephrase module response via LLM (if enabled)
                 if self._is_rephrase_enabled():
@@ -1089,7 +1090,10 @@ class VoiceCoreModule(SystemModule):
                 await self._enqueue_speech(text, priority=1, done_event=done)
                 await done.wait()
 
-                await self.publish("voice.speak_done", {"text": text})
+                done_payload: dict[str, Any] = {"text": text}
+                if speech_id:
+                    done_payload["speech_id"] = speech_id
+                await self.publish("voice.speak_done", done_payload)
                 self._system_speak_done.set()
 
     # ── Lifecycle ────────────────────────────────────────────────────────

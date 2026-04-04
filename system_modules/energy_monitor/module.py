@@ -60,9 +60,7 @@ class EnergyMonitorModule(SystemModule):
 
         await self.publish("module.started", {"name": self.name})
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     async def _on_voice_intent(self, event: Any) -> None:
         """Handle voice.intent events for energy.* intents."""

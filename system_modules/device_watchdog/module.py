@@ -43,9 +43,7 @@ class DeviceWatchdogModule(SystemModule):
             "notify_on_offline": True,
         }
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     async def _on_heartbeat(self, event) -> None:
         if self._watchdog:

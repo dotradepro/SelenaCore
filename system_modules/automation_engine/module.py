@@ -44,9 +44,7 @@ class AutomationEngineModule(SystemModule):
             "notification.send", {"message": message, "channel": channel}
         )
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     async def _on_event(self, event) -> None:
         if event.type == "voice.intent":

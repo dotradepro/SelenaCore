@@ -107,9 +107,7 @@ class PresenceDetectionModule(SystemModule):
         elif etype == "device.state_changed":
             await self._on_state_changed(event)
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus -> voice-core."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     async def stop(self) -> None:
         if self._detector:

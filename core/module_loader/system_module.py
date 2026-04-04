@@ -17,8 +17,10 @@ Subclass contract:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable
@@ -94,6 +96,36 @@ class SystemModule(ABC):
                 f"Module '{self.name}': setup() must be called before publish()"
             )
         await self._bus.publish(type=event_type, source=self.name, payload=payload)
+
+    # ── TTS speech helper ──────────────────────────────────────────────────────
+
+    async def speak(self, text: str, *, timeout: float = 30.0) -> None:
+        """Publish voice.speak and WAIT for TTS to complete (voice.speak_done).
+
+        This ensures speech finishes before the caller continues, so actions
+        (like starting radio playback) happen AFTER the voice announcement.
+        """
+        if not text or self._bus is None:
+            return
+
+        speech_id = str(uuid.uuid4())
+        done = asyncio.Event()
+
+        async def _on_speak_done(event: Any) -> None:
+            if event.payload.get("speech_id") == speech_id:
+                done.set()
+
+        sub_id = self.subscribe(["voice.speak_done"], _on_speak_done)
+        try:
+            await self.publish("voice.speak", {"text": text, "speech_id": speech_id})
+            await asyncio.wait_for(done.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.debug("speak() timeout for '%s' (speech_id=%s)", text[:40], speech_id)
+        finally:
+            if self._bus:
+                self._bus.unsubscribe_direct(sub_id)
+            if sub_id in self._direct_sub_ids:
+                self._direct_sub_ids.remove(sub_id)
 
     # ── DeviceRegistry helpers ────────────────────────────────────────────────
 

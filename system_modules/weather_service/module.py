@@ -80,9 +80,7 @@ class WeatherServiceModule(SystemModule):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    async def speak(self, text: str) -> None:
-        """Send text to TTS via EventBus."""
-        await self.publish("voice.speak", {"text": text})
+    # speak() is inherited from SystemModule — blocking, waits for TTS to finish
 
     def get_router(self) -> APIRouter:
         router = APIRouter()
