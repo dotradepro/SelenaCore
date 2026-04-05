@@ -35,7 +35,7 @@ Key characteristics:
 - **Direct database access** through a shared SQLAlchemy async session factory
 - **Optional FastAPI router** mounted at `/api/ui/modules/{name}/`
 - Located in the `system_modules/` directory
-- Currently **22 built-in** system modules ship with SelenaCore
+- Currently **21 built-in** system modules ship with SelenaCore
 
 Use a system module when you need tight integration with the core, low latency, or direct database access. Use a [user module](user-module-development.md) when you need isolation, independent deployment, or third-party extensibility.
 
@@ -681,7 +681,7 @@ SelenaCore ships with 22 system modules:
 | `secrets_vault` | AES-256-GCM encrypted token storage |
 | `weather_service` | Weather API integration |
 
-The 22nd module is not listed here as it is an internal core utility. Browse `system_modules/` for the full set.
+Browse `system_modules/` for the full set.
 
 ---
 

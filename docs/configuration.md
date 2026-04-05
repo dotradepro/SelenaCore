@@ -139,13 +139,13 @@ ui:
 
 ```yaml
 agent:
-  check_interval: 30
+  check_interval_sec: 30
   max_restore_attempts: 3
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `check_interval` | `int` | `30` | Seconds between module health checks. |
+| `check_interval_sec` | `int` | `30` | Seconds between module health checks. |
 | `max_restore_attempts` | `int` | `3` | Maximum automatic restart attempts for a failed module. |
 
 ### modules

@@ -193,6 +193,163 @@ Remove a device from the registry.
 
 Publishes a `device.removed` event.
 
+### GET /devices/query
+
+Search devices by entity_type, location, and/or keyword.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entity_type` | `string` | Filter by entity type (e.g. `"light"`, `"thermostat"`) |
+| `location` | `string` | Filter by location (e.g. `"kitchen"`, `"bedroom"`) |
+| `keyword` | `string` | Search by keyword |
+
+**Response 200:** `DeviceListResponse`
+
+---
+
+## Radio Station Endpoints
+
+All radio endpoints require authentication. Radio stations are used by the media-player module and LLM prompt builder. Names are stored in dual-language format: `name_user` (original) and `name_en` (auto-translated to English).
+
+### GET /radio
+
+List all radio stations.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enabled_only` | `bool` | Return only enabled stations (default: `false`) |
+| `genre` | `string` | Filter by genre (partial match, checks both `genre_en` and `genre_user`) |
+
+**Response 200:**
+
+```json
+{
+  "stations": [
+    {
+      "id": 1,
+      "name_user": "Jazz FM",
+      "name_en": "Jazz FM",
+      "stream_url": "https://example.com/jazz.mp3",
+      "genre_user": "jazz",
+      "genre_en": "jazz",
+      "country": "UK",
+      "logo_url": "",
+      "enabled": true,
+      "favourite": false,
+      "patterns_en": ["play jazz fm", "jazz radio"]
+    }
+  ]
+}
+```
+
+### POST /radio
+
+Create a new radio station. Names are auto-translated to English via LLM.
+
+**Request:**
+
+```json
+{
+  "name_user": "Jazz FM",
+  "stream_url": "https://example.com/jazz.mp3",
+  "genre_user": "jazz",
+  "country": "UK",
+  "logo_url": "",
+  "enabled": true,
+  "favourite": false
+}
+```
+
+**Response 201:** `RadioStationResponse`
+
+### PUT /radio/{station_id}
+
+Update a radio station. Only provided fields are updated. Name/genre are re-translated if changed.
+
+**Request:** Partial `RadioStationCreate` (all fields optional).
+
+**Response 200:** `RadioStationResponse`
+
+### DELETE /radio/{station_id}
+
+Remove a radio station.
+
+**Response 204:** No body.
+
+---
+
+## Scene Endpoints
+
+All scene endpoints require authentication. Scenes are named sets of device actions. Names are stored in dual-language format: `name_user` (original) and `name_en` (auto-translated).
+
+### GET /scenes
+
+List all scenes.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `enabled_only` | `bool` | Return only enabled scenes (default: `false`) |
+
+**Response 200:**
+
+```json
+{
+  "scenes": [
+    {
+      "id": 1,
+      "name_user": "Movie Night",
+      "name_en": "Movie Night",
+      "actions": [
+        {"device_id": "uuid-...", "state": {"on": false}},
+        {"device_id": "uuid-...", "state": {"brightness": 20}}
+      ],
+      "trigger": "",
+      "enabled": true,
+      "patterns_en": ["movie night", "start movie scene"]
+    }
+  ]
+}
+```
+
+### POST /scenes
+
+Create a new scene. Name is auto-translated to English via LLM.
+
+**Request:**
+
+```json
+{
+  "name_user": "Movie Night",
+  "actions": [
+    {"device_id": "uuid-...", "state": {"on": false}}
+  ],
+  "trigger": "",
+  "enabled": true
+}
+```
+
+**Response 201:** `SceneResponse`
+
+### PUT /scenes/{scene_id}
+
+Update a scene. Only provided fields are updated. Name is re-translated if changed.
+
+**Request:** Partial `SceneCreate` (all fields optional).
+
+**Response 200:** `SceneResponse`
+
+### DELETE /scenes/{scene_id}
+
+Remove a scene.
+
+**Response 204:** No body.
+
 ---
 
 ## Event Endpoints
