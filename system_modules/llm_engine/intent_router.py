@@ -160,6 +160,18 @@ class IntentRouter:
     def __init__(self) -> None:
         self._system_prompt: str | None = None
         self._prompt_cache: dict[str, str] = {}  # lang → cached prompt
+        self._live_log_fn: Any = None  # callback for live monitor logging
+
+    def set_live_log(self, fn: Any) -> None:
+        """Set callback for live monitor: fn(event: str, data: dict)."""
+        self._live_log_fn = fn
+
+    def _live_log(self, event: str, data: dict) -> None:
+        if self._live_log_fn:
+            try:
+                self._live_log_fn(event, data)
+            except Exception:
+                pass
 
     # ── Legacy registration (no-op, kept for backward compat) ────────
 
@@ -505,6 +517,13 @@ class IntentRouter:
         if not await client.is_available():
             return None
 
+        self._live_log("llm_prompt", {
+            "provider": "ollama",
+            "model": model,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+        })
+
         raw = await asyncio.wait_for(
             client.generate(
                 prompt=user_prompt, system=system_prompt,
@@ -516,6 +535,7 @@ class IntentRouter:
         if not raw:
             return None
 
+        self._live_log("llm_raw", {"provider": "ollama", "raw": raw})
         return self._parse_llm_response(raw, source="llm")
 
     # ── Cloud LLM ──────────────────────────────────────────────────────
@@ -566,16 +586,26 @@ class IntentRouter:
 
         # Legacy cloud providers
         legacy_provider = cloud_cfg.get("provider")
+        cloud_model = cloud_cfg.get("model", "")
+
+        self._live_log("llm_prompt", {
+            "provider": legacy_provider or "openai-compat",
+            "model": cloud_model,
+            "system_prompt": system_prompt,
+            "user_prompt": user_prompt,
+        })
+
         if legacy_provider:
             from system_modules.llm_engine.cloud_providers import generate
             raw = await asyncio.wait_for(
                 generate(
-                    legacy_provider, cloud_cfg["key"], cloud_cfg["model"],
+                    legacy_provider, cloud_cfg["key"], cloud_model,
                     user_prompt, system_prompt, temperature=0.1,
                 ),
                 timeout=15.0,
             )
             if raw:
+                self._live_log("llm_raw", {"provider": legacy_provider, "raw": raw})
                 return self._parse_llm_response(raw, source="cloud")
             return None
 
@@ -587,7 +617,7 @@ class IntentRouter:
                 f"{url}/chat/completions",
                 headers={"Authorization": f"Bearer {cloud_cfg['key']}"},
                 json={
-                    "model": cloud_cfg["model"],
+                    "model": cloud_model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -600,6 +630,7 @@ class IntentRouter:
             raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
 
         if raw:
+            self._live_log("llm_raw", {"provider": "openai-compat", "raw": raw})
             return self._parse_llm_response(raw, source="cloud")
         return None
 

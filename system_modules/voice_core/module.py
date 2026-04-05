@@ -1686,6 +1686,13 @@ class VoiceCoreModule(SystemModule):
             self._speech_worker(), name="tts-speech-worker",
         )
 
+        # Connect IntentRouter live logging to this module's live monitor
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().set_live_log(self._log_live)
+        except Exception:
+            pass
+
         # Warm up Vosk model (JIT priming via LLM → Piper → Vosk)
         asyncio.create_task(self._warmup_vosk())
 

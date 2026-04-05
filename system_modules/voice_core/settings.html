@@ -3449,6 +3449,29 @@
         if (e.event === 'timeout') {
             return time + '⏰ <span style="color:var(--rd)">' + (e.msg || 'Timeout') + '</span>';
         }
+        if (e.event === 'llm_prompt') {
+            var prov = e.provider || '?';
+            var mdl = e.model || '?';
+            var sys = (e.system_prompt || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var usr = (e.user_prompt || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return time + '📋 <span style="color:var(--pr);font-weight:600">LLM Prompt</span> <span style="color:var(--tx3)">(' + prov + ' / ' + mdl + ')</span>'
+                + '\n<details style="margin:2px 0 4px 20px;border-left:2px solid var(--pr);padding-left:8px">'
+                + '<summary style="cursor:pointer;color:var(--pr);font-size:11px;user-select:none">System prompt (' + sys.length + ' chars)</summary>'
+                + '<pre style="margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:10px;color:var(--tx2);max-height:200px;overflow-y:auto">' + sys + '</pre>'
+                + '</details>'
+                + '<details style="margin:0 0 4px 20px;border-left:2px solid var(--ac);padding-left:8px">'
+                + '<summary style="cursor:pointer;color:var(--ac);font-size:11px;user-select:none">User prompt</summary>'
+                + '<pre style="margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:10px;color:var(--tx2)">' + usr + '</pre>'
+                + '</details>';
+        }
+        if (e.event === 'llm_raw') {
+            var raw = (e.raw || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return time + '📨 <span style="color:var(--am);font-weight:600">LLM Response</span> <span style="color:var(--tx3)">(' + (e.provider||'?') + ')</span>'
+                + '\n<details style="margin:2px 0 4px 20px;border-left:2px solid var(--am);padding-left:8px">'
+                + '<summary style="cursor:pointer;color:var(--am);font-size:11px;user-select:none">Raw response</summary>'
+                + '<pre style="margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:10px;color:var(--tx2)">' + raw + '</pre>'
+                + '</details>';
+        }
         // Unknown events
         return time + '❓ ' + (e.event||'?') + ': ' + JSON.stringify(e.data || e);
     }
