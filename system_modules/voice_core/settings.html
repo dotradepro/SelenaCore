@@ -5,40 +5,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Voice Core — Settings</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        :root {
-            --bg: #0B0C10;
-            --sf: #12131A;
-            --sf2: #191A22;
-            --sf3: #20212C;
-            --b: rgba(255, 255, 255, .07);
-            --b2: rgba(255, 255, 255, .13);
-            --tx: #EDEEF5;
-            --tx2: #888EA8;
-            --tx3: #484D66;
-            --ac: #4F8CF7;
-            --gr: #2EC98A;
-            --am: #F5A93A;
-            --rd: #E05454;
-            --pr: #a855f7;
-        }
-
-        :root.light {
-            --bg: #F3F4F8;
-            --sf: #FFFFFF;
-            --sf2: #F0F1F5;
-            --sf3: #E4E5ED;
-            --b: rgba(0, 0, 0, .08);
-            --b2: rgba(0, 0, 0, .14);
-            --tx: #1A1C24;
-            --tx2: #5C6178;
-            --tx3: #9498AD;
-            --ac: #3B7AE8;
-            --gr: #1FAF75;
-            --am: #DB8F1C;
-            --rd: #C94040;
-            --pr: #9333ea;
-        }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -825,7 +793,7 @@
         <div class="section-sub" data-i18n="prompts_tab_desc"></div>
     </div>
 
-    <!-- 1. Conversation prompt (cloud models) -->
+    <!-- 1. User instructions (all models) -->
     <div class="card-inner mb12">
         <div class="flex gap6 mb4">
             <span class="label-sm" data-i18n="user_prompt_label"></span>
@@ -835,35 +803,6 @@
         <textarea id="userPromptText" rows="3" style="width:100%"></textarea>
         <div class="flex gap8 mt4" style="align-items:center">
             <button id="saveUserBtn" class="btn btn-green" data-i18n="save"></button>
-            <span id="userCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
-        </div>
-    </div>
-
-    <!-- 2. Conversation prompt (local models) -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="compact_user_label"></span>
-            <span id="customCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="compact_user_desc"></div>
-        <textarea id="compactUserText" rows="2" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveCompactBtn" class="btn btn-green" data-i18n="save"></button>
-            <span id="compactCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
-        </div>
-    </div>
-
-    <!-- 3. Rephrase prompt -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="rephrase_prompt_label"></span>
-            <span id="customRephraseBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="rephrase_prompt_desc"></div>
-        <textarea id="rephrasePromptText" rows="4" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveRephraseBtn" class="btn btn-green" data-i18n="save"></button>
-            <span id="rephraseCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
         </div>
     </div>
 
@@ -916,6 +855,32 @@
         <textarea id="rephraseSystemText" rows="4" style="width:100%"></textarea>
         <div class="flex gap8 mt4" style="align-items:center">
             <button id="saveRephraseSysBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- 9. Translation prompt -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="translate_system_label"></span>
+            <span id="customTranslateBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="translate_system_desc"></div>
+        <textarea id="translateSystemText" rows="3" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="saveTranslateBtn" class="btn btn-green" data-i18n="save"></button>
+        </div>
+    </div>
+
+    <!-- 10. Voice pattern prompt -->
+    <div class="card-inner mb12">
+        <div class="flex gap6 mb4">
+            <span class="label-sm" data-i18n="pattern_system_label"></span>
+            <span id="customPatternBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
+        </div>
+        <div class="label-xs mb4" style="opacity:.6" data-i18n="pattern_system_desc"></div>
+        <textarea id="patternSystemText" rows="3" style="width:100%"></textarea>
+        <div class="flex gap8 mt4" style="align-items:center">
+            <button id="savePatternBtn" class="btn btn-green" data-i18n="save"></button>
         </div>
     </div>
 
@@ -1296,10 +1261,8 @@
             stop_server: 'Stop',
             model_name_placeholder: 'Model name (e.g. phi3:mini)...',
             prompt_section: 'AI Prompts',
-            user_prompt_label: 'Your instructions (cloud models)',
-            user_prompt_desc: 'Personality and behavior for OpenAI, Gemini, etc.',
-            compact_user_label: 'Your instructions (local models)',
-            compact_user_desc: 'Short instructions for Ollama / llama.cpp',
+            user_prompt_label: 'User instructions',
+            user_prompt_desc: 'Personality and behavior instructions for all LLM models.',
             hidden_system_label: 'Auto-generated system prompt (name, language, rules):',
             hidden_system_label_edit: 'System identity (cloud models)',
             hidden_system_desc: 'Core identity and rules. Template variables: {name}, {lang}. Applied before user prompt.',
@@ -1309,6 +1272,10 @@
             intent_system_desc: 'Main prompt for intent classification. Controls how LLM classifies voice commands into intents (JSON). Template: {name}, {lang}. Intent catalog is injected automatically.',
             rephrase_system_label: 'Rephrase system wrapper',
             rephrase_system_desc: 'Wraps the rephrase rules above with TTS instructions. Template: {lang_name}, {rephrase_rules}.',
+            translate_system_label: 'Translation prompt',
+            translate_system_desc: 'System prompt for translating text to English (keywords, device names).',
+            pattern_system_label: 'Voice pattern prompt',
+            pattern_system_desc: 'System prompt for generating voice command patterns (short English phrases).',
             show_hidden: 'Show system prompt',
             custom: 'Custom',
             reset_default: 'Reset to default',
@@ -1359,8 +1326,6 @@
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
             prompts_tab_desc: 'Customize prompts for conversation, intent classification, and response rephrase',
-            rephrase_prompt_label: 'Response rephrase rules',
-            rephrase_prompt_desc: 'Instructions for LLM to rephrase module responses naturally for TTS output.',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1497,10 +1462,8 @@
             stop_server: 'Зупинити',
             model_name_placeholder: 'Назва моделi (напр. phi3:mini)...',
             prompt_section: 'Промпти AI',
-            user_prompt_label: 'Вашi iнструкцiї (хмарнi моделi)',
-            user_prompt_desc: 'Особистiсть та поведiнка для OpenAI, Gemini тощо',
-            compact_user_label: 'Вашi iнструкцiї (локальнi моделi)',
-            compact_user_desc: 'Короткi iнструкцiї для Ollama / llama.cpp',
+            user_prompt_label: 'Iнструкцiї користувача',
+            user_prompt_desc: 'Особистiсть та поведiнка для всiх LLM моделей.',
             hidden_system_label: 'Автоматичний системний промпт (iм\'я, мова, правила):',
             hidden_system_label_edit: 'Системна iдентичнiсть (хмарнi моделi)',
             hidden_system_desc: 'Основна iдентичнiсть та правила. Шаблон: {name}, {lang}. Додається перед промптом користувача.',
@@ -1510,6 +1473,10 @@
             intent_system_desc: 'Основний промпт класифiкацiї iнтентiв. Контролює як LLM класифiкує голосовi команди в iнтенти (JSON). Шаблон: {name}, {lang}. Каталог iнтентiв додається автоматично.',
             rephrase_system_label: 'Системна обгортка перефразування',
             rephrase_system_desc: 'Обгортає правила перефразування iнструкцiями для TTS. Шаблон: {lang_name}, {rephrase_rules}.',
+            translate_system_label: 'Промпт перекладу',
+            translate_system_desc: 'Системний промпт для перекладу тексту англiйською (ключовi слова, назви пристроїв).',
+            pattern_system_label: 'Промпт голосових патернiв',
+            pattern_system_desc: 'Системний промпт для генерацiї патернiв голосових команд (короткi англiйськi фрази).',
             show_hidden: 'Показати системний промпт',
             custom: 'Кастомний',
             reset_default: 'Скинути за замовч.',
@@ -1560,8 +1527,6 @@
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
             prompts_tab_desc: 'Налаштування промптів для діалогу, класифікації інтентів та перефразування відповідей',
-            rephrase_prompt_label: 'Правила перефразування відповідей',
-            rephrase_prompt_desc: 'Інструкції для LLM щодо природного перефразування відповідей модулів для TTS.',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -1670,9 +1635,8 @@
         ollamaModels: [], ollamaActive: '',
         pulling: false, pullProgress: 0, pullStatus: '',
         llamacppRunning: false, llamacppStarting: false,
-        userPrompt: '', defaultUser: '', isCustomUser: false,
-        compactUser: '', defaultCompact: '', isCustomCompact: false,
-        limits: { user_prompt: 300, compact_user: 120 },
+        isCustomUser: false,
+        limits: {},
         detectedLang: '', assistantName: '',
         cloudModels: [], keyValid: null,
     };
@@ -2445,93 +2409,57 @@
     }
 
     // ── AI Prompts ─────────────────────────────────────────────────
-    function charCount(id, countId, limit) {
-        var len = $(id).value.length;
-        $(countId).textContent = len + ' / ' + limit;
-        $(countId).style.color = len > limit ? '#e53' : '';
-    }
-
     state.promptsLoaded = false;
 
     async function loadSystemPrompt() {
         try {
             var res = await api('/setup/llm/system-prompt');
             state.promptsLoaded = true;
-            state.userPrompt = res.user_prompt || '';
-            state.defaultUser = res.default_user || '';
-            state.isCustomUser = res.is_custom_user || false;
-            state.compactUser = res.compact_user || '';
-            state.defaultCompact = res.default_compact || '';
-            state.isCustomCompact = res.is_custom_compact || false;
-            state.rephrasePrompt = res.rephrase_prompt || '';
-            state.defaultRephrase = res.default_rephrase || '';
-            state.isCustomRephrase = res.is_custom_rephrase || false;
             state.detectedLang = res.lang || '';
             state.assistantName = res.name || '';
             if (res.limits) state.limits = res.limits;
 
-            $('userPromptText').value = state.userPrompt;
-            $('userPromptText').maxLength = state.limits.user_prompt;
-            $('compactUserText').value = state.compactUser;
-            $('compactUserText').maxLength = state.limits.compact_user;
-            $('rephrasePromptText').value = state.rephrasePrompt;
-            $('rephrasePromptText').maxLength = state.limits.rephrase_prompt;
-
-            function updateBadges() {
-                var any = state.isCustomUser || state.isCustomCompact || state.isCustomRephrase;
-                if (any) show('customPromptBadge'); else hide('customPromptBadge');
-                if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
-                if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
-                if (state.isCustomRephrase) show('customRephraseBadge'); else hide('customRephraseBadge');
-            }
-            state._updatePromptBadges = updateBadges;
-            updateBadges();
-
-            // New prompts from res.prompts (all 8 keys)
+            // All prompts from res.prompts (universal endpoint)
             var pm = res.prompts || {};
+
+            // User instructions
+            if (pm.user_instructions) {
+                $('userPromptText').value = pm.user_instructions.value || '';
+                state.isCustomUser = pm.user_instructions.is_custom || false;
+            }
+            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
+
+            // System prompts
             if (pm.hidden_system) $('hiddenSystemText').value = pm.hidden_system.value || '';
             if (pm.hidden_compact) $('hiddenCompactText').value = pm.hidden_compact.value || '';
             if (pm.intent_system) $('intentSystemText').value = pm.intent_system.value || '';
             if (pm.rephrase_system) $('rephraseSystemText').value = pm.rephrase_system.value || '';
+            if (pm.translate_system) $('translateSystemText').value = pm.translate_system.value || '';
+            if (pm.pattern_system) $('patternSystemText').value = pm.pattern_system.value || '';
 
-            // Custom badges for new prompts
+            // Custom badges
             if (pm.hidden_system && pm.hidden_system.is_custom) show('customHiddenBadge'); else hide('customHiddenBadge');
             if (pm.hidden_compact && pm.hidden_compact.is_custom) show('customHiddenCompactBadge'); else hide('customHiddenCompactBadge');
             if (pm.intent_system && pm.intent_system.is_custom) show('customIntentSysBadge'); else hide('customIntentSysBadge');
             if (pm.rephrase_system && pm.rephrase_system.is_custom) show('customRephraseSysBadge'); else hide('customRephraseSysBadge');
+            if (pm.translate_system && pm.translate_system.is_custom) show('customTranslateBadge'); else hide('customTranslateBadge');
+            if (pm.pattern_system && pm.pattern_system.is_custom) show('customPatternBadge'); else hide('customPatternBadge');
+
+            // Global custom badge
+            var anyCustom = state.isCustomUser ||
+                (pm.hidden_system && pm.hidden_system.is_custom) ||
+                (pm.hidden_compact && pm.hidden_compact.is_custom) ||
+                (pm.intent_system && pm.intent_system.is_custom) ||
+                (pm.rephrase_system && pm.rephrase_system.is_custom) ||
+                (pm.translate_system && pm.translate_system.is_custom) ||
+                (pm.pattern_system && pm.pattern_system.is_custom);
+            if (anyCustom) show('customPromptBadge'); else hide('customPromptBadge');
 
             $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
-
-            charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
-            charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
-            charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt);
         } catch(e) { /* ignore */ }
     }
 
-    $('userPromptText').oninput = function() { charCount('userPromptText', 'userCharCount', state.limits.user_prompt); };
-    $('compactUserText').oninput = function() { charCount('compactUserText', 'compactCharCount', state.limits.compact_user); };
-    $('rephrasePromptText').oninput = function() { charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt); };
-
-    function _savePrompt(btnId, endpoint, textId, stateKey, defaultKey, customKey) {
-        $(btnId).onclick = async function() {
-            this.disabled = true;
-            try {
-                await postJson(endpoint, { prompt: $(textId).value });
-                state[stateKey] = $(textId).value;
-                state[customKey] = state[stateKey] !== state[defaultKey];
-                if (state._updatePromptBadges) state._updatePromptBadges();
-                rebuildPrompts();
-                showToast(t('saved'));
-            } catch(e) { /* ignore */ }
-            this.disabled = false;
-        };
-    }
-
-    _savePrompt('saveUserBtn', '/setup/llm/user-prompt', 'userPromptText', 'userPrompt', 'defaultUser', 'isCustomUser');
-    _savePrompt('saveCompactBtn', '/setup/llm/compact-prompt', 'compactUserText', 'compactUser', 'defaultCompact', 'isCustomCompact');
-    _savePrompt('saveRephraseBtn', '/setup/llm/rephrase-prompt', 'rephrasePromptText', 'rephrasePrompt', 'defaultRephrase', 'isCustomRephrase');
-
-    // Universal save for new prompt fields (hidden_system, hidden_compact, intent_system, rephrase_system)
+    // Universal save for all prompt fields
     function _saveUniversalPrompt(btnId, textId, key) {
         $(btnId).onclick = async function() {
             this.disabled = true;
@@ -2543,10 +2471,13 @@
             this.disabled = false;
         };
     }
+    _saveUniversalPrompt('saveUserBtn', 'userPromptText', 'user_instructions');
     _saveUniversalPrompt('saveHiddenBtn', 'hiddenSystemText', 'hidden_system');
     _saveUniversalPrompt('saveHiddenCompactBtn', 'hiddenCompactText', 'hidden_compact');
     _saveUniversalPrompt('saveIntentSysBtn', 'intentSystemText', 'intent_system');
     _saveUniversalPrompt('saveRephraseSysBtn', 'rephraseSystemText', 'rephrase_system');
+    _saveUniversalPrompt('saveTranslateBtn', 'translateSystemText', 'translate_system');
+    _saveUniversalPrompt('savePatternBtn', 'patternSystemText', 'pattern_system');
 
     // Reset all
     $('resetPromptsBtn').onclick = async function() {
@@ -3451,10 +3382,10 @@
         }
         if (e.event === 'llm_prompt') {
             var prov = e.provider || '?';
-            var mdl = e.model || '?';
+            var pkey = e.prompt_key || '?';
             var sys = (e.system_prompt || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
             var usr = (e.user_prompt || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            return time + '📋 <span style="color:var(--pr);font-weight:600">LLM Prompt</span> <span style="color:var(--tx3)">(' + prov + ' / ' + mdl + ')</span>'
+            return time + '📋 <span style="color:var(--pr);font-weight:600">LLM</span> <span style="color:var(--ac);font-weight:600">' + pkey + '</span> <span style="color:var(--tx3)">(' + prov + ')</span>'
                 + '\n<details style="margin:2px 0 4px 20px;border-left:2px solid var(--pr);padding-left:8px">'
                 + '<summary style="cursor:pointer;color:var(--pr);font-size:11px;user-select:none">System prompt (' + sys.length + ' chars)</summary>'
                 + '<pre style="margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:10px;color:var(--tx2);max-height:200px;overflow-y:auto">' + sys + '</pre>'
@@ -3466,7 +3397,8 @@
         }
         if (e.event === 'llm_raw') {
             var raw = (e.raw || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            return time + '📨 <span style="color:var(--am);font-weight:600">LLM Response</span> <span style="color:var(--tx3)">(' + (e.provider||'?') + ')</span>'
+            var pkey = e.prompt_key || '?';
+            return time + '📨 <span style="color:var(--am);font-weight:600">LLM</span> <span style="color:var(--ac);font-weight:600">' + pkey + '</span> <span style="color:var(--tx3)">(' + (e.provider||'?') + ')</span>'
                 + '\n<details style="margin:2px 0 4px 20px;border-left:2px solid var(--am);padding-left:8px">'
                 + '<summary style="cursor:pointer;color:var(--am);font-size:11px;user-select:none">Raw response</summary>'
                 + '<pre style="margin:4px 0;white-space:pre-wrap;word-break:break-word;font-size:10px;color:var(--tx2)">' + raw + '</pre>'
