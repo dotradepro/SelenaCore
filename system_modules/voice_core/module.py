@@ -229,37 +229,11 @@ async def generate_wake_variants_llm(phrase: str, lang: str = "uk") -> list[str]
     someone says the wake phrase. Returns list of variants or empty.
     """
     try:
-        from system_modules.llm_engine.cloud_providers import generate as llm_generate
-        from core.config_writer import read_config
-        cfg = read_config()
-
-        # Find available cloud provider (config → env)
-        api_key = ""
-        provider = ""
-        model = ""
-        llm_cfg = cfg.get("llm", {})
-        _env_keys = {
-            "google": ("GEMINI_API_KEY", "gemini-2.0-flash"),
-            "openai": ("OPENAI_API_KEY", "gpt-4o-mini"),
-            "anthropic": ("ANTHROPIC_API_KEY", "claude-sonnet-4-20250514"),
-            "groq": ("GROQ_API_KEY", "llama-3.1-8b-instant"),
-        }
-        for prov_name, (env_name, default_model) in _env_keys.items():
-            key = llm_cfg.get(f"{prov_name}_api_key", "") or os.getenv(env_name, "")
-            if key:
-                api_key = key
-                provider = prov_name
-                models = llm_cfg.get(f"{prov_name}_models", [])
-                model = models[0] if models else llm_cfg.get(f"{prov_name}_model", default_model)
-                break
-
-        if not api_key or not provider:
-            return []
-
+        from core.llm import llm_call
         from core.lang_utils import lang_code_to_name
         lang_name = lang_code_to_name(lang)
 
-        prompt = (
+        prompt_text = (
             f'The word "{phrase}" is a voice assistant wake word in {lang_name}. '
             f"When someone says this word, speech recognition (Vosk) sometimes "
             f"transcribes it incorrectly as a similar-sounding word.\n\n"
@@ -273,20 +247,14 @@ async def generate_wake_variants_llm(phrase: str, lang: str = "uk") -> list[str]
             f"no explanations. Include the original word first."
         )
 
-        result = await llm_generate(
-            provider=provider,
-            api_key=api_key,
-            model=model,
-            prompt=prompt,
-            temperature=0.3,
-        )
+        raw = await llm_call(prompt_text, prompt_key="pattern", temperature=0.3)
 
-        if not result:
+        if not raw:
             return []
 
         # Parse LLM response: one variant per line
         variants = []
-        for line in result.strip().splitlines():
+        for line in raw.strip().splitlines():
             word = line.strip().lower().strip("- •·0123456789.)")
             if word and len(word) >= 3 and len(word) <= 30:
                 variants.append(word)
@@ -424,8 +392,10 @@ class VoiceCoreModule(SystemModule):
     async def _speak_wake_response(self) -> None:
         """Speak a short confirmation after wake phrase detected, then listen."""
         try:
-            from core.i18n import t
-            text = t("voice.wake_response", lang=self._tts_primary_lang)
+            from core.llm import llm_call
+            text = await llm_call("wake word activated, greet briefly", prompt_key="rephrase", temperature=0.9, timeout=5.0)
+            if not text:
+                text = "..."  # silent fallback
             from system_modules.voice_core.tts import sanitize_for_tts
             clean = sanitize_for_tts(text).lower()
             if clean:
@@ -1455,125 +1425,71 @@ class VoiceCoreModule(SystemModule):
             return False
 
     async def _rephrase_via_llm(self, default_text: str) -> str:
-        """Ask LLM to rephrase a module response for natural TTS output.
+        """Ask LLM to rephrase text for natural TTS output."""
+        from core.llm import llm_call
 
-        Works with any provider (cloud, ollama, llamacpp).
-        Converts numbers to words, translates foreign text, varies phrasing.
-        Falls back to default_text on failure.
-        """
-        try:
-            from core.config_writer import read_config
-            config = read_config()
-            voice_cfg = config.get("voice", {})
-            provider = voice_cfg.get("llm_provider", "ollama")
+        lang = self._tts_primary_lang or self._detect_lang()
+        from core.lang_utils import lang_code_to_name
+        lang_name = lang_code_to_name(lang)
 
-            # Use TTS language (not STT) — response must match the voice output
-            lang = self._tts_primary_lang or self._detect_lang()
-            from core.lang_utils import lang_code_to_name
-            lang_name = lang_code_to_name(lang)
+        ctx = f"[{lang_name}]\n"
+        if self._last_query:
+            ctx += f"\"{self._last_query}\"\n"
+        if self._last_intent:
+            ctx += f"{self._last_intent}\n"
+        ctx += f"\"{default_text}\""
 
-            # Load rephrase prompt from DB (prompt_store)
-            rephrase_rules = ""
-            try:
-                from core.prompt_store import get_prompt_store
-                rephrase_rules = await get_prompt_store().get(lang, "rephrase_prompt")
-            except Exception:
-                pass
-            if not rephrase_rules:
-                from core.api.routes.voice_engines import DEFAULT_REPHRASE_PROMPT
-                rephrase_rules = DEFAULT_REPHRASE_PROMPT
-
-            # Load rephrase_system template from DB (editable via UI)
-            rephrase_system_tpl = ""
-            try:
-                from core.prompt_store import get_prompt_store
-                rephrase_system_tpl = await get_prompt_store().get(lang, "rephrase_system")
-            except Exception:
-                pass
-            if rephrase_system_tpl and "{rephrase_rules}" in rephrase_system_tpl:
-                try:
-                    system = rephrase_system_tpl.format(
-                        lang_name=lang_name, rephrase_rules=rephrase_rules)
-                except (KeyError, IndexError):
-                    system = rephrase_system_tpl
-            else:
-                system = (
-                    f"You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-                    f"{rephrase_rules}\n"
-                    f"CRITICAL: All numbers MUST be spelled out as words in {lang_name}.\n"
-                    f"CRITICAL: Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
-                    f"Output will be read aloud by TTS — no digits, no Latin letters, no symbols."
-                )
-
-            # Build context
-            messages_ctx = ""
-            if self._last_query:
-                messages_ctx += f"User said: \"{self._last_query}\"\n"
-            if self._last_intent:
-                messages_ctx += f"Classified intent: {self._last_intent}\n"
-            messages_ctx += f"Default response: \"{default_text}\"\n"
-            messages_ctx += "Your rephrased response:"
-
-            # For local providers, add language tag
-            if provider in ("ollama", "llamacpp"):
-                messages_ctx = f"[{lang_name}] {messages_ctx}"
-
-            rephrased = ""
-
-            if provider == "ollama":
-                from system_modules.llm_engine.ollama_client import get_ollama_client
-                rephrased = await asyncio.wait_for(
-                    get_ollama_client().generate(prompt=messages_ctx, system=system),
-                    timeout=10.0,
-                )
-            elif provider == "llamacpp":
-                import httpx
-                llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
-                messages = [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": messages_ctx},
-                ]
-                async with httpx.AsyncClient(timeout=10) as http:
-                    resp = await http.post(
-                        f"{llamacpp_url}/v1/chat/completions",
-                        json={"messages": messages, "temperature": 0.9, "max_tokens": 256},
-                    )
-                    resp.raise_for_status()
-                    rephrased = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-            else:
-                # Cloud provider
-                p_cfg = voice_cfg.get("providers", {}).get(provider, {})
-                api_key = p_cfg.get("api_key", "")
-                model = p_cfg.get("model", "")
-                if not api_key or not model:
-                    return default_text
-                from system_modules.llm_engine.cloud_providers import generate
-                rephrased = await asyncio.wait_for(
-                    generate(provider, api_key, model, messages_ctx, system, temperature=0.9),
-                    timeout=8.0,
-                )
-
-            rephrased = rephrased.strip().strip('"').strip("'")
-            if rephrased and len(rephrased) < 300:
-                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-                return preprocess_for_tts(rephrased, lang)
-        except Exception as exc:
-            logger.warning("Rephrase via LLM failed (provider=%s): %s", provider, exc)
+        result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
+        if result and len(result) < 300:
+            from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+            return preprocess_for_tts(result, lang)
 
         from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-        return preprocess_for_tts(default_text, self._tts_primary_lang or self._detect_lang())
+        return preprocess_for_tts(default_text, lang)
 
-    def _is_rephrase_enabled(self) -> bool:
-        """Check if LLM rephrase is enabled in config (default: off)."""
-        return self._config.get("rephrase_enabled", False)
+    async def _generate_via_llm(self, action_context: dict) -> str:
+        """Ask LLM to generate TTS response from action context."""
+        from core.llm import llm_call
+        import json as _json
+
+        intent = action_context.get("intent", "unknown")
+        ctx_parts = {k: v for k, v in action_context.items() if k != "intent"}
+        ctx_summary = ", ".join(f"{k}={v}" for k, v in ctx_parts.items()) if ctx_parts else "done"
+        fallback_text = f"{intent}: {ctx_summary}"
+
+        lang = self._tts_primary_lang or self._detect_lang()
+        from core.lang_utils import lang_code_to_name
+        lang_name = lang_code_to_name(lang)
+
+        ctx = f"[{lang_name}]\n"
+        if self._last_query:
+            ctx += f"\"{self._last_query}\"\n"
+        ctx += f"{intent}\n"
+        if ctx_parts:
+            ctx += f"{_json.dumps(ctx_parts, ensure_ascii=False, default=str)}\n"
+
+        result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
+        if result and len(result) < 300:
+            from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+            return preprocess_for_tts(result, lang)
+
+        return fallback_text
 
     async def _on_voice_event(self, event: Any) -> None:
         if event.type == "voice.speak" and self._tts:
-            text = event.payload.get("text", "")
+            action_ctx = event.payload.get("action_context")
             speech_id = event.payload.get("speech_id")
+
+            if action_ctx:
+                # LLM generates response from structured action context
+                text = await self._generate_via_llm(action_ctx)
+            else:
+                text = event.payload.get("text", "")
+                if text:
+                    # Rephrase/translate existing text via LLM
+                    text = await self._rephrase_via_llm(text)
+
             if text:
-                # Always rephrase/translate via LLM for natural TTS output
-                text = await self._rephrase_via_llm(text)
                 # Full TTS preprocessing: lowercase + numbers
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
                 text = preprocess_for_tts(text, self._tts_primary_lang).lower()
@@ -1686,7 +1602,12 @@ class VoiceCoreModule(SystemModule):
             self._speech_worker(), name="tts-speech-worker",
         )
 
-        # Connect IntentRouter live logging to this module's live monitor
+        # Connect live logging to this module's live monitor
+        try:
+            from core.llm import set_live_log as set_llm_live_log
+            set_llm_live_log(self._log_live)
+        except Exception:
+            pass
         try:
             from system_modules.llm_engine.intent_router import get_intent_router
             get_intent_router().set_live_log(self._log_live)
@@ -1732,9 +1653,7 @@ class VoiceCoreModule(SystemModule):
         router = APIRouter()
         svc = self
 
-        @router.get("/health")
-        async def health() -> dict:
-            return {"status": "ok", "module": svc.name}
+        svc._register_health_endpoint(router)
 
         @router.get("/config")
         async def get_config() -> JSONResponse:
@@ -2074,15 +1993,7 @@ class VoiceCoreModule(SystemModule):
                 "spoken_text": svc._last_spoken if tts_done else None,
             })
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings_page() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
+        svc._register_html_routes(router, __file__)
 
         @router.websocket("/stream")
         async def audio_stream_ws(websocket: WebSocket) -> None:

@@ -29,39 +29,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# ── Fixed LLM system prompt (KV cache stays hot between requests) ──────
-
-INTENT_SYSTEM_PROMPT = """\
-You are Selena, a smart home assistant.
-Analyze the user request. Reply ONLY with valid JSON, no extra text:
-{
-  "intent": "<intent_name or unknown>",
-  "entity": "<device/object or null>",
-  "location": "<room or null>",
-  "params": {},
-  "pattern": "<short English command phrase (2-5 words) that would trigger this intent>",
-  "response": "<1-2 sentences in the user's language confirming the action>"
-}
-
-Known intents:
-  device.on, device.off, device.set, device.query,
-  media.play, media.stop, media.pause, media.resume, media.volume_set, media.next, media.prev,
-  climate.set, climate.query,
-  weather.query,
-  automation.run, automation.list,
-  presence.query,
-  unknown
-
-Rules:
-- intent MUST be from the known list above or from the registered intents list
-- entity, location — always in English (e.g. "light", "kitchen"), even if user speaks another language
-- params — extracted parameters (e.g. {"level": 50} for volume, {"genre": "jazz"} for music)
-- pattern — MUST be in English, a short natural voice command (e.g. "play jazz radio", "turn on kitchen light", "current weather"). This is used for future voice recognition
-- response — MUST be in the TTS language (specified at the end of this prompt), natural and concise
-- If you cannot determine the intent, use "unknown" and provide a helpful response
-"""
-
-
 # ── Template responses for regex hits (no LLM needed) ──────────────────
 
 _TEMPLATE_RESPONSES: dict[str, dict[str, str]] = {
@@ -158,8 +125,6 @@ class IntentRouter:
     """Intent router: DB regex → Module Bus → Cache → LLM → Cloud."""
 
     def __init__(self) -> None:
-        self._system_prompt: str | None = None
-        self._prompt_cache: dict[str, str] = {}  # lang → cached prompt
         self._live_log_fn: Any = None  # callback for live monitor logging
 
     def set_live_log(self, fn: Any) -> None:
@@ -280,10 +245,9 @@ class IntentRouter:
                         "Module bus: %s unavailable (reason=%s)", module_name, reason,
                     )
                     bus_error = f"{module_name}: {reason}"
-                    from core.i18n import t
                     result = IntentResult(
                         intent=f"module.{module_name}",
-                        response=t("intent.module_unavailable", lang=lang),
+                        response="The module is temporarily unavailable. Please try again later.",
                         action=None,
                         source="module_bus",
                         latency_ms=_elapsed(),
@@ -452,8 +416,7 @@ class IntentRouter:
             })
 
         # ── Fallback ──
-        from core.i18n import t
-        fallback_msg = t("intent.fallback", lang=lang)
+        fallback_msg = "Sorry, I didn't understand. Please try again."
 
         if trace:
             steps.append({
@@ -477,71 +440,44 @@ class IntentRouter:
     # ── Local LLM (single call) ────────────────────────────────────────
 
     async def _local_llm_classify(self, text: str, lang: str, *, tts_lang: str | None = None) -> IntentResult | None:
-        """Single LLM call: returns intent JSON + response in TTS language."""
+        """Single LLM call via core.llm.llm_call(): returns intent JSON + response in TTS language."""
         tts_lang = tts_lang or lang
-        try:
-            from core.config_writer import read_config
-        except ImportError:
-            return None
+        from core.llm import llm_call
 
-        config = read_config()
+        catalog = self._build_intent_catalog(tts_lang)
 
-        # Read AI config (new format) or fall back to legacy voice/llm config
-        ai_cfg = config.get("ai", {}).get("conversation", {})
-        voice_cfg = config.get("voice", {})
-
-        # Determine provider and model
-        local_cfg = ai_cfg.get("local", {})
-        host = local_cfg.get("host") or voice_cfg.get("ollama_url", "http://localhost:11434")
-        model = local_cfg.get("model") or voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
-        # Legacy provider config override
-        p_model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
-        if p_model:
-            model = p_model
-
-        options = local_cfg.get("options", {})
-        temperature = options.get("temperature", 0.1)
-        num_predict = options.get("num_predict", 80)
-
-        # Build system prompt with registered intents catalog
-        system_prompt = self._build_system_prompt(tts_lang)
-
-        # Build user prompt with language tag for local models
         lang_name = _lang_name(lang)
         tts_lang_name = _lang_name(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
-        # Call Ollama
-        from system_modules.llm_engine.ollama_client import get_ollama_client
-        client = get_ollama_client()
-        if not await client.is_available():
-            return None
-
         self._live_log("llm_prompt", {
-            "provider": "ollama",
-            "model": model,
-            "system_prompt": system_prompt,
+            "provider": "llm_call",
             "user_prompt": user_prompt,
+            "extra_context_len": len(catalog),
         })
 
-        raw = await asyncio.wait_for(
-            client.generate(
-                prompt=user_prompt, system=system_prompt,
-                model=model, temperature=temperature,
-            ),
+        raw = await llm_call(
+            user_prompt,
+            prompt_key="intent",
+            extra_context=catalog,
+            temperature=0.1,
             timeout=25.0,
         )
 
         if not raw:
             return None
 
-        self._live_log("llm_raw", {"provider": "ollama", "raw": raw})
+        self._live_log("llm_raw", {"provider": "llm_call", "raw": raw})
         return self._parse_llm_response(raw, source="llm")
 
     # ── Cloud LLM ──────────────────────────────────────────────────────
 
     def _get_cloud_config(self) -> dict | None:
-        """Get cloud LLM config if configured and enabled."""
+        """Check whether a cloud LLM provider is configured.
+
+        Returns a truthy dict if cloud is available, None otherwise.
+        llm_call() handles the actual provider dispatch internally.
+        """
         try:
             from core.config_writer import read_config
             config = read_config()
@@ -552,7 +488,6 @@ class IntentRouter:
             url = cloud_cfg.get("url", "")
             key = cloud_cfg.get("key") or os.environ.get("GROQ_API_KEY", "")
             model = cloud_cfg.get("model", "")
-
             if url and key and model:
                 return {"url": url, "key": key, "model": model}
 
@@ -565,11 +500,7 @@ class IntentRouter:
                 api_key = p_cfg.get("api_key", "")
                 p_model = p_cfg.get("model", "")
                 if api_key and p_model:
-                    return {
-                        "provider": provider,
-                        "key": api_key,
-                        "model": p_model,
-                    }
+                    return {"provider": provider, "key": api_key, "model": p_model}
         except Exception:
             pass
         return None
@@ -577,96 +508,47 @@ class IntentRouter:
     async def _cloud_llm_classify(
         self, text: str, lang: str, cloud_cfg: dict, *, tts_lang: str | None = None,
     ) -> IntentResult | None:
-        """Cloud LLM classification via OpenAI-compatible API or legacy providers."""
+        """Cloud LLM classification via core.llm.llm_call()."""
         tts_lang = tts_lang or lang
+        from core.llm import llm_call
+
+        catalog = self._build_intent_catalog(tts_lang)
+
         lang_name = _lang_name(lang)
         tts_lang_name = _lang_name(tts_lang)
-        system_prompt = self._build_system_prompt(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
-        # Legacy cloud providers
-        legacy_provider = cloud_cfg.get("provider")
-        cloud_model = cloud_cfg.get("model", "")
-
         self._live_log("llm_prompt", {
-            "provider": legacy_provider or "openai-compat",
-            "model": cloud_model,
-            "system_prompt": system_prompt,
+            "provider": "llm_call (cloud)",
             "user_prompt": user_prompt,
+            "extra_context_len": len(catalog),
         })
 
-        if legacy_provider:
-            from system_modules.llm_engine.cloud_providers import generate
-            raw = await asyncio.wait_for(
-                generate(
-                    legacy_provider, cloud_cfg["key"], cloud_model,
-                    user_prompt, system_prompt, temperature=0.1,
-                ),
-                timeout=15.0,
-            )
-            if raw:
-                self._live_log("llm_raw", {"provider": legacy_provider, "raw": raw})
-                return self._parse_llm_response(raw, source="cloud")
+        raw = await llm_call(
+            user_prompt,
+            prompt_key="intent",
+            extra_context=catalog,
+            temperature=0.1,
+            timeout=15.0,
+        )
+
+        if not raw:
             return None
 
-        # OpenAI-compatible API
-        import httpx
-        url = cloud_cfg["url"].rstrip("/")
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
-                f"{url}/chat/completions",
-                headers={"Authorization": f"Bearer {cloud_cfg['key']}"},
-                json={
-                    "model": cloud_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 200,
-                },
-            )
-            resp.raise_for_status()
-            raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-
-        if raw:
-            self._live_log("llm_raw", {"provider": "openai-compat", "raw": raw})
-            return self._parse_llm_response(raw, source="cloud")
-        return None
+        self._live_log("llm_raw", {"provider": "llm_call (cloud)", "raw": raw})
+        return self._parse_llm_response(raw, source="cloud")
 
     # ── Prompt building ────────────────────────────────────────────────
 
-    def _build_system_prompt(self, lang: str) -> str:
-        """Build system prompt with dynamic catalog from DB + in-memory intents.
+    def _build_intent_catalog(self, lang: str) -> str:
+        """Build the dynamic intent catalog (extra_context for llm_call).
 
-        Cached per lang. Invalidated by refresh_system_prompt().
+        Includes registered intents from IntentCompiler, DB catalog
+        (modules, devices, radio stations, scenes), and language enforcement.
+        The base system prompt is loaded by llm_call() from PromptStore.
         """
-        if lang in self._prompt_cache:
-            return self._prompt_cache[lang]
-
         lang_name = _lang_name(lang)
-
-        # Load intent system prompt from DB (editable via UI)
-        try:
-            from core.prompt_store import get_prompt_store
-            cache = get_prompt_store()._cache
-            # Try TTS lang first, fallback to en
-            from core.api.routes.voice_engines import _get_prompt_context
-            _, _, tts_lang = _get_prompt_context()
-            intent_tpl = (cache.get(tts_lang, {}).get("intent_system")
-                          or cache.get("en", {}).get("intent_system")
-                          or INTENT_SYSTEM_PROMPT)
-            # Fill template variables
-            from core.api.routes.voice_engines import _extract_name_from_wake
-            from core.config_writer import read_config as _rc
-            _wake = _rc().get("voice", {}).get("wake_word_model", "")
-            _name = _extract_name_from_wake(_wake) if _wake else "Selena"
-            try:
-                prompt = intent_tpl.format(name=_name, lang=_lang_name(lang))
-            except (KeyError, IndexError):
-                prompt = intent_tpl
-        except Exception:
-            prompt = INTENT_SYSTEM_PROMPT
+        parts: list[str] = []
 
         # Add known intents from IntentCompiler (DB-driven)
         try:
@@ -678,20 +560,19 @@ class IntentRouter:
                 params_str = ", ".join(params_keys) if params_keys else "none"
                 extra_intents.append(f"  {ci.intent}: {desc} (params: {params_str})")
             if extra_intents:
-                prompt += "\nRegistered intents:\n" + "\n".join(extra_intents) + "\n"
+                parts.append("Registered intents:\n" + "\n".join(extra_intents))
         except Exception:
             pass
 
         # Dynamic catalog from DB (registered_modules, devices, radio_stations, scenes)
         db_catalog = self._load_db_catalog()
         if db_catalog:
-            prompt += db_catalog
+            parts.append(db_catalog)
 
         # Language enforcement
-        prompt += f"\nTTS language: {lang_name} ({lang}). Response MUST be in {lang_name}.\n"
+        parts.append(f"TTS language: {lang_name} ({lang}). Response MUST be in {lang_name}.")
 
-        self._prompt_cache[lang] = prompt
-        return prompt
+        return "\n".join(parts)
 
     def _load_db_catalog(self) -> str:
         """Load dynamic catalog from DB (sync wrapper for startup speed).
@@ -834,21 +715,9 @@ class IntentRouter:
 
         return None
 
-    # ── Legacy compatibility ───────────────────────────────────────────
-
-    def _get_system_prompt(self) -> str:
-        """Build system prompt — compact for local Ollama."""
-        if self._system_prompt:
-            return self._system_prompt
-        from core.api.routes.voice_engines import build_system_prompt
-        return build_system_prompt(compact=True)
-
-    def set_system_prompt(self, prompt: str) -> None:
-        self._system_prompt = prompt
-
     def refresh_system_prompt(self) -> None:
-        self._system_prompt = None
-        self._prompt_cache.clear()
+        """No-op kept for API compatibility. Prompts are built fresh each time."""
+        pass
 
     def _get_known_intent_names(self) -> set[str]:
         """Collect all known intent names from DB compiler + module bus."""
@@ -1056,14 +925,9 @@ class IntentRouter:
                 result.params = {**(result.params or {}), "device_id": devices[0].device_id}
             elif len(devices) > 1:
                 # Multiple matches — ask for clarification
-                from core.i18n import t
                 device_names = ", ".join(d.name for d in devices[:5])
                 result.intent = "disambiguation"
-                result.response = t(
-                    "intent.disambiguation",
-                    lang=tts_lang,
-                    devices=device_names,
-                )
+                result.response = f"Which one did you mean: {device_names}?"
                 result.action = None
                 result.params = {
                     **(result.params or {}),

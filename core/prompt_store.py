@@ -1,9 +1,11 @@
 """
-core/prompt_store.py — Prompt storage service (SQLite + in-memory cache).
+core/prompt_store.py — Prompt storage service (SQLite, no caching).
 
 Stores LLM system prompts per language in the database.
 JSON files in config/prompts/ serve as seed data for initial population.
 Custom prompts (user-edited or LLM-translated) are flagged is_custom=True.
+
+Every get() call reads fresh from DB — no in-memory caching.
 
 Usage:
     store = get_prompt_store()
@@ -25,26 +27,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 logger = logging.getLogger(__name__)
 
 PROMPT_KEYS = (
-    "user_prompt",          # User instructions for cloud LLM (appended to hidden_system)
-    "compact_user",         # User instructions for local LLM (appended to hidden_compact)
-    "rephrase_prompt",       # Rephrase/TTS preparation instructions
     "hidden_system",         # System identity prompt for cloud LLM (template: {name}, {lang})
     "hidden_compact",        # System identity prompt for local LLM (template: {name}, {lang})
+    "user_instructions",     # User instructions (appended to hidden_system/compact)
     "intent_system",         # Intent router LLM prompt (JSON format instructions)
-    "rephrase_system",       # Rephrase wrapper prompt (template: {lang_name}, {rephrase_rules})
+    "rephrase_system",       # TTS rephrase/generation prompt (template: {lang_name})
+    "translate_system",      # System prompt for translation tasks
+    "pattern_system",        # System prompt for voice command pattern generation
 )
 _PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
 
 # English hardcoded fallback (if JSON files are also missing)
 _EN_FALLBACK = {
-    "user_prompt": "Keep answers short and helpful. You are a smart home assistant.",
-    "compact_user": "Short answers, plain text.",
-    "rephrase_prompt": (
-        "The system performed an action and generated a default response.\n"
-        "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"
-        "Vary your phrasing — don't repeat the same structure.\n"
-        "Keep it short for TTS. Plain text only."
-    ),
+    "user_instructions": "Keep answers short and helpful. You are a smart home assistant.",
     "hidden_system": (
         "You are {name}. "
         "CRITICAL: Reply ONLY in {lang}. Every word MUST be in {lang}. "
@@ -78,10 +73,20 @@ _EN_FALLBACK = {
     ),
     "rephrase_system": (
         "You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-        "{rephrase_rules}\n"
-        "CRITICAL: All numbers MUST be spelled out as words in {lang_name}.\n"
-        "CRITICAL: Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
-        "Output will be read aloud by TTS — no digits, no Latin letters, no symbols."
+        "Rephrase naturally and concisely (1-2 sentences, no emoji, no markdown).\n"
+        "Vary your phrasing — don't repeat the same structure.\n"
+        "All numbers MUST be spelled out as words in {lang_name}.\n"
+        "Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
+        "Output will be read aloud by TTS — no digits, no Latin letters, no symbols.\n"
+        "Keep it short for TTS. Plain text only."
+    ),
+    "translate_system": (
+        "You are a translator. Reply with ONLY the translated text, nothing else. "
+        "No quotes, no explanations, no extra words."
+    ),
+    "pattern_system": (
+        "You generate short English voice commands for a smart home system. "
+        "Reply ONLY with a JSON array of strings. Each string is a short command (2-5 words)."
     ),
 }
 
@@ -89,17 +94,16 @@ from core.lang_utils import lang_code_to_name
 
 
 class PromptStore:
-    """Prompt storage with DB persistence and in-memory cache."""
+    """Prompt storage with DB persistence. No in-memory caching — always reads fresh."""
 
     def __init__(self) -> None:
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
-        self._cache: dict[str, dict[str, str]] = {}  # {lang: {key: value}}
 
     def set_session_factory(self, factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = factory
 
     async def initialize(self) -> None:
-        """Seed DB from JSON files if empty, then load cache."""
+        """Seed DB from JSON files if empty, run migrations."""
         if not self._session_factory:
             return
         async with self._session_factory() as session:
@@ -107,20 +111,22 @@ class PromptStore:
             result = await session.execute(select(SystemPrompt).limit(1))
             if result.scalar_one_or_none() is None:
                 await self._seed_from_json(session)
-            await self._load_cache(session)
+        # Migrate: user_prompt+compact_user → user_instructions
+        await self._migrate_user_instructions()
 
     async def get(self, lang: str, key: str) -> str:
-        """Get a prompt by language and key. Falls back to en, then hardcoded."""
-        # Cache first
-        if lang in self._cache and key in self._cache[lang]:
-            return self._cache[lang][key]
-        # Try DB
+        """Get a prompt by language and key. Always reads from DB.
+
+        Fallback chain: DB(lang) → DB(en) → _EN_FALLBACK.
+        """
         val = await self._db_get(lang, key)
         if val is not None:
             return val
-        # Fallback to English
+        # Fallback to English in DB
         if lang != "en":
-            return await self.get("en", key)
+            val = await self._db_get("en", key)
+            if val is not None:
+                return val
         # Hardcoded fallback
         return _EN_FALLBACK.get(key, "")
 
@@ -148,7 +154,7 @@ class PromptStore:
         return {"value": await self.get(lang, key), "is_custom": False}
 
     async def set(self, lang: str, key: str, value: str, is_custom: bool = True) -> None:
-        """Save a prompt. Updates cache and DB."""
+        """Save a prompt to DB."""
         if not self._session_factory:
             return
         async with self._session_factory() as session:
@@ -165,8 +171,6 @@ class PromptStore:
             else:
                 session.add(SystemPrompt(lang=lang, key=key, value=value, is_custom=is_custom))
             await session.commit()
-        # Update cache
-        self._cache.setdefault(lang, {})[key] = value
 
     async def reset(self, lang: str) -> None:
         """Reset all prompts for a language to defaults (from JSON seed or en fallback)."""
@@ -187,25 +191,19 @@ class PromptStore:
         en_prompts = await self.get_all("en")
 
         try:
-            from system_modules.llm_engine.cloud_providers import generate as llm_generate
-
-            api_key, provider, model = _find_llm_provider()
-            if not api_key:
-                logger.warning("No LLM provider for prompt generation")
-                return False
+            from core.llm import llm_call
 
             for key, en_text in en_prompts.items():
                 if not en_text:
                     continue
-                prompt = (
+                translated = await llm_call(
                     f"Translate this voice assistant system prompt to {lang_name}. "
                     f"Keep the same meaning, tone, structure, and formatting exactly. "
                     f"Output ONLY the translated text, nothing else.\n\n"
-                    f"{en_text}"
-                )
-                translated = await llm_generate(
-                    provider=provider, api_key=api_key, model=model,
-                    prompt=prompt, temperature=0.2,
+                    f"{en_text}",
+                    prompt_key="translate",
+                    temperature=0.2,
+                    timeout=15.0,
                 )
                 if translated and translated.strip():
                     await self.set(lang, key, translated.strip(), is_custom=False)
@@ -220,26 +218,21 @@ class PromptStore:
         """Translate user-edited (custom) prompts from old_lang to new_lang via LLM."""
         new_lang_name = lang_code_to_name(new_lang)
 
-        api_key, provider, model = _find_llm_provider()
-        if not api_key:
-            return
-
         try:
-            from system_modules.llm_engine.cloud_providers import generate as llm_generate
+            from core.llm import llm_call
 
             for key in PROMPT_KEYS:
                 meta = await self.get_meta(old_lang, key)
                 if not meta["is_custom"]:
                     continue
-                prompt = (
+                translated = await llm_call(
                     f"Translate this voice assistant system prompt to {new_lang_name}. "
                     f"Keep the same meaning, tone, and formatting. "
                     f"Output ONLY the translated text, nothing else.\n\n"
-                    f"{meta['value']}"
-                )
-                translated = await llm_generate(
-                    provider=provider, api_key=api_key, model=model,
-                    prompt=prompt, temperature=0.2,
+                    f"{meta['value']}",
+                    prompt_key="translate",
+                    temperature=0.2,
+                    timeout=15.0,
                 )
                 if translated and translated.strip():
                     await self.set(new_lang, key, translated.strip(), is_custom=True)
@@ -248,6 +241,77 @@ class PromptStore:
             logger.warning("Custom prompt translation failed: %s", e)
 
     # ── Private ───────────────────────────────────────────────────────────
+
+    async def _migrate_user_instructions(self) -> None:
+        """Migrate user_prompt → user_instructions, delete compact_user."""
+        if not self._session_factory:
+            return
+        async with self._session_factory() as session:
+            from core.registry.models import SystemPrompt
+            # Check if old key exists
+            old = await session.execute(
+                select(SystemPrompt).where(SystemPrompt.key == "user_prompt")
+            )
+            old_rows = list(old.scalars())
+
+            for row in old_rows:
+                # Copy to user_instructions if not already present
+                existing = await session.execute(
+                    select(SystemPrompt).where(
+                        SystemPrompt.lang == row.lang,
+                        SystemPrompt.key == "user_instructions",
+                    )
+                )
+                if existing.scalar_one_or_none() is None:
+                    session.add(SystemPrompt(
+                        lang=row.lang, key="user_instructions",
+                        value=row.value, is_custom=row.is_custom,
+                    ))
+                await session.delete(row)
+
+            # Delete compact_user rows
+            compact = await session.execute(
+                select(SystemPrompt).where(SystemPrompt.key == "compact_user")
+            )
+            for row in compact.scalars():
+                await session.delete(row)
+
+            # Merge rephrase_prompt into rephrase_system and delete rephrase_prompt
+            rp_rows = await session.execute(
+                select(SystemPrompt).where(SystemPrompt.key == "rephrase_prompt")
+            )
+            for row in rp_rows.scalars():
+                # If rephrase_system still has {rephrase_rules}, replace it
+                rs = await session.execute(
+                    select(SystemPrompt).where(
+                        SystemPrompt.lang == row.lang,
+                        SystemPrompt.key == "rephrase_system",
+                    )
+                )
+                rs_row = rs.scalar_one_or_none()
+                if rs_row and "{rephrase_rules}" in rs_row.value:
+                    rs_row.value = rs_row.value.replace("{rephrase_rules}", row.value)
+                await session.delete(row)
+
+            # Seed new keys (translate_system, pattern_system) if missing
+            for new_key in ("translate_system", "pattern_system"):
+                for lang_code in ("en",):
+                    existing = await session.execute(
+                        select(SystemPrompt).where(
+                            SystemPrompt.lang == lang_code,
+                            SystemPrompt.key == new_key,
+                        )
+                    )
+                    if existing.scalar_one_or_none() is None:
+                        val = _EN_FALLBACK.get(new_key, "")
+                        if val:
+                            session.add(SystemPrompt(
+                                lang=lang_code, key=new_key,
+                                value=val, is_custom=False,
+                            ))
+
+            await session.commit()
+            logger.info("PromptStore: migrated user_prompt→user_instructions, added translate/pattern keys")
 
     async def _db_get(self, lang: str, key: str) -> str | None:
         if not self._session_factory:
@@ -261,16 +325,6 @@ class PromptStore:
             )
             row = result.scalar_one_or_none()
             return row if row else None
-
-    async def _load_cache(self, session: AsyncSession) -> None:
-        """Load all prompts into memory cache."""
-        from core.registry.models import SystemPrompt
-        result = await session.execute(select(SystemPrompt))
-        self._cache.clear()
-        for row in result.scalars():
-            self._cache.setdefault(row.lang, {})[row.key] = row.value
-        logger.info("PromptStore: cached %d prompts for %d languages",
-                     sum(len(v) for v in self._cache.values()), len(self._cache))
 
     async def _seed_from_json(self, session: AsyncSession) -> None:
         """Seed DB with English defaults from en.json on first run.
@@ -309,28 +363,6 @@ class PromptStore:
                 except Exception:
                     pass
         return dict(_EN_FALLBACK)
-
-
-def _find_llm_provider() -> tuple[str, str, str]:
-    """Find an available LLM provider. Returns (api_key, provider, model)."""
-    _env_keys = {
-        "google": ("GEMINI_API_KEY", "gemini-2.0-flash"),
-        "openai": ("OPENAI_API_KEY", "gpt-4o-mini"),
-        "anthropic": ("ANTHROPIC_API_KEY", "claude-sonnet-4-20250514"),
-        "groq": ("GROQ_API_KEY", "llama-3.1-8b-instant"),
-    }
-    try:
-        from core.config_writer import read_config
-        llm_cfg = read_config().get("llm", {})
-    except Exception:
-        llm_cfg = {}
-
-    for prov, (env_name, default_model) in _env_keys.items():
-        key = llm_cfg.get(f"{prov}_api_key", "") or os.getenv(env_name, "")
-        if key:
-            model = llm_cfg.get(f"{prov}_model", default_model)
-            return key, prov, model
-    return "", "", ""
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────

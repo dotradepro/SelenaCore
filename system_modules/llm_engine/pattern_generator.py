@@ -134,16 +134,9 @@ class PatternGenerator:
             return []
 
         try:
-            from system_modules.llm_engine.ollama_client import get_ollama_client
-            client = get_ollama_client()
-            if not await client.is_available():
-                return []
+            from core.llm import llm_call
 
-            raw = await client.generate(
-                prompt=prompt,
-                system="You generate short English voice commands for a smart home system. Reply ONLY with a JSON array.",
-                temperature=0.1,
-            )
+            raw = await llm_call(prompt, prompt_key="pattern", temperature=0.1, timeout=10.0)
             if not raw:
                 return []
 

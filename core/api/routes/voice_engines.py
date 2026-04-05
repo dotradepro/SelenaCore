@@ -23,10 +23,10 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from core.config_writer import get_value, read_config, update_config, update_many
-from core.i18n import t
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["voice-engines"])
@@ -148,7 +148,7 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
     try:
         raw = await asyncio.wait_for(loop.run_in_executor(None, _record), timeout=duration + 5)
         if len(raw) < 100:
-            return {"status": "error", "text": "", "error": t("api.no_audio")}
+            return {"status": "error", "text": "", "error": "No audio recorded"}
 
         # Peak level
         samples = struct.unpack(f"<{len(raw) // 2}h", raw)
@@ -162,7 +162,7 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
             text = result.text
             lang = result.lang
         except Exception as exc:
-            return {"status": "error", "text": "", "error": t("api.stt_error", error=str(exc))}
+            return {"status": "error", "text": "", "error": f"STT error: {exc}"}
 
         # Encode audio as base64 WAV for frontend playback
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -204,7 +204,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
     from fastapi.responses import Response
 
     if not req.text.strip():
-        raise HTTPException(status_code=422, detail=t("api.text_empty"))
+        raise HTTPException(status_code=422, detail="Text is empty")
 
     voice = req.voice or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"))
 
@@ -213,7 +213,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         engine = get_tts_engine()
         wav_bytes = await engine.synthesize(req.text[:500], voice=voice)
         if not wav_bytes:
-            raise HTTPException(status_code=503, detail=t("api.tts_failed"))
+            raise HTTPException(status_code=503, detail="TTS synthesis failed")
 
         # Also play on device if requested
         if req.output_device and req.output_device != "none":
@@ -221,7 +221,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
 
         return Response(content=wav_bytes, media_type="audio/wav")
     except ImportError:
-        raise HTTPException(status_code=503, detail=t("api.piper_not_installed"))
+        raise HTTPException(status_code=503, detail="Piper TTS not installed")
     except HTTPException:
         raise
     except Exception as exc:
@@ -229,63 +229,7 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-def _get_hidden_prompt(compact: bool = False) -> str:
-    """Load hidden system prompt template from DB (editable via UI)."""
-    key = "hidden_compact" if compact else "hidden_system"
-    try:
-        from core.prompt_store import get_prompt_store
-        cache = get_prompt_store()._cache
-        # Check TTS lang first, fallback to en
-        name, lang, tts_lang = _get_prompt_context()
-        for check_lang in (tts_lang, "en"):
-            if check_lang in cache and key in cache[check_lang]:
-                return cache[check_lang][key]
-    except Exception:
-        pass
-    # Hardcoded fallback
-    from core.prompt_store import _EN_FALLBACK
-    return _EN_FALLBACK.get(key, "")
-
-# ── Default rephrase prompt ──────────────────────────────────────────
-DEFAULT_REPHRASE_PROMPT = (
-    "The system performed an action and generated a default response.\n"
-    "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"
-    "Vary your phrasing — don't repeat the same structure.\n"
-    "Keep it short for TTS. Plain text only."
-)
-
-MAX_REPHRASE_PROMPT = 400
-
-# ── Prompt loading (DB-backed via PromptStore) ───────────────────────
-_prompts_cache: dict[str, dict[str, str]] = {}  # kept for backward compat with _prompts_cache.clear()
-
-
-def _load_prompt_locale(lang: str) -> dict[str, str]:
-    """Load prompts from PromptStore (DB). Sync wrapper for async store."""
-    import asyncio
-    try:
-        from core.prompt_store import get_prompt_store
-        store = get_prompt_store()
-        # Check cache directly (avoids event loop issues in sync context)
-        if lang in store._cache:
-            return store._cache[lang]
-        # Try running async get_all
-        try:
-            loop = asyncio.get_running_loop()
-            # Already in async context — can't await here, use cache
-        except RuntimeError:
-            pass
-    except Exception:
-        pass
-    # Fallback to hardcoded English
-    return {
-        "user_prompt": "Keep answers short and helpful.",
-        "compact_user": "Short answers, plain text.",
-    }
-
-# Character limits
-MAX_USER_PROMPT = 300
-MAX_COMPACT_USER = 120
+MAX_PROMPT_LEN = 5000  # universal max for any prompt
 
 from core.lang_utils import lang_code_to_name
 
@@ -333,15 +277,14 @@ def _get_prompt_context() -> tuple[str, str, str]:
 
 
 def _flush_llm_caches() -> None:
-    """Flush all LLM-related caches after prompt or language change."""
+    """Flush LLM-related caches after prompt or language change."""
     try:
         from system_modules.llm_engine.intent_router import get_intent_router
         router = get_intent_router()
         router.refresh_system_prompt()
-        router._prompt_cache.clear()
-        logger.info("Flushed IntentRouter prompt cache")
+        logger.info("Refreshed IntentRouter system prompt")
     except Exception as exc:
-        logger.warning("Failed to flush IntentRouter prompt cache: %s", exc)
+        logger.warning("Failed to refresh IntentRouter: %s", exc)
     try:
         from system_modules.llm_engine.intent_cache import get_intent_cache
         task = asyncio.create_task(get_intent_cache().clear())
@@ -354,55 +297,29 @@ def _flush_llm_caches() -> None:
         logger.warning("Failed to schedule IntentCache clear: %s", exc)
 
 
-def _get_default_user_prompt(ui_lang: str) -> str:
-    return _load_prompt_locale(ui_lang).get("user_prompt", "Keep answers short and helpful.")
-
-
-def _get_default_compact_user(ui_lang: str) -> str:
-    return _load_prompt_locale(ui_lang).get("compact_user", "Short answers, plain text.")
-
-
-def _get_default_rephrase(ui_lang: str) -> str:
-    return _load_prompt_locale(ui_lang).get("rephrase_prompt", DEFAULT_REPHRASE_PROMPT)
-
-
-def build_system_prompt(compact: bool = False) -> str:
-    """Build the full prompt: hidden system part + user part from DB.
+async def _build_prompt_preview(compact: bool = False) -> str:
+    """Build a prompt preview for the UI using core.llm prompt resolution.
 
     Args:
-        compact: If True, use short prompt for local models (ollama/llamacpp).
+        compact: If True, preview the compact (local model) prompt.
     """
-    name, lang, tts_lang = _get_prompt_context()
-
-    # Read from prompt_store cache (sync-safe, loaded at startup)
-    try:
-        from core.prompt_store import get_prompt_store
-        cache = get_prompt_store()._cache
-        lang_prompts = cache.get(tts_lang, cache.get("en", {}))
-    except Exception:
-        lang_prompts = {}
-
+    from core.llm import _resolve_system_prompt, _get_provider
+    provider, _ = _get_provider()
     if compact:
-        hidden = _get_hidden_prompt(compact=True).format(name=name, lang=lang)
-        user = lang_prompts.get("compact_user", "Short answers, plain text.")
-        return hidden + " " + user
-
-    hidden = _get_hidden_prompt(compact=False).format(name=name, lang=lang)
-    user = lang_prompts.get("user_prompt", "Keep answers short and helpful.")
-    return hidden + "\n" + user
+        # Force local provider to get compact variant
+        return await _resolve_system_prompt("chat", "ollama")
+    return await _resolve_system_prompt("chat", provider)
 
 
 @router.get("/llm/system-prompt")
 async def get_system_prompt() -> dict[str, Any]:
-    """Get prompt settings: hidden preview + editable user prompts from DB."""
-    from core.prompt_store import get_prompt_store
+    """Get all prompt settings from DB."""
+    from core.prompt_store import get_prompt_store, PROMPT_KEYS
     store = get_prompt_store()
     name, lang, tts_lang = _get_prompt_context()
 
-    # Load ALL prompts + custom flags from DB
     prompts_meta: dict[str, dict] = {}
-    for key in ("user_prompt", "compact_user", "rephrase_prompt",
-                "hidden_system", "hidden_compact", "intent_system", "rephrase_system"):
+    for key in PROMPT_KEYS:
         prompts_meta[key] = await store.get_meta(tts_lang, key)
 
     en_prompts = await store.get_all("en")
@@ -411,12 +328,6 @@ async def get_system_prompt() -> dict[str, Any]:
         "name": name,
         "lang": lang,
         "ui_lang": tts_lang,
-        # Preview (hidden_system with variables filled)
-        "hidden_full": prompts_meta["hidden_system"]["value"].format(name=name, lang=lang)
-            if prompts_meta["hidden_system"]["value"] else "",
-        "hidden_compact": prompts_meta["hidden_compact"]["value"].format(name=name, lang=lang)
-            if prompts_meta["hidden_compact"]["value"] else "",
-        # All editable prompts
         "prompts": {
             key: {
                 "value": meta["value"],
@@ -425,57 +336,10 @@ async def get_system_prompt() -> dict[str, Any]:
             }
             for key, meta in prompts_meta.items()
         },
-        # Backward compat: flat fields for existing UI
-        "user_prompt": prompts_meta["user_prompt"]["value"],
-        "is_custom_user": prompts_meta["user_prompt"]["is_custom"],
-        "default_user": en_prompts.get("user_prompt", ""),
-        "compact_user": prompts_meta["compact_user"]["value"],
-        "is_custom_compact": prompts_meta["compact_user"]["is_custom"],
-        "default_compact": en_prompts.get("compact_user", ""),
-        "rephrase_prompt": prompts_meta["rephrase_prompt"]["value"],
-        "is_custom_rephrase": prompts_meta["rephrase_prompt"]["is_custom"],
-        "default_rephrase": en_prompts.get("rephrase_prompt", ""),
-        "limits": {
-            "user_prompt": MAX_USER_PROMPT,
-            "compact_user": MAX_COMPACT_USER,
-            "rephrase_prompt": MAX_REPHRASE_PROMPT,
-        },
-        "full_preview": build_system_prompt(compact=False),
-        "compact_preview": build_system_prompt(compact=True),
+        "limits": {"max_prompt_len": MAX_PROMPT_LEN},
+        "full_preview": await _build_prompt_preview(compact=False),
+        "compact_preview": await _build_prompt_preview(compact=True),
     }
-
-
-@router.post("/llm/user-prompt")
-async def save_user_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom user prompt (cloud models) to DB."""
-    from core.prompt_store import get_prompt_store
-    prompt = req.prompt.strip()[:MAX_USER_PROMPT]
-    _, _, tts_lang = _get_prompt_context()
-    await get_prompt_store().set(tts_lang, "user_prompt", prompt, is_custom=True)
-    _flush_llm_caches()
-    return {"status": "ok"}
-
-
-@router.post("/llm/compact-prompt")
-async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom compact user prompt (local models) to DB."""
-    from core.prompt_store import get_prompt_store
-    prompt = req.prompt.strip()[:MAX_COMPACT_USER]
-    _, _, tts_lang = _get_prompt_context()
-    await get_prompt_store().set(tts_lang, "compact_user", prompt, is_custom=True)
-    _flush_llm_caches()
-    return {"status": "ok"}
-
-
-@router.post("/llm/rephrase-prompt")
-async def save_rephrase_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom rephrase prompt to DB."""
-    from core.prompt_store import get_prompt_store
-    prompt = req.prompt.strip()[:MAX_REPHRASE_PROMPT]
-    _, _, tts_lang = _get_prompt_context()
-    await get_prompt_store().set(tts_lang, "rephrase_prompt", prompt, is_custom=True)
-    _flush_llm_caches()
-    return {"status": "ok"}
 
 
 @router.post("/llm/prompt")
@@ -511,11 +375,7 @@ async def reset_system_prompt() -> dict[str, Any]:
 
     prompts = await store.get_all(tts_lang)
     _flush_llm_caches()
-    return {
-        "status": "ok",
-        "user_prompt": prompts.get("user_prompt", ""),
-        "compact_user": prompts.get("compact_user", ""),
-    }
+    return {"status": "ok", "prompts": prompts}
 
 
 @router.post("/llm/rebuild")
@@ -524,16 +384,6 @@ async def rebuild_prompts() -> dict[str, Any]:
 
     Reloads prompt cache from DB. Call after language or wake word change.
     """
-    # Reload prompt store cache from DB
-    try:
-        from core.prompt_store import get_prompt_store
-        store = get_prompt_store()
-        if store._session_factory:
-            async with store._session_factory() as session:
-                await store._load_cache(session)
-    except Exception:
-        pass
-
     _flush_llm_caches()
 
     name, lang, tts_lang = _get_prompt_context()
@@ -542,8 +392,8 @@ async def rebuild_prompts() -> dict[str, Any]:
         "name": name,
         "lang": lang,
         "ui_lang": tts_lang,
-        "full_preview": build_system_prompt(compact=False),
-        "compact_preview": build_system_prompt(compact=True),
+        "full_preview": await _build_prompt_preview(compact=False),
+        "compact_preview": await _build_prompt_preview(compact=True),
     }
 
 
@@ -571,115 +421,50 @@ async def _translate_prompts_on_lang_change(old_lang: str, new_lang: str) -> Non
 
 @router.post("/llm/chat")
 async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
-    """Send text to active LLM provider and return response."""
-    if not req.text.strip():
-        raise HTTPException(status_code=422, detail=t("api.text_empty"))
+    """Send text to active LLM provider and return response.
 
+    Uses core.llm.llm_call() for standard requests.
+    When req.system is provided (UI test/preview feature), calls the
+    provider directly with the custom system prompt.
+    """
+    if not req.text.strip():
+        raise HTTPException(status_code=422, detail="Text is empty")
+
+    from core.llm import llm_call, _get_provider, _call_provider
+
+    provider, provider_cfg = _get_provider()
+    is_local = provider in ("ollama", "llamacpp")
+    _, response_lang, _ = _get_prompt_context()
+
+    # Language tag for local models — reinforces system prompt for small models
+    user_msg = f"[{response_lang}] {req.text}" if is_local else req.text
+
+    # Resolve model name for response metadata
     config = read_config()
     voice_cfg = config.get("voice", {})
-    provider = voice_cfg.get("llm_provider", "ollama")
-
-    # Response language from UI language (system.language)
-    name, response_lang, _ = _get_prompt_context()
-
-    # Local providers get compact prompt (small models lose focus with long prompts)
-    is_local = provider in ("ollama", "llamacpp")
-    system_prompt = req.system or build_system_prompt(compact=is_local)
+    if provider == "ollama":
+        model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "") or \
+                voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
+    elif provider == "llamacpp":
+        model = voice_cfg.get("providers", {}).get("llamacpp", {}).get("model", "")
+    else:
+        model = voice_cfg.get("providers", {}).get(provider, {}).get("model", "")
 
     try:
-        if provider == "ollama":
-            ollama_url = voice_cfg.get("ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
-            model = voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
-            p_model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
-            if p_model:
-                model = p_model
-
-            # Check if ollama is running
-            try:
-                async with httpx.AsyncClient(timeout=3) as client:
-                    resp = await client.get(f"{ollama_url}/api/tags")
-                    if resp.status_code != 200:
-                        return {"status": "error", "response": "", "error": t("api.ollama_not_running"), "provider": provider}
-            except Exception:
-                return {"status": "error", "response": "", "error": t("api.ollama_not_available"), "provider": provider}
-
-            # Use /api/chat (messages format) — models follow system prompt much better
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            # Language tag in user message — reinforces system prompt for small models
-            user_text = f"[{response_lang}] {req.text}"
-            messages.append({"role": "user", "content": user_text})
-
-            payload = {
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 512},
-            }
-
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{ollama_url}/api/chat", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                response_text = data.get("message", {}).get("content", "").strip()
-
-            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
-
-        elif provider == "llamacpp":
-            llamacpp_url = voice_cfg.get("llamacpp_url", "http://localhost:8081")
-            p_model = voice_cfg.get("providers", {}).get("llamacpp", {}).get("model", "")
-
-            # Check if running
-            try:
-                async with httpx.AsyncClient(timeout=3) as client:
-                    resp = await client.get(f"{llamacpp_url}/v1/models")
-                    if resp.status_code != 200:
-                        return {"status": "error", "response": "", "error": t("api.llamacpp_not_running"), "provider": provider}
-            except Exception:
-                return {"status": "error", "response": "", "error": t("api.llamacpp_not_available"), "provider": provider}
-
-            # Use /v1/chat/completions (messages format) — models follow system prompt better
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            # Language tag in user message — reinforces system prompt for small models
-            user_text = f"[{response_lang}] {req.text}"
-            messages.append({"role": "user", "content": user_text})
-
-            payload = {
-                "messages": messages,
-                "max_tokens": 512,
-                "temperature": 0.7,
-            }
-
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{llamacpp_url}/v1/chat/completions", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                response_text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-
-            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": p_model}
-
+        if req.system:
+            # UI test/preview with custom system prompt — bypass llm_call prompt loading
+            response_text = await _call_provider(
+                provider, provider_cfg, req.system, user_msg, 0.7, 512,
+            )
         else:
-            # Cloud provider
-            providers_cfg = voice_cfg.get("providers", {})
-            p_cfg = providers_cfg.get(provider, {})
-            api_key = p_cfg.get("api_key", "")
-            model = p_cfg.get("model", "")
+            response_text = await llm_call(
+                user_msg, prompt_key="chat", temperature=0.7, timeout=120.0,
+            )
 
-            if not api_key:
-                return {"status": "error", "response": "", "error": t("api.no_api_key", provider=provider), "provider": provider}
-            if not model:
-                return {"status": "error", "response": "", "error": t("api.no_model_selected", provider=provider), "provider": provider}
+        if not response_text:
+            return {"status": "error", "response": "", "error": "LLM returned empty response", "provider": provider}
 
-            from system_modules.llm_engine.cloud_providers import generate
-            response_text = await generate(provider, api_key, model, req.text, system_prompt)
-
-            if not response_text:
-                return {"status": "error", "response": "", "error": t("api.llm_empty_response"), "provider": provider}
-
-            return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
+        return {"status": "ok", "response": response_text.lower(), "provider": provider, "model": model}
 
     except Exception as exc:
         logger.error("LLM chat failed: %s", exc)
@@ -693,7 +478,7 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
     from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
     if not req.text.strip():
-        raise HTTPException(status_code=422, detail=t("api.text_empty"))
+        raise HTTPException(status_code=422, detail="Text is empty")
 
     voice = req.voice or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"))
     device = req.output_device or "default"
@@ -1003,7 +788,6 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
     # If TTS language changed → translate custom prompts + flush all LLM caches
     if new_lang and old_lang and new_lang != old_lang:
         logger.info("TTS language changed: %s → %s, updating prompts + clearing caches", old_lang, new_lang)
-        _prompts_cache.clear()
         asyncio.create_task(_translate_prompts_on_lang_change(old_lang, new_lang))
         _flush_llm_caches()
 
@@ -1656,11 +1440,11 @@ async def llamacpp_start(body: dict[str, Any] = {}) -> dict[str, Any]:
         model = p_cfg.get("model", "")
 
     if not model:
-        raise HTTPException(status_code=422, detail=t("api.no_model_specified"))
+        raise HTTPException(status_code=422, detail="No model specified")
 
     gguf_path = await _find_gguf_for_model(model)
     if not gguf_path:
-        raise HTTPException(status_code=404, detail=t("api.gguf_not_found", model=model))
+        raise HTTPException(status_code=404, detail=f"GGUF file not found for {model}. Pull model via Ollama first.")
 
     llamacpp_url = get_value("voice", "llamacpp_url", "http://localhost:8081")
     port = llamacpp_url.rsplit(":", 1)[-1] if ":" in llamacpp_url else "8081"
@@ -1940,7 +1724,7 @@ async def _download_piper_voice(voice_id: str) -> None:
     # e.g., en_US-amy-medium -> en/en_US/amy/medium/en_US-amy-medium.onnx
     parts = voice_id.split("-", 1)  # ["en_US", "amy-medium"]
     if len(parts) < 2:
-        _tts_download_state[voice_id] = {"running": False, "progress": "error", "error": t("api.invalid_voice_id")}
+        _tts_download_state[voice_id] = {"running": False, "progress": "error", "error": "Invalid voice ID"}
         return
 
     locale = parts[0]  # en_US
@@ -1996,7 +1780,7 @@ async def tts_delete(req: VoiceIdRequest) -> dict[str, Any]:
         onnx.unlink()
         json_file.unlink(missing_ok=True)
         return {"status": "ok"}
-    raise HTTPException(status_code=404, detail=t("api.voice_not_found"))
+    raise HTTPException(status_code=404, detail="Voice not found")
 
 
 # ================================================================== #
@@ -2148,7 +1932,7 @@ async def llm_provider_models(provider: str | None = None) -> dict[str, Any]:
     api_key = p_cfg.get("api_key", "")
 
     if not api_key:
-        return {"models": [], "error": t("api.no_api_key_configured")}
+        return {"models": [], "error": "No API key configured"}
 
     from system_modules.llm_engine.cloud_providers import list_models
     models = await list_models(active, api_key)
