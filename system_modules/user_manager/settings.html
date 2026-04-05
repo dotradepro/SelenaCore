@@ -181,7 +181,7 @@
                 voiceCommands: 'Voice commands',
                 scenesRun: 'Run scenes',
                 savePerms: 'Save',
-                saved: 'Saved',
+                saved: 'Saved', save_error: 'Save failed',
                 errLoad: 'Failed to load users',
             },
             uk: {
@@ -200,7 +200,7 @@
                 voiceCommands: 'Голосові команди',
                 scenesRun: 'Запуск сцен',
                 savePerms: 'Зберегти',
-                saved: 'Збережено',
+                saved: 'Збережено', save_error: 'Не вдалося зберегти',
                 errLoad: 'Помилка завантаження',
             },
         };
@@ -329,12 +329,20 @@
                 });
                 if (res.ok) {
                     btn.textContent = t('saved');
-                    setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; }, 2000);
+                    btn.style.background = 'var(--gr)';
+                    btn.style.color = '#fff';
+                    setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 2000);
                 } else {
-                    btn.disabled = false;
+                    btn.textContent = t('save_error');
+                    btn.style.background = 'var(--rd)';
+                    btn.style.color = '#fff';
+                    setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 3000);
                 }
             } catch (e) {
-                btn.disabled = false;
+                btn.textContent = t('save_error');
+                btn.style.background = 'var(--rd)';
+                btn.style.color = '#fff';
+                setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 3000);
             }
         }
 

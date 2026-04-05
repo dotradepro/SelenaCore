@@ -5,38 +5,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Scheduler — Settings</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        :root {
-            --bg: #0B0C10;
-            --sf: #12131A;
-            --sf2: #191A22;
-            --sf3: #20212C;
-            --b: rgba(255, 255, 255, .07);
-            --b2: rgba(255, 255, 255, .13);
-            --tx: #EDEEF5;
-            --tx2: #888EA8;
-            --tx3: #484D66;
-            --ac: #4F8CF7;
-            --gr: #2EC98A;
-            --am: #F5A93A;
-            --rd: #E05454;
-        }
-
-        :root.light {
-            --bg: #F3F4F8;
-            --sf: #FFFFFF;
-            --sf2: #F0F1F5;
-            --sf3: #E4E5ED;
-            --b: rgba(0, 0, 0, .08);
-            --b2: rgba(0, 0, 0, .14);
-            --tx: #1A1C24;
-            --tx2: #5C6178;
-            --tx3: #9498AD;
-            --ac: #3B7AE8;
-            --gr: #1FAF75;
-            --am: #DB8F1C;
-            --rd: #C94040;
-        }
 
         body {
             font-family: system-ui, sans-serif;
@@ -225,7 +195,8 @@
                 loc_set: 'Location', lbl_tz: 'Timezone',
                 save: 'Save', saved: '✓ Saved',
                 h_jobs: 'Active Jobs', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Owner', col_next: 'Next Run',
-                remove_confirm: 'Remove job '
+                remove_confirm: 'Remove job ',
+                removed_ok: '✓ Job removed', error: 'Error'
             },
             uk: {
                 title: '⏱ Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
@@ -240,7 +211,8 @@
                 loc_set: 'Місцезнаходження', lbl_tz: 'Часовий пояс',
                 save: 'Зберегти', saved: '✓ Збережено',
                 h_jobs: 'Активні завдання', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Власник', col_next: 'Наступний запуск',
-                remove_confirm: 'Видалити завдання '
+                remove_confirm: 'Видалити завдання ',
+                removed_ok: '✓ Завдання видалено', error: 'Помилка'
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -295,8 +267,19 @@
 
         async function removeJob(jobId) {
             if (!confirm(t('remove_confirm') + jobId + '?')) return;
-            await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
+            try {
+                var r = await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
+                if (r.ok) { showMsg(t('removed_ok'), true); }
+                else { showMsg(t('error'), false); }
+            } catch (e) { showMsg(t('error') + ': ' + e.message, false); }
             loadJobs();
+        }
+
+        function showMsg(text, ok) {
+            var el = document.getElementById('msg');
+            el.textContent = text;
+            el.style.color = ok ? 'var(--gr)' : 'var(--rd)';
+            setTimeout(function () { el.textContent = ''; }, 3000);
         }
 
         function detectLocation() {
