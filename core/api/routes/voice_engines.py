@@ -346,6 +346,22 @@ def _get_prompt_context() -> tuple[str, str, str]:
     return name, lang, tts_lang
 
 
+def _flush_llm_caches() -> None:
+    """Flush all LLM-related caches after prompt or language change."""
+    try:
+        from system_modules.llm_engine.intent_router import get_intent_router
+        router = get_intent_router()
+        router.refresh_system_prompt()
+        router._prompt_cache.clear()
+    except Exception:
+        pass
+    try:
+        from system_modules.llm_engine.intent_cache import get_intent_cache
+        asyncio.create_task(get_intent_cache().clear())
+    except Exception:
+        pass
+
+
 def _get_default_user_prompt(ui_lang: str) -> str:
     return _load_prompt_locale(ui_lang).get("user_prompt", "Keep answers short and helpful.")
 
@@ -452,6 +468,7 @@ async def save_user_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     prompt = req.prompt.strip()[:MAX_USER_PROMPT]
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, "user_prompt", prompt, is_custom=True)
+    _flush_llm_caches()
     return {"status": "ok"}
 
 
@@ -462,6 +479,7 @@ async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     prompt = req.prompt.strip()[:MAX_COMPACT_USER]
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, "compact_user", prompt, is_custom=True)
+    _flush_llm_caches()
     return {"status": "ok"}
 
 
@@ -472,11 +490,7 @@ async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]
     prompt = req.prompt.strip()[:MAX_CLASSIFICATION_PROMPT]
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, "classification_prompt", prompt, is_custom=True)
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
+    _flush_llm_caches()
     return {"status": "ok"}
 
 
@@ -487,6 +501,7 @@ async def save_rephrase_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     prompt = req.prompt.strip()[:MAX_REPHRASE_PROMPT]
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, "rephrase_prompt", prompt, is_custom=True)
+    _flush_llm_caches()
     return {"status": "ok"}
 
 
@@ -500,12 +515,7 @@ async def save_any_prompt(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, f"Unknown prompt key: {key}")
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, key, value, is_custom=True)
-    # Refresh caches
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
+    _flush_llm_caches()
     return {"status": "ok", "key": key}
 
 
@@ -527,6 +537,7 @@ async def reset_system_prompt() -> dict[str, Any]:
             await store.reset(tts_lang)
 
     prompts = await store.get_all(tts_lang)
+    _flush_llm_caches()
     return {
         "status": "ok",
         "user_prompt": prompts.get("user_prompt", ""),
@@ -550,12 +561,7 @@ async def rebuild_prompts() -> dict[str, Any]:
     except Exception:
         pass
 
-    # Clear intent_router cached prompt
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
+    _flush_llm_caches()
 
     name, lang, tts_lang = _get_prompt_context()
     return {
@@ -1021,24 +1027,12 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
 
     update_config("voice", "tts", tts_cfg)
 
-    # If TTS language changed → translate custom prompts + reset defaults + clear caches
+    # If TTS language changed → translate custom prompts + flush all LLM caches
     if new_lang and old_lang and new_lang != old_lang:
         logger.info("TTS language changed: %s → %s, updating prompts + clearing caches", old_lang, new_lang)
-        _prompts_cache.clear()  # reload locale defaults for new lang
+        _prompts_cache.clear()
         asyncio.create_task(_translate_prompts_on_lang_change(old_lang, new_lang))
-        # Clear IntentRouter prompt cache (language-dependent)
-        try:
-            from system_modules.llm_engine.intent_router import get_intent_router
-            get_intent_router().refresh_system_prompt()
-            get_intent_router()._prompt_cache.clear()
-        except Exception:
-            pass
-        # Clear IntentCache (cached responses are in old language)
-        try:
-            from system_modules.llm_engine.intent_cache import get_intent_cache
-            asyncio.create_task(get_intent_cache().clear())
-        except Exception:
-            pass
+        _flush_llm_caches()
 
     return {"status": "ok"}
 
