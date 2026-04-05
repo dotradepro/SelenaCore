@@ -70,11 +70,15 @@ class CoreApiProxyMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] == "http" and scope.get("path", "").startswith("/api/"):
-            if scope["path"] == "/api/ui/stream":
+        path = scope.get("path", "")
+        if scope["type"] == "http" and path.startswith("/api/"):
+            if path == "/api/ui/stream":
                 await self._proxy_stream(scope, receive, send)
             else:
                 await self._proxy(scope, receive, send)
+            return
+        if scope["type"] == "websocket" and path.startswith("/api/"):
+            await self._proxy_websocket(scope, receive, send)
             return
         await self.app(scope, receive, send)
 
@@ -224,6 +228,63 @@ class CoreApiProxyMiddleware:
                 "body": b'{"detail":"Core API unavailable"}',
                 "more_body": False,
             })
+
+
+    async def _proxy_websocket(self, scope, receive, send) -> None:
+        """Proxy WebSocket connections to Core API on port 7070."""
+        import websockets
+
+        path = scope["path"]
+        query = scope.get("query_string", b"").decode("latin-1")
+        ws_url = CORE_API_BASE.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = f"{ws_url}{path}" + (f"?{query}" if query else "")
+
+        # Accept the client WebSocket
+        await send({"type": "websocket.accept"})
+
+        upstream = None
+        try:
+            upstream = await websockets.connect(ws_url, max_size=2**20)
+
+            async def client_to_upstream():
+                while True:
+                    msg = await receive()
+                    msg_type = msg.get("type", "")
+                    if msg_type == "websocket.receive":
+                        if "text" in msg and msg["text"] is not None:
+                            await upstream.send(msg["text"])
+                        elif "bytes" in msg and msg["bytes"] is not None:
+                            await upstream.send(msg["bytes"])
+                    elif msg_type == "websocket.disconnect":
+                        break
+
+            async def upstream_to_client():
+                async for message in upstream:
+                    if isinstance(message, str):
+                        await send({"type": "websocket.send", "text": message})
+                    else:
+                        await send({"type": "websocket.send", "bytes": message})
+
+            done, pending = await asyncio.wait(
+                [asyncio.create_task(client_to_upstream()),
+                 asyncio.create_task(upstream_to_client())],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+
+        except Exception as e:
+            logger.debug("WebSocket proxy error: %s", e)
+        finally:
+            if upstream:
+                try:
+                    await upstream.close()
+                except Exception:
+                    pass
+            try:
+                await send({"type": "websocket.close", "code": 1000})
+            except Exception:
+                pass
 
 
 def create_ui_app() -> FastAPI:

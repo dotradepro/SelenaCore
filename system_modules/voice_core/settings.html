@@ -404,90 +404,67 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  WHISPER — Speech-to-Text                                        -->
+<!--  VOSK — Speech-to-Text                                            -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="card" id="whisperCard">
+<div class="card" id="voskCard">
     <div class="row">
         <div>
             <div class="flex gap8">
                 <span class="section-title" data-i18n="stt_title"></span>
-                <span class="badge badge-ac">Whisper</span>
+                <span class="badge badge-ac">Vosk</span>
             </div>
-            <div class="section-sub">99 languages, auto-detect</div>
+            <div class="section-sub" data-i18n="vosk_desc"></div>
         </div>
-        <span id="whisperStatus" class="badge badge-off"></span>
+        <span id="voskStatus" class="badge badge-off"></span>
     </div>
 
+    <!-- Active model info -->
+    <div class="mb12" id="voskActiveModel">
+        <div class="label-xs" data-i18n="vosk_active_model"></div>
+        <div id="voskModelName" style="font-size:13px;font-weight:600">—</div>
+        <div id="voskModelLang" style="font-size:11px;color:var(--tx2)"></div>
+    </div>
+
+    <!-- Model catalog (collapsible) -->
     <div class="mb12">
-        <div class="label-xs">Provider: <span id="whisperProvider">—</span></div>
+        <button id="voskCatalogToggle" class="btn btn-secondary" style="width:100%;font-size:12px" data-i18n="vosk_browse_models"></button>
+    </div>
+    <div id="voskCatalogSection" class="hidden">
+        <div class="flex gap8 mb8">
+            <input type="text" id="voskCatalogSearch" style="flex:1;font-size:12px" data-placeholder-i18n="vosk_search_placeholder">
+            <select id="voskCatalogLang" style="font-size:12px;width:auto">
+                <option value="">All</option>
+                <option value="en">English</option>
+                <option value="uk">Ukrainian</option>
+                <option value="ru">Russian</option>
+                <option value="de">German</option>
+                <option value="fr">French</option>
+                <option value="es">Spanish</option>
+            </select>
+        </div>
+        <div id="voskCatalogList" style="max-height:300px;overflow-y:auto"></div>
+        <div class="flex gap8 mt8" style="justify-content:center">
+            <button id="voskCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
+            <span id="voskCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
+            <button id="voskCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
+        </div>
+        <div style="text-align:right;margin-top:8px">
+            <button id="voskDeleteInactiveBtn" class="btn btn-ghost" style="font-size:11px;color:var(--rd)" data-i18n="vosk_delete_inactive"></button>
+        </div>
     </div>
 
-    <!-- Model selection -->
-    <div id="whisperModels" class="mb12">
-        <div class="label-sm" data-i18n="installed_models"></div>
-        <div id="whisperModelList"></div>
-    </div>
-
-    <!-- STT Settings -->
-    <div class="card-inner mb12">
-        <div style="font-size:13px;font-weight:600;margin-bottom:8px" data-i18n="stt_settings"></div>
-
-        <div class="slider-row">
-            <div class="slider-header">
-                <span class="slider-label">Beam Size</span>
-                <span class="slider-value" id="sttBeamVal">5</span>
-            </div>
-            <input type="range" id="sttBeam" min="1" max="10" step="1" value="5">
+    <!-- Download progress -->
+    <div id="voskDownloadSection" class="hidden mb12">
+        <div class="label-xs" data-i18n="vosk_downloading"></div>
+        <div id="voskDownloadName" style="font-size:12px;font-weight:600"></div>
+        <div style="height:8px;background:var(--sf3);border-radius:4px;overflow:hidden;margin-top:6px">
+            <div id="voskDownloadBar" style="height:100%;background:var(--ac);border-radius:4px;width:0;transition:width .3s"></div>
         </div>
-
-        <div class="slider-row">
-            <div class="slider-header">
-                <span class="slider-label">No Speech Threshold</span>
-                <span class="slider-value" id="sttNoSpeechVal">0.60</span>
-            </div>
-            <input type="range" id="sttNoSpeech" min="0.1" max="1.0" step="0.05" value="0.6">
-        </div>
-
-        <div class="slider-row">
-            <div class="slider-header">
-                <span class="slider-label">VAD Threshold</span>
-                <span class="slider-value" id="sttVadThreshVal">0.50</span>
-            </div>
-            <input type="range" id="sttVadThresh" min="0.1" max="1.0" step="0.05" value="0.5">
-        </div>
-
-        <div class="slider-row">
-            <div class="slider-header">
-                <span class="slider-label">VAD Min Silence (ms)</span>
-                <span class="slider-value" id="sttVadSilenceVal">500</span>
-            </div>
-            <input type="range" id="sttVadSilence" min="100" max="2000" step="50" value="500">
-        </div>
-
-        <div class="slider-row">
-            <div class="slider-header">
-                <span class="slider-label">VAD Speech Pad (ms)</span>
-                <span class="slider-value" id="sttVadPadVal">400</span>
-            </div>
-            <input type="range" id="sttVadPad" min="100" max="1000" step="50" value="400">
-        </div>
-
-        <div class="row" style="margin-top:6px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
-                <input type="checkbox" id="sttVadFilter" checked> VAD Filter
-            </label>
-        </div>
-        <div class="row">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
-                <input type="checkbox" id="sttCondPrev"> Condition on Previous Text
-            </label>
-        </div>
-
-        <button class="btn btn-green" id="sttSettingsSave" style="margin-top:10px" data-i18n="save">Save</button>
+        <div id="voskDownloadPercent" style="font-size:11px;color:var(--tx2);margin-top:4px">0%</div>
     </div>
 
     <!-- Voice Pipeline Test -->
-    <div id="whisperTestSection" class="card-inner">
+    <div id="voskTestSection" class="card-inner">
         <div style="font-size:13px;font-weight:600;margin-bottom:12px" data-i18n="pipeline_test"></div>
 
         <!-- Record & recognize -->
@@ -570,6 +547,12 @@
         <div class="label-xs mt4" style="opacity:.6" id="wakePreview"></div>
     </div>
 
+    <!-- Wake word language mismatch warning -->
+    <div id="wakeLangMismatch" class="hidden mb12" style="padding:8px 12px;background:var(--am-bg, rgba(255,165,0,.1));border:1px solid var(--am, orange);border-radius:8px;font-size:12px">
+        <span id="wakeLangMismatchText" style="color:var(--am, orange)"></span>
+        <button class="btn btn-secondary" style="font-size:11px;margin-top:4px" onclick="document.getElementById('wakeNameInput').focus()" data-i18n="vosk_update_wake_word"></button>
+    </div>
+
     <!-- STT Listening -->
     <div class="slider-row mb12">
         <div class="slider-header">
@@ -577,6 +560,33 @@
             <span class="slider-value" id="sttSilenceVal">1.2s</span>
         </div>
         <input type="range" id="sttSilence" min="0.5" max="3.0" step="0.1" value="1.2">
+    </div>
+
+    <!-- Vosk Endpointer Settings -->
+    <div class="label-sm mb4" data-i18n="vosk_endpointer_title"></div>
+
+    <div class="slider-row mb8">
+        <div class="slider-header">
+            <span class="slider-label" data-i18n="vosk_t_start_max"></span>
+            <span class="slider-value" id="epStartVal">5.0s</span>
+        </div>
+        <input type="range" id="epStart" min="1.0" max="15.0" step="0.5" value="5.0">
+    </div>
+
+    <div class="slider-row mb8">
+        <div class="slider-header">
+            <span class="slider-label" data-i18n="vosk_t_end"></span>
+            <span class="slider-value" id="epEndVal">0.8s</span>
+        </div>
+        <input type="range" id="epEnd" min="0.3" max="3.0" step="0.1" value="0.8">
+    </div>
+
+    <div class="slider-row mb12">
+        <div class="slider-header">
+            <span class="slider-label" data-i18n="vosk_t_max"></span>
+            <span class="slider-value" id="epMaxVal">25s</span>
+        </div>
+        <input type="range" id="epMax" min="5" max="60" step="1" value="25">
     </div>
 
     <button id="wakeWordSaveBtn" class="btn btn-green" data-i18n="save"></button>
@@ -1025,7 +1035,24 @@
 <div class="tab-panel" id="tabTest">
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  Live STT Terminal                                                 -->
+<!--  STT Settings                                                      -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card mb12">
+    <div class="section-title mb8" data-i18n="vosk_status_title"></div>
+
+    <div class="mb8">
+        <div class="label-xs" data-i18n="vosk_provider_status"></div>
+        <span id="testVoskReady" class="badge badge-off">—</span>
+    </div>
+
+    <div class="mb8">
+        <div class="label-xs" data-i18n="vosk_grammar_status"></div>
+        <div id="testVoskGrammar" style="font-size:12px;color:var(--tx2)">—</div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  Live STT Monitor                                                  -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="card mb12" id="liveTerminalCard">
     <div class="row mb8">
@@ -1033,7 +1060,7 @@
             <div class="flex gap8">
                 <span class="section-title" data-i18n="live_title"></span>
                 <span class="badge badge-off" id="liveStateBadge">idle</span>
-                <span class="badge badge-ac" id="liveLangBadge">en</span>
+                <span class="badge badge-ac" id="liveLangBadge">—</span>
             </div>
             <div class="section-sub" data-i18n="live_desc"></div>
         </div>
@@ -1043,8 +1070,19 @@
         </div>
     </div>
 
-    <!-- Audio debug panel — VU meter + pipeline status -->
+    <!-- Controls: mode + grammar -->
     <div id="audioDebugPanel" style="display:none;margin-bottom:10px">
+        <div class="flex gap8 mb8">
+            <select id="liveSttMode" style="font-size:12px;width:auto">
+                <option value="both">Partial + Final</option>
+                <option value="partial">Partial only</option>
+                <option value="final">Final only</option>
+            </select>
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                <input type="checkbox" id="liveSttGrammar"> <span data-i18n="vosk_grammar_on"></span>
+            </label>
+        </div>
+
         <!-- Energy VU meter -->
         <div style="margin-bottom:8px">
             <div class="flex" style="justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:3px">
@@ -1056,16 +1094,7 @@
                 <div id="adThreshLine" style="position:absolute;top:0;bottom:0;width:2px;background:var(--am);opacity:.8" title="threshold"></div>
             </div>
         </div>
-        <!-- Speech chunks -->
-        <div style="margin-bottom:8px">
-            <div class="flex" style="justify-content:space-between;font-size:11px;color:var(--tx3);margin-bottom:3px">
-                <span data-i18n="live_chunks"></span>
-                <span id="adChunksVal">0 / 6</span>
-            </div>
-            <div style="background:var(--bg);border:1px solid var(--b2);border-radius:4px;height:10px;overflow:hidden">
-                <div id="adChunksBar" style="height:100%;width:0%;background:var(--ac);transition:width .2s;border-radius:3px"></div>
-            </div>
-        </div>
+
         <!-- Status row -->
         <div class="flex gap8" style="flex-wrap:wrap;font-size:11px">
             <span class="badge badge-off" id="adArecord">arecord: ?</span>
@@ -1073,16 +1102,19 @@
             <span class="badge badge-off" id="adWake">wake: ?</span>
             <span id="adDiag" style="color:var(--tx3);font-style:italic"></span>
         </div>
-        <!-- Threshold controls -->
+
+        <!-- Threshold control -->
         <div class="flex gap8" style="margin-top:8px;align-items:center">
             <label style="font-size:11px;color:var(--tx3);white-space:nowrap" data-i18n="live_threshold"></label>
             <input type="range" id="adThreshSlider" min="10" max="2000" value="300" style="flex:1;height:4px">
             <span id="adThreshNum" style="font-size:11px;color:var(--tx2);min-width:32px;text-align:right">300</span>
-            <label style="font-size:11px;color:var(--tx3);white-space:nowrap;margin-left:12px" data-i18n="live_min_chunks"></label>
-            <input type="number" id="adMinChunks" min="1" max="30" value="6" style="width:48px;font-size:11px;text-align:center">
         </div>
     </div>
 
+    <!-- Partial result (live, italic) -->
+    <div id="liveSttPartial" style="font-size:12px;color:var(--tx3);min-height:18px;margin-bottom:4px;font-style:italic"></div>
+
+    <!-- Terminal output -->
     <pre id="liveTerminal" style="
         background:var(--bg);border:1px solid var(--b2);border-radius:8px;
         padding:10px;font-size:11px;line-height:1.7;color:var(--tx2);
@@ -1213,7 +1245,25 @@
             uninstalling: 'Uninstalling...',
             refresh: 'Refresh',
             installed_models: 'Installed Models',
-            stt_settings: 'STT Settings',
+            vosk_desc: 'Offline speech recognition (Vosk)',
+            vosk_active_model: 'Active model:',
+            vosk_browse_models: 'Browse Model Catalog',
+            vosk_search_placeholder: 'Search models...',
+            vosk_downloading: 'Downloading model...',
+            vosk_status_title: 'Vosk STT Status',
+            vosk_provider_status: 'Provider status:',
+            vosk_grammar_status: 'Grammar (wake words):',
+            vosk_update_wake_word: 'Update now',
+            vosk_endpointer_title: 'Vosk Endpointer',
+            vosk_t_start_max: 'Wait for speech start',
+            vosk_t_end: 'Silence = end of phrase',
+            vosk_t_max: 'Max phrase duration',
+            vosk_live_stt_title: 'Live STT Test (WebSocket)',
+            vosk_grammar_on: 'Grammar mode',
+            vosk_live_start: 'Start',
+            vosk_live_stop: 'Stop',
+            vosk_live_clear: 'Clear',
+            vosk_delete_inactive: 'Delete inactive models',
             installed_voices: 'Installed Voices',
             activate: 'Activate',
             show_catalog: 'Show catalog',
@@ -1398,7 +1448,25 @@
             uninstalling: 'Видалення...',
             refresh: 'Оновити',
             installed_models: 'Встановленi моделi',
-            stt_settings: 'Налаштування STT',
+            vosk_desc: 'Офлайн розпiзнавання мовлення (Vosk)',
+            vosk_active_model: 'Активна модель:',
+            vosk_browse_models: 'Каталог моделей',
+            vosk_search_placeholder: 'Пошук моделей...',
+            vosk_downloading: 'Завантаження моделi...',
+            vosk_status_title: 'Статус Vosk STT',
+            vosk_provider_status: 'Статус провайдера:',
+            vosk_grammar_status: 'Граматика (wake words):',
+            vosk_update_wake_word: 'Оновити зараз',
+            vosk_endpointer_title: 'Vosk ендпоiнтер',
+            vosk_t_start_max: 'Очiкування початку мовлення',
+            vosk_t_end: 'Тиша = кiнець фрази',
+            vosk_t_max: 'Макс. тривалiсть фрази',
+            vosk_live_stt_title: 'Тест STT (WebSocket)',
+            vosk_grammar_on: 'Режим граматики',
+            vosk_live_start: 'Старт',
+            vosk_live_stop: 'Стоп',
+            vosk_live_clear: 'Очистити',
+            vosk_delete_inactive: 'Видалити неактивнi моделi',
             installed_voices: 'Встановленi голоси',
             activate: 'Активувати',
             show_catalog: 'Показати каталог',
@@ -1605,8 +1673,8 @@
     // ── State ─────────────────────────────────────────────────────
     var state = {
         hw: null,
-        whisperAvailable: false, whisperProvider: 'none',
-        whisperModels: [], whisperActive: 'small',
+        voskReady: false, voskModel: '',
+        voskLang: 'en', voskCatalog: [], voskCatalogPage: 1,
         recording: false, recognizedText: '', recordedAudioB64: '', peakLevel: 0,
         aiResponse: '', aiProvider: '', aiModel: '',
         // Piper
@@ -1794,168 +1862,178 @@
     };
 
     // ══════════════════════════════════════════════════════════════
-    //  WHISPER STT
+    //  VOSK STT
     // ══════════════════════════════════════════════════════════════
-    async function loadWhisperStatus() {
+    async function loadVoskStatus() {
         try {
-            var res = await api('/setup/whisper/status');
-            state.whisperAvailable = res.available;
-            state.whisperProvider = res.provider || 'none';
-            $('whisperStatus').textContent = res.available ? res.provider : t('not_installed');
-            $('whisperStatus').className = 'badge ' + (res.available ? 'badge-ok' : 'badge-off');
-            $('whisperProvider').textContent = res.provider;
+            var res = await api('/vosk/status');
+            state.voskReady = res.ready;
+            state.voskModel = res.active_model || '';
+            state.voskLang = res.lang || 'en';
+            $('voskStatus').textContent = res.ready ? 'Vosk' : t('not_installed');
+            $('voskStatus').className = 'badge ' + (res.ready ? 'badge-ok' : 'badge-off');
+            $('voskModelName').textContent = res.active_model || '—';
+            $('voskModelLang').textContent = res.lang ? res.lang.toUpperCase() : '';
+            // Test tab status
+            if ($('testVoskReady')) {
+                $('testVoskReady').textContent = res.ready ? 'Ready' : (res.loading ? 'Loading...' : 'Not loaded');
+                $('testVoskReady').className = 'badge ' + (res.ready ? 'badge-ok' : 'badge-off');
+            }
         } catch(e) { /* ignore */ }
     }
 
-    async function loadWhisperModels() {
+    // ── Vosk Catalog ──
+    var _voskCatalogOpen = false;
+    if ($('voskCatalogToggle')) $('voskCatalogToggle').onclick = function() {
+        _voskCatalogOpen = !_voskCatalogOpen;
+        if (_voskCatalogOpen) { show('voskCatalogSection'); loadVoskCatalog(); }
+        else hide('voskCatalogSection');
+    };
+
+    async function loadVoskCatalog() {
+        var lang = $('voskCatalogLang') ? $('voskCatalogLang').value : '';
+        var q = $('voskCatalogSearch') ? $('voskCatalogSearch').value : '';
         try {
-            var res = await api('/setup/stt/models');
-            state.whisperModels = res.models || [];
-            state.whisperActive = res.active || 'small';
-            renderWhisperModels();
-        } catch(e) { /* ignore */ }
+            var res = await api('/vosk/catalog?lang=' + encodeURIComponent(lang) + '&q=' + encodeURIComponent(q) + '&page=' + state.voskCatalogPage + '&per_page=10');
+            state.voskCatalog = res.models || [];
+            renderVoskCatalog(res);
+        } catch(e) {
+            $('voskCatalogList').innerHTML = '<div class="label-xs" style="color:var(--rd)">Error loading catalog</div>';
+        }
     }
 
-    // ── STT Settings ──
-    async function loadSttSettings() {
-        try {
-            var s = await api('/setup/stt/settings');
-            if ($('sttBeam')) $('sttBeam').value = s.beam_size || 5;
-            if ($('sttBeamVal')) $('sttBeamVal').textContent = s.beam_size || 5;
-            if ($('sttNoSpeech')) { $('sttNoSpeech').value = s.no_speech_threshold || 0.6; $('sttNoSpeechVal').textContent = (s.no_speech_threshold || 0.6).toFixed(2); }
-            if ($('sttVadThresh')) { $('sttVadThresh').value = s.vad_threshold || 0.5; $('sttVadThreshVal').textContent = (s.vad_threshold || 0.5).toFixed(2); }
-            if ($('sttVadSilence')) { $('sttVadSilence').value = s.vad_min_silence_ms || 500; $('sttVadSilenceVal').textContent = s.vad_min_silence_ms || 500; }
-            if ($('sttVadPad')) { $('sttVadPad').value = s.vad_speech_pad_ms || 400; $('sttVadPadVal').textContent = s.vad_speech_pad_ms || 400; }
-            if ($('sttVadFilter')) $('sttVadFilter').checked = s.vad_filter !== false;
-            if ($('sttCondPrev')) $('sttCondPrev').checked = !!s.condition_on_previous_text;
-        } catch(e) { /* ignore */ }
+    function renderVoskCatalog(res) {
+        var list = $('voskCatalogList');
+        if (!list) return;
+        if (!res.models || !res.models.length) {
+            list.innerHTML = '<div class="label-xs" style="padding:12px;text-align:center">No models found</div>';
+            return;
+        }
+        list.innerHTML = res.models.map(function(m) {
+            var sizeMb = m.size ? Math.round(m.size / (1024 * 1024)) : (m.size_mb || '?');
+            var langLabel = m.lang || '?';
+            // WER quality label
+            var werLabel = '';
+            if (m.wer) {
+                var wer = parseFloat(m.wer);
+                if (wer <= 10) werLabel = '<span class="badge badge-ok" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
+                else if (wer <= 20) werLabel = '<span class="badge" style="font-size:10px;background:var(--am-bg,rgba(255,165,0,.15));color:var(--am,orange)">WER ' + wer.toFixed(1) + '%</span>';
+                else werLabel = '<span class="badge badge-off" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
+            }
+            var typeLabel = m.type ? ' <span style="opacity:.6">' + m.type + '</span>' : '';
+            var status = '';
+            if (m.active) status = '<span class="badge badge-ok">Active</span>';
+            else if (m.installed) status = '<button class="btn btn-secondary" style="font-size:11px" onclick="window._voskActivate(\'' + m.name + '\')">' + t('activate') + '</button>' +
+                ' <button class="btn btn-ghost" style="font-size:11px;color:var(--rd)" onclick="window._voskDelete(\'' + m.name + '\')">&#10005;</button>';
+            else status = '<button class="btn btn-blue" style="font-size:11px" onclick="window._voskDownload(\'' + m.name + '\')">' + t('install') + '</button>';
+            return '<div class="model-item" style="padding:8px 0;border-bottom:1px solid var(--b)">' +
+                '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + m.name + ' ' + werLabel + '</div>' +
+                '<div style="font-size:11px;color:var(--tx2)">' + langLabel + ' · ' + sizeMb + ' MB' + typeLabel + '</div></div>' +
+                '<div>' + status + '</div></div>';
+        }).join('');
+        // Pagination
+        $('voskCatalogPage').textContent = res.page + '/' + res.pages;
+        $('voskCatalogPrev').disabled = res.page <= 1;
+        $('voskCatalogNext').disabled = res.page >= res.pages;
     }
 
-    // Slider live update
-    ['sttBeam','sttNoSpeech','sttVadThresh','sttVadSilence','sttVadPad'].forEach(function(id) {
+    if ($('voskCatalogPrev')) $('voskCatalogPrev').onclick = function() { if (state.voskCatalogPage > 1) { state.voskCatalogPage--; loadVoskCatalog(); } };
+    if ($('voskCatalogNext')) $('voskCatalogNext').onclick = function() { state.voskCatalogPage++; loadVoskCatalog(); };
+    if ($('voskCatalogSearch')) $('voskCatalogSearch').oninput = function() { state.voskCatalogPage = 1; loadVoskCatalog(); };
+    if ($('voskCatalogLang')) $('voskCatalogLang').onchange = function() { state.voskCatalogPage = 1; loadVoskCatalog(); };
+
+    window._voskDownload = async function(name) {
+        try {
+            await postJson('/vosk/download', { name: name });
+            show('voskDownloadSection');
+            $('voskDownloadName').textContent = name;
+            // Poll progress
+            var pollId = setInterval(async function() {
+                try {
+                    var s = await api('/vosk/download/status');
+                    $('voskDownloadBar').style.width = s.progress + '%';
+                    $('voskDownloadPercent').textContent = Math.round(s.progress) + '%';
+                    if (s.done || s.error || !s.active) {
+                        clearInterval(pollId);
+                        if (s.done) {
+                            showToast(t('saved'));
+                            hide('voskDownloadSection');
+                            loadVoskCatalog();
+                            loadVoskStatus();
+                        } else if (s.error) {
+                            showToast('Error: ' + s.error, 5000);
+                            hide('voskDownloadSection');
+                        }
+                    }
+                } catch(e) { clearInterval(pollId); hide('voskDownloadSection'); }
+            }, 1000);
+        } catch(e) { showToast('Error: ' + e.message, 3000); }
+    };
+
+    window._voskActivate = async function(name) {
+        try {
+            await postJson('/vosk/activate', { name: name });
+            showToast(t('saved'));
+            loadVoskStatus();
+            loadVoskCatalog();
+        } catch(e) { showToast('Error: ' + (e.message || 'failed'), 3000); }
+    };
+
+    window._voskDelete = async function(name) {
+        try {
+            var resp = await fetch('/api/ui/vosk/model/' + encodeURIComponent(name), { method: 'DELETE' });
+            if (resp.ok) { showToast('Deleted'); loadVoskCatalog(); }
+            else { var d = await resp.json(); showToast(d.detail || 'Error', 3000); }
+        } catch(e) { showToast('Error: ' + e.message, 3000); }
+    };
+
+    // ── Delete Inactive Models ──
+    if ($('voskDeleteInactiveBtn')) $('voskDeleteInactiveBtn').onclick = async function() {
+        try {
+            var resp = await fetch('/api/ui/vosk/models/inactive', { method: 'DELETE' });
+            var data = await resp.json();
+            if (resp.ok) {
+                showToast('Deleted ' + (data.count || 0) + ' models');
+                loadVoskCatalog();
+                loadVoskStatus();
+            } else {
+                showToast(data.detail || 'Error', 3000);
+            }
+        } catch(e) { showToast('Error: ' + e.message, 3000); }
+    };
+
+    // ── Endpointer Sliders ──
+    ['epStart','epEnd','epMax'].forEach(function(id) {
         var el = $(id);
         if (!el) return;
-        var valId = id + 'Val';
         el.oninput = function() {
             var v = parseFloat(this.value);
-            $(valId).textContent = (id === 'sttBeam' || id === 'sttVadSilence' || id === 'sttVadPad') ? String(parseInt(v)) : v.toFixed(2);
+            $(id + 'Val').textContent = (id === 'epMax' ? Math.round(v) : v.toFixed(1)) + 's';
         };
     });
 
-    if ($('sttSettingsSave')) $('sttSettingsSave').onclick = async function() {
-        var body = {
-            beam_size: parseInt($('sttBeam').value),
-            temperature: 0.0,
-            no_speech_threshold: parseFloat($('sttNoSpeech').value),
-            vad_filter: $('sttVadFilter').checked,
-            vad_min_silence_ms: parseInt($('sttVadSilence').value),
-            vad_speech_pad_ms: parseInt($('sttVadPad').value),
-            vad_threshold: parseFloat($('sttVadThresh').value),
-            condition_on_previous_text: $('sttCondPrev').checked,
-        };
+    // ── Wake Word Language Mismatch ──
+    async function checkWakeLangMismatch() {
         try {
-            await postJson('/setup/stt/settings', body);
-            showToast(t('saved'));
-        } catch(e) {
-            showToast('Error: ' + e.message, 3000);
-        }
-    };
-
-    function renderWhisperModels() {
-        var list = $('whisperModelList');
-        if (!list) return;
-        list.innerHTML = state.whisperModels.map(function(m) {
-            var isActive = m.id === state.whisperActive;
-            return '<div class="model-item' + (isActive ? ' active' : '') + '">' +
-                '<div><div class="model-name">' + m.name + '</div>' +
-                '<div class="model-meta">' + m.size_mb + ' MB · 99 languages</div></div>' +
-                '<button class="btn ' + (isActive ? 'btn-green' : 'btn-secondary') + '" ' + (isActive ? 'disabled' : '') +
-                ' onclick="window._whisperSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
-                '</div>';
-        }).join('');
+            var wk = await api('/vosk/wake-word');
+            var st = await api('/vosk/status');
+            if (wk.lang && st.lang && wk.lang !== st.lang && wk.phrases && wk.phrases.length > 0) {
+                $('wakeLangMismatchText').textContent =
+                    'Wake word language (' + wk.lang + ') does not match STT model (' + st.lang + '). Regenerate wake word variants.';
+                show('wakeLangMismatch');
+            } else {
+                hide('wakeLangMismatch');
+            }
+            // Show grammar phrases in test tab
+            if ($('testVoskGrammar') && wk.variants && wk.variants.length) {
+                $('testVoskGrammar').textContent = wk.variants.join(', ');
+            }
+        } catch(e) { /* ignore */ }
     }
 
-    window._whisperSelect = async function(id) {
-        var snack = $('sttSnackbar');
-        var stepsEl = $('sttSteps');
-        var titleEl = $('sttSnackTitle');
-        var modelName = 'Whisper ' + id.charAt(0).toUpperCase() + id.slice(1);
-
-        var steps = ['stt_step_check', 'stt_step_download', 'stt_step_config', 'stt_step_restart', 'stt_step_verify'];
-
-        function renderSteps(activeIdx, errorIdx) {
-            stepsEl.innerHTML = steps.map(function(key, i) {
-                var cls = 'stt-step';
-                var icon = '<span style="opacity:.3">&#9679;</span>';
-                if (errorIdx === i) {
-                    cls += ' error';
-                    icon = '&#10007;';
-                } else if (i < activeIdx) {
-                    cls += ' done';
-                    icon = '&#10003;';
-                } else if (i === activeIdx) {
-                    cls += ' active';
-                    icon = '<span class="spinner"></span>';
-                }
-                return '<div class="' + cls + '"><span class="stt-step-icon">' + icon + '</span>' + t(key) + '</div>';
-            }).join('');
-        }
-
-        function showSnack() { snack.classList.add('visible'); }
-        function hideSnack(delay) { setTimeout(function() { snack.classList.remove('visible'); }, delay || 0); }
-
-        titleEl.textContent = modelName;
-        renderSteps(0, -1);
-        showSnack();
-
-        try {
-            renderSteps(1, -1);
-
-            var resp = await fetch('/api/ui/setup/stt/select', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model: id })
-            });
-            var data = await resp.json();
-
-            if (!resp.ok) {
-                renderSteps(1, 1);
-                titleEl.textContent = t('stt_switch_error');
-                stepsEl.innerHTML += '<div class="stt-step error" style="margin-top:6px;font-size:11px;word-break:break-word">' + (data.detail || 'Unknown error') + '</div>';
-                hideSnack(5000);
-                return;
-            }
-
-            renderSteps(3, -1);
-            await new Promise(function(r) { setTimeout(r, 1500); });
-
-            renderSteps(4, -1);
-            var ok = false;
-            for (var attempt = 0; attempt < 30; attempt++) {
-                await new Promise(function(r) { setTimeout(r, 2000); });
-                try {
-                    var st = await api('/setup/whisper/status');
-                    if (st.available) { ok = true; break; }
-                } catch(e) { /* retry */ }
-            }
-
-            if (ok) {
-                renderSteps(5, -1);
-                titleEl.textContent = t('stt_switch_done') + ' — ' + modelName;
-                state.whisperActive = id;
-                renderWhisperModels();
-            } else {
-                renderSteps(4, 4);
-                titleEl.textContent = t('stt_switch_error');
-            }
-        } catch(e) {
-            renderSteps(0, 0);
-            titleEl.textContent = t('stt_switch_error');
-            stepsEl.innerHTML += '<div class="stt-step error" style="margin-top:6px;font-size:11px">' + e.message + '</div>';
-        }
-
-        hideSnack(3000);
-    };
+    // ── Live mode/grammar change sent via polling cycle ──
+    // (WebSocket is only for dedicated STT test stream, not used here —
+    //  the main voice loop handles STT and live-log shows the results)
 
     // ── STT Test ──────────────────────────────────────────────────
     $('sttTestBtn').onclick = async function() {
@@ -2080,7 +2158,7 @@
         if (v) window._sendToAi(v);
     };
 
-    // Whisper models are built-in (tiny/base/small/medium), no catalog needed
+    // Vosk models are managed via /vosk/catalog API
 
     // ══════════════════════════════════════════════════════════════
     //  PIPER
@@ -3158,9 +3236,8 @@
         await Promise.all([
             loadHardware(),
             loadWakeWordStatus(),
-            loadWhisperStatus(),
-            loadWhisperModels(),
-            loadSttSettings(),
+            loadVoskStatus(),
+            checkWakeLangMismatch(),
             loadPiperStatus(),
             loadPiperVoices(),
             loadDualVoiceStatus(),
@@ -3169,7 +3246,7 @@
             loadOllamaModels(),
             loadLlamacppStatus(),
         ]);
-        // Whisper doesn't need install/uninstall actions
+        // Vosk model management is in the catalog section
         renderPiperVoices();
         renderPiperActions();
         renderDualVoice();
@@ -3352,32 +3429,61 @@
 
     function formatLiveEntry(e) {
         var dt = new Date(e.ts * 1000);
-        var time = dt.toLocaleTimeString('en-GB', {hour12: false});
-        var color = EVENT_COLORS[e.event] || 'var(--tx2)';
+        var time = '<span style="color:var(--tx3);font-size:10px">' + dt.toLocaleTimeString('en-GB', {hour12: false}) + '</span> ';
 
         if (e.event === 'stt') {
-            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[STT]</span> <span style="color:var(--tx)">"' + (e.text||'') + '"</span> <span style="color:var(--tx3)">lang=' + (e.lang||'?') + ' state=' + (e.state||'') + '</span>';
+            var stateIcon = e.state === 'idle' ? '💤' : '👂';
+            var mode = e.state === 'idle' ? 'Ожидание' : 'Слушает';
+            return time + stateIcon + ' <span style="color:var(--tx3)">' + mode + '</span> → распознано: <span style="color:var(--ac)">"' + (e.text||'') + '"</span>';
         }
         if (e.event === 'wake') {
-            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[WAKE]</span> phrase="' + (e.phrase||'') + '"';
+            return time + '🔔 <span style="color:var(--gr);font-weight:600">Активация!</span> Услышано: <span style="color:var(--gr)">"' + (e.phrase||'') + '"</span> → переход в режим слушания';
         }
         if (e.event === 'command') {
-            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[CMD]</span> <span style="color:var(--tx);font-weight:600">"' + (e.text||'') + '"</span> lang=' + (e.lang||'?');
+            return time + '🎤 <span style="color:var(--ac);font-weight:600">Команда:</span> <span style="color:var(--tx);font-weight:600">"' + (e.text||'') + '"</span> → отправлена в IntentRouter';
         }
         if (e.event === 'intent') {
             var src = e.source || '?';
-            var srcColor = src === 'system_module' ? 'var(--gr)' : src === 'cache' ? 'var(--am)' : 'var(--pr)';
-            return '<span style="color:var(--tx3)">' + time + '</span> <span style="color:' + color + '">[INTENT]</span> <span style="color:var(--tx);font-weight:600">' + (e.intent||'?') + '</span> <span style="color:' + srcColor + '">(' + src + ' ' + (e.latency_ms||0) + 'ms)</span>' + (e.response ? '\n         <span style="color:var(--tx2)">→ "' + e.response + '"</span>' : '');
+            var srcMap = {system_module:'модуль',fast_matcher:'быстрый',cache:'кеш',llm:'LLM',cloud:'облако',fallback:'не понял'};
+            var srcLabel = srcMap[src] || src;
+            var srcColor = src === 'system_module' ? 'var(--gr)' : src === 'fast_matcher' ? 'var(--gr)' : src === 'cache' ? 'var(--am)' : src === 'fallback' ? 'var(--rd)' : 'var(--pr)';
+            var line = time + '🧠 <span style="color:' + srcColor + ';font-weight:600">' + (e.intent||'?') + '</span>';
+            line += ' <span style="color:var(--tx3)">(' + srcLabel + ', ' + (e.latency_ms||0) + 'ms)</span>';
+            if (e.response) {
+                line += '\n   💬 <span style="color:var(--tx)">Ответ: "' + e.response + '"</span>';
+            }
+            return line;
         }
-        return '<span style="color:var(--tx3)">' + time + '</span> ' + JSON.stringify(e);
+        if (e.event === 'partial') {
+            return time + '✏️ <span style="color:var(--tx3);font-style:italic">' + (e.data && e.data.text ? e.data.text : '') + '</span>';
+        }
+        if (e.event === 'routing') {
+            return time + '🔍 <span style="color:var(--am)">' + (e.msg || 'IntentRouter...') + '</span> <span style="color:var(--tx3)">"' + (e.text||'') + '"</span>';
+        }
+        if (e.event === 'action') {
+            return time + '⚡ <span style="color:var(--pr)">' + (e.msg || '') + '</span> <span style="color:var(--tx3)">(' + (e.intent||'') + ')</span>';
+        }
+        if (e.event === 'rephrase') {
+            return time + '✨ <span style="color:var(--am)">' + (e.msg || 'Rephrase...') + '</span>';
+        }
+        if (e.event === 'tts') {
+            return time + '🔊 <span style="color:var(--ac)">' + (e.msg || 'TTS...') + '</span> <span style="color:var(--tx)">"' + (e.text||'') + '"</span>';
+        }
+        if (e.event === 'done') {
+            var dur = e.duration_ms ? ' <span style="color:var(--tx3)">(' + e.duration_ms + 'ms)</span>' : '';
+            return time + '✅ <span style="color:var(--gr)">' + (e.msg || 'Done') + '</span>' + dur;
+        }
+        if (e.event === 'timeout') {
+            return time + '⏰ <span style="color:var(--rd)">' + (e.msg || 'Timeout') + '</span>';
+        }
+        // Unknown events
+        return time + '❓ ' + (e.event||'?') + ': ' + JSON.stringify(e.data || e);
     }
 
     function updateAudioDebug(d) {
         if (!d || d.energy === undefined) return;
         var energy = d.energy || 0;
         var thr = d.energy_threshold || 300;
-        var chunks = d.speech_chunks || 0;
-        var minC = d.min_speech_chunks || 6;
 
         // Energy bar — scale to 2x threshold for visual range
         var maxE = Math.max(thr * 2, 1000);
@@ -3391,22 +3497,16 @@
         var thrPct = Math.min(thr / maxE * 100, 100);
         $('adThreshLine').style.left = thrPct + '%';
 
-        // Chunks bar
-        var cPct = Math.min(chunks / minC * 100, 100);
-        $('adChunksBar').style.width = cPct + '%';
-        $('adChunksBar').style.background = chunks >= minC ? 'var(--gr)' : 'var(--ac)';
-        $('adChunksVal').textContent = chunks + ' / ' + minC;
-
         // Status badges
         var arecEl = $('adArecord');
         if (d.arecord_running !== undefined) {
-            arecEl.textContent = 'arecord: ' + (d.arecord_running ? 'OK' : 'OFF');
+            arecEl.textContent = 'mic: ' + (d.arecord_running ? 'OK' : 'OFF');
             arecEl.className = 'badge ' + (d.arecord_running ? 'badge-ok' : 'badge-off');
         }
 
         var sttEl = $('adStt');
         if (d.stt_provider !== undefined) {
-            sttEl.textContent = 'STT: ' + (d.stt_provider || '?');
+            sttEl.textContent = 'Vosk: ' + (d.stt_provider === 'VoskProvider' ? 'OK' : d.stt_provider || '?');
             sttEl.className = 'badge ' + (d.stt_provider && d.stt_provider !== 'none' ? 'badge-ok' : 'badge-off');
         }
 
@@ -3416,25 +3516,30 @@
             wakeEl.className = 'badge ' + (d.wake_enabled ? 'badge-ac' : 'badge-off');
         }
 
+        // State badge update with human-readable mode
+        var stateMap = {idle: '💤 Ожидание', listening: '👂 Слушает', processing: '🧠 Обработка'};
+        $('liveStateBadge').textContent = stateMap[d.state] || d.state || 'idle';
+
         // Diagnostic message
         var diag = '';
         if (d.privacy_mode) diag = t('live_diag_privacy');
         else if (d.arecord_running === false) diag = t('live_diag_no_arecord');
         else if (energy < 50) diag = t('live_diag_silent');
         else if (energy < thr) diag = t('live_diag_quiet');
-        else if (chunks < minC) diag = t('live_diag_speech');
         else diag = t('live_diag_ready');
         $('adDiag').textContent = diag;
 
-        // Sync slider/input to server values (only when not actively adjusting)
+        // Sync slider to server values (only when not actively adjusting)
         if (!adThreshDebounce) {
             $('adThreshSlider').value = thr;
             $('adThreshNum').textContent = thr;
-            $('adMinChunks').value = minC;
         }
     }
 
+    var _pollBusy = false;
     async function pollLive() {
+        if (_pollBusy) return;
+        _pollBusy = true;
         try {
             var res = await moduleApi('/live-log?since=' + liveSince);
             var term = $('liveTerminal');
@@ -3445,13 +3550,28 @@
             // Update audio debug panel from live-log response
             updateAudioDebug(res);
 
+            // Show partial in live italic line
             if (res.entries && res.entries.length > 0) {
-                var html = res.entries.map(formatLiveEntry).join('\n');
-                term.innerHTML += (term.innerHTML ? '\n' : '') + html;
-                term.scrollTop = term.scrollHeight;
+                var lastPartial = '';
+                var html = '';
+                var mode = $('liveSttMode') ? $('liveSttMode').value : 'both';
+                for (var i = 0; i < res.entries.length; i++) {
+                    var e = res.entries[i];
+                    if (e.type === 'partial' && (mode === 'partial' || mode === 'both')) {
+                        lastPartial = e.data && e.data.text ? e.data.text : '';
+                    } else {
+                        html += (html ? '\n' : '') + formatLiveEntry(e);
+                    }
+                }
+                $('liveSttPartial').textContent = lastPartial;
+                if (html) {
+                    term.innerHTML += (term.innerHTML ? '\n' : '') + html;
+                    term.scrollTop = term.scrollHeight;
+                }
                 liveSince = res.entries[res.entries.length - 1].ts;
             }
         } catch(e) { /* ignore */ }
+        _pollBusy = false;
     }
 
     $('liveToggleBtn').onclick = function() {
@@ -3462,6 +3582,7 @@
             this.textContent = t('live_start');
             this.className = 'btn btn-green';
             $('audioDebugPanel').style.display = 'none';
+            $('liveSttPartial').textContent = '';
         } else {
             liveRunning = true;
             this.textContent = t('live_stop');
@@ -3474,6 +3595,7 @@
 
     $('liveClearBtn').onclick = function() {
         $('liveTerminal').innerHTML = '';
+        $('liveSttPartial').textContent = '';
         liveSince = Date.now() / 1000;
     };
 
@@ -3487,15 +3609,6 @@
         modulePost('/config', { energy_threshold: val })
             .then(function() { setTimeout(function() { adThreshDebounce = null; }, 2000); })
             .catch(function() { adThreshDebounce = null; });
-    };
-    $('adMinChunks').onchange = function() {
-        var val = parseInt(this.value);
-        if (val >= 1 && val <= 30) {
-            adThreshDebounce = true;
-            modulePost('/config', { min_speech_chunks: val })
-                .then(function() { setTimeout(function() { adThreshDebounce = null; }, 2000); })
-                .catch(function() { adThreshDebounce = null; });
-        }
     };
 
     init();
