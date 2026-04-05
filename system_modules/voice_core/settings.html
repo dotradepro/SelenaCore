@@ -853,21 +853,7 @@
         </div>
     </div>
 
-    <!-- 3. Intent classification prompt -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="classification_prompt_label"></span>
-            <span id="customClassBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="classification_prompt_desc"></div>
-        <textarea id="classificationPromptText" rows="5" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveClassBtn" class="btn btn-green" data-i18n="save"></button>
-            <span id="classCharCount" class="label-xs" style="margin-left:auto;opacity:.6"></span>
-        </div>
-    </div>
-
-    <!-- 4. Rephrase prompt -->
+    <!-- 3. Rephrase prompt -->
     <div class="card-inner mb12">
         <div class="flex gap6 mb4">
             <span class="label-sm" data-i18n="rephrase_prompt_label"></span>
@@ -1320,7 +1306,7 @@
             hidden_compact_label: 'System identity (local models)',
             hidden_compact_desc: 'Short identity for Ollama/llama.cpp. Template: {name}, {lang}.',
             intent_system_label: 'Intent router prompt',
-            intent_system_desc: 'Instructions for LLM to classify commands into intents (JSON). Template: {name}, {lang}. Intent catalog is injected automatically.',
+            intent_system_desc: 'Main prompt for intent classification. Controls how LLM classifies voice commands into intents (JSON). Template: {name}, {lang}. Intent catalog is injected automatically.',
             rephrase_system_label: 'Rephrase system wrapper',
             rephrase_system_desc: 'Wraps the rephrase rules above with TTS instructions. Template: {lang_name}, {rephrase_rules}.',
             show_hidden: 'Show system prompt',
@@ -1373,8 +1359,6 @@
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
             prompts_tab_desc: 'Customize prompts for conversation, intent classification, and response rephrase',
-            classification_prompt_label: 'Intent classification rules',
-            classification_prompt_desc: 'Instructions for LLM to classify voice commands into intents (JSON output). The intent catalog is injected automatically.',
             rephrase_prompt_label: 'Response rephrase rules',
             rephrase_prompt_desc: 'Instructions for LLM to rephrase module responses naturally for TTS output.',
 
@@ -1523,7 +1507,7 @@
             hidden_compact_label: 'Системна iдентичнiсть (локальнi моделi)',
             hidden_compact_desc: 'Коротка iдентичнiсть для Ollama/llama.cpp. Шаблон: {name}, {lang}.',
             intent_system_label: 'Промпт маршрутизатора iнтентiв',
-            intent_system_desc: 'Iнструкцiї для LLM щодо класифiкацiї команд у iнтенти (JSON). Шаблон: {name}, {lang}. Каталог iнтентiв додається автоматично.',
+            intent_system_desc: 'Основний промпт класифiкацiї iнтентiв. Контролює як LLM класифiкує голосовi команди в iнтенти (JSON). Шаблон: {name}, {lang}. Каталог iнтентiв додається автоматично.',
             rephrase_system_label: 'Системна обгортка перефразування',
             rephrase_system_desc: 'Обгортає правила перефразування iнструкцiями для TTS. Шаблон: {lang_name}, {rephrase_rules}.',
             show_hidden: 'Показати системний промпт',
@@ -1576,8 +1560,6 @@
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
             prompts_tab_desc: 'Налаштування промптів для діалогу, класифікації інтентів та перефразування відповідей',
-            classification_prompt_label: 'Правила класифікації інтентів',
-            classification_prompt_desc: 'Інструкції для LLM щодо класифікації голосових команд у інтенти (JSON). Каталог інтентів додається автоматично.',
             rephrase_prompt_label: 'Правила перефразування відповідей',
             rephrase_prompt_desc: 'Інструкції для LLM щодо природного перефразування відповідей модулів для TTS.',
 
@@ -2481,9 +2463,6 @@
             state.compactUser = res.compact_user || '';
             state.defaultCompact = res.default_compact || '';
             state.isCustomCompact = res.is_custom_compact || false;
-            state.classPrompt = res.classification_prompt || '';
-            state.defaultClass = res.default_classification || '';
-            state.isCustomClass = res.is_custom_classification || false;
             state.rephrasePrompt = res.rephrase_prompt || '';
             state.defaultRephrase = res.default_rephrase || '';
             state.isCustomRephrase = res.is_custom_rephrase || false;
@@ -2495,17 +2474,14 @@
             $('userPromptText').maxLength = state.limits.user_prompt;
             $('compactUserText').value = state.compactUser;
             $('compactUserText').maxLength = state.limits.compact_user;
-            $('classificationPromptText').value = state.classPrompt;
-            $('classificationPromptText').maxLength = state.limits.classification_prompt;
             $('rephrasePromptText').value = state.rephrasePrompt;
             $('rephrasePromptText').maxLength = state.limits.rephrase_prompt;
 
             function updateBadges() {
-                var any = state.isCustomUser || state.isCustomCompact || state.isCustomClass || state.isCustomRephrase;
+                var any = state.isCustomUser || state.isCustomCompact || state.isCustomRephrase;
                 if (any) show('customPromptBadge'); else hide('customPromptBadge');
                 if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
                 if (state.isCustomCompact) show('customCompactBadge'); else hide('customCompactBadge');
-                if (state.isCustomClass) show('customClassBadge'); else hide('customClassBadge');
                 if (state.isCustomRephrase) show('customRephraseBadge'); else hide('customRephraseBadge');
             }
             state._updatePromptBadges = updateBadges;
@@ -2528,14 +2504,12 @@
 
             charCount('userPromptText', 'userCharCount', state.limits.user_prompt);
             charCount('compactUserText', 'compactCharCount', state.limits.compact_user);
-            charCount('classificationPromptText', 'classCharCount', state.limits.classification_prompt);
             charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt);
         } catch(e) { /* ignore */ }
     }
 
     $('userPromptText').oninput = function() { charCount('userPromptText', 'userCharCount', state.limits.user_prompt); };
     $('compactUserText').oninput = function() { charCount('compactUserText', 'compactCharCount', state.limits.compact_user); };
-    $('classificationPromptText').oninput = function() { charCount('classificationPromptText', 'classCharCount', state.limits.classification_prompt); };
     $('rephrasePromptText').oninput = function() { charCount('rephrasePromptText', 'rephraseCharCount', state.limits.rephrase_prompt); };
 
     function _savePrompt(btnId, endpoint, textId, stateKey, defaultKey, customKey) {
@@ -2555,7 +2529,6 @@
 
     _savePrompt('saveUserBtn', '/setup/llm/user-prompt', 'userPromptText', 'userPrompt', 'defaultUser', 'isCustomUser');
     _savePrompt('saveCompactBtn', '/setup/llm/compact-prompt', 'compactUserText', 'compactUser', 'defaultCompact', 'isCustomCompact');
-    _savePrompt('saveClassBtn', '/setup/llm/classification-prompt', 'classificationPromptText', 'classPrompt', 'defaultClass', 'isCustomClass');
     _savePrompt('saveRephraseBtn', '/setup/llm/rephrase-prompt', 'rephrasePromptText', 'rephrasePrompt', 'defaultRephrase', 'isCustomRephrase');
 
     // Universal save for new prompt fields (hidden_system, hidden_compact, intent_system, rephrase_system)

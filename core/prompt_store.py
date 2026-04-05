@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 PROMPT_KEYS = (
     "user_prompt",          # User instructions for cloud LLM (appended to hidden_system)
     "compact_user",         # User instructions for local LLM (appended to hidden_compact)
-    "classification_prompt", # Intent classification instructions
     "rephrase_prompt",       # Rephrase/TTS preparation instructions
     "hidden_system",         # System identity prompt for cloud LLM (template: {name}, {lang})
     "hidden_compact",        # System identity prompt for local LLM (template: {name}, {lang})
@@ -40,16 +39,6 @@ _PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/confi
 _EN_FALLBACK = {
     "user_prompt": "Keep answers short and helpful. You are a smart home assistant.",
     "compact_user": "Short answers, plain text.",
-    "classification_prompt": (
-        "You are a voice command classifier for a smart home assistant.\n"
-        "Classify the user's voice command into one of the known intents.\n\n"
-        "Rules:\n"
-        '1. If the command matches a known intent, respond: {{"intent": "<name>", "params": {{<extracted params>}}}}\n'
-        "2. Extract parameters when applicable (genre, station_name, query, level, etc.).\n"
-        '3. If the command is a general question or conversation, respond: {{"intent": "llm.response", "params": {{}}, '
-        '"response": "<helpful answer>"}}\n'
-        "4. Output ONLY valid JSON. No markdown, no code fences, no explanation."
-    ),
     "rephrase_prompt": (
         "The system performed an action and generated a default response.\n"
         "Rephrase it naturally and concisely (1 sentence, no emoji, no markdown).\n"

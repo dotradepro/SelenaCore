@@ -246,20 +246,6 @@ def _get_hidden_prompt(compact: bool = False) -> str:
     from core.prompt_store import _EN_FALLBACK
     return _EN_FALLBACK.get(key, "")
 
-# ── Default intent classification prompt ─────────────────────────────
-DEFAULT_CLASSIFICATION_PROMPT = (
-    "You are a voice command classifier for a smart home assistant.\n"
-    "Classify the user's voice command into one of the known intents.\n\n"
-    "Rules:\n"
-    '1. If the command matches a known intent, respond: {{"intent": "<name>", "params": {{<extracted params>}}}}\n'
-    "2. Extract parameters when applicable (genre, station_name, query, level, etc.).\n"
-    '3. If the command is a general question or conversation, respond: {{"intent": "llm.response", "params": {{}}, '
-    '"response": "<helpful answer>"}}\n'
-    "4. Output ONLY valid JSON. No markdown, no code fences, no explanation."
-)
-
-MAX_CLASSIFICATION_PROMPT = 600
-
 # ── Default rephrase prompt ──────────────────────────────────────────
 DEFAULT_REPHRASE_PROMPT = (
     "The system performed an action and generated a default response.\n"
@@ -353,13 +339,19 @@ def _flush_llm_caches() -> None:
         router = get_intent_router()
         router.refresh_system_prompt()
         router._prompt_cache.clear()
-    except Exception:
-        pass
+        logger.info("Flushed IntentRouter prompt cache")
+    except Exception as exc:
+        logger.warning("Failed to flush IntentRouter prompt cache: %s", exc)
     try:
         from system_modules.llm_engine.intent_cache import get_intent_cache
-        asyncio.create_task(get_intent_cache().clear())
-    except Exception:
-        pass
+        task = asyncio.create_task(get_intent_cache().clear())
+        task.add_done_callback(
+            lambda t: logger.warning("IntentCache clear failed: %s", t.exception())
+            if t.exception()
+            else logger.info("IntentCache cleared successfully")
+        )
+    except Exception as exc:
+        logger.warning("Failed to schedule IntentCache clear: %s", exc)
 
 
 def _get_default_user_prompt(ui_lang: str) -> str:
@@ -368,10 +360,6 @@ def _get_default_user_prompt(ui_lang: str) -> str:
 
 def _get_default_compact_user(ui_lang: str) -> str:
     return _load_prompt_locale(ui_lang).get("compact_user", "Short answers, plain text.")
-
-
-def _get_default_classification(ui_lang: str) -> str:
-    return _load_prompt_locale(ui_lang).get("classification_prompt", DEFAULT_CLASSIFICATION_PROMPT)
 
 
 def _get_default_rephrase(ui_lang: str) -> str:
@@ -413,7 +401,7 @@ async def get_system_prompt() -> dict[str, Any]:
 
     # Load ALL prompts + custom flags from DB
     prompts_meta: dict[str, dict] = {}
-    for key in ("user_prompt", "compact_user", "classification_prompt", "rephrase_prompt",
+    for key in ("user_prompt", "compact_user", "rephrase_prompt",
                 "hidden_system", "hidden_compact", "intent_system", "rephrase_system"):
         prompts_meta[key] = await store.get_meta(tts_lang, key)
 
@@ -444,16 +432,12 @@ async def get_system_prompt() -> dict[str, Any]:
         "compact_user": prompts_meta["compact_user"]["value"],
         "is_custom_compact": prompts_meta["compact_user"]["is_custom"],
         "default_compact": en_prompts.get("compact_user", ""),
-        "classification_prompt": prompts_meta["classification_prompt"]["value"],
-        "is_custom_classification": prompts_meta["classification_prompt"]["is_custom"],
-        "default_classification": en_prompts.get("classification_prompt", ""),
         "rephrase_prompt": prompts_meta["rephrase_prompt"]["value"],
         "is_custom_rephrase": prompts_meta["rephrase_prompt"]["is_custom"],
         "default_rephrase": en_prompts.get("rephrase_prompt", ""),
         "limits": {
             "user_prompt": MAX_USER_PROMPT,
             "compact_user": MAX_COMPACT_USER,
-            "classification_prompt": MAX_CLASSIFICATION_PROMPT,
             "rephrase_prompt": MAX_REPHRASE_PROMPT,
         },
         "full_preview": build_system_prompt(compact=False),
@@ -479,17 +463,6 @@ async def save_compact_prompt(req: SystemPromptRequest) -> dict[str, Any]:
     prompt = req.prompt.strip()[:MAX_COMPACT_USER]
     _, _, tts_lang = _get_prompt_context()
     await get_prompt_store().set(tts_lang, "compact_user", prompt, is_custom=True)
-    _flush_llm_caches()
-    return {"status": "ok"}
-
-
-@router.post("/llm/classification-prompt")
-async def save_classification_prompt(req: SystemPromptRequest) -> dict[str, Any]:
-    """Save custom intent classification prompt to DB."""
-    from core.prompt_store import get_prompt_store
-    prompt = req.prompt.strip()[:MAX_CLASSIFICATION_PROMPT]
-    _, _, tts_lang = _get_prompt_context()
-    await get_prompt_store().set(tts_lang, "classification_prompt", prompt, is_custom=True)
     _flush_llm_caches()
     return {"status": "ok"}
 
