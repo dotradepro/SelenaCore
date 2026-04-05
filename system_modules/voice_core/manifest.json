@@ -1,7 +1,7 @@
 {
     "name": "voice-core",
     "version": "1.0.0",
-    "description": "Voice subsystem: STT (Whisper), TTS (Piper), wake word detection, speaker ID, privacy mode",
+    "description": "Voice subsystem: STT (Vosk), TTS (Piper), wake word detection, speaker ID, privacy mode",
     "type": "SYSTEM",
     "ui_profile": "FULL",
     "api_version": "1.0",

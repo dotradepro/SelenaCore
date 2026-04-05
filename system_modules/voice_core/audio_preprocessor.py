@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Defaults (overridable via env or config)
 _DEFAULT_HIGHPASS_FREQ = 80       # Hz
 _DEFAULT_NOISE_ALPHA = 1.5        # oversubtraction factor
-_DEFAULT_AGC_TARGET = 3000.0      # target RMS for speech
+_DEFAULT_AGC_TARGET = 1000.0      # target RMS for speech (moderate boost)
 _DEFAULT_AGC_MAX_GAIN = 8.0       # max amplification factor
 _DEFAULT_SPECTRAL_FLOOR = 0.05    # minimum fraction of original magnitude
 _DEFAULT_NOISE_DECAY = 0.95       # exponential moving average for noise profile
@@ -248,11 +248,13 @@ class AudioPreprocessor:
         """Automatic gain control — normalize RMS to target level.
 
         Only amplifies when signal is clearly above noise floor (post-gating).
-        This prevents amplifying residual noise artifacts.
+        Below speech_floor → no amplification (prevents boosting noise).
+        Above speech_floor → boost to agc_target with max gain limit.
         """
         rms = self._fast_rms(samples)
-        # Don't amplify below noise floor — only real speech gets boosted
-        if rms < 30.0:
+        # Don't amplify residual noise — only real speech gets boosted
+        # Post spectral-gate noise is ~1-20 RMS, speech is 50+
+        if rms < 50.0:
             return samples
         gain = self.agc_target / rms
         gain = min(gain, self.agc_max_gain)
