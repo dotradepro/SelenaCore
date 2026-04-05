@@ -4,7 +4,7 @@ core/api/routes/setup.py — Real device setup & configuration API endpoints.
 Endpoints for:
   - WiFi scanning & connection (nmcli)
   - Audio device detection
-  - STT model list & selection (Whisper)
+  - STT status (Vosk) — model management in core/api/routes/vosk.py
   - TTS voice list, selection & preview (Piper)
   - LLM model list, download & selection (Ollama)
   - Timezone list & application
@@ -882,193 +882,40 @@ async def audio_source_volume(body: dict[str, Any]) -> dict[str, Any]:
 
 
 # ================================================================== #
-#  STT Models (Whisper)                                                #
+#  STT (Vosk) — status and settings                                    #
+#  Full model management API is in core/api/routes/vosk.py             #
 # ================================================================== #
 
-@router.get("/whisper/status")
-async def whisper_status() -> dict[str, Any]:
-    """Check if Whisper STT server is reachable (faster-whisper or whisper.cpp)."""
-    import httpx as _httpx
-    host = "http://localhost:9000"
-    provider = "none"
-    device = "cpu"
+@router.get("/stt/status")
+async def stt_status() -> dict[str, Any]:
+    """Check STT provider status (Vosk)."""
+    provider_name = "none"
+    ready = False
+    lang = "en"
     model = ""
-    available = False
-    try:
-        resp = _httpx.get(f"{host}/", timeout=3.0)
-        available = resp.status_code == 200
-        # Try JSON health response (faster-whisper server)
-        try:
-            data = resp.json()
-            model = data.get("model", "")
-            provider = "faster-whisper"
-            device = "cuda"
-        except Exception:
-            # whisper.cpp returns HTML page
-            provider = "whisper.cpp"
-            device = "cpu"
-    except Exception:
-        pass
-    return {
-        "available": available,
-        "provider": provider,
-        "device": device,
-        "model": model,
-    }
 
-
-@router.get("/stt/models")
-async def stt_models() -> dict[str, Any]:
-    """List available Whisper STT models."""
-    active_model = get_value("voice", "stt_model", "small")
-
-    ram_total_mb = 0
-    ram_available_mb = 0
-    try:
-        import psutil
-        vm = psutil.virtual_memory()
-        ram_total_mb = vm.total // (1024 * 1024)
-        ram_available_mb = vm.available // (1024 * 1024)
-    except ImportError:
-        pass
-
-    models = [
-        {"id": "tiny",   "name": "Whisper Tiny",   "size_mb": 75,   "installed": True, "active": active_model == "tiny",   "fits_ram": True},
-        {"id": "base",   "name": "Whisper Base",   "size_mb": 142,  "installed": True, "active": active_model == "base",   "fits_ram": True},
-        {"id": "small",  "name": "Whisper Small",  "size_mb": 466,  "installed": True, "active": active_model == "small",  "fits_ram": ram_available_mb > 600},
-        {"id": "medium", "name": "Whisper Medium", "size_mb": 1530, "installed": True, "active": active_model == "medium", "fits_ram": ram_available_mb > 2000},
-    ]
-
-    # Check STT provider status
-    try:
-        from core.stt import create_stt_provider
-        provider = create_stt_provider()
-        provider_name = type(provider).__name__
-    except Exception:
-        provider_name = "none"
-
-    return {
-        "models": models,
-        "active": active_model,
-        "provider": provider_name,
-        "auto_lang_detect": True,
-        "ram_total_mb": ram_total_mb,
-        "ram_available_mb": ram_available_mb,
-    }
-
-
-@router.post("/stt/select")
-async def stt_select(req: SelectModelRequest) -> dict[str, Any]:
-    """Select Whisper model size — restarts faster-whisper Docker container."""
-    import asyncio as _aio
-
-    model_id = req.model  # tiny | base | small | medium
-
-    # 1. Save config
-    update_config("voice", "stt_model", model_id)
-
-    # 2. Restart selena-stt Docker container with new model
-    restart_script = (
-        "docker rm -f selena-stt 2>/dev/null; "
-        "docker run -d "
-        "  --name selena-stt "
-        "  --runtime nvidia "
-        "  --network host "
-        "  --restart unless-stopped "
-        "  -v /home/dotradepro/Downloads/SelenaCore/scripts:/app:ro "
-        "  dustynv/faster-whisper:r36.4.0-cu128-24.04 "
-        f"  python3 /app/faster-whisper-server.py --model {model_id} --port 9000"
-    )
-    try:
-        proc = await _aio.create_subprocess_exec(
-            "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
-            "bash", "-c", restart_script,
-            stdout=_aio.subprocess.PIPE,
-            stderr=_aio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.warning(
-                "selena-stt restart failed (rc=%d): %s",
-                proc.returncode, stderr.decode(errors="replace")[:200],
-            )
-        else:
-            logger.info("selena-stt restarted with model %s (CUDA)", model_id)
-    except Exception as exc:
-        logger.warning("Could not restart selena-stt: %s", exc)
-
-    # 3. Reload STT provider in voice_core
     try:
         from core.module_loader.sandbox import get_sandbox
         vc = get_sandbox().get_in_process_module("voice-core")
         if vc and hasattr(vc, "_stt_provider"):
-            # Wait for new container to start
-            await _aio.sleep(15)
-            from core.stt import create_stt_provider
-            if vc._stt_provider:
-                await vc._stt_provider.close()
-            vc._stt_provider = create_stt_provider()
-            logger.info("STT provider reloaded: %s", type(vc._stt_provider).__name__)
-    except Exception as exc:
-        logger.warning("STT provider reload failed: %s", exc)
-
-    logger.info("STT model set to %s", model_id)
-    return {"status": "ok", "model": model_id}
-
-
-# ── STT Settings ────────────────────────────────────────────────────
-
-STT_DEFAULTS = {
-    "beam_size": 5,
-    "temperature": 0.0,
-    "no_speech_threshold": 0.6,
-    "vad_filter": True,
-    "vad_min_silence_ms": 500,
-    "vad_speech_pad_ms": 400,
-    "vad_threshold": 0.5,
-    "condition_on_previous_text": False,
-}
-
-
-@router.get("/stt/settings")
-async def stt_settings_get() -> dict[str, Any]:
-    """Get current STT (Whisper) processing settings."""
-    saved = read_config().get("stt", {}).get("settings", {})
-    settings = {**STT_DEFAULTS, **saved}
-
-    # Show language hint from TTS primary (read-only info)
-    try:
-        lang = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("lang")
-        if lang:
-            settings["language"] = lang
+            p = vc._stt_provider
+            if p and hasattr(p, "status"):
+                st = p.status()
+                provider_name = "vosk"
+                ready = st.get("ready", False)
+                lang = st.get("lang", "en")
+                model = st.get("model_path", "")
+            elif p:
+                provider_name = type(p).__name__
     except Exception:
-        settings["language"] = "auto"
+        pass
 
-    return settings
-
-
-@router.post("/stt/settings")
-async def stt_settings_save(body: dict[str, Any]) -> dict[str, Any]:
-    """Save STT settings. Restarts STT container to apply."""
-    import asyncio as _aio
-
-    settings = {}
-    for key in STT_DEFAULTS:
-        if key in body:
-            val = body[key]
-            if isinstance(STT_DEFAULTS[key], bool):
-                settings[key] = bool(val)
-            elif isinstance(STT_DEFAULTS[key], int):
-                settings[key] = int(val)
-            elif isinstance(STT_DEFAULTS[key], float):
-                settings[key] = float(val)
-            else:
-                settings[key] = str(val)
-
-    update_config("stt", "settings", settings)
-
-    logger.info("STT settings saved (applied per-request): %s", settings)
-    return {"status": "ok", "settings": settings}
+    return {
+        "available": ready,
+        "provider": provider_name,
+        "lang": lang,
+        "model": model,
+    }
 
 
 # ================================================================== #
@@ -1374,7 +1221,7 @@ async def start_provision() -> dict[str, Any]:
     tasks: list[dict[str, Any]] = []
     tasks.append({"id": "apply_config", "label": "apply_config", "status": "pending"})
 
-    # Whisper models are managed by whisper.cpp server or faster-whisper (auto-downloaded)
+    # Vosk models are managed via /vosk/catalog API (download from alphacephei.com)
     # No manual download step needed
 
     # Check if TTS voice needs downloading

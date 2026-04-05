@@ -780,8 +780,7 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                 pass
 
         elif step == "stt_model" and data.get("model"):
-            update_config("voice", "stt_model", data["model"])
-            os.environ["WHISPER_MODEL"] = data["model"]
+            update_config("stt", "vosk", {"active_model": data["model"]})
 
         elif step == "tts_voice" and data.get("voice"):
             update_config("voice", "tts_voice", data["voice"])

@@ -250,10 +250,11 @@ def create_app() -> FastAPI:
     app.include_router(bus_routes.router, prefix=api_prefix)
 
     # UI routes (no auth — localhost only, protected by iptables)
-    from core.api.routes import voice_engines
+    from core.api.routes import voice_engines, vosk as vosk_routes
     app.include_router(ui.router, prefix="/api/ui")
     app.include_router(setup.router, prefix="/api/ui")
     app.include_router(voice_engines.router, prefix="/api/ui")
+    app.include_router(vosk_routes.router, prefix="/api/ui")
 
     return app
 

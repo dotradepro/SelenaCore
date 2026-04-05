@@ -2,7 +2,7 @@
 core/api/routes/voice_engines.py — Voice engine management API.
 
 Endpoints for:
-  - Whisper STT model management
+  - Vosk STT test endpoint
   - Piper binary install/uninstall/status + dynamic voice catalog
   - Ollama binary install/uninstall/start/stop/status
   - Cloud LLM provider management (key validation, model listing)
@@ -108,7 +108,7 @@ class SttTtsTestRequest(BaseModel):
 
 @router.post("/stt/test")
 async def stt_test(req: SttTestRequest) -> dict[str, Any]:
-    """Record audio from mic, run Whisper STT, return recognized text + audio as base64."""
+    """Record audio from mic, run Vosk STT, return recognized text + audio as base64."""
     import base64
     import struct
     import wave
@@ -154,7 +154,7 @@ async def stt_test(req: SttTestRequest) -> dict[str, Any]:
         samples = struct.unpack(f"<{len(raw) // 2}h", raw)
         peak = max(abs(s) for s in samples) / 32768.0 if samples else 0
 
-        # STT via provider abstraction (Whisper)
+        # STT via provider abstraction (Vosk)
         try:
             from core.stt import create_stt_provider
             provider = create_stt_provider()
@@ -305,10 +305,14 @@ from core.lang_utils import lang_code_to_name
 
 
 def _detect_lang_from_stt(stt_model: str) -> str:
-    """Detect language from STT config. Whisper auto-detects."""
-    if stt_model in ("tiny", "base", "small", "medium", "large"):
-        return "Auto-detect (Whisper)"
-    return "Auto-detect (Whisper)"
+    """Detect language from STT config."""
+    try:
+        from core.config_writer import read_config
+        lang = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("lang", "en")
+        lang_names = {"en": "English", "uk": "Ukrainian", "ru": "Russian"}
+        return lang_names.get(lang, lang)
+    except Exception:
+        return "English"
 
 
 def _extract_name_from_wake(wake_phrase: str) -> str:
@@ -1017,11 +1021,24 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
 
     update_config("voice", "tts", tts_cfg)
 
-    # If TTS language changed → translate custom prompts + reset defaults
+    # If TTS language changed → translate custom prompts + reset defaults + clear caches
     if new_lang and old_lang and new_lang != old_lang:
-        logger.info("TTS language changed: %s → %s, updating prompts", old_lang, new_lang)
+        logger.info("TTS language changed: %s → %s, updating prompts + clearing caches", old_lang, new_lang)
         _prompts_cache.clear()  # reload locale defaults for new lang
         asyncio.create_task(_translate_prompts_on_lang_change(old_lang, new_lang))
+        # Clear IntentRouter prompt cache (language-dependent)
+        try:
+            from system_modules.llm_engine.intent_router import get_intent_router
+            get_intent_router().refresh_system_prompt()
+            get_intent_router()._prompt_cache.clear()
+        except Exception:
+            pass
+        # Clear IntentCache (cached responses are in old language)
+        try:
+            from system_modules.llm_engine.intent_cache import get_intent_cache
+            asyncio.create_task(get_intent_cache().clear())
+        except Exception:
+            pass
 
     return {"status": "ok"}
 
@@ -1214,41 +1231,9 @@ _ollama_install = _InstallState()
 
 
 # ================================================================== #
-#  Whisper STT Status                                                  #
+#  Vosk STT Status (compat endpoint for voice_engines)                 #
+#  Full Vosk management API is in core/api/routes/vosk.py              #
 # ================================================================== #
-
-@router.get("/whisper/status")
-async def whisper_status() -> dict[str, Any]:
-    """Check Whisper STT provider status (faster-whisper CUDA or whisper.cpp)."""
-    import httpx as _httpx
-
-    host = "http://localhost:9000"
-    provider = "none"
-    device = "cpu"
-    model = ""
-    available = False
-
-    try:
-        resp = _httpx.get(f"{host}/", timeout=3.0)
-        available = resp.status_code == 200
-        try:
-            data = resp.json()
-            model = data.get("model", "")
-            provider = "faster-whisper"
-            device = "cuda"
-        except Exception:
-            provider = "whisper.cpp"
-    except Exception:
-        pass
-
-    return {
-        "available": available,
-        "provider": provider,
-        "device": device,
-        "model": model,
-        "auto_lang_detect": True,
-        "supported_languages": 99,
-    }
 
 
 # ================================================================== #
@@ -1893,22 +1878,8 @@ async def ollama_delete_model(req: OllamaModelRequest) -> dict[str, Any]:
 
 
 # ================================================================== #
-#  STT Model Catalog (Whisper)                                         #
+#  STT Model Catalog — moved to /api/ui/vosk/catalog                   #
 # ================================================================== #
-
-@router.get("/stt/catalog")
-async def stt_catalog() -> dict[str, Any]:
-    """Return available Whisper model sizes."""
-    return {
-        "models": [
-            {"id": "tiny",   "size_mb": 75,  "languages": 99, "description": "Fastest, lowest accuracy"},
-            {"id": "base",   "size_mb": 142, "languages": 99, "description": "Good balance for Raspberry Pi"},
-            {"id": "small",  "size_mb": 466, "languages": 99, "description": "Recommended for most hardware"},
-            {"id": "medium", "size_mb": 1530, "languages": 99, "description": "High accuracy, needs 4GB+ RAM"},
-        ],
-        "provider": "whisper",
-        "auto_lang_detect": True,
-    }
 
 
 
