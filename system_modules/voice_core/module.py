@@ -435,6 +435,25 @@ class VoiceCoreModule(SystemModule):
         except Exception as exc:
             logger.debug("Wake response failed: %s", exc)
 
+    @staticmethod
+    def _drain_pipe(proc: "subprocess.Popen[bytes]") -> None:
+        """Drain buffered audio from arecord pipe without blocking.
+
+        During TTS playback the microphone keeps recording into the pipe buffer.
+        Draining prevents stale audio (including TTS echo) from being fed to the
+        recognizer when command listening starts.
+        """
+        import select as _sel
+        fd = proc.stdout.fileno()
+        drained = 0
+        while _sel.select([fd], [], [], 0)[0]:
+            chunk = proc.stdout.read(BYTES_PER_CHUNK)
+            if not chunk:
+                break
+            drained += len(chunk)
+        if drained:
+            logger.debug("Drained %d bytes from arecord pipe after TTS", drained)
+
     def _idle_state(self) -> str:
         """Return the 'resting' state: IDLE if wake word enabled, LISTENING if disabled."""
         return STATE_IDLE if self._config.get("wake_word_enabled", True) else STATE_LISTENING
@@ -713,6 +732,10 @@ class VoiceCoreModule(SystemModule):
                             provider.reset_idle()
                             provider.reset_listening()
                             await self._speak_wake_response()
+                            # Drain pipe buffer accumulated during TTS playback
+                            # (prevents TTS echo from bleeding into command recognition)
+                            self._drain_pipe(proc)
+                            provider.reset_listening()
                             self._state = STATE_LISTENING
                             command_dispatched = False
                             speaker_buffer.clear()
