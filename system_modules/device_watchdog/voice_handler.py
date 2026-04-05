@@ -4,8 +4,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from core.i18n import t
-
 if TYPE_CHECKING:
     from .module import DeviceWatchdogModule
 
@@ -16,13 +14,11 @@ class WatchdogVoiceHandler:
     def __init__(self, module: "DeviceWatchdogModule") -> None:
         self._module = module
 
-    async def handle(self, intent: str, params: dict) -> None:
+    async def handle(self, intent: str, params: dict) -> dict | None:
         watchdog = self._module._watchdog
-        m = self._module
 
         if watchdog is None:
-            await m.speak(t("watchdog.not_running"))
-            return
+            return {"action": "not_running"}
 
         match intent:
             case "watchdog.status":
@@ -30,19 +26,15 @@ class WatchdogVoiceHandler:
                 total = summary.get("total", 0)
                 online = summary.get("online", 0)
                 offline = summary.get("offline", 0)
-                if total == 0:
-                    await m.speak(t("watchdog.no_devices"))
-                elif offline == 0:
-                    await m.speak(t("watchdog.all_online", total=total))
-                else:
-                    await m.speak(t("watchdog.status", online=online, total=total, offline=offline))
+                return {"action": "status", "total": total, "online": online, "offline": offline}
 
             case "watchdog.scan":
                 result = await watchdog.check_now()
                 total = result.get("total", 0)
                 online = result.get("online", 0)
                 offline = result.get("offline", 0)
-                await m.speak(t("watchdog.scan_done", online=online, offline=offline, total=total))
+                return {"action": "scan_done", "total": total, "online": online, "offline": offline}
 
             case _:
                 logger.debug("WatchdogVoiceHandler: unhandled intent '%s'", intent)
+                return None

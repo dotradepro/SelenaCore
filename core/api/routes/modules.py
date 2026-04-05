@@ -16,7 +16,6 @@ from pydantic import BaseModel
 
 from core.api.auth import verify_module_token
 from core.eventbus.bus import get_event_bus
-from core.i18n import t
 from core.eventbus.types import MODULE_INSTALLED, MODULE_REMOVED, MODULE_STARTED, MODULE_STOPPED
 from core.module_loader.sandbox import ModuleInfo, ModuleStatus, get_sandbox
 from core.module_loader.validator import validate_zip
@@ -174,9 +173,9 @@ async def stop_module(
     sandbox = get_sandbox()
     info = sandbox.get_module(name)
     if info is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     if info.type == "SYSTEM":
-        raise HTTPException(status_code=403, detail=t("api.cannot_stop_system"))
+        raise HTTPException(status_code=403, detail="Cannot stop SYSTEM modules")
 
     await sandbox.stop(name)
     bus = get_event_bus()
@@ -194,7 +193,7 @@ async def start_module(
     sandbox = get_sandbox()
     info = sandbox.get_module(name)
     if info is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
 
     await sandbox.start(name)
     bus = get_event_bus()
@@ -212,9 +211,9 @@ async def remove_module(
     sandbox = get_sandbox()
     info = sandbox.get_module(name)
     if info is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     if info.type == "SYSTEM":
-        raise HTTPException(status_code=403, detail=t("api.cannot_remove_system"))
+        raise HTTPException(status_code=403, detail="Cannot remove SYSTEM modules")
 
     await sandbox.remove(name)
     bus = get_event_bus()

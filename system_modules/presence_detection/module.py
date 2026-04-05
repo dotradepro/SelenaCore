@@ -103,7 +103,9 @@ class PresenceDetectionModule(SystemModule):
         if etype == "voice.intent":
             intent = payload.get("intent", "")
             if intent.startswith("presence."):
-                await self._voice.handle(intent, payload.get("params", {}))
+                ctx = await self._voice.handle(intent, payload.get("params", {}))
+                if ctx:
+                    await self.speak_action(intent, ctx)
         elif etype == "device.state_changed":
             await self._on_state_changed(event)
 
@@ -347,15 +349,7 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             return JSONResponse({"invites": svc._detector.list_invites()})
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = _MODULE_DIR / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings_page() -> HTMLResponse:
-            f = _MODULE_DIR / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
+        svc._register_html_routes(router, __file__)
 
         # ── PWA + Push endpoints ────────────────────────────────────
 

@@ -54,7 +54,9 @@ class DeviceWatchdogModule(SystemModule):
         payload = event.payload if hasattr(event, "payload") else event
         intent = payload.get("intent", "")
         if intent.startswith("watchdog.") and self._voice:
-            await self._voice.handle(intent, payload.get("params", {}))
+            ctx = await self._voice.handle(intent, payload.get("params", {}))
+            if ctx:
+                await self.speak_action(intent, ctx)
 
     async def start(self) -> None:
         self._watchdog = DeviceWatchdog(
@@ -110,14 +112,5 @@ class DeviceWatchdogModule(SystemModule):
                 svc._watchdog.update_config(svc._config)
             return svc._config
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings_page() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router

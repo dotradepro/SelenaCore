@@ -50,7 +50,9 @@ class AutomationEngineModule(SystemModule):
         if event.type == "voice.intent":
             intent = event.payload.get("intent", "")
             if intent.startswith("automation.") and self._voice:
-                await self._voice.handle(intent, event.payload.get("params", {}))
+                ctx = await self._voice.handle(intent, event.payload.get("params", {}))
+                if ctx:
+                    await self.speak_action(intent, ctx)
             return
         if self._engine:
             await self._engine.on_event(event.type, event.payload)
@@ -140,14 +142,5 @@ class AutomationEngineModule(SystemModule):
                 raise HTTPException(404, "Rule not found")
             return svc._engine.get_rule(rule_id).to_dict()
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings_page() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router

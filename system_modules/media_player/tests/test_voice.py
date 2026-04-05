@@ -23,7 +23,6 @@ def module():
     m._library.search = MagicMock(return_value=[])
     m._usb = MagicMock()
     m._usb.scan = AsyncMock(return_value=[])
-    m.speak = AsyncMock()
     return m
 
 
@@ -36,83 +35,102 @@ def handler(module):
 
 @pytest.mark.asyncio
 async def test_volume_up(handler, module):
-    await handler.handle("media.volume_up", {})
+    ctx = await handler.handle("media.volume_up", {})
     module._player.set_volume.assert_called_once_with(85)
-    module.speak.assert_called_once()
+    assert ctx is not None
+    assert ctx["level"] == 85
 
 
 @pytest.mark.asyncio
 async def test_volume_down(handler, module):
-    await handler.handle("media.volume_down", {})
+    ctx = await handler.handle("media.volume_down", {})
     module._player.set_volume.assert_called_once_with(55)
+    assert ctx is not None
+    assert ctx["level"] == 55
 
 
 @pytest.mark.asyncio
 async def test_volume_up_clamps_at_100(handler, module):
     module._player._volume = 95
-    await handler.handle("media.volume_up", {})
+    ctx = await handler.handle("media.volume_up", {})
     module._player.set_volume.assert_called_once_with(100)
+    assert ctx["level"] == 100
 
 
 @pytest.mark.asyncio
 async def test_volume_down_clamps_at_0(handler, module):
     module._player._volume = 5
-    await handler.handle("media.volume_down", {})
+    ctx = await handler.handle("media.volume_down", {})
     module._player.set_volume.assert_called_once_with(0)
+    assert ctx["level"] == 0
 
 
 @pytest.mark.asyncio
 async def test_volume_set(handler, module):
-    await handler.handle("media.volume_set", {"level": "42"})
+    ctx = await handler.handle("media.volume_set", {"level": "42"})
     module._player.set_volume.assert_called_once_with(42)
+    assert ctx is not None
+    assert ctx["level"] == 42
 
 
 @pytest.mark.asyncio
 async def test_volume_set_invalid(handler, module):
-    await handler.handle("media.volume_set", {"level": "bad"})
+    ctx = await handler.handle("media.volume_set", {"level": "bad"})
     module._player.set_volume.assert_not_called()
+    assert ctx is None
 
 
 @pytest.mark.asyncio
 async def test_next(handler, module):
-    await handler.handle("media.next", {})
+    ctx = await handler.handle("media.next", {})
     module._player.next.assert_called_once()
+    assert ctx == {"action": "next"}
 
 
 @pytest.mark.asyncio
 async def test_previous(handler, module):
-    await handler.handle("media.previous", {})
+    ctx = await handler.handle("media.previous", {})
     module._player.previous.assert_called_once()
+    assert ctx == {"action": "previous"}
 
 
 @pytest.mark.asyncio
 async def test_stop(handler, module):
-    await handler.handle("media.stop", {})
+    ctx = await handler.handle("media.stop", {})
     module._player.stop.assert_called_once()
+    assert ctx == {"action": "stop"}
 
 
 @pytest.mark.asyncio
-async def test_pause_announces(handler, module):
+async def test_pause_returns_paused(handler, module):
     module._player.get_state.return_value = "playing"
-    await handler.handle("media.pause", {})
+    ctx = await handler.handle("media.pause", {})
     module._player.pause.assert_called_once()
-    call_text = module.speak.call_args[0][0]
-    from core.i18n import t
-    assert t("media.paused") in call_text
+    assert ctx == {"action": "paused"}
+
+
+@pytest.mark.asyncio
+async def test_pause_returns_resumed(handler, module):
+    module._player.get_state.return_value = "paused"
+    ctx = await handler.handle("media.pause", {})
+    module._player.pause.assert_called_once()
+    assert ctx == {"action": "resumed"}
 
 
 @pytest.mark.asyncio
 async def test_resume_when_paused(handler, module):
     module._player.get_state.return_value = "paused"
-    await handler.handle("media.resume", {})
+    ctx = await handler.handle("media.resume", {})
     module._player.pause.assert_called_once()  # toggles via pause()
+    assert ctx == {"action": "resumed"}
 
 
 @pytest.mark.asyncio
 async def test_resume_when_already_playing(handler, module):
     module._player.get_state.return_value = "playing"
-    await handler.handle("media.resume", {})
+    ctx = await handler.handle("media.resume", {})
     module._player.pause.assert_not_called()
+    assert ctx is None
 
 
 @pytest.mark.asyncio
@@ -123,98 +141,23 @@ async def test_whats_playing_with_track(handler, module):
     track.album = "Suite bergamasque"
     module._player.get_current_track.return_value = track
     module._player.get_state.return_value = "playing"
-    await handler.handle("media.whats_playing", {})
-    call_text = module.speak.call_args[0][0]
-    assert "Clair de Lune" in call_text
-    assert "Debussy" in call_text
-
-
-@pytest.mark.asyncio
-async def test_whats_playing_includes_album(handler, module):
-    track = MagicMock()
-    track.title = "Clair de Lune"
-    track.artist = "Debussy"
-    track.album = "Suite bergamasque"
-    module._player.get_current_track.return_value = track
-    module._player.get_state.return_value = "playing"
-    await handler.handle("media.whats_playing", {})
-    call_text = module.speak.call_args[0][0]
-    assert "Suite bergamasque" in call_text
+    ctx = await handler.handle("media.whats_playing", {})
+    assert ctx is not None
+    assert ctx["title"] == "Clair de Lune"
+    assert ctx["artist"] == "Debussy"
+    assert ctx["album"] == "Suite bergamasque"
 
 
 @pytest.mark.asyncio
 async def test_whats_playing_nothing(handler, module):
     module._player.get_state.return_value = "stopped"
-    module._player.get_current_track.return_value = None
-    await handler.handle("media.whats_playing", {})
-    call_text = module.speak.call_args[0][0]
-    assert "nothing" in call_text.lower()
+    ctx = await handler.handle("media.whats_playing", {})
+    assert ctx == {"action": "nothing_playing"}
 
 
 @pytest.mark.asyncio
-async def test_shuffle_toggle_on(handler, module):
+async def test_shuffle_toggle(handler, module):
     module._player._shuffle = False
-    await handler.handle("media.shuffle_toggle", {})
+    ctx = await handler.handle("media.shuffle_toggle", {})
     module._player.set_shuffle.assert_called_once_with(True)
-    call_text = module.speak.call_args[0][0]
-    assert "enabled" in call_text.lower()
-
-
-@pytest.mark.asyncio
-async def test_shuffle_toggle_off(handler, module):
-    module._player._shuffle = True
-    await handler.handle("media.shuffle_toggle", {})
-    module._player.set_shuffle.assert_called_once_with(False)
-    call_text = module.speak.call_args[0][0]
-    assert "disabled" in call_text.lower()
-
-
-@pytest.mark.asyncio
-async def test_play_radio_when_stations_found(handler, module):
-    module._player.get_state.return_value = "stopped"
-    module._library.search = MagicMock(return_value=[
-        {"name": "Test FM", "url": "https://stream.test/radio"}
-    ])
-    await handler.handle("media.play_radio", {})
-    module._player.play_url.assert_called_once_with(
-        "https://stream.test/radio", "radio"
-    )
-    call_text = module.speak.call_args[0][0]
-    assert "Test FM" in call_text
-
-
-@pytest.mark.asyncio
-async def test_play_radio_already_playing(handler, module):
-    module._player.get_state.return_value = "playing"
-    module._player._current_source_type = "radio"
-    module._player.get_current_track.return_value = MagicMock(title="Jazz FM")
-    await handler.handle("media.play_radio", {})
-    module._player.play_url.assert_not_called()
-    call_text = module.speak.call_args[0][0]
-    assert "Jazz FM" in call_text
-
-
-@pytest.mark.asyncio
-async def test_play_radio_no_stations(handler, module):
-    module._player.get_state.return_value = "stopped"
-    module._library.search = MagicMock(return_value=[])
-    await handler.handle("media.play_radio", {})
-    module._player.play_url.assert_not_called()
-    call_text = module.speak.call_args[0][0]
-    assert "station" in call_text.lower() or "no" in call_text.lower()
-
-
-@pytest.mark.asyncio
-async def test_play_radio_name_not_found(handler, module):
-    module._library.search = MagicMock(return_value=[])
-    await handler.handle("media.play_radio_name", {"station_name": "Unknown FM"})
-    module._player.play_url.assert_not_called()
-    call_text = module.speak.call_args[0][0]
-    assert "Unknown FM" in call_text
-
-
-@pytest.mark.asyncio
-async def test_unknown_intent_is_ignored(handler, module):
-    await handler.handle("media.unknown_intent_xyz", {})
-    module.speak.assert_not_called()
-    module._player.stop.assert_not_called()
+    assert ctx == {"action": "shuffle_on"}

@@ -127,6 +127,42 @@ class SystemModule(ABC):
             if sub_id in self._direct_sub_ids:
                 self._direct_sub_ids.remove(sub_id)
 
+    async def speak_action(
+        self, intent: str, context: dict, *, timeout: float = 30.0,
+    ) -> None:
+        """Publish voice.speak with action context for LLM to generate TTS text.
+
+        Unlike speak(text), this does NOT pass pre-written text.  Instead it
+        sends a structured *action_context* dict that VoiceCore forwards to
+        LLM, which generates a natural-language response in the TTS language.
+        """
+        if self._bus is None:
+            return
+
+        speech_id = str(uuid.uuid4())
+        done = asyncio.Event()
+
+        async def _on_done(event: Any) -> None:
+            if event.payload.get("speech_id") == speech_id:
+                done.set()
+
+        sub_id = self.subscribe(["voice.speak_done"], _on_done)
+        try:
+            await self.publish("voice.speak", {
+                "action_context": {"intent": intent, **context},
+                "speech_id": speech_id,
+            })
+            await asyncio.wait_for(done.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.debug(
+                "speak_action() timeout intent=%s (speech_id=%s)", intent, speech_id,
+            )
+        finally:
+            if self._bus:
+                self._bus.unsubscribe_direct(sub_id)
+            if sub_id in self._direct_sub_ids:
+                self._direct_sub_ids.remove(sub_id)
+
     # ── DeviceRegistry helpers ────────────────────────────────────────────────
 
     @asynccontextmanager
@@ -190,6 +226,45 @@ class SystemModule(ABC):
             )
             await session.commit()
             return device.device_id
+
+    # ── Router helpers ──────────────────────────────────────────────────────
+
+    def _register_html_routes(self, router: "APIRouter", module_file: str) -> None:
+        """Register /widget and /settings HTML endpoints on *router*.
+
+        Call at the end of ``get_router()`` to avoid repeating the same
+        4-line pattern in every system module::
+
+            self._register_html_routes(router, __file__)
+        """
+        from pathlib import Path
+
+        from fastapi.responses import HTMLResponse
+
+        parent = Path(module_file).parent
+
+        @router.get("/widget", response_class=HTMLResponse)
+        async def _widget():
+            f = parent / "widget.html"
+            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
+
+        @router.get("/settings", response_class=HTMLResponse)
+        async def _settings_page():
+            f = parent / "settings.html"
+            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
+
+    def _register_health_endpoint(self, router: "APIRouter") -> None:
+        """Register a minimal ``GET /health`` on *router*.
+
+        Only use this for modules whose health is the simple
+        ``{"status": "ok", "module": name}`` pattern. Modules that add
+        extra status fields should keep their own endpoint.
+        """
+        svc = self
+
+        @router.get("/health")
+        async def _health():
+            return {"status": "ok", "module": svc.name}
 
     # ── Internal ──────────────────────────────────────────────────────────────
 

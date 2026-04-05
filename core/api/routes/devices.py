@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.auth import verify_module_token
+from core.api.dependencies import get_db_session
+from core.api.helpers import translate_keywords_to_en
 from core.eventbus.bus import get_event_bus
-from core.i18n import t
 from core.eventbus.types import DEVICE_REGISTERED, DEVICE_REMOVED, DEVICE_STATE_CHANGED
 from core.registry.models import Device
 from core.registry.service import DeviceNotFoundError, DeviceRegistry
@@ -81,55 +82,11 @@ class DeviceListResponse(BaseModel):
 
 # --- Dependency helpers ---
 
-async def get_db_session(request: Request) -> AsyncSession:
-    """Get database session from app state."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-    factory: async_sessionmaker = request.app.state.db_session_factory
-    async with factory() as session:
-        yield session
-
-
 async def get_registry(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
 ) -> DeviceRegistry:
     return DeviceRegistry(session)
-
-
-async def _translate_keywords_to_en(keywords: list[str]) -> list[str]:
-    """Auto-translate keywords to English using LLM. Falls back to original on error."""
-    if not keywords:
-        return []
-
-    # Check if keywords are already English (simple ASCII heuristic)
-    all_ascii = all(all(ord(c) < 128 for c in kw) for kw in keywords)
-    if all_ascii:
-        return [kw.lower().strip() for kw in keywords]
-
-    try:
-        from system_modules.llm_engine.ollama_client import get_ollama_client
-        client = get_ollama_client()
-        if not await client.is_available():
-            return [kw.lower().strip() for kw in keywords]
-
-        prompt = (
-            f"Translate these smart home keywords to English. "
-            f"Return ONLY a comma-separated list of translated words, nothing else.\n"
-            f"Keywords: {', '.join(keywords)}"
-        )
-        raw = await client.generate(
-            prompt=prompt,
-            system="You are a translator. Reply with ONLY comma-separated English words.",
-            temperature=0.0,
-        )
-        if raw:
-            translated = [w.strip().lower() for w in raw.split(",") if w.strip()]
-            if translated:
-                return translated
-    except Exception as exc:
-        logger.warning("Keywords translation failed: %s", exc)
-
-    return [kw.lower().strip() for kw in keywords]
 
 
 # --- Endpoints ---
@@ -171,7 +128,7 @@ async def create_device(
     # Auto-translate keywords to EN if provided
     keywords_en: list[str] = []
     if body.keywords:
-        keywords_en = await _translate_keywords_to_en(body.keywords)
+        keywords_en = await translate_keywords_to_en(body.keywords)
 
     factory: async_sessionmaker = request.app.state.db_session_factory
     async with factory() as session:
@@ -205,7 +162,7 @@ async def get_device(
 ) -> DeviceResponse:
     device = await registry.get(device_id)
     if device is None:
-        raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+        raise HTTPException(status_code=404, detail="Device not found")
     return DeviceResponse.from_orm(device)
 
 
@@ -224,11 +181,11 @@ async def update_device_state(
             try:
                 old_device = await registry.get(device_id)
                 if old_device is None:
-                    raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+                    raise HTTPException(status_code=404, detail="Device not found")
                 old_state = old_device.get_state()
                 device = await registry.update_state(device_id, body.state)
             except DeviceNotFoundError:
-                raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+                raise HTTPException(status_code=404, detail="Device not found")
         bus = get_event_bus()
         await bus.publish(
             type=DEVICE_STATE_CHANGED,
@@ -256,7 +213,7 @@ async def delete_device(
             try:
                 await registry.delete(device_id)
             except DeviceNotFoundError:
-                raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+                raise HTTPException(status_code=404, detail="Device not found")
     bus = get_event_bus()
     await bus.publish(
         type=DEVICE_REMOVED,

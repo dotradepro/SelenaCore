@@ -23,7 +23,6 @@ from pydantic import BaseModel
 
 from core.config import get_settings, get_yaml_config
 from core.config_writer import read_config, update_config, update_section, write_config
-from core.i18n import t
 from core.registry.models import Device
 from core.registry.service import DeviceNotFoundError, DeviceRegistry
 
@@ -380,7 +379,7 @@ async def ui_update_device_state(
 
             return _device_to_dict(device)
         except DeviceNotFoundError:
-            raise HTTPException(status_code=404, detail=t("api.device_not_found"))
+            raise HTTPException(status_code=404, detail="Device not found")
 
 
 # ---------- Modules ----------
@@ -417,9 +416,9 @@ async def ui_stop_module(name: str) -> dict[str, Any]:
     manager = get_plugin_manager()
     module = manager.get_module(name)
     if module is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     if module.type == "SYSTEM":
-        raise HTTPException(status_code=403, detail=t("api.cannot_stop_system"))
+        raise HTTPException(status_code=403, detail="Cannot stop SYSTEM modules")
     info = await manager.stop(name)
     broadcast_event("module.stopped", {"name": info.name})
     return {"name": info.name, "status": info.status.value}
@@ -431,7 +430,7 @@ async def ui_start_module(name: str) -> dict[str, Any]:
     manager = get_plugin_manager()
     module = manager.get_module(name)
     if module is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     info = await manager.start(name)
     broadcast_event("module.started", {"name": info.name})
     return {"name": info.name, "status": info.status.value}
@@ -443,9 +442,9 @@ async def ui_remove_module(name: str) -> None:
     manager = get_plugin_manager()
     module = manager.get_module(name)
     if module is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     if module.type == "SYSTEM":
-        raise HTTPException(status_code=403, detail=t("api.cannot_remove_system"))
+        raise HTTPException(status_code=403, detail="Cannot remove SYSTEM modules")
     await manager.remove(name)
     broadcast_event("module.removed", {"name": name})
 
@@ -529,7 +528,7 @@ def _get_module_or_404(name: str):
     manager = get_plugin_manager()
     module = manager.get_module(name)
     if module is None:
-        raise HTTPException(status_code=404, detail=t("api.module_not_found"))
+        raise HTTPException(status_code=404, detail="Module not found")
     return module
 
 
@@ -538,11 +537,11 @@ async def ui_module_widget(name: str) -> HTMLResponse:
     """Serve module widget HTML from module_dir."""
     module = _get_module_or_404(name)
     if not module.module_dir:
-        raise HTTPException(status_code=404, detail=t("api.module_dir_not_available"))
+        raise HTTPException(status_code=404, detail="Module directory not available")
     widget_file = module.manifest.get("ui", {}).get("widget", {}).get("file", "widget.html")
     fpath = Path(module.module_dir) / widget_file
     if not fpath.is_file():
-        raise HTTPException(status_code=404, detail=t("api.widget_not_found"))
+        raise HTTPException(status_code=404, detail="Widget file not found")
     return HTMLResponse(fpath.read_text(encoding="utf-8"))
 
 
@@ -551,11 +550,11 @@ async def ui_module_settings(name: str) -> HTMLResponse:
     """Serve module settings HTML from module_dir."""
     module = _get_module_or_404(name)
     if not module.module_dir:
-        raise HTTPException(status_code=404, detail=t("api.module_dir_not_available"))
+        raise HTTPException(status_code=404, detail="Module directory not available")
     settings_file = module.manifest.get("ui", {}).get("settings", "settings.html")
     fpath = Path(module.module_dir) / settings_file
     if not fpath.is_file():
-        raise HTTPException(status_code=404, detail=t("api.settings_not_found"))
+        raise HTTPException(status_code=404, detail="Settings file not found")
     return HTMLResponse(fpath.read_text(encoding="utf-8"))
 
 
@@ -564,11 +563,11 @@ async def ui_module_icon(name: str) -> Response:
     """Serve module icon file."""
     module = _get_module_or_404(name)
     if not module.module_dir:
-        raise HTTPException(status_code=404, detail=t("api.module_dir_not_available"))
+        raise HTTPException(status_code=404, detail="Module directory not available")
     icon_file = module.manifest.get("ui", {}).get("icon", "icon.svg")
     fpath = Path(module.module_dir) / icon_file
     if not fpath.is_file():
-        raise HTTPException(status_code=404, detail=t("api.icon_not_found"))
+        raise HTTPException(status_code=404, detail="Icon file not found")
     return Response(content=fpath.read_bytes(), media_type="image/svg+xml")
 
 
@@ -580,12 +579,12 @@ async def ui_module_proxy(name: str, path: str, request: Request) -> Response:
     """Proxy API requests to a bus-connected module via Module Bus."""
     module = _get_module_or_404(name)
     if module.status.value != "RUNNING":
-        raise HTTPException(status_code=503, detail=t("api.module_not_running"))
+        raise HTTPException(status_code=503, detail="Module is not running")
 
     from core.module_bus import get_module_bus
     bus = get_module_bus()
     if not bus.is_connected(name):
-        raise HTTPException(status_code=502, detail=t("api.module_unreachable"))
+        raise HTTPException(status_code=502, detail="Module unreachable")
 
     body_bytes = await request.body()
     body = None
@@ -609,10 +608,10 @@ async def ui_module_proxy(name: str, path: str, request: Request) -> Response:
             media_type="application/json",
         )
     except TimeoutError:
-        raise HTTPException(status_code=504, detail=t("api.module_unreachable"))
+        raise HTTPException(status_code=504, detail="Module unreachable")
     except Exception as exc:
         logger.warning("Module proxy error for %s: %s", name, exc)
-        raise HTTPException(status_code=502, detail=t("api.proxy_failed"))
+        raise HTTPException(status_code=502, detail="Proxy request failed")
 
 
 # ---------- Wizard ----------
@@ -689,7 +688,7 @@ async def ui_wizard_requirements() -> dict[str, Any]:
 async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     step_name = body.step
     if step_name not in WIZARD_STEPS:
-        raise HTTPException(status_code=400, detail=t("api.unknown_wizard_step", step=step_name))
+        raise HTTPException(status_code=400, detail=f"Unknown wizard step: {step_name}")
 
     # Mark step as done
     _wizard_state["steps"][step_name] = body.data

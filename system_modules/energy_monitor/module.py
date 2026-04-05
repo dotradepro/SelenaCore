@@ -67,7 +67,9 @@ class EnergyMonitorModule(SystemModule):
         payload = event.payload if hasattr(event, "payload") else event
         intent = payload.get("intent", "")
         if intent.startswith("energy.") and self._voice:
-            await self._voice.handle(intent, payload.get("params", {}))
+            ctx = await self._voice.handle(intent, payload.get("params", {}))
+            if ctx:
+                await self.speak_action(intent, ctx)
 
     async def _on_device_state_changed(self, event: Any) -> None:
         """Handle device.state_changed events — extract watts from configured sources."""
@@ -155,9 +157,7 @@ class EnergyMonitorModule(SystemModule):
         router = APIRouter()
         svc = self
 
-        @router.get("/health")
-        async def health() -> dict:
-            return {"status": "ok", "module": svc.name}
+        svc._register_health_endpoint(router)
 
         @router.post("/energy/reading", status_code=201)
         async def record_reading(req: ReadingRequest) -> JSONResponse:
@@ -232,14 +232,5 @@ class EnergyMonitorModule(SystemModule):
                 raise HTTPException(404, "Source not found")
             return JSONResponse({"ok": True, "enabled": req.enabled})
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router

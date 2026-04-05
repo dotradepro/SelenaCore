@@ -15,7 +15,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.api.auth import verify_module_token
-from core.i18n import t
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/secrets", tags=["secrets"])
@@ -76,7 +75,7 @@ async def oauth_start(
     if not client_id:
         raise HTTPException(
             status_code=400,
-            detail=t("api.oauth_not_configured", provider=body.provider),
+            detail=f"OAuth provider {body.provider} not configured",
         )
 
     try:
@@ -89,7 +88,7 @@ async def oauth_start(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("OAuth start failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=502, detail=t("api.oauth_start_failed"))
+        raise HTTPException(status_code=502, detail="Failed to start OAuth flow")
 
     return OAuthStartResponse(
         session_id=result["session_id"],
@@ -110,7 +109,7 @@ async def oauth_status(
 
     status = get_session_status(session_id)
     if status is None:
-        raise HTTPException(status_code=404, detail=t("api.oauth_not_found"))
+        raise HTTPException(status_code=404, detail="OAuth session not found")
 
     return OAuthStatusResponse(
         session_id=status["session_id"],
@@ -143,7 +142,7 @@ async def secrets_proxy(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error("Proxy request failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=502, detail=t("api.proxy_failed"))
+        raise HTTPException(status_code=502, detail="Proxy request failed")
 
     return ProxyResponse(
         status_code=result["status"],

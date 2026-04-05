@@ -163,7 +163,9 @@ class MediaPlayerModule(SystemModule):
         if etype == "voice.intent":
             intent = payload.get("intent", "")
             if intent.startswith("media."):
-                await self._voice.handle(intent, payload.get("params", {}))
+                ctx = await self._voice.handle(intent, payload.get("params", {}))
+                if ctx:
+                    await self.speak_action(intent, ctx)
 
     # ── Audio ducking (mute media during TTS) ───────────────────────────────────
 
@@ -233,16 +235,7 @@ class MediaPlayerModule(SystemModule):
         svc = self
 
         # ── Widget / Settings HTML ────────────────────────────────────────────
-
-        @router.get("/widget", response_class=HTMLResponse)
-        async def serve_widget() -> HTMLResponse:
-            path = MODULE_DIR / "widget.html"
-            return HTMLResponse(path.read_text(encoding="utf-8"))
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def serve_settings() -> HTMLResponse:
-            path = MODULE_DIR / "settings.html"
-            return HTMLResponse(path.read_text(encoding="utf-8"))
+        svc._register_html_routes(router, __file__)
 
         # ── Playback controls ─────────────────────────────────────────────────
 
@@ -650,7 +643,7 @@ class MediaPlayerModule(SystemModule):
                             pass
                 else:
                     # Translate name to English
-                    from core.api.routes.radio import _translate_to_en
+                    from core.api.helpers import translate_to_en as _translate_to_en
                     name_en = await _translate_to_en(name)
                     genre = station.get("genre", "")
                     genre_en = await _translate_to_en(genre) if genre else ""

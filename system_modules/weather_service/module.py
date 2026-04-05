@@ -76,7 +76,9 @@ class WeatherServiceModule(SystemModule):
         if etype == "voice.intent":
             intent = payload.get("intent", "")
             if intent.startswith("weather."):
-                await self._voice.handle(intent, payload.get("params", {}))
+                ctx = await self._voice.handle(intent, payload.get("params", {}))
+                if ctx:
+                    await self.speak_action(intent, ctx)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -86,9 +88,7 @@ class WeatherServiceModule(SystemModule):
         router = APIRouter()
         svc = self
 
-        @router.get("/health")
-        async def health() -> dict:
-            return {"status": "ok", "module": svc.name}
+        svc._register_health_endpoint(router)
 
         @router.get("/weather/current")
         async def get_current() -> JSONResponse:
@@ -164,14 +164,5 @@ class WeatherServiceModule(SystemModule):
                 logger.warning("Geocoding search failed: %s", exc)
                 return JSONResponse({"results": [], "error": str(exc)})
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router

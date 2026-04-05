@@ -16,8 +16,6 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.i18n import t
-
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ui/wizard", tags=["wizard"])
 
@@ -105,7 +103,7 @@ async def wizard_step(req: WizardStepRequest) -> dict:
             "step": req.step,
             "status": "ok",
             "next_step": None,
-            "message": t("wizard.onboarding_complete"),
+            "message": "Onboarding complete! Rebooting to apply settings.",
             **result,
         }
 
@@ -156,22 +154,22 @@ async def wizard_requirements() -> dict:
         "internet": {
             "required": False,
             "done": _internet_ok(),
-            "label": t("wizard.req_internet"),
+            "label": "Internet connection",
         },
         "admin_user": {
             "required": True,
             "done": admin_done,
-            "label": t("wizard.req_admin"),
+            "label": "Administrator account",
         },
         "device_name": {
             "required": False,
             "done": device_done,
-            "label": t("wizard.req_device_name"),
+            "label": "Device name",
         },
         "platform": {
             "required": False,
             "done": platform_done,
-            "label": t("wizard.req_platform"),
+            "label": "SmartHome LK Platform",
         },
     }
 
@@ -218,13 +216,13 @@ async def _step_wifi(data: dict, state: dict) -> dict:
         local_ip = socket.gethostbyname(socket.gethostname())
     except Exception:
         local_ip = "192.168.1.x"
-    return {"message": t("wizard.connected", ssid=ssid, ip=local_ip)}
+    return {"message": f"Connected to {ssid}. IP: {local_ip}"}
 
 
 async def _step_language(data: dict, state: dict) -> dict:
     lang = data.get("language", "en")
     logger.info("Wizard language: %s", lang)
-    return {"message": t("wizard.language_set", lang=lang)}
+    return {"message": f"Language set to {lang}"}
 
 
 async def _step_device_name(data: dict, state: dict) -> dict:
@@ -232,25 +230,25 @@ async def _step_device_name(data: dict, state: dict) -> dict:
     if not name:
         raise HTTPException(status_code=422, detail="'name' is required")
     logger.info("Wizard device_name: %s", name)
-    return {"message": t("wizard.device_name_set", name=name)}
+    return {"message": f"Device name set to '{name}'"}
 
 
 async def _step_timezone(data: dict, state: dict) -> dict:
     tz = data.get("timezone", "Europe/Moscow")
     logger.info("Wizard timezone: %s", tz)
-    return {"message": t("wizard.timezone_set", tz=tz)}
+    return {"message": f"Timezone set to {tz}"}
 
 
 async def _step_stt_model(data: dict, state: dict) -> dict:
     model = data.get("model", "base")
     logger.info("Wizard stt_model: %s", model)
-    return {"message": t("wizard.stt_model_set", model=model)}
+    return {"message": f"STT model set to {model}"}
 
 
 async def _step_tts_voice(data: dict, state: dict) -> dict:
     voice = data.get("voice", "ru_RU-irina-medium")
     logger.info("Wizard tts_voice: %s", voice)
-    return {"message": t("wizard.tts_voice_set", voice=voice)}
+    return {"message": f"TTS voice set to {voice}"}
 
 
 async def _step_admin_user(data: dict, state: dict) -> dict:
@@ -284,7 +282,7 @@ async def _step_admin_user(data: dict, state: dict) -> dict:
         raise HTTPException(status_code=500, detail=f"Failed to create user: {exc}") from exc
 
     return {
-        "message": t("wizard.owner_created", username=username),
+        "message": f"Owner account '{username}' created",
         "_state_updates": {"owner_user_id": user_id},
     }
 
@@ -300,7 +298,7 @@ async def _step_home_devices(data: dict, state: dict) -> dict:
     if not owner_user_id:
         # Wizard skipped admin_user — skip silently
         logger.warning("Wizard home_devices: owner_user_id not set — skipping auto-registration")
-        return {"message": t("wizard.skip_registration")}
+        return {"message": "Skipped device registration (no owner user)"}
 
     device_name = data.get("device_name", "Kiosk Screen")
 
@@ -325,7 +323,7 @@ async def _step_home_devices(data: dict, state: dict) -> dict:
         return {"message": "Device registration skipped due to error"}
 
     return {
-        "message": t("wizard.device_registered", name=device_name),
+        "message": f"Device '{device_name}' registered",
         "device_token": plain_token,
         "owner_user_id": owner_user_id,
     }
@@ -347,10 +345,10 @@ async def _step_platform(data: dict, state: dict) -> dict:
             env_path.write_text("\n".join(lines) + "\n")
         except Exception as e:
             logger.warning("Could not save platform config: %s", e)
-    return {"message": t("wizard.platform_saved")}
+    return {"message": "Platform credentials saved"}
 
 
 async def _step_import(data: dict, state: dict) -> dict:
     source = data.get("source", "manual")
     logger.info("Wizard import: source=%s", source)
-    return {"message": t("wizard.import_queued", source=source)}
+    return {"message": f"Import from {source} queued"}
