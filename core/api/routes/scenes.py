@@ -16,6 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.auth import verify_module_token
+from core.api.dependencies import get_db_session
+from core.api.helpers import get_entity_patterns, on_entity_changed, translate_to_en
 from core.registry.models import Scene
 
 logger = logging.getLogger(__name__)
@@ -64,56 +66,7 @@ class SceneListResponse(BaseModel):
     scenes: list[SceneResponse]
 
 
-# ── Dependency ───────────────────────────────────────────────────────────
-
-async def get_db_session(request: Request) -> AsyncSession:
-    factory = request.app.state.db_session_factory
-    async with factory() as session:
-        yield session
-
-
-# ── Auto-translate helper ────────────────────────────────────────────────
-
-async def _translate_to_en(text: str) -> str:
-    """Translate text to English via LLM. Returns original on failure."""
-    if not text:
-        return ""
-    if all(ord(c) < 128 for c in text):
-        return text
-    try:
-        from system_modules.llm_engine.ollama_client import get_ollama_client
-        client = get_ollama_client()
-        if not await client.is_available():
-            return text
-        raw = await client.generate(
-            prompt=f"Translate to English (single phrase, no quotes): {text}",
-            system="Reply with ONLY the translated text, nothing else.",
-            temperature=0.0,
-        )
-        return raw.strip().strip('"').strip("'") if raw else text
-    except Exception:
-        return text
-
-
-# ── Pattern helper ────────────────��─────────────────────────────────────
-
-async def _get_entity_patterns(factory, entity_ref: str) -> list[str]:
-    """Fetch generated English patterns for an entity from DB."""
-    try:
-        from core.registry.models import IntentPattern
-        async with factory() as session:
-            result = await session.execute(
-                select(IntentPattern.pattern).where(
-                    IntentPattern.entity_ref == entity_ref,
-                    IntentPattern.lang == "en",
-                )
-            )
-            return [r[0] for r in result.all()]
-    except Exception:
-        return []
-
-
-#── Endpoints ────────────────────────────────────────────────────────────
+# ── Endpoints ��────────────────────────────────��──────────────────────────
 
 @router.get("", response_model=SceneListResponse)
 async def list_scenes(
@@ -136,7 +89,7 @@ async def create_scene(
     _token: str = Depends(verify_module_token),
 ) -> SceneResponse:
     factory = request.app.state.db_session_factory
-    name_en = await _translate_to_en(body.name_user)
+    name_en = await translate_to_en(body.name_user)
 
     async with factory() as session:
         async with session.begin():
@@ -150,8 +103,8 @@ async def create_scene(
             session.add(scene)
         await session.refresh(scene)
 
-    await _on_entity_changed("scene", scene.id, "created")
-    patterns = await _get_entity_patterns(factory, f"scene:{scene.id}")
+    await on_entity_changed("scene", scene.id, "created")
+    patterns = await get_entity_patterns(factory, f"scene:{scene.id}")
     return SceneResponse.from_orm(scene, patterns=patterns)
 
 
@@ -174,7 +127,7 @@ async def update_scene(
 
             if body.name_user is not None:
                 scene.name_user = body.name_user
-                scene.name_en = await _translate_to_en(body.name_user)
+                scene.name_en = await translate_to_en(body.name_user)
             if body.actions is not None:
                 scene.set_actions(body.actions)
             if body.trigger is not None:
@@ -184,8 +137,8 @@ async def update_scene(
 
         await session.refresh(scene)
 
-    await _on_entity_changed("scene", scene.id, "updated")
-    patterns = await _get_entity_patterns(factory, f"scene:{scene.id}")
+    await on_entity_changed("scene", scene.id, "updated")
+    patterns = await get_entity_patterns(factory, f"scene:{scene.id}")
     return SceneResponse.from_orm(scene, patterns=patterns)
 
 
@@ -206,41 +159,5 @@ async def delete_scene(
                 raise HTTPException(status_code=404, detail="Scene not found")
             await session.delete(scene)
 
-    await _on_entity_changed("scene", scene_id, "deleted")
+    await on_entity_changed("scene", scene_id, "deleted")
     return Response(status_code=204)
-
-
-async def _on_entity_changed(entity_type: str, entity_id: int, action: str) -> None:
-    """Generate/delete patterns + invalidate caches after entity data change."""
-    try:
-        from system_modules.llm_engine.pattern_generator import get_pattern_generator
-        gen = get_pattern_generator()
-        if action == "deleted":
-            await gen.delete_for_entity(entity_type, entity_id)
-        else:
-            await gen.generate_for_entity(entity_type, entity_id)
-    except Exception as exc:
-        logger.debug("Pattern generation failed: %s", exc)
-
-    try:
-        from system_modules.llm_engine.intent_compiler import get_intent_compiler
-        await get_intent_compiler().full_reload()
-    except Exception:
-        pass
-
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
-
-    try:
-        from core.eventbus.bus import get_event_bus
-        from core.eventbus.types import REGISTRY_ENTITY_CHANGED
-        await get_event_bus().publish(
-            type=REGISTRY_ENTITY_CHANGED,
-            source="core.api",
-            payload={"entity_type": entity_type, "entity_id": entity_id, "action": action},
-        )
-    except Exception:
-        pass

@@ -16,13 +16,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.api.auth import verify_module_token
+from core.api.dependencies import get_db_session
+from core.api.helpers import get_entity_patterns, on_entity_changed, translate_to_en
 from core.registry.models import RadioStation
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/radio", tags=["radio"])
 
 
-# ── Pydantic schemas ─────────────────────────────────────────────────────
+# ── Pydantic schemas ─────��─────────────────���─────────────────────────────
 
 class RadioStationCreate(BaseModel):
     name_user: str = Field(..., min_length=1, max_length=255)
@@ -78,57 +80,7 @@ class RadioStationListResponse(BaseModel):
     stations: list[RadioStationResponse]
 
 
-# ── Dependency ───────────────────────────────────────────────────────────
-
-async def get_db_session(request: Request) -> AsyncSession:
-    factory = request.app.state.db_session_factory
-    async with factory() as session:
-        yield session
-
-
-# ── Auto-translate helper ────────────────────────────────────────────────
-
-async def _translate_to_en(text: str) -> str:
-    """Translate text to English via LLM. Returns original on failure."""
-    if not text:
-        return ""
-    # ASCII check — already English
-    if all(ord(c) < 128 for c in text):
-        return text
-    try:
-        from system_modules.llm_engine.ollama_client import get_ollama_client
-        client = get_ollama_client()
-        if not await client.is_available():
-            return text
-        raw = await client.generate(
-            prompt=f"Translate to English (single phrase, no quotes): {text}",
-            system="Reply with ONLY the translated text, nothing else.",
-            temperature=0.0,
-        )
-        return raw.strip().strip('"').strip("'") if raw else text
-    except Exception:
-        return text
-
-
-# ── Pattern helper ──────────────────────────────────────────────────────
-
-async def _get_entity_patterns(factory, entity_ref: str) -> list[str]:
-    """Fetch generated English patterns for an entity from DB."""
-    try:
-        from core.registry.models import IntentPattern
-        async with factory() as session:
-            result = await session.execute(
-                select(IntentPattern.pattern).where(
-                    IntentPattern.entity_ref == entity_ref,
-                    IntentPattern.lang == "en",
-                )
-            )
-            return [r[0] for r in result.all()]
-    except Exception:
-        return []
-
-
-# ── Endpoints ────────────────────────────────────────────────────────────
+# ── Endpoints ────────────────────────────────────���───────────────────────
 
 @router.get("", response_model=RadioStationListResponse)
 async def list_stations(
@@ -159,9 +111,8 @@ async def create_station(
     _token: str = Depends(verify_module_token),
 ) -> RadioStationResponse:
     factory = request.app.state.db_session_factory
-    # Auto-translate
-    name_en = await _translate_to_en(body.name_user)
-    genre_en = await _translate_to_en(body.genre_user)
+    name_en = await translate_to_en(body.name_user)
+    genre_en = await translate_to_en(body.genre_user)
 
     async with factory() as session:
         async with session.begin():
@@ -179,9 +130,9 @@ async def create_station(
             session.add(station)
         await session.refresh(station)
 
-    await _on_entity_changed("radio_station", station.id, "created")
+    await on_entity_changed("radio_station", station.id, "created")
 
-    patterns = await _get_entity_patterns(factory, f"radio_station:{station.id}")
+    patterns = await get_entity_patterns(factory, f"radio_station:{station.id}")
     return RadioStationResponse.from_orm(station, patterns=patterns)
 
 
@@ -204,12 +155,12 @@ async def update_station(
 
             if body.name_user is not None:
                 station.name_user = body.name_user
-                station.name_en = await _translate_to_en(body.name_user)
+                station.name_en = await translate_to_en(body.name_user)
             if body.stream_url is not None:
                 station.stream_url = body.stream_url
             if body.genre_user is not None:
                 station.genre_user = body.genre_user
-                station.genre_en = await _translate_to_en(body.genre_user)
+                station.genre_en = await translate_to_en(body.genre_user)
             if body.country is not None:
                 station.country = body.country
             if body.logo_url is not None:
@@ -221,8 +172,8 @@ async def update_station(
 
         await session.refresh(station)
 
-    await _on_entity_changed("radio_station", station.id, "updated")
-    patterns = await _get_entity_patterns(factory, f"radio_station:{station.id}")
+    await on_entity_changed("radio_station", station.id, "updated")
+    patterns = await get_entity_patterns(factory, f"radio_station:{station.id}")
     return RadioStationResponse.from_orm(station, patterns=patterns)
 
 
@@ -243,41 +194,5 @@ async def delete_station(
                 raise HTTPException(status_code=404, detail="Station not found")
             await session.delete(station)
 
-    await _on_entity_changed("radio_station", station_id, "deleted")
+    await on_entity_changed("radio_station", station_id, "deleted")
     return Response(status_code=204)
-
-
-async def _on_entity_changed(entity_type: str, entity_id: int, action: str) -> None:
-    """Generate/delete patterns + invalidate caches after entity data change."""
-    try:
-        from system_modules.llm_engine.pattern_generator import get_pattern_generator
-        gen = get_pattern_generator()
-        if action == "deleted":
-            await gen.delete_for_entity(entity_type, entity_id)
-        else:
-            await gen.generate_for_entity(entity_type, entity_id)
-    except Exception as exc:
-        logger.debug("Pattern generation failed: %s", exc)
-
-    try:
-        from system_modules.llm_engine.intent_compiler import get_intent_compiler
-        await get_intent_compiler().full_reload()
-    except Exception:
-        pass
-
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
-
-    try:
-        from core.eventbus.bus import get_event_bus
-        from core.eventbus.types import REGISTRY_ENTITY_CHANGED
-        await get_event_bus().publish(
-            type=REGISTRY_ENTITY_CHANGED,
-            source="core.api",
-            payload={"entity_type": entity_type, "entity_id": entity_id, "action": action},
-        )
-    except Exception:
-        pass

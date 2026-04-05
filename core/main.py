@@ -249,6 +249,10 @@ def create_app() -> FastAPI:
     from core.api.routes import bus as bus_routes
     app.include_router(bus_routes.router, prefix=api_prefix)
 
+    # Shared assets for widget iframes (no auth)
+    from core.api.routes import shared_assets
+    app.include_router(shared_assets.router, prefix="/api")
+
     # UI routes (no auth — localhost only, protected by iptables)
     from core.api.routes import voice_engines, vosk as vosk_routes
     app.include_router(ui.router, prefix="/api/ui")

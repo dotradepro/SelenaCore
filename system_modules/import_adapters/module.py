@@ -58,9 +58,7 @@ class ImportAdaptersModule(SystemModule):
         router = APIRouter()
         svc = self
 
-        @router.get("/health")
-        async def health() -> dict:
-            return {"status": "ok", "module": svc.name}
+        svc._register_health_endpoint(router)
 
         @router.get("/import/status")
         async def get_status() -> JSONResponse:
@@ -95,14 +93,5 @@ class ImportAdaptersModule(SystemModule):
             result = await svc._manager.import_hue(req.bridge_ip, req.username, req.dry_run)
             return JSONResponse(result)
 
-        @router.get("/widget", response_class=HTMLResponse)
-        async def widget() -> HTMLResponse:
-            f = Path(__file__).parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
-
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router

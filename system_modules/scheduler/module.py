@@ -85,9 +85,7 @@ class SchedulerModule(SystemModule):
         router = APIRouter()
         svc = self
 
-        @router.get("/health")
-        async def health() -> dict:
-            return {"status": "ok", "module": svc.name}
+        svc._register_health_endpoint(router)
 
         @router.get("/jobs")
         async def list_jobs() -> dict:
@@ -121,9 +119,5 @@ class SchedulerModule(SystemModule):
                 svc._config[k] = v
             return svc._config
 
-        @router.get("/settings", response_class=HTMLResponse)
-        async def settings_page() -> HTMLResponse:
-            f = Path(__file__).parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
-
+        svc._register_html_routes(router, __file__)
         return router
