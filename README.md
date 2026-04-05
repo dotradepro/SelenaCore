@@ -101,7 +101,7 @@ SelenaCore runs as a single FastAPI application on port 7070 with two types of m
 └───────────────────────────────────────────────────────┘
 ```
 
-**System modules** (22 built-in) run in-process via `importlib` — zero network overhead, direct EventBus and database access.
+**System modules** (21 built-in) run in-process via `importlib` — zero network overhead, direct EventBus and database access.
 
 **User modules** run in Docker containers and connect to core through the **WebSocket Module Bus** at `ws://core:7070/api/v1/bus`. No individual ports per module — all communication goes through a single bus endpoint.
 
@@ -119,7 +119,7 @@ selena-core/
     api/routes/              # REST API endpoints
     cloud_sync/              # Platform sync (HMAC)
     i18n.py                  # Internationalization
-  system_modules/            # 22 built-in in-process modules
+  system_modules/            # 21 built-in in-process modules
     voice_core/              # STT (Whisper), TTS (Piper), wake-word
     llm_engine/              # Ollama, Fast Matcher, Intent Router
     ui_core/                 # Web UI server (:80)

@@ -252,7 +252,8 @@ function AudioSettings() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device: selectedOutput }),
       });
-    } catch { /* ignore */ }
+      showToast(t('settings.testOutputDone'));
+    } catch { showToast(t('common.error'), 'error'); }
     setTestingOutput(false);
   };
 
@@ -296,9 +297,11 @@ function AudioSettings() {
       const data = await res.json();
       if (data.peak_level !== undefined) setMicLevel(data.peak_level);
       setPlayingBack(false);
+      showToast(t('settings.testInputDone'));
     } catch {
       clearInterval(timer);
       setCountdown(0);
+      showToast(t('common.error'), 'error');
     }
     setTestingInput(false);
   };
@@ -474,6 +477,7 @@ function AudioSources() {
 
 function NetworkSettings() {
   const { t } = useTranslation();
+  const showToast = useStore(s => s.showToast);
   const [netStatus, setNetStatus] = useState<any>(null);
   const [wifiNetworks, setWifiNetworks] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -507,8 +511,9 @@ function NetworkSettings() {
         await new Promise(r => setTimeout(r, 2000));
         await fetchStatus();
         if (!wifiEnabled) scanWifi();
+        showToast(t('settings.saved'));
       }
-    } catch { /* ignore */ }
+    } catch { showToast(t('common.error'), 'error'); }
     setToggling(false);
   };
 
@@ -537,9 +542,10 @@ function NetworkSettings() {
       } else {
         setPassword('');
         setSelectedSsid('');
+        showToast(t('settings.wifiConnected'));
         await fetchStatus();
       }
-    } catch (e: any) { setConnectError(e.message); }
+    } catch (e: any) { setConnectError(e.message); showToast(e.message, 'error'); }
     setConnecting(null);
   };
 
@@ -704,6 +710,7 @@ function UsersSettings() {
 
 function SystemSettings() {
   const { t } = useTranslation();
+  const showToast = useStore(s => s.showToast);
   const [autoStopRam, setAutoStopRam] = useState(true);
   const [stopLlmTemp, setStopLlmTemp] = useState(true);
   const [resetting, setResetting] = useState(false);
@@ -714,7 +721,8 @@ function SystemSettings() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ section: 'system', key, value }),
       });
-    } catch { /* ignore */ }
+      showToast(t('settings.saved'));
+    } catch { showToast(t('common.error'), 'error'); }
   };
 
   const resetWizard = async () => {

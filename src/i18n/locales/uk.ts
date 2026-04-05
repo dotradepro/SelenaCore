@@ -341,6 +341,10 @@ const uk = {
             languageChanged: 'Мову змінено',
             audioSaved: 'Аудіо налаштування збережено',
             audioSaveError: 'Не вдалося зберегти аудіо налаштування',
+            saved: 'Налаштування збережено',
+            wifiConnected: 'Підключено до Wi-Fi',
+            testOutputDone: 'Тест аудіо завершено',
+            testInputDone: 'Тест мікрофона завершено',
         },
 
         // ── Users & Presence ──
@@ -689,6 +693,7 @@ const uk = {
             killConfirm: 'Завершити процес «{{name}}» (PID {{pid}})?',
             killSuccess: 'Сигнал надіслано PID {{pid}}',
             killFailed: 'Помилка: {{error}}',
+            processKilled: 'Процес "{{name}}" завершено',
             refresh: 'Оновити',
             loadProcesses: 'Показати процеси',
         },

@@ -341,6 +341,10 @@ const en = {
             languageChanged: 'Language changed',
             audioSaved: 'Audio settings saved',
             audioSaveError: 'Failed to save audio settings',
+            saved: 'Settings saved',
+            wifiConnected: 'Connected to Wi-Fi',
+            testOutputDone: 'Audio test complete',
+            testInputDone: 'Mic test complete',
         },
 
         // ── Users & Presence ──
@@ -689,6 +693,7 @@ const en = {
             killConfirm: 'Kill process "{{name}}" (PID {{pid}})?',
             killSuccess: 'Signal sent to PID {{pid}}',
             killFailed: 'Failed to kill: {{error}}',
+            processKilled: 'Process "{{name}}" terminated',
             refresh: 'Refresh',
             loadProcesses: 'Load processes',
         },

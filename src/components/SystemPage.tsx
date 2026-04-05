@@ -60,20 +60,22 @@ export default function SystemPage() {
     loadProcesses(sort);
   }, [loadProcesses]);
 
+  const showToast = useStore(s => s.showToast);
   const handleKill = useCallback(async (proc: ProcessInfo) => {
     if (!confirm(t('systemInfo.killConfirm', { name: proc.name, pid: proc.pid }))) return;
     try {
       const resp = await fetch(`/api/ui/system/processes/${proc.pid}/kill`, { method: 'POST' });
       if (resp.ok) {
+        showToast(t('systemInfo.processKilled', { name: proc.name }));
         loadProcesses();
       } else {
         const err = await resp.json().catch(() => ({ detail: 'Unknown error' }));
-        alert(t('systemInfo.killFailed', { error: err.detail }));
+        showToast(t('systemInfo.killFailed', { error: err.detail }), 'error');
       }
     } catch (e: unknown) {
-      alert(t('systemInfo.killFailed', { error: String(e) }));
+      showToast(t('systemInfo.killFailed', { error: String(e) }), 'error');
     }
-  }, [loadProcesses, t]);
+  }, [loadProcesses, t, showToast]);
 
   const ramPct = stats ? Math.round((stats.ramUsedMb / stats.ramTotalMb) * 100) : 0;
   const swapPct = stats && stats.swapTotalMb > 0 ? Math.round((stats.swapUsedMb / stats.swapTotalMb) * 100) : 0;
