@@ -136,7 +136,7 @@
   "api.tts_failed": "Помилка синтезу TTS",
   "api.stt_error": "Помилка STT: {error}",
   "api.piper_not_installed": "Piper TTS не встановлено",
-  "api.stt_not_available": "STT недоступний — встановіть Whisper",
+  "api.stt_not_available": "STT недоступний — завантажте модель Vosk",
   "api.ollama_not_running": "Сервер Ollama не запущено",
   "api.ollama_not_available": "Сервер Ollama недоступний",
   "api.llamacpp_not_running": "Сервер llama.cpp не запущено",

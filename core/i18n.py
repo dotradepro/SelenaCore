@@ -57,7 +57,7 @@ def t(key: str, lang: str | None = None, **kwargs: Any) -> str:
         Returns the raw *key* if missing from all locales.
     """
     if lang is None:
-        lang = get_system_lang()
+        lang = get_voice_lang()
 
     translations = _get_locale(lang)
     value = translations.get(key)
@@ -81,7 +81,11 @@ def t(key: str, lang: str | None = None, **kwargs: Any) -> str:
 
 
 def get_system_lang() -> str:
-    """Read ``system.language`` from core.yaml (cached for 10 s)."""
+    """Read ``system.language`` from core.yaml (cached for 10 s).
+
+    Used for UI translations (frontend widgets, settings pages).
+    For voice/TTS responses use :func:`get_voice_lang` instead.
+    """
     global _lang_cache, _lang_cache_ts
 
     now = time.monotonic()
@@ -96,6 +100,35 @@ def get_system_lang() -> str:
 
     _lang_cache = lang
     _lang_cache_ts = now
+    return lang
+
+
+_voice_lang_cache: str | None = None
+_voice_lang_cache_ts: float = 0.0
+
+
+def get_voice_lang() -> str:
+    """Read ``voice.tts.primary.lang`` — the TTS output language.
+
+    Used by voice handlers for ``t()`` translations that will be spoken aloud.
+    Falls back to :func:`get_system_lang` if TTS lang is not configured.
+    """
+    global _voice_lang_cache, _voice_lang_cache_ts
+
+    now = time.monotonic()
+    if _voice_lang_cache is not None and (now - _voice_lang_cache_ts) < _LANG_CACHE_TTL:
+        return _voice_lang_cache
+
+    try:
+        from core.config_writer import read_config
+        lang = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("lang", "")
+        if not lang:
+            lang = get_system_lang()
+    except Exception:
+        lang = get_system_lang()
+
+    _voice_lang_cache = lang
+    _voice_lang_cache_ts = now
     return lang
 
 
@@ -128,6 +161,11 @@ def register_module_locales(module_name: str, locales_dir: Path) -> None:
         logger.info(
             "i18n: registered locales for '%s' from %s", module_name, locales_dir,
         )
+
+
+def locale_exists(lang: str) -> bool:
+    """Check if a locale file exists for the given language code."""
+    return (_LOCALES_DIR / f"{lang}.json").is_file()
 
 
 def reload_locales() -> None:

@@ -166,7 +166,7 @@ modules:
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "small"
+  stt_model: "vosk-model-small-uk"
   stt_silence_timeout: 1.0
   rephrase_enabled: false
   output_volume: 50               # Master TTS playback volume (0-150%)
@@ -200,7 +200,7 @@ voice:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `wake_word_sensitivity` | `float` | `0.5` | Sensitivity threshold for wake word detection (0.0-1.0). |
-| `stt_model` | `str` | `small` | Whisper STT model size: `tiny`, `base`, `small`, `medium`. |
+| `stt_model` | `str` | `vosk-model-small-uk` | Vosk STT model name (downloaded from alphacephei.com/vosk/models). |
 | `stt_silence_timeout` | `float` | `1.0` | Seconds of silence before processing command (0.5-5.0). |
 | `rephrase_enabled` | `bool` | `false` | LLM rephrase for module responses. Adds latency. |
 | `output_volume` | `int` | `100` | Master TTS output volume 0-150%. Software PCM scaling. |

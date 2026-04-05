@@ -124,8 +124,8 @@ systemd (multi-user.target)
   │                 └── xinit → Xorg + Chromium кіоск
   ├── docker (контейнер selena-core)
   │     └── FastAPI :7070 + UI :80
-  ├── whisper-server.service
-  │     └── whisper.cpp :9000
+  ├── vosk-server.service
+  │     └── Vosk STT (нативно, без контейнера)
   └── pulseaudio (сесія користувача)
         └── аудіо I/O для голосу
 ```

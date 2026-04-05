@@ -6,7 +6,7 @@
 Мікрофон (arecord, ALSA)
      |
      v
-  Whisper STT (авто-визначення мови) --> текст + stt_lang
+  Vosk STT (мова з конфігу, для кожної моделі) --> текст + stt_lang
      |
      v
   Intent Router
@@ -38,7 +38,7 @@
 
 | Поняття | Джерело | Призначення |
 |---------|---------|-------------|
-| `stt_lang` | Whisper авто-визначення | Regex matching, ключ кешу |
+| `stt_lang` | Мова моделі Vosk (з конфігу) | Regex matching, ключ кешу |
 | `tts_lang` | Конфіг Piper `voice.tts.primary.lang` | Мова відповіді, вибір голосу |
 
 Правила:
@@ -47,30 +47,32 @@
 - EventBus payload: intent/entity/location/params завжди **англійською**
 - Текст відповіді: мовою `tts_lang`
 
-## STT -- Whisper
+## STT -- Vosk
 
-Розпізнавання мовлення через провайдери Whisper (авто-визначення):
+Розпізнавання мовлення через Vosk (нативно, без контейнера). Vosk використовує потокове розпізнавання (чанк за чанком) замість пакетної транскрипції, видаючи результати по мірі отримання аудіо.
 
-| Платформа | Провайдер | Модель | Затримка |
-|-----------|-----------|--------|----------|
-| Jetson Orin | whisper_cpp (Wyoming) | small | ~200мс |
-| Linux CUDA | faster_whisper | small | ~150мс |
-| Raspberry Pi 5 | faster_whisper (CPU) | small | ~600мс |
-| Raspberry Pi 4 | faster_whisper (CPU) | base | ~800мс |
-| Будь-що + інтернет | OpenAI Whisper API | - | ~500мс |
+| Платформа | Модель | Затримка |
+|-----------|--------|----------|
+| Jetson Orin | vosk-model-small-uk | ~150мс |
+| Linux x86_64 | vosk-model-small-uk | ~100мс |
+| Raspberry Pi 5 | vosk-model-small-uk | ~300мс |
+| Raspberry Pi 4 | vosk-model-small-uk | ~500мс |
+
+Моделі завантажуються з [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) та зберігаються локально. Для кожної мови потрібна окрема модель.
 
 Конфігурація:
 
 ```yaml
 stt:
-  provider: "auto"
-  whisper_cpp:
-    host: "http://localhost:10300"
-    protocol: "wyoming"
-  faster_whisper:
-    model: "small"
-    device: "auto"
+  provider: vosk
+  vosk:
+    models_dir: /var/lib/selena/models/vosk
+    active_model: vosk-model-small-uk
 ```
+
+Vosk також підтримує **режим граматики** для виявлення слова активації -- обмежений словник, що покращує точність та зменшує навантаження CPU під час постійного прослуховування.
+
+Мова визначається активною моделлю (окремі моделі для кожної мови, не авто-визначення з мовлення).
 
 ## TTS -- Dual Piper (piper1-gpl)
 
@@ -143,12 +145,12 @@ ai:
 
 ```
 OS headless              0.65 ГБ
-Whisper small CUDA       0.45 ГБ
+Vosk small model         0.05 ГБ
 SelenaCore + модулі      0.30 ГБ
 qwen2.5:3b (Ollama Q4)  2.00 ГБ
 Piper uk medium (GPU)    0.065 ГБ
 Piper en low (CPU)       0.005 ГБ
 -----------------------------------------
-Разом:                   3.47 ГБ
-Вільно:                  4.53 ГБ
+Разом:                   3.07 ГБ
+Вільно:                  4.93 ГБ
 ```

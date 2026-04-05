@@ -659,7 +659,7 @@ SelenaCore ships with 22 system modules:
 
 | Module | Description |
 |---|---|
-| `voice_core` | STT (Whisper), TTS (Piper), wake word detection |
+| `voice_core` | STT (Vosk), TTS (Piper), wake word detection |
 | `llm_engine` | Ollama LLM client, intent router, fast matcher |
 | `ui_core` | Web dashboard UI server (:80) |
 | `user_manager` | User profiles, authentication, biometrics |

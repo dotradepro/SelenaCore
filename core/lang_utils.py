@@ -7,7 +7,7 @@ with fallback to code.capitalize().
 """
 from __future__ import annotations
 
-# Minimal built-in mapping (covers Whisper's most common outputs).
+# Minimal built-in mapping (covers common language name→code conversions).
 # NOT a hardcoded limit — unknown codes fall back to code.capitalize()
 # which works for most ISO 639-1 codes (e.g. "fr" → "Fr" is wrong,
 # but LLMs understand it fine as a language hint).

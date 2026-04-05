@@ -279,7 +279,7 @@ ls /var/log/selena/
 | Шлях | Вміст |
 |------|-------|
 | `/var/lib/selena/` | База даних SQLite, голосові моделі, резервні копії |
-| `/var/lib/selena/models/whisper/` | Моделі Whisper STT |
+| `/var/lib/selena/models/vosk/` | Моделі Vosk STT |
 | `/var/lib/selena/models/piper/` | Моделі Piper TTS |
 | `/secure/` | Зашифровані токени, AES-ключі |
 | `/secure/module_tokens/` | Токени автентифікації модулів |

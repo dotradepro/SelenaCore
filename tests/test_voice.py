@@ -10,7 +10,7 @@ import pytest
 # ── STT Provider tests ──────────────────────────────────────────────────────
 
 class TestSTTProvider:
-    """Test core/stt/ provider abstraction."""
+    """Test core/stt/ provider abstraction (Vosk backend)."""
 
     def test_import_stt_package(self) -> None:
         from core.stt import STTProvider, STTResult, create_stt_provider
@@ -31,7 +31,7 @@ class TestSTTProvider:
         assert r.lang == "uk"
 
     def test_factory_returns_provider(self) -> None:
-        """Factory should return a provider (DummyProvider if nothing available)."""
+        """Factory should return a provider (DummyProvider if no Vosk model)."""
         from core.stt import create_stt_provider
         from core.stt.base import STTProvider
         provider = create_stt_provider({"provider": "auto"})
@@ -44,6 +44,60 @@ class TestSTTProvider:
         result = await p.transcribe(b"\x00" * 100, 16000)
         assert result.text == ""
         assert result.lang == "en"
+
+    def test_vosk_provider_import(self) -> None:
+        """VoskProvider should be importable."""
+        from core.stt.vosk_provider import VoskProvider
+        assert VoskProvider is not None
+
+    def test_vosk_provider_status_before_load(self) -> None:
+        """VoskProvider status should show not ready before model load."""
+        from core.stt.vosk_provider import VoskProvider
+        p = VoskProvider(model_path="/nonexistent", lang="en")
+        st = p.status()
+        assert st["provider"] == "vosk"
+        assert st["ready"] is False
+        assert st["lang"] == "en"
+
+    def test_vosk_provider_properties(self) -> None:
+        """VoskProvider should expose lang, model_path, is_ready, is_loading."""
+        from core.stt.vosk_provider import VoskProvider
+        p = VoskProvider(model_path="/tmp/test_model", lang="uk")
+        assert p.lang == "uk"
+        assert p.model_path == "/tmp/test_model"
+        assert p.is_ready is False
+        assert p.is_loading is False
+
+    @pytest.mark.asyncio
+    async def test_vosk_provider_transcribe_without_model(self) -> None:
+        """transcribe() should return empty result if model not loaded."""
+        from core.stt.vosk_provider import VoskProvider
+        p = VoskProvider(model_path="/nonexistent", lang="en")
+        result = await p.transcribe(b"\x00" * 1000, 16000)
+        assert result.text == ""
+
+    def test_vosk_provider_feed_idle_without_grammar(self) -> None:
+        """feed_idle() should return (None, None) without grammar set."""
+        from core.stt.vosk_provider import VoskProvider
+        p = VoskProvider(model_path="/nonexistent", lang="en")
+        partial, final = p.feed_idle(b"\x00" * 1000)
+        assert partial is None
+        assert final is None
+
+    def test_vosk_provider_feed_listening_without_model(self) -> None:
+        """feed_listening() should return (None, None) without model."""
+        from core.stt.vosk_provider import VoskProvider
+        p = VoskProvider(model_path="/nonexistent", lang="en")
+        partial, final = p.feed_listening(b"\x00" * 1000)
+        assert partial is None
+        assert final is None
+
+    def test_factory_no_whisper_providers(self) -> None:
+        """Old Whisper provider files should not exist."""
+        assert not Path("core/stt/faster_whisper.py").exists()
+        assert not Path("core/stt/whisper_cpp.py").exists()
+        assert not Path("core/stt/whisper_trt.py").exists()
+        assert not Path("core/stt/openai_stt.py").exists()
 
 
 # ── TTS tests ────────────────────────────────────────────────────────────────

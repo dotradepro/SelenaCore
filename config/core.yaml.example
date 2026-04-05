@@ -28,22 +28,13 @@ modules:
   sandbox_image: "smarthome-sandbox:latest"
 
 stt:
-  provider: "auto"                     # auto | whisper_trt | whisper_cpp | faster_whisper | openai
-  whisper_trt:
-    model: "small"                     # tiny | base | small (multilingual = auto lang detect)
-  whisper_cpp:
-    host: "http://localhost:9000"
-  faster_whisper:
-    model: "small"                     # tiny | base | small | medium
-    device: "auto"                     # auto | cpu | cuda
-    compute_type: "auto"               # auto | int8 | float16 | float32
-  openai:
-    api_key: ""                        # or set OPENAI_API_KEY env var
-    model: "whisper-1"
+  provider: "vosk"                     # vosk | auto
+  vosk:
+    models_dir: "/var/lib/selena/models/vosk"
+    active_model: ""                   # auto-detected from models_dir if empty
 
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "small"                    # whisper model size: tiny | base | small | medium
   stt_silence_timeout: 1.0            # seconds of silence before processing (0.5-5.0)
   rephrase_enabled: false              # LLM rephrase for module responses (adds latency)
   tts:

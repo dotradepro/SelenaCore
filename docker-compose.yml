@@ -30,7 +30,7 @@ services:
       - ./modules:/opt/selena-core/modules
       - ./sdk:/opt/selena-core/sdk
       - ./scripts:/opt/selena-core/scripts:ro
-      - ${WHISPER_DIR:-/home/dotradepro/whisper.cpp}:/opt/whisper.cpp
+      - ${VOSK_MODELS_DIR:-/var/lib/selena/models/vosk}:/var/lib/selena/models/vosk
       - /media:/media:ro
       - /mnt:/mnt:ro
     devices:
@@ -44,7 +44,7 @@ services:
       - MALLOC_ARENA_MAX=2
       - SELENA_GPU_AVAILABLE=1
       - SELENA_GPU_TYPE=jetson
-      - WHISPER_DIR=/opt/whisper.cpp
+      - VOSK_MODELS_DIR=/var/lib/selena/models/vosk
     env_file:
       - .env
     healthcheck:

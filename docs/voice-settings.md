@@ -6,7 +6,7 @@
 Microphone (arecord, ALSA)
      |
      v
-  Whisper STT (auto language detection) --> text + stt_lang
+  Vosk STT (language from config, per-model) --> text + stt_lang
      |
      v
   Intent Router
@@ -38,7 +38,7 @@ Two language concepts -- do not mix:
 
 | Concept | Source | Purpose |
 |---------|--------|---------|
-| `stt_lang` | Whisper auto-detect | Regex matching, cache key |
+| `stt_lang` | Vosk model language (from config) | Regex matching, cache key |
 | `tts_lang` | Piper config `voice.tts.primary.lang` | Response language, voice selection |
 
 Rules:
@@ -47,34 +47,32 @@ Rules:
 - EventBus payload: intent/entity/location/params always in **English**
 - Response text: in `tts_lang`
 
-## STT -- Whisper
+## STT -- Vosk
 
-Speech recognition via Whisper providers (auto-detected):
+Speech recognition via Vosk (native, no container needed). Vosk uses streaming (chunk-by-chunk) recognition rather than batch transcription, delivering results as audio is received.
 
-| Platform | Provider | Model | Latency |
-|----------|----------|-------|---------|
-| Jetson Orin | whisper_cpp (Wyoming) | small | ~200ms |
-| Linux CUDA | faster_whisper | small | ~150ms |
-| Raspberry Pi 5 | faster_whisper (CPU) | small | ~600ms |
-| Raspberry Pi 4 | faster_whisper (CPU) | base | ~800ms |
-| Any + internet | OpenAI Whisper API | - | ~500ms |
+| Platform | Model | Latency |
+|----------|-------|---------|
+| Jetson Orin | vosk-model-small-uk | ~150ms |
+| Linux x86_64 | vosk-model-small-uk | ~100ms |
+| Raspberry Pi 5 | vosk-model-small-uk | ~300ms |
+| Raspberry Pi 4 | vosk-model-small-uk | ~500ms |
+
+Models are downloaded from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and stored locally. Each language requires its own model.
 
 Configuration:
 
 ```yaml
 stt:
-  provider: "auto"              # auto | whisper_cpp | faster_whisper | openai
-  whisper_cpp:
-    host: "http://localhost:10300"
-    protocol: "wyoming"
-  faster_whisper:
-    model: "small"
-    device: "auto"              # auto | cpu | cuda
+  provider: vosk
+  vosk:
+    models_dir: /var/lib/selena/models/vosk
+    active_model: vosk-model-small-uk
 ```
 
-Provider selection (`auto`): whisper_cpp --> faster_whisper --> Dummy.
+Vosk also supports **grammar mode** for wake word detection -- a constrained vocabulary that improves accuracy and reduces CPU usage during always-on listening.
 
-Language is auto-detected by Whisper from speech (99 languages supported).
+Language is determined by the active model (per-language models, not auto-detected from speech).
 
 ## TTS -- Dual Piper (piper1-gpl)
 
@@ -278,12 +276,12 @@ Cached per `tts_lang`, invalidated on data changes.
 
 ```
 OS headless (no GNOME)       0.65 GB
-Whisper small CUDA           0.45 GB
+Vosk small model             0.05 GB
 SelenaCore + modules         0.30 GB
 qwen2.5:3b (Ollama Q4)      2.00 GB
 Piper uk medium (GPU)        0.065 GB
 Piper en low (CPU)           0.005 GB
 -----------------------------------------
-Total:                       3.47 GB
-Free:                        4.53 GB
+Total:                       3.07 GB
+Free:                        4.93 GB
 ```

@@ -166,7 +166,7 @@ modules:
 ```yaml
 voice:
   wake_word_sensitivity: 0.5
-  stt_model: "small"
+  stt_model: "vosk-model-small-uk"
   stt_silence_timeout: 1.0
   rephrase_enabled: false
   output_volume: 50               # Загальна гучність TTS (0-150%)
@@ -200,7 +200,7 @@ voice:
 | Ключ | Тип | За замовчуванням | Опис |
 |------|-----|-----------------|------|
 | `wake_word_sensitivity` | `float` | `0.5` | Поріг чутливості для слова активації (0.0-1.0). |
-| `stt_model` | `str` | `small` | Розмір моделі Whisper STT: `tiny`, `base`, `small`, `medium`. |
+| `stt_model` | `str` | `vosk-model-small-uk` | Назва моделі Vosk STT (завантажується з alphacephei.com/vosk/models). |
 | `stt_silence_timeout` | `float` | `1.0` | Секунди тиші перед обробкою команди (0.5-5.0). |
 | `rephrase_enabled` | `bool` | `false` | LLM перефразування відповідей модулів. Додає затримку. |
 | `output_volume` | `int` | `100` | Загальна гучність TTS 0-150%. Програмне масштабування PCM. |

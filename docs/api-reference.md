@@ -436,7 +436,7 @@ These routes are intended for the local web UI only. They are protected by iptab
 | Route | Description |
 |---|---|
 | `POST /api/ui/setup/*` | Onboarding wizard steps |
-| `GET /api/ui/setup/stt/catalog` | Whisper speech-to-text model catalog |
+| `GET /api/ui/setup/vosk/catalog` | Vosk speech-to-text model catalog |
 | Voice engine endpoints | Manage STT/TTS engine configuration |
 | Module UI routing | Serve module widget files and icons |
 

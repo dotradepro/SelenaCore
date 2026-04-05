@@ -220,7 +220,7 @@ sudo systemctl start smarthome-core.service
 | `smarthome-agent.service` | Integrity monitoring agent |
 | `smarthome-modules.service` | Module bus gateway |
 | `getty@tty1` (with override) | Headless kiosk mode (see [Kiosk Setup](kiosk-setup.md)) |
-| `whisper-server.service` | Whisper.cpp STT server |
+| `vosk-server.service` | Vosk STT server |
 | `piper-tts.service` | Piper TTS server (native, GPU) |
 
 ### Headless Kiosk (Recommended for Production)
@@ -295,7 +295,7 @@ ls /var/log/selena/
 | Path | Contents |
 |------|----------|
 | `/var/lib/selena/` | SQLite database, voice models, backups |
-| `/var/lib/selena/models/whisper/` | Whisper STT models |
+| `/var/lib/selena/models/vosk/` | Vosk STT models |
 | `/var/lib/selena/models/piper/` | Piper TTS models |
 | `/secure/` | Encrypted tokens, AES keys |
 | `/secure/module_tokens/` | Module authentication tokens |
