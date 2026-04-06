@@ -20,7 +20,7 @@ from system_modules.scheduler.scheduler import SchedulerService
 logger = logging.getLogger(__name__)
 
 MODULE_NAME = "scheduler"
-CORE_API = os.environ.get("SELENA_CORE_API", "http://localhost:7070/api/v1")
+CORE_API = os.environ.get("SELENA_CORE_API", "http://localhost/api/v1")
 MODULE_TOKEN = os.environ.get("MODULE_TOKEN", "")
 DATA_DIR = Path(os.environ.get("SELENA_DATA_DIR", "/var/lib/selena")) / "modules" / MODULE_NAME
 

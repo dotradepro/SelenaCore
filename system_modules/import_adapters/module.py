@@ -44,7 +44,7 @@ class ImportAdaptersModule(SystemModule):
     async def start(self) -> None:
         self._manager = ImportManager(
             publish_event_cb=self.publish,
-            core_api_url=os.getenv("CORE_API_URL", "http://localhost:7070"),
+            core_api_url=os.getenv("CORE_API_URL", "http://localhost"),
             module_token=os.getenv("MODULE_TOKEN", ""),
         )
         await self.publish("module.started", {"name": self.name})

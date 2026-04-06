@@ -29,7 +29,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 # ── Environment ─────────────────────────────────────────────────────────────
 
-SELENA_BUS_URL = os.environ.get("SELENA_BUS_URL", "ws://localhost:7070/api/v1/bus")
+SELENA_BUS_URL = os.environ.get("SELENA_BUS_URL", "ws://localhost/api/v1/bus")
 MODULE_TOKEN = os.environ.get("MODULE_TOKEN", "")
 MODULE_DIR = os.environ.get("MODULE_DIR", "")
 

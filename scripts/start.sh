@@ -59,34 +59,65 @@ mixer = get_mixer()
 mixer.initialize()
 " 2>/dev/null && echo "[start.sh] Audio mixer OK" || echo "[start.sh] WARNING: audio mixer setup failed"
 
-echo "[start.sh] Starting Core API on :7070..."
-python -m uvicorn core.main:app --host 0.0.0.0 --port 7070 --no-access-log &
+# --- Unified server: Core API + SPA on port 80 (no separate UI proxy) ---
+echo "[start.sh] Starting SelenaCore on :80 (HTTP, unified API + SPA)..."
+python -m uvicorn core.main:app --host 0.0.0.0 --port 80 --no-access-log &
 CORE_PID=$!
 
-echo "[start.sh] Starting UI Core on :80 (HTTP)..."
-python -m uvicorn system_modules.ui_core.server:ui_app --host 0.0.0.0 --port 80 --no-access-log &
-UI_PID=$!
-
-# Start HTTPS if TLS certificate exists
+# HTTPS: lightweight TLS proxy via Python (no second uvicorn = saves ~1.5 GB RAM)
+# Forwards TLS connections on :443 to the main HTTP server on :80
 TLS_CERT="/secure/tls/selena.crt"
 TLS_KEY="/secure/tls/selena.key"
 HTTPS_PID=""
 if [ -f "$TLS_CERT" ] && [ -f "$TLS_KEY" ]; then
-  echo "[start.sh] Starting UI Core on :443 (HTTPS)..."
-  python -m uvicorn system_modules.ui_core.server:ui_app --host 0.0.0.0 --port 443 \
-    --ssl-certfile "$TLS_CERT" --ssl-keyfile "$TLS_KEY" --no-access-log &
+  echo "[start.sh] Starting TLS proxy :443 → :80..."
+  python3 -c "
+import asyncio, ssl, sys
+
+async def handle(reader, writer):
+    try:
+        r2, w2 = await asyncio.open_connection('127.0.0.1', 80)
+        async def pipe(src, dst):
+            try:
+                while True:
+                    data = await src.read(65536)
+                    if not data:
+                        break
+                    dst.write(data)
+                    await dst.drain()
+            except Exception:
+                pass
+            finally:
+                try: dst.close()
+                except: pass
+        await asyncio.gather(pipe(reader, w2), pipe(r2, writer))
+    except Exception:
+        pass
+    finally:
+        writer.close()
+
+async def main():
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain('$TLS_CERT', '$TLS_KEY')
+    srv = await asyncio.start_server(handle, '0.0.0.0', 443, ssl=ctx)
+    print('[tls-proxy] Listening on :443', flush=True)
+    async with srv:
+        await srv.serve_forever()
+
+asyncio.run(main())
+" &
   HTTPS_PID=$!
-  echo "[start.sh] HTTPS PID=$HTTPS_PID"
+  echo "[start.sh] TLS proxy PID=$HTTPS_PID"
 else
   echo "[start.sh] No TLS certificate found, HTTPS disabled"
 fi
 
-echo "[start.sh] Core API PID=$CORE_PID  UI Core PID=$UI_PID"
+echo "[start.sh] Core PID=$CORE_PID"
 
 # If any process exits, kill all others and exit
-wait -n "$CORE_PID" "$UI_PID" ${HTTPS_PID:+"$HTTPS_PID"}
+wait -n "$CORE_PID" ${HTTPS_PID:+"$HTTPS_PID"}
 EXIT_CODE=$?
 
-echo "[start.sh] One of the processes exited (code $EXIT_CODE), shutting down..."
-kill "$CORE_PID" "$UI_PID" ${HTTPS_PID:+"$HTTPS_PID"} 2>/dev/null || true
+echo "[start.sh] Process exited (code $EXIT_CODE), shutting down..."
+kill "$CORE_PID" ${HTTPS_PID:+"$HTTPS_PID"} 2>/dev/null || true
 exit $EXIT_CODE

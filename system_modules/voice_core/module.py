@@ -1138,7 +1138,7 @@ class VoiceCoreModule(SystemModule):
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
-                    "http://localhost:7070/api/ui/setup/llm/chat",
+                    "http://localhost/api/ui/setup/llm/chat",
                     json={"text": text},
                 )
                 if resp.status_code != 200:

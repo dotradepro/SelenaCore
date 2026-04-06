@@ -25,16 +25,13 @@ iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # Allow SSH (adjust port if needed)
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
-# Core API (local network only)
-iptables -A INPUT -p tcp --dport 7070 -m conntrack --ctstate NEW -j ACCEPT
-
-# UI HTTP (local network only)
+# Core API + UI (unified on port 80, local network only)
 iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
 
-# UI HTTPS (local network only)
+# HTTPS (local network only)
 iptables -A INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
 
-# Modules communicate via WebSocket bus on port 7070 — no separate ports needed
+# Modules communicate via WebSocket bus on port 80 — no separate ports needed
 
 # Block external access to Ollama
 iptables -A INPUT -p tcp --dport 11434 -s 127.0.0.1 -j ACCEPT

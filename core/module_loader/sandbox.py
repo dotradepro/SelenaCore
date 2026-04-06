@@ -380,7 +380,7 @@ class DockerSandbox:
                     environment={
                         "MODULE_NAME": name,
                         "MODULE_DIR": "/opt/selena-module",
-                        "SELENA_BUS_URL": "ws://selena-core:7070/api/v1/bus",
+                        "SELENA_BUS_URL": "ws://selena-core:80/api/v1/bus",
                         "MODULE_TOKEN": info.manifest.get("token", ""),
                     },
                     command=["python", "main.py"],

@@ -17,7 +17,7 @@ import weakref
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -494,10 +494,11 @@ async def get_layout() -> dict[str, Any]:
 
 @router.post("/layout")
 async def save_layout(request: Request) -> dict[str, Any]:
-    """Persist widget layout and broadcast change to all connected browsers."""
+    """Persist widget layout and broadcast change via SyncManager + SSE."""
     layout = await request.json()
     _save_layout(layout)
-    broadcast_event("layout_changed", layout)
+    from core.api.sync_manager import get_sync_manager
+    await get_sync_manager().update_layout(layout)
     return {"ok": True}
 
 
@@ -507,9 +508,17 @@ class SettingsBody(BaseModel):
     theme: str | None = None
     language: str | None = None
 
+
+@router.get("/settings")
+async def get_settings_sync() -> dict[str, Any]:
+    """Return current authoritative UI settings (theme, language)."""
+    from core.api.sync_manager import get_sync_manager
+    return get_sync_manager().settings
+
+
 @router.post("/settings")
 async def save_settings(body: SettingsBody) -> dict[str, Any]:
-    """Save settings and broadcast change to all connected browsers via SSE."""
+    """Save settings and broadcast via SyncManager (WS + SSE)."""
     payload: dict[str, Any] = {}
     if body.theme is not None:
         payload["theme"] = body.theme
@@ -517,8 +526,93 @@ async def save_settings(body: SettingsBody) -> dict[str, Any]:
         payload["language"] = body.language
         update_config("system", "language", body.language)
     if payload:
-        broadcast_event("settings_changed", payload)
+        from core.api.sync_manager import get_sync_manager
+        await get_sync_manager().update_settings(payload)
     return {"ok": True}
+
+
+# ---------- WebSocket sync — versioned state + ping/pong ----------
+
+@router.websocket("/sync")
+async def ui_sync_websocket(websocket: WebSocket) -> None:
+    """WebSocket endpoint for real-time UI sync with versioned state.
+
+    Protocol:
+      - On connect: server sends 'hello' (full snapshot) or 'replay' (missed events)
+      - Server sends 'event' on state changes, 'ping' every 5s
+      - Client must respond 'pong' within 10s or gets disconnected
+      - On reconnect with ?v=<version>, server replays missed events
+    """
+    from core.api.sync_manager import get_sync_manager
+    manager = get_sync_manager()
+
+    await websocket.accept()
+
+    # Parse last known version from query param
+    last_version = 0
+    v_param = websocket.query_params.get("v", "0")
+    try:
+        last_version = int(v_param)
+    except (ValueError, TypeError):
+        pass
+
+    client_id = await manager.register(websocket)
+
+    try:
+        # Send initial state: full snapshot or replay of missed events
+        if last_version > 0:
+            events = manager.get_events_since(last_version)
+            if events is not None and len(events) > 0:
+                replay_data = [
+                    {
+                        "version": e.version,
+                        "event_type": e.event_type,
+                        "payload": e.payload,
+                    }
+                    for e in events
+                ]
+                await websocket.send_json({"type": "replay", "events": replay_data})
+            else:
+                # Too old or no events — send full snapshot
+                await websocket.send_json(manager.get_snapshot())
+        else:
+            await websocket.send_json(manager.get_snapshot())
+
+        # Main loop: ping/pong + receive client messages
+        ping_task = asyncio.create_task(_ping_loop(manager, client_id))
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    msg = json.loads(raw)
+                    if msg.get("type") == "pong":
+                        manager.update_pong(client_id)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+        except WebSocketDisconnect:
+            pass
+        finally:
+            ping_task.cancel()
+            try:
+                await ping_task
+            except asyncio.CancelledError:
+                pass
+
+    except Exception as exc:
+        logger.debug("WebSocket sync error for %s: %s", client_id, exc)
+    finally:
+        manager.unregister(client_id)
+
+
+async def _ping_loop(manager, client_id: str) -> None:
+    """Send pings every 5s, close if client doesn't pong within 10s."""
+    while True:
+        await asyncio.sleep(5.0)
+        if manager.is_client_stale(client_id, timeout_sec=15.0):
+            logger.debug("WebSocket client %s stale, closing", client_id)
+            break
+        if not await manager.send_ping(client_id):
+            break
 
 
 # ---------- Module Content Proxy ----------

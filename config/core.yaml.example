@@ -3,7 +3,7 @@ version: "0.3.0-beta"
 
 core:
   host: "0.0.0.0"
-  port: 7070
+  port: 80
   data_dir: "/var/lib/selena"
   secure_dir: "/secure"
   log_level: "INFO"

@@ -10,7 +10,7 @@ Group=selena
 WorkingDirectory=/opt/selena-core
 ExecStart=/opt/selena-core/.venv/bin/python -m uvicorn core.main:app \
     --host 0.0.0.0 \
-    --port 7070 \
+    --port 80 \
     --log-config /opt/selena-core/config/logging.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=always

@@ -25,7 +25,7 @@ except ImportError:
     ICMPLIB_AVAILABLE = False
     logger.warning("icmplib not installed — ICMP ping disabled, using TCP fallback")
 
-CORE_API_BASE = "http://localhost:7070/api/v1"
+CORE_API_BASE = "http://localhost/api/v1"
 MODULE_NAME = "device-watchdog"
 
 

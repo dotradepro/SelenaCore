@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 import yaml
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response as FastAPIResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
@@ -195,6 +196,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     modules_dir = Path("/opt/selena-core/modules")
     await manager.scan_local_modules(modules_dir)
 
+    # Register SPA catch-all LAST — after all module routers are mounted.
+    # This ensures /api/ui/modules/{name}/* routes are matched before the
+    # catch-all /{full_path:path} which returns index.html.
+    _register_spa_fallback(app)
+
     logger.info("SelenaCore ready on port %s", settings.core_port)
 
     yield  # App is running
@@ -260,7 +266,121 @@ def create_app() -> FastAPI:
     app.include_router(voice_engines.router, prefix="/api/ui")
     app.include_router(vosk_routes.router, prefix="/api/ui")
 
+    # PWA routes (manifest.json, sw.js, network-info) — served directly
+    from core.api.routes import pwa as pwa_routes
+    app.include_router(pwa_routes.router)
+
+    # ── Static file serving (SPA) — replaces the UI proxy server ────────
+    _mount_static_files(app)
+
     return app
+
+
+def _mount_static_files(app: FastAPI) -> None:
+    """Mount React SPA static files and SPA catch-all fallback.
+
+    MUST be called last — the catch-all route matches everything
+    that wasn't handled by API routes above.
+    """
+    from starlette.staticfiles import StaticFiles
+    from starlette.types import Receive, Scope, Send
+
+    static_dir = Path("/opt/selena-core/system_modules/ui_core/static")
+    if not static_dir.exists():
+        logger.warning("Static directory not found: %s — SPA will not be served", static_dir)
+        return
+
+    class NoCacheStaticFiles(StaticFiles):
+        """StaticFiles that always sends Cache-Control: no-cache."""
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            async def send_with_no_cache(message: dict) -> None:
+                if message["type"] == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.append((b"cache-control", b"no-cache, no-store, must-revalidate"))
+                    message["headers"] = headers
+                await send(message)
+            await super().__call__(scope, receive, send_with_no_cache)
+
+    # Mount known asset sub-directories
+    assets_dir = static_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", NoCacheStaticFiles(directory=str(assets_dir)), name="assets")
+    icons_dir = static_dir / "icons"
+    if icons_dir.is_dir():
+        app.mount("/icons", NoCacheStaticFiles(directory=str(icons_dir)), name="icons")
+
+    # SPA catch-all: any non-API, non-asset path returns index.html
+    # so that React Router handles client-side routes on page refresh.
+    index_html = static_dir / "index.html"
+    static_resolved = static_dir.resolve()
+
+    _MIME_TYPES = {
+        "js": "application/javascript; charset=utf-8",
+        "css": "text/css; charset=utf-8",
+        "html": "text/html; charset=utf-8",
+        "json": "application/json",
+        "png": "image/png",
+        "svg": "image/svg+xml",
+        "ico": "image/x-icon",
+        "woff2": "font/woff2",
+        "woff": "font/woff",
+        "ttf": "font/ttf",
+        "webp": "image/webp",
+        "webmanifest": "application/manifest+json",
+    }
+
+    # SPA catch-all is NOT registered here — it MUST be registered AFTER
+    # module routers are dynamically added during lifespan startup.
+    # See: _register_spa_fallback() called at end of lifespan().
+
+
+_SPA_MIME_TYPES = {
+    "js": "application/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+    "json": "application/json",
+    "png": "image/png",
+    "svg": "image/svg+xml",
+    "ico": "image/x-icon",
+    "woff2": "font/woff2",
+    "woff": "font/woff",
+    "ttf": "font/ttf",
+    "webp": "image/webp",
+    "webmanifest": "application/manifest+json",
+}
+
+_STATIC_DIR = Path("/opt/selena-core/system_modules/ui_core/static")
+
+
+def _register_spa_fallback(app: FastAPI) -> None:
+    """Register SPA catch-all route. MUST be called after all module routers."""
+    static_dir = _STATIC_DIR
+    if not static_dir.exists():
+        return
+    index_html = static_dir / "index.html"
+    static_resolved = static_dir.resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False, response_class=FastAPIResponse)
+    async def spa_fallback(full_path: str):
+        # Serve real static file if it exists
+        candidate = (static_dir / full_path).resolve()
+        if candidate.is_file() and str(candidate).startswith(str(static_resolved)):
+            ext = candidate.name.rsplit(".", 1)[-1].lower() if "." in candidate.name else ""
+            media_type = _SPA_MIME_TYPES.get(ext, "application/octet-stream")
+            return FastAPIResponse(
+                content=candidate.read_bytes(),
+                media_type=media_type,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        # SPA routing — serve index.html
+        if index_html.is_file():
+            return FastAPIResponse(
+                content=index_html.read_bytes(),
+                media_type="text/html",
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+            )
+        return FastAPIResponse(content=b"Not Found", status_code=404)
 
 
 app = create_app()

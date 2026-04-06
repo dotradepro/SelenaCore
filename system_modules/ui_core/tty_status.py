@@ -22,7 +22,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-CORE_API = os.environ.get("CORE_API_URL", "http://localhost:7070/api/v1")
+CORE_API = os.environ.get("CORE_API_URL", "http://localhost/api/v1")
 UI_URL_BASE = os.environ.get("UI_URL", "http://localhost")
 REFRESH_SEC = 5
 WIZARD_STATE_FILE = Path("/var/lib/selena/wizard_state.json")

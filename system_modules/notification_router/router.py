@@ -234,7 +234,7 @@ class NotificationRouter:
     async def _deliver_push(self, config: dict, message: str, level: str) -> bool:
         push_url = config.get(
             "push_url",
-            "http://localhost:7070/api/ui/modules/presence-detection/push/send",
+            "http://localhost/api/ui/modules/presence-detection/push/send",
         )
         user_id = config.get("user_id")  # None = send to all
         emoji = self._LEVEL_EMOJI.get(level, "ℹ️")

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ── Core API client ───────────────────────────────────────────────────────────
 
-CORE_URL = os.getenv("CORE_API_URL", "http://localhost:7070")
+CORE_URL = os.getenv("CORE_API_URL", "http://localhost")
 MODULE_TOKEN = os.getenv("MODULE_TOKEN", "weather-service-token")
 
 

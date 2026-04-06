@@ -4,7 +4,7 @@
 
 # Wait for SelenaCore to be ready
 for i in $(seq 1 30); do
-    curl -sf http://localhost:7070/api/v1/health >/dev/null 2>&1 && break
+    curl -sf http://localhost/api/v1/health >/dev/null 2>&1 && break
     echo "[kiosk] waiting for SelenaCore... ($i)"
     sleep 2
 done

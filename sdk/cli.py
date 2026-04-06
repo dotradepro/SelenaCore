@@ -162,7 +162,7 @@ def main() -> None:
 
     p_pub = sub.add_parser("publish", help="Publish module to SelenaCore")
     p_pub.add_argument("path", nargs="?", default=".", help="Module directory")
-    p_pub.add_argument("--core", default=os.environ.get("SELENA_CORE_API", "http://localhost:7070"), help="Core API URL")
+    p_pub.add_argument("--core", default=os.environ.get("SELENA_CORE_API", "http://localhost"), help="Core API URL")
     p_pub.add_argument("--token", default=os.environ.get("MODULE_TOKEN", ""), help="Auth token")
 
     args = parser.parse_args()

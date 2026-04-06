@@ -12,7 +12,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-CORE_API_BASE = os.environ.get("SELENA_CORE_API", "http://localhost:7070/api/v1")
+CORE_API_BASE = os.environ.get("SELENA_CORE_API", "http://localhost/api/v1")
 MODULE_TOKEN = os.environ.get("MODULE_TOKEN", "")
 
 

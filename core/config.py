@@ -26,7 +26,7 @@ class CoreSettings(BaseSettings):
     mock_platform: bool = False
 
     # Core
-    core_port: int = 7070
+    core_port: int = 80
     core_data_dir: str = "/var/lib/selena"
     core_secure_dir: str = "/secure"
     core_log_level: str = "INFO"

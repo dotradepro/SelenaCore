@@ -18,7 +18,7 @@ from system_modules.presence_detection.presence import PresenceDetector
 logger = logging.getLogger(__name__)
 
 MODULE_NAME = "presence-detection"
-CORE_API = os.environ.get("SELENA_CORE_API", "http://localhost:7070/api/v1")
+CORE_API = os.environ.get("SELENA_CORE_API", "http://localhost/api/v1")
 MODULE_TOKEN = os.environ.get("MODULE_TOKEN", "")
 
 _detector: PresenceDetector | None = None
@@ -44,7 +44,7 @@ async def _subscribe_events() -> None:
                 headers={"Authorization": f"Bearer {MODULE_TOKEN}"},
                 json={
                     "event_types": ["device.state_changed"],
-                    "webhook_url": "http://localhost:7070/webhook/events",  # Legacy — use SystemModule.subscribe() instead
+                    "webhook_url": "http://localhost/webhook/events",  # Legacy — use SystemModule.subscribe() instead
                 },
             )
     except Exception as exc:

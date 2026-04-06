@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +17,7 @@ from agent.manifest import BACKUP_DIR, MANIFEST_PATH, create_manifest, sha256_fi
 
 logger = logging.getLogger(__name__)
 
-CORE_API_URL = "http://localhost:7070/api/v1"
+CORE_API_URL = os.environ.get("CORE_API_URL", "http://localhost/api/v1")
 PLATFORM_API_URL = ""  # loaded from env
 
 

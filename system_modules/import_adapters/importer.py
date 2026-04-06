@@ -62,7 +62,7 @@ class ImportManager:
     def __init__(
         self,
         publish_event_cb: Any,
-        core_api_url: str = "http://localhost:7070",
+        core_api_url: str = "http://localhost",
         module_token: str = "",
     ) -> None:
         self._publish = publish_event_cb

@@ -15,7 +15,7 @@ from system_modules.energy_monitor.energy import EnergyMonitor
 
 logger = logging.getLogger(__name__)
 
-CORE_URL = os.getenv("CORE_API_URL", "http://localhost:7070")
+CORE_URL = os.getenv("CORE_API_URL", "http://localhost")
 MODULE_TOKEN = os.getenv("MODULE_TOKEN", "energy-monitor-token")
 
 # ── Core API helpers ──────────────────────────────────────────────────────────

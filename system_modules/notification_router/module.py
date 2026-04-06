@@ -62,7 +62,7 @@ class NotificationRouterModule(SystemModule):
             return
         if "push" not in rt._channels:
             rt.add_channel("push", {
-                "push_url": "http://localhost:7070/api/ui/modules/presence-detection/push/send",
+                "push_url": "http://localhost/api/ui/modules/presence-detection/push/send",
             })
             logger.info("Auto-registered default push channel")
         if not any(r.get("channel") == "push" for r in rt._rules):
