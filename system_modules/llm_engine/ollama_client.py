@@ -80,8 +80,18 @@ class OllamaClient:
         system: str | None = None,
         model: str | None = None,
         temperature: float = 0.7,
+        max_tokens: int = 512,
+        json_mode: bool = False,
+        num_ctx: int = 4096,
     ) -> str:
-        """Generate a completion (non-streaming) via /api/chat messages format."""
+        """Generate a completion (non-streaming) via /api/chat messages format.
+
+        Args:
+            json_mode: When True, sends ``format: "json"`` so Ollama
+                       constrains output to valid JSON.
+            num_ctx:   Context window in tokens. Larger windows fit bigger
+                       intent catalogs at the cost of memory.
+        """
         messages: list[dict[str, str]] = []
         if system:
             messages.append({"role": "system", "content": system})
@@ -91,8 +101,14 @@ class OllamaClient:
             "model": model or self.model,
             "messages": messages,
             "stream": False,
-            "options": {"temperature": temperature, "num_predict": 512},
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+                "num_ctx": num_ctx,
+            },
         }
+        if json_mode:
+            payload["format"] = "json"
 
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:

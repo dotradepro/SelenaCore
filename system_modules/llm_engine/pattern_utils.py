@@ -28,6 +28,12 @@ def phrase_to_regex(phrase: str) -> str:
       - Special regex chars in words are escaped
     """
     phrase = phrase.lower().strip()
+    # ASCII-only safety net: pattern fragments coming from LLM must be English.
+    # Entity names (radio "ХІТ FM", etc.) never go through this helper —
+    # they are escaped via re.escape() inside PatternGenerator, so this guard
+    # does not affect legitimate Cyrillic entity names.
+    if not phrase.isascii():
+        return ""
     # Remove punctuation except hyphens (e.g. "wi-fi")
     phrase = re.sub(r"[^\w\s\-]", "", phrase)
     # Collapse multiple spaces

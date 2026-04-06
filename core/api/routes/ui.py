@@ -174,7 +174,14 @@ def _read_hw_metrics() -> dict[str, Any]:
 
 
 def _read_ollama_status() -> dict[str, Any]:
-    """Read Ollama/LLM status (best-effort)."""
+    """Read Ollama/LLM status (best-effort).
+
+    Ollama typically runs natively on the host while Selena runs in a
+    container, so the host binary is NOT on the container's PATH and
+    ``shutil.which("ollama")`` would return ``None``. The HTTP API is the
+    authoritative source: if ``/api/tags`` answers, Ollama is reachable
+    and we treat it as both installed and running.
+    """
     result: dict[str, Any] = {
         "installed": False,
         "running": False,
@@ -182,12 +189,6 @@ def _read_ollama_status() -> dict[str, Any]:
         "model_loaded": False,
         "url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
     }
-    try:
-        result["installed"] = shutil.which("ollama") is not None
-    except Exception:
-        pass
-    if not result["installed"]:
-        return result
     try:
         import urllib.request
         req = urllib.request.Request(
@@ -198,6 +199,7 @@ def _read_ollama_status() -> dict[str, Any]:
         with urllib.request.urlopen(req, timeout=2) as resp:
             if resp.status == 200:
                 result["running"] = True
+                result["installed"] = True
                 data = json.loads(resp.read())
                 models = data.get("models", [])
                 result["models"] = [
@@ -206,6 +208,13 @@ def _read_ollama_status() -> dict[str, Any]:
                 ]
     except Exception:
         pass
+    # Binary-on-PATH fallback for the rare case where the API is down but
+    # the local binary is present (e.g. service stopped on this same host).
+    if not result["installed"]:
+        try:
+            result["installed"] = shutil.which("ollama") is not None
+        except Exception:
+            pass
     # Check active model from config
     try:
         from core.config import get_yaml_config

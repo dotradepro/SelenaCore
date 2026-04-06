@@ -32,20 +32,11 @@ logger = logging.getLogger(__name__)
 # ── Template responses for regex hits (no LLM needed) ──────────────────
 
 _TEMPLATE_RESPONSES: dict[str, dict[str, str]] = {
-    "device.on": {
-        "en": "Turned on",
-        "uk": "Увімкнено",
-        "de": "Eingeschaltet",
-        "fr": "Allumé",
-        "es": "Encendido",
-    },
-    "device.off": {
-        "en": "Turned off",
-        "uk": "Вимкнено",
-        "de": "Ausgeschaltet",
-        "fr": "Éteint",
-        "es": "Apagado",
-    },
+    # device.on / device.off intentionally NOT here — they are owned by
+    # the device-control module which generates an LLM-rephrased ack via
+    # speak_action() after the real driver call succeeds. A templated
+    # response here would race with that and announce success even if the
+    # driver failed.
     "media.play": {
         "en": "Playing",
         "uk": "Вмикаю",
@@ -113,7 +104,6 @@ class IntentResult:
     lang: str = "en"
     user_id: str | None = None
     params: dict[str, Any] | None = None
-    pattern: str | None = None    # English pattern phrase from LLM (for saving to DB)
     raw_llm: str | None = None    # raw LLM response before parsing (debug)
 
 
@@ -349,12 +339,6 @@ class IntentRouter:
                     )
                 except Exception:
                     pass
-                # Save LLM-generated English pattern to DB for future 0ms matching
-                if llm_result.pattern:
-                    try:
-                        await self._save_llm_pattern(llm_result.intent, llm_result.pattern)
-                    except Exception:
-                        pass
             # Device disambiguation: resolve entity+location → device_id
             llm_result = await self._disambiguate_device(llm_result, tts_lang)
             await self._publish_event(llm_result, raw_text=text, lang=lang)
@@ -397,12 +381,6 @@ class IntentRouter:
                         )
                     except Exception:
                         pass
-                    # Save Cloud LLM-generated English pattern to DB
-                    if cloud_result.pattern:
-                        try:
-                            await self._save_llm_pattern(cloud_result.intent, cloud_result.pattern)
-                        except Exception:
-                            pass
                 # Device disambiguation
                 cloud_result = await self._disambiguate_device(cloud_result, tts_lang)
                 await self._publish_event(cloud_result, raw_text=text, lang=lang)
@@ -487,7 +465,7 @@ class IntentRouter:
             # Fallback: check legacy voice.providers for cloud
             voice_cfg = config.get("voice", {})
             provider = voice_cfg.get("llm_provider", "")
-            if provider not in ("ollama", "llamacpp", ""):
+            if provider not in ("ollama", ""):
                 providers_cfg = voice_cfg.get("providers", {})
                 p_cfg = providers_cfg.get(provider, {})
                 api_key = p_cfg.get("api_key", "")
@@ -676,7 +654,6 @@ class IntentRouter:
         response = data.get("response", "")
         entity = data.get("entity")
         location = data.get("location")
-        pattern = data.get("pattern", "")
 
         # Merge entity/location into params for module consumption
         if entity and entity != "null":
@@ -688,14 +665,12 @@ class IntentRouter:
             return IntentResult(
                 intent=intent_name, response=response, action=None,
                 source=source, latency_ms=0, params=params,
-                pattern=pattern if pattern else None,
                 raw_llm=raw_debug,
             )
         elif response:
             return IntentResult(
                 intent="llm.response", response=response, action=None,
                 source=source, latency_ms=0, params=params,
-                pattern=pattern if pattern else None,
                 raw_llm=raw_debug,
             )
 
@@ -794,81 +769,6 @@ class IntentRouter:
             logger.debug("Entity ref resolution failed: %s", exc)
 
         return result
-
-    # ── Save LLM-generated pattern to DB ────────────────────────────────
-
-    async def _save_llm_pattern(self, intent_name: str, pattern_phrase: str) -> None:
-        """Save an LLM-generated English pattern to intent_patterns DB.
-
-        Converts phrase to regex, checks for duplicates, caps at 20 per intent.
-        """
-        from system_modules.llm_engine.pattern_utils import (
-            deduplicate_pattern,
-            phrase_to_regex,
-            validate_pattern,
-        )
-
-        regex = phrase_to_regex(pattern_phrase)
-        if not regex or not validate_pattern(regex):
-            return
-
-        try:
-            from core.module_loader.sandbox import get_sandbox
-            sf = get_sandbox()._session_factory
-            if sf is None:
-                return
-
-            from sqlalchemy import select, func
-            from core.registry.models import IntentDefinition, IntentPattern
-
-            async with sf() as session:
-                async with session.begin():
-                    # Find intent definition
-                    result = await session.execute(
-                        select(IntentDefinition).where(IntentDefinition.intent == intent_name)
-                    )
-                    idef = result.scalar_one_or_none()
-                    if idef is None:
-                        return
-
-                    # Check pattern count cap (max 20 per intent)
-                    count_result = await session.execute(
-                        select(func.count()).where(
-                            IntentPattern.intent_id == idef.id,
-                            IntentPattern.source == "llm_generated",
-                        )
-                    )
-                    count = count_result.scalar() or 0
-                    if count >= 20:
-                        return
-
-                    # Check for duplicates
-                    existing_result = await session.execute(
-                        select(IntentPattern.pattern).where(
-                            IntentPattern.intent_id == idef.id,
-                            IntentPattern.lang == "en",
-                        )
-                    )
-                    existing_patterns = [r[0] for r in existing_result.all()]
-
-                    if deduplicate_pattern(regex, existing_patterns):
-                        return
-
-                    # Save new pattern
-                    session.add(IntentPattern(
-                        intent_id=idef.id,
-                        lang="en",
-                        pattern=regex,
-                        source="llm_generated",
-                    ))
-
-            # Hot-reload compiler
-            from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            await get_intent_compiler().full_reload()
-            logger.info("Saved LLM pattern for '%s': %s", intent_name, regex)
-
-        except Exception as exc:
-            logger.debug("Failed to save LLM pattern: %s", exc)
 
     # ── Device disambiguation ─────────────────────────────────────────
 

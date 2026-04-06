@@ -40,7 +40,6 @@ services:
       - HOST_USER=${USER:-root}
       - OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}
       - PIPER_MODELS_DIR=/var/lib/selena/models/piper
-      - LLAMACPP_START_SCRIPT=${PWD}/scripts/llamacpp-start.sh
       - MALLOC_ARENA_MAX=2
       - SELENA_GPU_AVAILABLE=1
       - SELENA_GPU_TYPE=jetson

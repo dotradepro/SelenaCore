@@ -223,7 +223,7 @@ async def _seed_fast_matcher_rules(session) -> int:
     rules = [
         {
             "intent": "device.on",
-            "module": "",
+            "module": "device-control",
             "noun_class": "DEVICE",
             "verb": "on",
             "priority": 100,
@@ -236,7 +236,7 @@ async def _seed_fast_matcher_rules(session) -> int:
         },
         {
             "intent": "device.off",
-            "module": "",
+            "module": "device-control",
             "noun_class": "DEVICE",
             "verb": "off",
             "priority": 100,

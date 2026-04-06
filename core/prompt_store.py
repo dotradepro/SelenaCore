@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,6 @@ PROMPT_KEYS = (
     "intent_system",         # Intent router LLM prompt (JSON format instructions)
     "rephrase_system",       # TTS rephrase/generation prompt (template: {lang_name})
     "translate_system",      # System prompt for translation tasks
-    "pattern_system",        # System prompt for voice command pattern generation
 )
 _PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
 
@@ -83,10 +82,6 @@ _EN_FALLBACK = {
     "translate_system": (
         "You are a translator. Reply with ONLY the translated text, nothing else. "
         "No quotes, no explanations, no extra words."
-    ),
-    "pattern_system": (
-        "You generate short English voice commands for a smart home system. "
-        "Reply ONLY with a JSON array of strings. Each string is a short command (2-5 words)."
     ),
 }
 
@@ -293,25 +288,30 @@ class PromptStore:
                     rs_row.value = rs_row.value.replace("{rephrase_rules}", row.value)
                 await session.delete(row)
 
-            # Seed new keys (translate_system, pattern_system) if missing
-            for new_key in ("translate_system", "pattern_system"):
-                for lang_code in ("en",):
-                    existing = await session.execute(
-                        select(SystemPrompt).where(
-                            SystemPrompt.lang == lang_code,
-                            SystemPrompt.key == new_key,
-                        )
-                    )
-                    if existing.scalar_one_or_none() is None:
-                        val = _EN_FALLBACK.get(new_key, "")
-                        if val:
-                            session.add(SystemPrompt(
-                                lang=lang_code, key=new_key,
-                                value=val, is_custom=False,
-                            ))
+            # Seed translate_system if missing (en only)
+            existing = await session.execute(
+                select(SystemPrompt).where(
+                    SystemPrompt.lang == "en",
+                    SystemPrompt.key == "translate_system",
+                )
+            )
+            if existing.scalar_one_or_none() is None:
+                val = _EN_FALLBACK.get("translate_system", "")
+                if val:
+                    session.add(SystemPrompt(
+                        lang="en", key="translate_system",
+                        value=val, is_custom=False,
+                    ))
+
+            # Drop the deprecated pattern_system key — pattern generation is now
+            # an internal English-only operation hardcoded inside PatternGenerator,
+            # not a user-editable DB prompt.
+            await session.execute(
+                delete(SystemPrompt).where(SystemPrompt.key == "pattern_system")
+            )
 
             await session.commit()
-            logger.info("PromptStore: migrated user_prompt→user_instructions, added translate/pattern keys")
+            logger.info("PromptStore: migrated user_prompt→user_instructions, dropped pattern_system")
 
     async def _db_get(self, lang: str, key: str) -> str | None:
         if not self._session_factory:

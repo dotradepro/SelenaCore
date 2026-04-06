@@ -235,8 +235,6 @@ voice:
 | `PIPER_VOICE` | `uk_UA-ukrainian_tts-medium` | Default TTS voice |
 | `PIPER_GPU_URL` | `http://localhost:5100` | Native Piper server URL |
 | `PIPER_DEVICE` | `auto` | Piper device mode: `auto`, `cpu`, `gpu` |
-| `LLAMACPP_GPU_LAYERS` | `999` | GPU layers for llama.cpp (0=CPU only) |
-| `LLAMACPP_N_CTX` | `512` | Context window size for llama.cpp |
 
 ### llm
 

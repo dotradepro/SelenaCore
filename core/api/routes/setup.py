@@ -986,6 +986,29 @@ async def tts_preview(req: PreviewVoiceRequest) -> Any:
 
 
 # ================================================================== #
+#  Intent Patterns — entity regeneration                              #
+# ================================================================== #
+
+@router.post("/patterns/regenerate")
+async def patterns_regenerate(entity_type: str | None = None) -> dict[str, Any]:
+    """Regenerate auto_entity intent patterns for radios/devices/scenes.
+
+    PatternGenerator wipes existing source='auto_entity' rows and rebuilds
+    them via the hardcoded English LLM prompt. Hot-reloads IntentCompiler.
+
+    Optional ?entity_type=radio_station|device|scene narrows the rebuild.
+    """
+    try:
+        from system_modules.llm_engine.pattern_generator import get_pattern_generator
+        gen = get_pattern_generator()
+        count = await gen.regenerate_all(entity_type)
+        return {"status": "ok", "count": count, "entity_type": entity_type or "all"}
+    except Exception as exc:
+        logger.error("Pattern regeneration failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ================================================================== #
 #  LLM Models (Ollama)                                                 #
 # ================================================================== #
 

@@ -247,7 +247,14 @@ async def generate_wake_variants_llm(phrase: str, lang: str = "uk") -> list[str]
             f"no explanations. Include the original word first."
         )
 
-        raw = await llm_call(prompt_text, prompt_key="pattern", temperature=0.3)
+        raw = await llm_call(
+            prompt_text,
+            system=(
+                "You are a helpful linguistic assistant. "
+                "Output exactly what the user asks, nothing else."
+            ),
+            temperature=0.3,
+        )
 
         if not raw:
             return []

@@ -18,10 +18,6 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "name": "Ollama (Local)",
         "needs_key": False,
     },
-    "llamacpp": {
-        "name": "llama.cpp (Local)",
-        "needs_key": False,
-    },
     "openai": {
         "name": "OpenAI",
         "base_url": "https://api.openai.com/v1",
@@ -179,8 +175,15 @@ async def generate(
     prompt: str,
     system: str | None = None,
     temperature: float = 0.7,
+    max_tokens: int = 512,
+    json_mode: bool = False,
 ) -> str:
-    """Unified generation across cloud providers."""
+    """Unified generation across cloud providers.
+
+    ``json_mode=True`` switches each provider to its native structured-output
+    mode (OpenAI/Groq ``response_format``, Gemini ``responseMimeType``,
+    Anthropic prompt-prefill).
+    """
     prov = PROVIDERS.get(provider)
     if not prov or not api_key:
         return ""
@@ -193,11 +196,16 @@ async def generate(
             headers.update(prov["extra_headers"])
 
         if provider == "anthropic":
+            messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+            # Anthropic has no JSON mode flag — prefill an opening brace so the
+            # model is forced to continue with JSON.
+            if json_mode:
+                messages.append({"role": "assistant", "content": "{"})
             payload = {
                 "model": model,
-                "max_tokens": 512,
+                "max_tokens": max_tokens,
                 "temperature": temperature,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
             }
             if system:
                 payload["system"] = system
@@ -207,9 +215,15 @@ async def generate(
             url = f"{prov['base_url']}/models/{model}:generateContent?key={api_key}"
             contents = [{"parts": [{"text": prompt}]}]
             # Use 8192 for thinking models (2.5-pro etc.) that consume tokens on reasoning
+            gen_cfg: dict[str, Any] = {
+                "temperature": temperature,
+                "maxOutputTokens": 8192,
+            }
+            if json_mode:
+                gen_cfg["responseMimeType"] = "application/json"
             payload: dict[str, Any] = {
                 "contents": contents,
-                "generationConfig": {"temperature": temperature, "maxOutputTokens": 8192},
+                "generationConfig": gen_cfg,
             }
             if system:
                 payload["systemInstruction"] = {"parts": [{"text": system}]}
@@ -224,8 +238,10 @@ async def generate(
                 "model": model,
                 "messages": messages,
                 "temperature": temperature,
-                "max_tokens": 512,
+                "max_tokens": max_tokens,
             }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
             url = prov["base_url"] + "/chat/completions"
 
         async with httpx.AsyncClient(timeout=120) as client:
@@ -234,10 +250,17 @@ async def generate(
             data = resp.json()
 
         if provider == "anthropic":
+            text = ""
             for block in data.get("content", []):
                 if block.get("type") == "text":
-                    return block.get("text", "")
-            return data.get("content", [{}])[0].get("text", "")
+                    text = block.get("text", "")
+                    break
+            else:
+                text = data.get("content", [{}])[0].get("text", "")
+            # Re-prepend the prefilled "{" we sent so the caller gets valid JSON
+            if json_mode and text and not text.lstrip().startswith("{"):
+                text = "{" + text
+            return text
         elif provider == "google":
             # Gemini thinking models may have multiple parts; extract text parts only
             candidates = data.get("candidates", [])

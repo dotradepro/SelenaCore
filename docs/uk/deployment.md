@@ -88,7 +88,7 @@ docker compose up -d
   - Директорія моделей Ollama (якщо налаштовано)
 - **Перевірка стану:** `GET /api/v1/health` кожні 30 секунд
 - **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
-- **Зовнішні сервіси (нативно на хості):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
+- **Зовнішні сервіси (нативно на хості):** Piper TTS (`piper-tts.service`), Ollama
 
 ### selena-agent (агент цілісності)
 
@@ -131,17 +131,28 @@ curl http://localhost:5100/health
 
 > **Примітка:** PyPI `onnxruntime-gpu` НЕ має aarch64 wheels. Використовуйте індекс NVIDIA Jetson AI Lab.
 
-### llama.cpp / Ollama
+### Ollama
 
-LLM працює нативно на хості для GPU offload.
+Локальний LLM-інференс виконується нативно на хості через Ollama для GPU-прискорення
+та щоб не роздувати контейнер. SelenaCore спілкується з Ollama по HTTP API
+(`OLLAMA_URL`, за замовчуванням `http://localhost:11434`).
 
 ```bash
-# З GPU (за замовч.)
-bash scripts/llamacpp-start.sh /path/to/model.gguf 8081 999
+# Встановити Ollama (одноразово)
+curl -fsSL https://ollama.com/install.sh | sh
 
-# Тільки CPU
-LLAMACPP_GPU_LAYERS=0 bash scripts/llamacpp-start.sh /path/to/model.gguf
+# Увімкнути та запустити systemd-сервіс
+sudo systemctl enable --now ollama
+
+# Завантажити модель
+ollama pull qwen2.5:3b
+
+# Перевірити
+curl http://localhost:11434/api/tags
 ```
+
+Хмарні LLM-провайдери (OpenAI, Anthropic, Google AI, Groq) налаштовуються через UI
+голосових налаштувань і не потребують жодного сервісу на хості.
 
 ---
 

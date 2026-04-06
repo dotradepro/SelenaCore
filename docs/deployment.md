@@ -88,7 +88,7 @@ The primary container running the SelenaCore application.
   - Ollama models directory (if configured)
 - **Health check:** `GET /api/v1/health` every 30 seconds
 - **Bundled software:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
-- **External services (native on host):** Piper TTS (`piper-tts.service`), llama.cpp / Ollama
+- **External services (native on host):** Piper TTS (`piper-tts.service`), Ollama
 
 ### selena-agent (integrity agent)
 
@@ -133,17 +133,28 @@ curl http://localhost:5100/health
 
 **Device modes:** `--device auto` (default, detect GPU), `--device cpu`, `--device gpu`
 
-### llama.cpp / Ollama
+### Ollama
 
-LLM inference runs natively on host for GPU layer offloading.
+Local LLM inference runs natively on the host via Ollama for GPU acceleration and to keep
+the container slim. SelenaCore communicates with Ollama over its HTTP API
+(`OLLAMA_URL`, default `http://localhost:11434`).
 
 ```bash
-# Start with GPU (default)
-bash scripts/llamacpp-start.sh /path/to/model.gguf 8081 999
+# Install Ollama (one-time)
+curl -fsSL https://ollama.com/install.sh | sh
 
-# CPU only
-LLAMACPP_GPU_LAYERS=0 bash scripts/llamacpp-start.sh /path/to/model.gguf
+# Enable and start the systemd service
+sudo systemctl enable --now ollama
+
+# Pull a model
+ollama pull qwen2.5:3b
+
+# Verify
+curl http://localhost:11434/api/tags
 ```
+
+Cloud LLM providers (OpenAI, Anthropic, Google AI, Groq) are configured via the
+voice settings UI and require no host-side service.
 
 ---
 

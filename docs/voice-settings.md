@@ -172,7 +172,13 @@ All intent patterns are stored in the database (no YAML files):
 
 ### Auto-Generated Patterns
 
-When a user adds entities through the UI, regex patterns are automatically generated:
+When a user adds an entity through the UI (radio station, device, scene),
+`PatternGenerator` runs **once** at registration time and writes English-only
+regex rows with `source='auto_entity'` and an `entity_ref` linking the row to
+its entity. The LLM prompt used here is **hardcoded English** inside
+`pattern_generator.py` (`_PATTERN_SYSTEM_EN`) — it is NOT stored in the DB
+and NOT exposed in the admin Prompts UI, because pattern generation is an
+internal English-only operation that powers the 0-ms regex tier.
 
 | Entity | Example | Generated Pattern (EN) |
 |--------|---------|----------------------|
@@ -180,10 +186,22 @@ When a user adds entities through the UI, regex patterns are automatically gener
 | Device "Kitchen lamp" | `device.on` | `(?:turn on\|switch on)\s+(?:the\s+)?kitchen lamp` |
 | Scene "Movie Night" | `automation.run_scene` | `(?:activate\|run)\s+(?:scene\s+)?movie night` |
 
+The intent router never writes back into `intent_patterns` at voice request
+time. Tier-3 LLM only **classifies** the user query against the existing
+catalogue (`manual` + `system` + `auto_entity` rows) and returns a JSON object
+with `{intent, params, location, response}` — no `pattern` field.
+
+To force a full rebuild of `auto_entity` rows (e.g. after a schema change):
+
+```bash
+curl -s -X POST http://localhost/api/ui/setup/patterns/regenerate
+# → {"status":"ok","count":<N>,"entity_type":"all"}
+```
+
 ### Hot-Reload
 
 When data changes (add/remove station, device, scene):
-1. PatternGenerator creates/deletes patterns in DB
+1. PatternGenerator creates/deletes `auto_entity` patterns in DB
 2. IntentCompiler recompiles regex cache in memory
 3. LLM prompt cache invalidated
 4. No restart needed

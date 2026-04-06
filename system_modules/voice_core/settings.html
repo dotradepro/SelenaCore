@@ -738,20 +738,6 @@
         </div>
     </div>
 
-    <!-- llama.cpp panel -->
-    <div id="llamacppPanel" class="hidden">
-        <div class="flex gap8 mb12">
-            <span id="llamacppStatusBadge" class="badge"></span>
-        </div>
-        <div class="label-xs mb8" data-i18n="llamacpp_desc"></div>
-        <div id="llamacppModelSelect" class="mb12 hidden">
-            <div class="label-sm" data-i18n="select_model"></div>
-            <select id="llamacppModel" style="width:100%"></select>
-        </div>
-        <div id="llamacppNoModels" class="hidden" style="font-size:11px;color:var(--rd);margin-bottom:12px" data-i18n="llamacpp_no_models"></div>
-        <div class="flex gap8 mb16 wrap" id="llamacppActions"></div>
-    </div>
-
     <!-- Cloud provider panel -->
     <div id="cloudPanel" class="hidden">
         <div class="mb16">
@@ -868,19 +854,6 @@
         <textarea id="translateSystemText" rows="3" style="width:100%"></textarea>
         <div class="flex gap8 mt4" style="align-items:center">
             <button id="saveTranslateBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 10. Voice pattern prompt -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="pattern_system_label"></span>
-            <span id="customPatternBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="pattern_system_desc"></div>
-        <textarea id="patternSystemText" rows="3" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="savePatternBtn" class="btn btn-green" data-i18n="save"></button>
         </div>
     </div>
 
@@ -1267,15 +1240,13 @@
             hidden_system_label_edit: 'System identity (cloud models)',
             hidden_system_desc: 'Core identity and rules. Template variables: {name}, {lang}. Applied before user prompt.',
             hidden_compact_label: 'System identity (local models)',
-            hidden_compact_desc: 'Short identity for Ollama/llama.cpp. Template: {name}, {lang}.',
+            hidden_compact_desc: 'Short identity for Ollama. Template: {name}, {lang}.',
             intent_system_label: 'Intent router prompt',
             intent_system_desc: 'Main prompt for intent classification. Controls how LLM classifies voice commands into intents (JSON). Template: {name}, {lang}. Intent catalog is injected automatically.',
             rephrase_system_label: 'Rephrase system wrapper',
             rephrase_system_desc: 'Wraps the rephrase rules above with TTS instructions. Template: {lang_name}, {rephrase_rules}.',
             translate_system_label: 'Translation prompt',
             translate_system_desc: 'System prompt for translating text to English (keywords, device names).',
-            pattern_system_label: 'Voice pattern prompt',
-            pattern_system_desc: 'System prompt for generating voice command patterns (short English phrases).',
             show_hidden: 'Show system prompt',
             custom: 'Custom',
             reset_default: 'Reset to default',
@@ -1290,8 +1261,6 @@
             cpu_only: 'CPU only (no GPU)',
             enable_gpu: 'Enable GPU',
             force_cpu: 'Force CPU',
-            llamacpp_desc: 'llama.cpp runs GGUF models directly with GPU acceleration',
-            llamacpp_no_models: 'No models available. Download models in Ollama first.',
             saved: 'Saved',
             wake_title: 'Activation Phrase',
             wake_desc: 'Wake word detection — always-on listener',
@@ -1468,15 +1437,13 @@
             hidden_system_label_edit: 'Системна iдентичнiсть (хмарнi моделi)',
             hidden_system_desc: 'Основна iдентичнiсть та правила. Шаблон: {name}, {lang}. Додається перед промптом користувача.',
             hidden_compact_label: 'Системна iдентичнiсть (локальнi моделi)',
-            hidden_compact_desc: 'Коротка iдентичнiсть для Ollama/llama.cpp. Шаблон: {name}, {lang}.',
+            hidden_compact_desc: 'Коротка iдентичнiсть для Ollama. Шаблон: {name}, {lang}.',
             intent_system_label: 'Промпт маршрутизатора iнтентiв',
             intent_system_desc: 'Основний промпт класифiкацiї iнтентiв. Контролює як LLM класифiкує голосовi команди в iнтенти (JSON). Шаблон: {name}, {lang}. Каталог iнтентiв додається автоматично.',
             rephrase_system_label: 'Системна обгортка перефразування',
             rephrase_system_desc: 'Обгортає правила перефразування iнструкцiями для TTS. Шаблон: {lang_name}, {rephrase_rules}.',
             translate_system_label: 'Промпт перекладу',
             translate_system_desc: 'Системний промпт для перекладу тексту англiйською (ключовi слова, назви пристроїв).',
-            pattern_system_label: 'Промпт голосових патернiв',
-            pattern_system_desc: 'Системний промпт для генерацiї патернiв голосових команд (короткi англiйськi фрази).',
             show_hidden: 'Показати системний промпт',
             custom: 'Кастомний',
             reset_default: 'Скинути за замовч.',
@@ -1491,8 +1458,6 @@
             cpu_only: 'Тiльки CPU (без GPU)',
             enable_gpu: 'Увiмкнути GPU',
             force_cpu: 'Примусово CPU',
-            llamacpp_desc: 'llama.cpp запускає GGUF моделi напряму з GPU прискоренням',
-            llamacpp_no_models: 'Немає моделей. Завантажте моделi в Ollama спочатку.',
             saved: 'Збережено',
             wake_title: 'Фраза активацiї',
             wake_desc: 'Детекцiя wake word — постiйне прослуховування',
@@ -1634,7 +1599,6 @@
         ollamaInstalled: false, ollamaVersion: null, ollamaRunning: false, ollamaInstalling: false,
         ollamaModels: [], ollamaActive: '',
         pulling: false, pullProgress: 0, pullStatus: '',
-        llamacppRunning: false, llamacppStarting: false,
         isCustomUser: false,
         limits: {},
         detectedLang: '', assistantName: '',
@@ -2352,7 +2316,6 @@
 
         try {
             if (oldPid === 'ollama' && pid !== 'ollama') addStep('Stopping Ollama...');
-            else if (oldPid === 'llamacpp' && pid !== 'llamacpp') addStep('Stopping llama.cpp...');
 
             addStep('Selecting provider...');
             await postJson('/setup/llm/provider/select', { provider: pid });
@@ -2360,10 +2323,6 @@
             if (pid === 'ollama') {
                 addStep('Starting Ollama...');
                 await waitForServer(function() { return api('/setup/ollama/status').then(function(d) { return d.running; }); }, 15);
-            } else if (pid === 'llamacpp') {
-                addStep('Starting llama.cpp...');
-                addStep('Loading model...');
-                await waitForServer(function() { return api('/setup/llamacpp/status').then(function(d) { return d.running; }); }, 30);
             }
             addStep('Ready');
             // Mark all done
@@ -2377,7 +2336,6 @@
             loadProviders();
             loadOllamaStatus();
             loadOllamaModels();
-            loadLlamacppStatus();
             showProviderPanel();
         }, 1500);
     }
@@ -2390,14 +2348,10 @@
     }
 
     function showProviderPanel() {
-        hide('ollamaPanel'); hide('llamacppPanel'); hide('cloudPanel');
+        hide('ollamaPanel'); hide('cloudPanel');
         var accelBadge = $('llmAccelBadge');
         if (state.activeProvider === 'ollama') {
             show('ollamaPanel');
-            accelBadge.textContent = state.gpuActive ? 'GPU' : 'CPU';
-            accelBadge.className = 'badge ' + (state.gpuActive ? 'badge-ok' : 'badge-ac');
-        } else if (state.activeProvider === 'llamacpp') {
-            show('llamacppPanel');
             accelBadge.textContent = state.gpuActive ? 'GPU' : 'CPU';
             accelBadge.className = 'badge ' + (state.gpuActive ? 'badge-ok' : 'badge-ac');
         } else {
@@ -2435,7 +2389,6 @@
             if (pm.intent_system) $('intentSystemText').value = pm.intent_system.value || '';
             if (pm.rephrase_system) $('rephraseSystemText').value = pm.rephrase_system.value || '';
             if (pm.translate_system) $('translateSystemText').value = pm.translate_system.value || '';
-            if (pm.pattern_system) $('patternSystemText').value = pm.pattern_system.value || '';
 
             // Custom badges
             if (pm.hidden_system && pm.hidden_system.is_custom) show('customHiddenBadge'); else hide('customHiddenBadge');
@@ -2443,7 +2396,6 @@
             if (pm.intent_system && pm.intent_system.is_custom) show('customIntentSysBadge'); else hide('customIntentSysBadge');
             if (pm.rephrase_system && pm.rephrase_system.is_custom) show('customRephraseSysBadge'); else hide('customRephraseSysBadge');
             if (pm.translate_system && pm.translate_system.is_custom) show('customTranslateBadge'); else hide('customTranslateBadge');
-            if (pm.pattern_system && pm.pattern_system.is_custom) show('customPatternBadge'); else hide('customPatternBadge');
 
             // Global custom badge
             var anyCustom = state.isCustomUser ||
@@ -2451,8 +2403,7 @@
                 (pm.hidden_compact && pm.hidden_compact.is_custom) ||
                 (pm.intent_system && pm.intent_system.is_custom) ||
                 (pm.rephrase_system && pm.rephrase_system.is_custom) ||
-                (pm.translate_system && pm.translate_system.is_custom) ||
-                (pm.pattern_system && pm.pattern_system.is_custom);
+                (pm.translate_system && pm.translate_system.is_custom);
             if (anyCustom) show('customPromptBadge'); else hide('customPromptBadge');
 
             $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
@@ -2477,7 +2428,6 @@
     _saveUniversalPrompt('saveIntentSysBtn', 'intentSystemText', 'intent_system');
     _saveUniversalPrompt('saveRephraseSysBtn', 'rephraseSystemText', 'rephrase_system');
     _saveUniversalPrompt('saveTranslateBtn', 'translateSystemText', 'translate_system');
-    _saveUniversalPrompt('savePatternBtn', 'patternSystemText', 'pattern_system');
 
     // Reset all
     $('resetPromptsBtn').onclick = async function() {
@@ -2536,19 +2486,6 @@
                 ' onclick="window._ollamaDelete(\'' + m.id + '\')">&#10005;</button>' +
                 '</div></div>';
         }).join('');
-
-        // llama.cpp model selector
-        if (state.ollamaModels.length > 0) {
-            show('llamacppModelSelect');
-            hide('llamacppNoModels');
-            $('llamacppModel').innerHTML = '<option value="">-- ' + t('select_model') + ' --</option>' +
-                state.ollamaModels.map(function(m) {
-                    return '<option value="' + m.id + '">' + m.name + (m.size_gb !== undefined ? ' (' + m.size_gb + ' GB)' : '') + '</option>';
-                }).join('');
-        } else {
-            hide('llamacppModelSelect');
-            show('llamacppNoModels');
-        }
     }
 
     window._ollamaSelect = async function(id) {
@@ -2697,71 +2634,6 @@
     window._ollamaPullCatalog = function(id) {
         $('pullModelInput').value = id;
         pullModel();
-    };
-
-    // ── llama.cpp ─────────────────────────────────────────────────
-    window._refreshLlamacpp = function() { loadLlamacppStatus(); loadOllamaModels(); };
-
-    async function loadLlamacppStatus() {
-        try {
-            var res = await api('/setup/llamacpp/status');
-            state.llamacppRunning = res.running || false;
-            $('llamacppStatusBadge').textContent = res.running ? t('server_running') : t('server_stopped');
-            $('llamacppStatusBadge').className = 'badge ' + (res.running ? 'badge-ok' : 'badge-warn');
-            renderLlamacppActions();
-        } catch(e) { /* ignore */ }
-    }
-
-    function renderLlamacppActions() {
-        var html = '';
-        if (!state.llamacppRunning) {
-            html += '<button class="btn btn-green" id="llamacppStartBtn">' + t('start_server') + '</button>';
-        } else {
-            html += '<button class="btn btn-amber" id="llamacppStopBtn">' + t('stop_server') + '</button>';
-        }
-        html += '<button class="btn btn-ghost" onclick="window._refreshLlamacpp()">' + t('refresh') + '</button>';
-        $('llamacppActions').innerHTML = html;
-
-        if ($('llamacppStartBtn')) $('llamacppStartBtn').onclick = async function() {
-            var model = $('llamacppModel').value;
-            if (!model) return;
-            this.disabled = true;
-            state.llamacppStarting = true;
-            show('switchSteps');
-            var steps = [];
-            function addStep(s) {
-                steps.push(s);
-                $('switchSteps').innerHTML = steps.map(function(s2, i) {
-                    var isLast = i === steps.length - 1;
-                    return '<div class="step-item ' + (isLast ? 'step-active' : 'step-done') + '">' +
-                        (isLast ? '<span class="spinner"></span>' : '&#10003;') + ' ' + s2 + '</div>';
-                }).join('');
-            }
-            try {
-                addStep('Starting llama.cpp...');
-                await postJson('/setup/llamacpp/start', {});
-                addStep('Loading model...');
-                await waitForServer(function() { return api('/setup/llamacpp/status').then(function(d) { return d.running; }); }, 30);
-                addStep('Ready');
-                $('switchSteps').innerHTML = steps.map(function(s2) {
-                    return '<div class="step-item step-done">&#10003; ' + s2 + '</div>';
-                }).join('');
-            } catch(e) { /* ignore */ }
-            setTimeout(function() { hide('switchSteps'); loadLlamacppStatus(); }, 1500);
-            state.llamacppStarting = false;
-        };
-
-        if ($('llamacppStopBtn')) $('llamacppStopBtn').onclick = async function() {
-            try { await api('/setup/llamacpp/stop', { method: 'POST' }); } catch(e) { /* ignore */ }
-            setTimeout(loadLlamacppStatus, 2000);
-        };
-    }
-
-    $('llamacppModel').onchange = async function() {
-        if (!this.value) return;
-        try {
-            await postJson('/setup/llm/provider/model', { provider: 'llamacpp', model: this.value });
-        } catch(e) { /* ignore */ }
     };
 
     // ── Cloud Provider ────────────────────────────────────────────
@@ -3000,7 +2872,6 @@
         $('patternsBody').innerHTML = page.map(function(p) {
             var srcBadge = p.source === 'auto_entity' ? '<span class="badge badge-ac">auto</span>' :
                            p.source === 'system' ? '<span class="badge badge-ok">system</span>' :
-                           p.source === 'llm_generated' ? '<span class="badge" style="background:rgba(168,85,247,.15);color:var(--pr)">llm</span>' :
                            '<span class="badge">' + (p.source || '—') + '</span>';
             return '<tr>' +
                 '<td class="intent-module">' + (p.module || '—') + '</td>' +
@@ -3148,7 +3019,6 @@
             loadProviders(),
             loadOllamaStatus(),
             loadOllamaModels(),
-            loadLlamacppStatus(),
         ]);
         // Vosk model management is in the catalog section
         renderPiperVoices();
