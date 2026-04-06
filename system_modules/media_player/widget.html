@@ -336,67 +336,201 @@
             text-overflow: ellipsis
         }
 
+        /* ═══ Marquee scroll for long titles ═══ */
+        .track-title {
+            position: relative
+        }
+
+        .marquee-inner {
+            display: inline-block;
+            white-space: nowrap;
+            will-change: transform
+        }
+
+        .track-title.marquee .marquee-inner {
+            padding-left: 100%;
+            animation: marquee-scroll 12s linear infinite
+        }
+
+        @keyframes marquee-scroll {
+            0% {
+                transform: translateX(0)
+            }
+
+            100% {
+                transform: translateX(-100%)
+            }
+        }
+
         /* ═══ RESPONSIVE ═══ */
-        /* sz-xs — 1×1 */
+        /* sz-xs — 1×1 (no cover; title row + 4-button controls row) */
         .sz-xs {
-            padding: 7px 9px;
-            gap: 8px
+            display: grid !important;
+            grid-template-rows: auto 1fr;
+            padding: 5px 7px;
+            gap: 3px;
+            align-items: center
         }
 
-        .sz-xs img.cover,
-        .sz-xs .cover-ph {
-            width: 50px;
-            height: 50px;
-            border-radius: 7px
-        }
-
-        .sz-xs .cover-ph {
-            font-size: 18px
+        .sz-xs .cover-zone {
+            display: none
         }
 
         .sz-xs .main-area {
-            flex-direction: row;
-            align-items: center;
-            gap: 6px
+            display: contents
         }
 
         .sz-xs .info-zone {
-            flex: 1
+            width: 100%;
+            min-width: 0;
+            text-align: center
         }
 
         .sz-xs .track-title {
-            font-size: 11px
+            font-size: 12px;
+            font-weight: 600
         }
 
-        .sz-xs .track-artist {
-            display: none
-        }
-
-        .sz-xs .progress-row {
-            display: none
-        }
-
-        .sz-xs .ctrl-zone {
-            flex-shrink: 0
-        }
-
-        .sz-xs .vol-row {
-            display: none
-        }
-
+        .sz-xs .track-artist,
+        .sz-xs .progress-row,
+        .sz-xs .vol-row,
         .sz-xs .mini-queue {
             display: none !important
         }
 
-        .sz-xs #btnShuffle,
-        .sz-xs .btn-prev,
-        .sz-xs .btn-next {
+        .sz-xs #btnShuffle {
             display: none
         }
 
+        .sz-xs .ctrl-zone {
+            justify-content: center;
+            min-width: 0;
+            width: 100%
+        }
+
         .sz-xs .controls {
-            gap: 2px;
-            flex: none
+            flex: 1;
+            justify-content: space-around;
+            gap: 0;
+            min-width: 0
+        }
+
+        .sz-xs .btn {
+            padding: 3px;
+            font-size: 13px
+        }
+
+        .sz-xs .btn-play {
+            width: 28px;
+            height: 28px;
+            font-size: 12px
+        }
+
+        .sz-xs .btn-src {
+            padding: 2px 5px;
+            font-size: 13px
+        }
+
+        /* sz-sm — 2×1: title across top (full width, marquee), cover + ctrl below */
+        .sz-sm {
+            display: grid !important;
+            grid-template-columns: auto 1fr;
+            grid-template-rows: auto 1fr;
+            grid-template-areas:
+                "title title"
+                "cover ctrl";
+            padding: 6px 9px;
+            gap: 4px 9px;
+            align-items: center
+        }
+
+        .sz-sm .main-area {
+            display: contents
+        }
+
+        .sz-sm .info-zone {
+            grid-area: title;
+            width: 100%;
+            min-width: 0
+        }
+
+        .sz-sm .cover-zone {
+            grid-area: cover;
+            align-self: center
+        }
+
+        .sz-sm .ctrl-zone {
+            grid-area: ctrl;
+            min-width: 0;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px
+        }
+
+        .sz-sm img.cover,
+        .sz-sm .cover-ph {
+            width: 52px;
+            height: 52px;
+            border-radius: 7px
+        }
+
+        .sz-sm .cover-ph {
+            font-size: 18px
+        }
+
+        .sz-sm .track-title {
+            font-size: 13px;
+            font-weight: 600
+        }
+
+        .sz-sm .track-artist,
+        .sz-sm .progress-row {
+            display: none
+        }
+
+        .sz-sm .controls {
+            gap: 1px;
+            flex: 0 0 auto;
+            width: 100%;
+            justify-content: flex-start
+        }
+
+        .sz-sm .btn {
+            padding: 3px;
+            font-size: 12px
+        }
+
+        .sz-sm .btn-play {
+            width: 26px;
+            height: 26px;
+            font-size: 11px
+        }
+
+        .sz-sm .btn-src {
+            padding: 2px 5px;
+            font-size: 13px
+        }
+
+        .sz-sm .vol-row {
+            flex: 0 0 auto;
+            width: 100%;
+            min-width: 0;
+            gap: 4px
+        }
+
+        .sz-sm .vol-icon {
+            font-size: 9px
+        }
+
+        .sz-sm input[type=range] {
+            flex: 1;
+            width: auto;
+            min-width: 24px
+        }
+
+        .sz-sm .vol-num {
+            font-size: 9px;
+            min-width: 14px
         }
 
         /* sz-lg — 2×2 */
@@ -898,9 +1032,45 @@
         function updateSize() {
             var root = document.getElementById('root');
             if (!root) return;
-            var w = root.offsetWidth, h = root.offsetHeight;
-            var cls = (w < 200) ? 'sz-xs' : (h > 140) ? 'sz-lg' : 'sz-sm';
-            if (cls !== _szClass) { root.classList.remove('sz-xs', 'sz-sm', 'sz-lg'); root.classList.add(cls); _szClass = cls; }
+            // Dashboard injects data-span-cols / data-span-rows on <html>.
+            // Fall back to offsetWidth-based detection only if attributes are absent.
+            var ds = document.documentElement.dataset || {};
+            var cols = parseInt(ds.spanCols || '0', 10);
+            var rows = parseInt(ds.spanRows || '0', 10);
+            var cls;
+            if (cols >= 1 && rows >= 1) {
+                if (cols === 1 && rows === 1) cls = 'sz-xs';
+                else if (cols >= 2 && rows >= 2) cls = 'sz-lg';
+                else cls = 'sz-sm'; // 2×1, 1×2, 3×1, etc.
+            } else {
+                var w = root.offsetWidth, h = root.offsetHeight;
+                cls = (w < 200) ? 'sz-xs' : (h > 140) ? 'sz-lg' : 'sz-sm';
+            }
+            if (cls !== _szClass) {
+                root.classList.remove('sz-xs', 'sz-sm', 'sz-lg');
+                root.classList.add(cls);
+                _szClass = cls;
+                // Container width changed → re-evaluate title marquee
+                var el = document.getElementById('trackTitle');
+                var inner = el && el.firstChild;
+                if (inner && inner.textContent) setTitle(inner.textContent);
+            }
+        }
+
+        // Set track title with marquee scroll if it overflows the container
+        function setTitle(text) {
+            var el = document.getElementById('trackTitle');
+            if (!el) return;
+            el.classList.remove('marquee');
+            el.innerHTML = '<span class="marquee-inner"></span>';
+            el.firstChild.textContent = text || '';
+            // After layout pass, decide whether to enable marquee scroll
+            requestAnimationFrame(function () {
+                var inner = el.firstChild;
+                if (inner && inner.scrollWidth > el.clientWidth + 2) {
+                    el.classList.add('marquee');
+                }
+            });
         }
 
         function refresh() { apiGet('/player/state').then(function (d) { if (d) renderState(d); }); }
@@ -921,7 +1091,7 @@
                 if (_state === 'error') { document.getElementById('trackArtist').textContent = t('play_error') || 'Playback error'; }
                 if (_state !== 'stopped' && track.duration_sec > 0) renderProgress(data.position, track.duration_sec);
             }
-            else { document.getElementById('trackTitle').textContent = t('nothing'); document.getElementById('trackArtist').textContent = ''; document.getElementById('srcBadge').style.display = 'none'; setCoverPh(); setProgOff(); }
+            else { setTitle(t('nothing')); document.getElementById('trackArtist').textContent = ''; document.getElementById('srcBadge').style.display = 'none'; setCoverPh(); setProgOff(); }
             if (data.queue) { renderQueue(data.queue, data.queue_index || 0); renderMiniQueue(data.queue, data.queue_index || 0); }
         }
 
@@ -929,7 +1099,7 @@
         function setProgOff() { var pr = document.getElementById('progressRow'); if (pr) { pr.style.opacity = '.35'; pr.style.pointerEvents = 'none'; } }
 
         function renderTrack(track) {
-            document.getElementById('trackTitle').textContent = track.title || '\u2014';
+            setTitle(track.title || '\u2014');
             document.getElementById('trackArtist').textContent = track.artist || '';
             var w = document.getElementById('coverWrap');
             if (track.cover_url) {
@@ -1082,6 +1252,11 @@
             if (pt) { pt.addEventListener('click', function (e) { var rect = pt.getBoundingClientRect(); apiPost('/player/seek', { position: (e.clientX - rect.left) / rect.width }).then(refresh); }); }
             document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSource(); });
             if (window.ResizeObserver) { var ro = new ResizeObserver(updateSize); ro.observe(document.getElementById('root')); }
+            // React to dashboard injecting new data-span-cols/rows on <html>
+            if (window.MutationObserver) {
+                var mo = new MutationObserver(updateSize);
+                mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-span-cols', 'data-span-rows'] });
+            }
             updateSize(); refresh(); setInterval(refresh, 3000);
         });
     </script>
