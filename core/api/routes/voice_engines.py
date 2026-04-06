@@ -521,22 +521,16 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
 
     synth_ms = int((_time.monotonic() - t0) * 1000)
 
-    if pcm_data:
-        size_kb = round(len(pcm_data) / 1024, 1)
-        sample_rate = 22050
-        t1 = _time.monotonic()
-        await loop.run_in_executor(None, _aplay_raw_pcm, pcm_data, device, sample_rate)
-        play_ms = int((_time.monotonic() - t1) * 1000)
-    else:
-        # Fallback: local piper binary pipe → paplay (streaming)
-        from system_modules.voice_core.tts import PIPER_BIN, MODELS_DIR
-        model_path = str(Path(MODELS_DIR) / f"{voice}.onnx")
-        t1 = _time.monotonic()
-        size_kb = await loop.run_in_executor(
-            None, _stream_piper_to_paplay, clean, model_path, settings, device,
+    if not pcm_data:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Piper TTS server unreachable at {gpu_url}",
         )
-        synth_ms = 0  # can't separate synth/play in pipe mode
-        play_ms = int((_time.monotonic() - t1) * 1000)
+    size_kb = round(len(pcm_data) / 1024, 1)
+    sample_rate = 22050
+    t1 = _time.monotonic()
+    await loop.run_in_executor(None, _aplay_raw_pcm, pcm_data, device, sample_rate)
+    play_ms = int((_time.monotonic() - t1) * 1000)
 
     total_ms = int((_time.monotonic() - t0) * 1000)
     return {
@@ -605,43 +599,6 @@ def _play_raw_pcm(pcm_data: bytes, device: str) -> None:
             proc.wait(timeout=2)
         except Exception:
             pass
-
-
-def _stream_piper_to_paplay(text: str, model_path: str, settings, device: str) -> float:
-    """Stream piper --output-raw | paplay --raw. Returns size in KB."""
-    from system_modules.voice_core.tts import PIPER_BIN
-    piper_cmd = [
-        PIPER_BIN, "--model", model_path, "--output-raw",
-        "--length-scale", str(settings.length_scale),
-        "--noise-scale", str(settings.noise_scale),
-        "--noise-w-scale", str(settings.noise_w_scale),
-        "--sentence-silence", str(settings.sentence_silence),
-        "--speaker", str(settings.speaker),
-    ]
-    play_cmd = ["paplay", "--raw", "--format=s16le", "--rate=22050", "--channels=1"]
-    if device and device != "none" and device != "default":
-        play_cmd.append("--device=" + device)
-
-    piper_proc = play_proc = None
-    try:
-        piper_proc = subprocess.Popen(piper_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        play_proc = subprocess.Popen(play_cmd, stdin=piper_proc.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        piper_proc.stdout.close()
-        piper_proc.stdin.write(text.encode("utf-8"))
-        piper_proc.stdin.close()
-        play_proc.wait(timeout=120)
-        piper_proc.wait(timeout=5)
-    except Exception as e:
-        logger.warning("Stream piper error: %s", e)
-    finally:
-        for p in [piper_proc, play_proc]:
-            if p:
-                try:
-                    p.kill()
-                    p.wait(timeout=2)
-                except Exception:
-                    pass
-    return 0
 
 
 async def _play_wav_on_device(wav_bytes: bytes, device: str) -> None:

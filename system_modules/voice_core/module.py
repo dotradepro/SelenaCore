@@ -1260,13 +1260,13 @@ class VoiceCoreModule(SystemModule):
     # ── TTS + Playback ───────────────────────────────────────────────────
 
     async def _stream_speak(self, text: str, voice_override: str | None = None) -> None:
-        """TTS playback: fetch raw PCM from Piper server → paplay.
+        """TTS playback: fetch raw PCM from native Piper server → aplay.
 
-        Primary: HTTP request to native Piper server (GPU-accelerated on host).
-        Fallback: local piper binary pipe (if server unavailable).
+        Piper TTS runs natively on the host as piper-tts.service (GPU-accelerated).
+        The container has no piper binary — all synthesis goes through HTTP.
         voice_override: use specific voice (e.g. EN fallback) instead of config default.
         """
-        from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, PIPER_BIN, MODELS_DIR, _load_tts_settings
+        from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
         clean = sanitize_for_tts(text)
         if not clean:
@@ -1306,19 +1306,13 @@ class VoiceCoreModule(SystemModule):
         output_device = self._get_output_device()
         loop = asyncio.get_running_loop()
 
-        # Try native Piper server first (GPU-accelerated, runs on host)
         tts_result = await self._fetch_tts_raw(clean, voice, settings)
-        if tts_result:
-            pcm_data, sample_rate = tts_result
-            await loop.run_in_executor(
-                None, self._play_raw_pcm, pcm_data, output_device, sample_rate,
-            )
+        if not tts_result:
+            logger.error("TTS HTTP request failed for voice=%s — playback skipped", voice)
             return
-
-        # Fallback: local piper binary pipe
-        model_path = str(Path(MODELS_DIR) / f"{voice}.onnx")
+        pcm_data, sample_rate = tts_result
         await loop.run_in_executor(
-            None, self._pipe_piper_local, clean, model_path, settings, output_device,
+            None, self._play_raw_pcm, pcm_data, output_device, sample_rate,
         )
 
     async def _fetch_tts_raw(self, text: str, voice: str, settings) -> tuple[bytes, int] | None:
@@ -1402,74 +1396,6 @@ class VoiceCoreModule(SystemModule):
                 proc.wait(timeout=2)
             except Exception:
                 pass
-
-    @staticmethod
-    def _pipe_piper_local(text: str, model_path: str, settings, output_device: str | None) -> None:
-        """Fallback: local piper binary → aplay with software volume."""
-        from system_modules.voice_core.tts import PIPER_BIN
-        piper_cmd = [
-            PIPER_BIN, "--model", model_path, "--output-raw",
-            "--length-scale", str(settings.length_scale),
-            "--noise-scale", str(settings.noise_scale),
-            "--noise-w-scale", str(settings.noise_w_scale),
-            "--sentence-silence", str(settings.sentence_silence),
-            "--speaker", str(settings.speaker),
-        ]
-        try:
-            from core.hardware import should_use_gpu, onnxruntime_has_gpu
-            if should_use_gpu() and onnxruntime_has_gpu():
-                piper_cmd.append("--cuda")
-        except Exception:
-            pass
-
-        play_cmd = [
-            "aplay", "-t", "raw",
-            "-f", "S16_LE", "-r", "22050", "-c", "1",
-        ]
-        if output_device:
-            play_cmd.extend(["-D", output_device])
-
-        piper_proc = None
-        play_proc = None
-        try:
-            piper_proc = subprocess.Popen(
-                piper_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-            piper_proc.stdin.write(text.encode("utf-8"))
-            piper_proc.stdin.close()
-            pcm_data = piper_proc.stdout.read()
-            piper_proc.wait(timeout=30)
-
-            volume = VoiceCoreModule._get_output_volume()
-            pcm_data = VoiceCoreModule._scale_pcm(pcm_data, volume)
-
-            play_proc = subprocess.Popen(
-                play_cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            play_proc.stdin.write(pcm_data)
-            play_proc.stdin.close()
-            play_proc.wait(timeout=120)
-            logger.info("Voice pipeline: playback complete")
-        except FileNotFoundError as e:
-            logger.warning("piper or aplay not found: %s", e)
-        except subprocess.TimeoutExpired:
-            logger.warning("TTS stream timed out")
-        except Exception as e:
-            logger.error("Stream speak error: %s", e)
-        finally:
-            for p in [piper_proc, play_proc]:
-                if p:
-                    try:
-                        p.kill()
-                        p.wait(timeout=2)
-                    except Exception:
-                        pass
 
     # ── Privacy ──────────────────────────────────────────────────────────
 

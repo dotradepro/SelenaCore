@@ -1,19 +1,25 @@
 """
-system_modules/voice_core/tts.py — Piper TTS engine (piper1-gpl)
+system_modules/voice_core/tts.py — Piper TTS client (HTTP-only)
 
 Architecture:
-  - Two PiperVoice objects loaded at startup, both hot in memory
-  - Primary voice (e.g. uk, GPU) for main language
-  - Fallback voice (en, CPU) for Latin/English segments
-  - split_by_language() segments text → each segment uses the right voice
-  - Switching between voices = Python variable, 0ms overhead
+  - Piper TTS runs NATIVELY on the host as piper-tts.service (port 5100).
+  - The container has NO `piper-tts` package installed; this module only
+    speaks to the native server over HTTP.
+  - Both voices (primary + fallback) are preloaded by piper-tts.service
+    at startup and stay hot in GPU memory.
+  - This client just routes synthesis requests with the right voice + settings.
 
-RAM: uk medium ~65MB (GPU) + en low ~5MB (CPU) = ~70MB total
+Live voice playback uses VoiceCoreModule._stream_speak() → _fetch_tts_raw()
+directly (also HTTP). This TTSEngine is used by:
+  1. Vosk warm-up at startup (single greeting phrase)
+  2. POST /tts/test endpoint from UI Settings
+  3. core/api/routes/voice_engines.py preview endpoints
 
 Usage:
     engine = TTSEngine()
-    engine.load_voices(primary="uk_UA-ukrainian_tts-medium", fallback="en_US-ryan-low")
-    wav_bytes = await engine.synthesize("Вмикаю WiFi підключено", primary_lang="uk")
+    engine.load_voices(primary="uk_UA-ukrainian_tts-medium",
+                       fallback="en_US-amy-low")
+    wav_bytes = await engine.synthesize("Привіт", primary_lang="uk")
 """
 from __future__ import annotations
 
@@ -24,13 +30,13 @@ import os
 import re
 import wave
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")
 DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
-DEFAULT_FALLBACK = os.environ.get("PIPER_FALLBACK_VOICE", "en_US-ryan-low")
+DEFAULT_FALLBACK = os.environ.get("PIPER_FALLBACK_VOICE", "en_US-amy-low")
+PIPER_GPU_URL = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
 
 
 def sanitize_for_tts(text: str) -> str:
@@ -92,7 +98,7 @@ def sanitize_for_tts(text: str) -> str:
 
 
 class TTSSettings:
-    """Piper synthesis parameters (backward compat)."""
+    """Piper synthesis parameters."""
     length_scale: float = 1.0
     noise_scale: float = 0.667
     noise_w_scale: float = 0.8
@@ -107,7 +113,7 @@ class TTSSettings:
 
 
 def _load_tts_settings() -> TTSSettings:
-    """Load TTS settings from config."""
+    """Load TTS settings from config (primary voice settings)."""
     try:
         from core.config_writer import read_config
         cfg = read_config()
@@ -124,31 +130,22 @@ def _load_tts_settings() -> TTSSettings:
     return TTSSettings()
 
 
-# Backward compat: also export PIPER_BIN
-PIPER_BIN = os.environ.get("PIPER_BIN", "piper")
-
-
 class TTSEngine:
-    """Piper TTS engine with dual voices (primary + fallback).
+    """Piper TTS engine — HTTP client to native piper-tts.service.
 
-    Both voices are loaded once at startup and stay hot in memory.
-    Switching between them is instant (Python variable selection).
+    Holds voice names and per-voice settings; all synthesis is delegated
+    to the native server via POST /synthesize/raw.
     """
 
     def __init__(self) -> None:
-        self._primary_voice: Any = None  # PiperVoice
-        self._fallback_voice: Any = None  # PiperVoice
         self._primary_name: str = ""
         self._fallback_name: str = ""
         self._primary_lang: str = "uk"
         self._fallback_lang: str = "en"
-        self._primary_sample_rate: int = 22050
-        self._fallback_sample_rate: int = 22050
         self._primary_settings: dict = {}
         self._fallback_settings: dict = {}
         self._lock = asyncio.Lock()
         self._loaded = False
-        self._use_http = False
 
     @property
     def voice(self) -> str:
@@ -159,69 +156,52 @@ class TTSEngine:
         self,
         primary: str = DEFAULT_VOICE,
         fallback: str = DEFAULT_FALLBACK,
-        primary_cuda: bool = False,
-        fallback_cuda: bool = False,
+        primary_cuda: bool = False,  # noqa: ARG002 — server decides
+        fallback_cuda: bool = False,  # noqa: ARG002 — server decides
     ) -> None:
-        """Load both TTS voices.
+        """Register voice names and per-language settings.
 
-        Strategy: try piper1-gpl Python API first, fall back to HTTP server.
+        Note: cuda flags are ignored — the native piper-tts.service decides
+        the device for all loaded models. Models are preloaded at server
+        startup (see scripts/piper-tts.service).
         """
         self._primary_name = primary
         self._fallback_name = fallback
         self._primary_lang = primary.split("-")[0].split("_")[0]
-
-        # Load per-voice settings from config
-        try:
-            from core.config_writer import read_config
-            cfg = read_config()
-            tts_cfg = cfg.get("voice", {}).get("tts", {})
-            self._primary_settings = tts_cfg.get("primary", {}).get("settings", {})
-            self._fallback_settings = tts_cfg.get("fallback", {}).get("settings", {})
-        except Exception:
-            pass
         self._fallback_lang = fallback.split("-")[0].split("_")[0] if fallback else "en"
 
-        # Try piper1-gpl Python API
-        try:
-            from piper import PiperVoice
-            models_dir = Path(MODELS_DIR)
+        self.reload_settings()
 
-            primary_path = models_dir / f"{primary}.onnx"
-            if primary_path.exists():
-                self._primary_voice = PiperVoice.load(str(primary_path), use_cuda=primary_cuda)
-                self._primary_sample_rate = self._primary_voice.config.sample_rate
-                logger.info("TTS primary loaded (piper1-gpl): %s cuda=%s", primary, primary_cuda)
-
-            fallback_path = models_dir / f"{fallback}.onnx"
-            if fallback_path.exists():
-                self._fallback_voice = PiperVoice.load(str(fallback_path), use_cuda=fallback_cuda)
-                self._fallback_sample_rate = self._fallback_voice.config.sample_rate
-                logger.info("TTS fallback loaded (piper1-gpl): %s", fallback)
-
-            self._loaded = self._primary_voice is not None
-            if self._loaded:
-                self._use_http = False
-                return
-        except ImportError:
-            logger.info("piper1-gpl not installed, trying HTTP server")
-        except Exception as exc:
-            logger.warning("piper1-gpl load failed: %s, trying HTTP server", exc)
-
-        # Fallback: use Piper HTTP server (GPU-accelerated, runs on host)
-        self._use_http = True
-        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+        # Health check — verify the server is up and the requested voices
+        # are actually loaded (preloaded by --preload in piper-tts.service).
         try:
             import httpx
-            resp = httpx.get(f"{gpu_url}/health", timeout=3)
+            resp = httpx.get(f"{PIPER_GPU_URL}/health", timeout=3)
             if resp.status_code == 200:
                 data = resp.json()
                 loaded = data.get("loaded_voices", [])
-                self._loaded = True
-                logger.info("TTS using HTTP server at %s (voices: %s)", gpu_url, loaded)
+                device = data.get("device", "?")
+                self._loaded = bool(self._primary_name)
+                logger.info(
+                    "TTS using HTTP server at %s (device=%s, loaded_voices=%s)",
+                    PIPER_GPU_URL, device, loaded,
+                )
+                if self._primary_name and self._primary_name not in loaded:
+                    logger.warning(
+                        "TTS primary voice %s not preloaded — first request will be slow",
+                        self._primary_name,
+                    )
+                if self._fallback_name and self._fallback_name not in loaded:
+                    logger.warning(
+                        "TTS fallback voice %s not preloaded — first request will be slow",
+                        self._fallback_name,
+                    )
             else:
-                logger.warning("Piper HTTP server unhealthy: %s", resp.status_code)
+                logger.error("Piper HTTP server unhealthy: %s", resp.status_code)
+                self._loaded = False
         except Exception as exc:
-            logger.warning("Piper HTTP server not available: %s", exc)
+            logger.error("Piper HTTP server not reachable at %s: %s", PIPER_GPU_URL, exc)
+            self._loaded = False
 
     def get_settings_for_lang(self, lang: str) -> dict:
         """Get TTS synthesis settings for a language."""
@@ -240,135 +220,91 @@ class TTSEngine:
         except Exception:
             pass
 
-    def get_voice_for_lang(self, lang: str) -> tuple[Any, int]:
-        """Select voice for a language segment.
+    def _select_voice(self, lang: str, voice_override: str | None) -> tuple[str, dict]:
+        """Pick voice name + settings dict for a language (or use override)."""
+        if voice_override:
+            # Explicit voice — use primary settings if it matches primary,
+            # fallback settings if it matches fallback, else primary as default.
+            if voice_override == self._fallback_name:
+                return voice_override, self._fallback_settings or {}
+            return voice_override, self._primary_settings or {}
+        if lang == "en" and self._fallback_name:
+            return self._fallback_name, self._fallback_settings or {}
+        return self._primary_name, self._primary_settings or {}
 
-        Returns (PiperVoice, sample_rate). Falls back to primary if no match.
-        """
-        if lang == "en" and self._fallback_voice:
-            return self._fallback_voice, self._fallback_sample_rate
-        if self._primary_voice:
-            return self._primary_voice, self._primary_sample_rate
-        if self._fallback_voice:
-            return self._fallback_voice, self._fallback_sample_rate
-        raise RuntimeError("No TTS voices loaded")
+    async def _synthesize_raw_http(
+        self, text: str, voice: str, settings: dict,
+    ) -> tuple[bytes, int]:
+        """POST /synthesize/raw → (pcm_bytes, sample_rate). Empty on failure."""
+        import httpx
+
+        payload: dict = {"text": text, "voice": voice}
+        for k in (
+            "length_scale", "noise_scale", "noise_w_scale",
+            "sentence_silence", "speaker", "volume",
+        ):
+            if k in settings and settings[k] is not None:
+                payload[k] = settings[k]
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.post(
+                    f"{PIPER_GPU_URL}/synthesize/raw", json=payload,
+                )
+                if resp.status_code == 200 and resp.content:
+                    sr = int(resp.headers.get("X-Audio-Rate", "22050"))
+                    return resp.content, sr
+                logger.warning(
+                    "Piper /synthesize/raw returned %s for voice=%s",
+                    resp.status_code, voice,
+                )
+        except Exception as exc:
+            logger.error("HTTP TTS failed (voice=%s): %s", voice, exc)
+        return b"", 22050
 
     async def synthesize(
         self, text: str, primary_lang: str = "uk",
         voice: str | None = None,
     ) -> bytes:
-        """Synthesize text to WAV bytes using split_by_language.
+        """Synthesize text to a single-voice WAV.
 
-        Mixed-language text is split into segments, each synthesized
-        by the appropriate voice. WAV chunks are concatenated.
+        Multi-language splitting is handled upstream in
+        VoiceCoreModule._stream_speak (which calls /synthesize/raw per
+        utterance directly). This method synthesizes a single phrase with
+        a single voice, used for warm-up and UI test endpoints.
 
-        Returns WAV bytes or empty bytes on failure.
+        Returns WAV bytes (empty on failure).
         """
-        from system_modules.voice_core.tts_preprocessor import split_by_language
-
         clean = sanitize_for_tts(text)
         if not clean:
             return b""
 
-        # HTTP server mode
-        if getattr(self, '_use_http', False):
-            return await self._synthesize_http(clean, voice or self._primary_name)
-
-        segments = split_by_language(clean, primary_lang)
-        if not segments:
+        chosen_voice, settings = self._select_voice(primary_lang, voice)
+        if not chosen_voice:
+            logger.error("No TTS voice available")
             return b""
 
         async with self._lock:
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, self._synthesize_segments_sync, segments,
+            pcm, sample_rate = await self._synthesize_raw_http(
+                clean, chosen_voice, settings,
             )
-
-    async def _synthesize_http(self, text: str, voice: str) -> bytes:
-        """Synthesize via Piper HTTP server (fallback)."""
-        try:
-            import httpx
-            gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(f"{gpu_url}/synthesize", json={
-                    "text": text, "voice": voice,
-                })
-                if resp.status_code == 200 and resp.content:
-                    return resp.content
-        except Exception as exc:
-            logger.error("HTTP TTS failed: %s", exc)
-        return b""
-
-    def _synthesize_segments_sync(self, segments: list) -> bytes:
-        """Synthesize segments and concatenate WAV output."""
-        from piper import SynthesisConfig
-
-        all_pcm = bytearray()
-        sample_rate = self._primary_sample_rate
-        sample_width = 2  # 16-bit
-        channels = 1
-
-        for seg in segments:
-            voice, sr = self.get_voice_for_lang(seg.lang)
-            sample_rate = sr
-
-            s = self.get_settings_for_lang(seg.lang)
-            config = SynthesisConfig(
-                length_scale=s.get("length_scale"),
-                noise_scale=s.get("noise_scale"),
-                noise_w_scale=s.get("noise_w_scale"),
-                volume=s.get("volume", 1.0),
-                speaker_id=s.get("speaker") if s.get("speaker", 0) > 0 else None,
-            )
-
-            for chunk in voice.synthesize(seg.text, syn_config=config):
-                all_pcm.extend(chunk.audio_int16_bytes)
-
-        if not all_pcm:
+        if not pcm:
             return b""
 
-        # Build WAV
+        # Wrap raw PCM s16le mono in a WAV container
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
-            wf.setnchannels(channels)
-            wf.setsampwidth(sample_width)
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
             wf.setframerate(sample_rate)
-            wf.writeframes(bytes(all_pcm))
-
+            wf.writeframes(pcm)
         return buf.getvalue()
 
-    def synthesize_to_pcm(self, text: str, lang: str = "uk") -> tuple[bytes, int] | None:
-        """Synthesize single-language text to raw PCM (for streaming playback).
-
-        Returns (pcm_bytes, sample_rate) or None.
-        """
-        clean = sanitize_for_tts(text)
-        if not clean:
-            return None
-
-        try:
-            voice, sr = self.get_voice_for_lang(lang)
-            from piper import SynthesisConfig
-
-            pcm = bytearray()
-            s = self.get_settings_for_lang(lang)
-            config = SynthesisConfig(
-                length_scale=s.get("length_scale"),
-                noise_scale=s.get("noise_scale"),
-                noise_w_scale=s.get("noise_w_scale"),
-                volume=s.get("volume", 1.0),
-                speaker_id=s.get("speaker") if s.get("speaker", 0) > 0 else None,
-            )
-            for chunk in voice.synthesize(clean, syn_config=config):
-                pcm.extend(chunk.audio_int16_bytes)
-
-            return bytes(pcm), sr if pcm else None
-        except Exception as exc:
-            logger.error("TTS PCM synthesis failed: %s", exc)
-            return None
-
     def list_voices(self) -> list[dict]:
-        """Discover installed voices by scanning the models directory."""
+        """Discover installed voices by scanning the models directory.
+
+        The host's piper models directory is volume-mounted into the
+        container as MODELS_DIR (see docker-compose.yml).
+        """
         models_path = Path(MODELS_DIR)
         if not models_path.is_dir():
             return []
@@ -393,6 +329,6 @@ def get_tts_engine() -> TTSEngine:
 
 
 # Backward compat alias
-def get_tts(voice: str = DEFAULT_VOICE) -> TTSEngine:
+def get_tts(voice: str = DEFAULT_VOICE) -> TTSEngine:  # noqa: ARG001
     """Backward-compatible: returns the global TTSEngine."""
     return get_tts_engine()
