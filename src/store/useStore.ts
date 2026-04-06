@@ -27,7 +27,7 @@ export interface Module {
   installed_at: number;
   ui?: {
     icon?: string;
-    widget?: { file?: string; size?: string; max_size?: string };
+    widget?: { file?: string; size?: string; min_size?: string; max_size?: string };
     settings?: string;
   };
 }

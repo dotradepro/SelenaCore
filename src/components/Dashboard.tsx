@@ -5,10 +5,10 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useStore, Module } from '../store/useStore';
 
-// Fixed grid: always 6 columns × 5 rows — cells scale to fill any screen
-const GRID_COLS = 6;
-const GRID_ROWS = 5;
-const PER_SCREEN = GRID_COLS * GRID_ROWS; // 30 slots
+// Fixed grid: always 5 columns × 4 rows — cells scale to fill any screen
+const GRID_COLS = 5;
+const GRID_ROWS = 4;
+const PER_SCREEN = GRID_COLS * GRID_ROWS; // 20 slots
 const GRID_GAP = 8;
 const GRID_PAD = 10;  // padding on each screen div side
 const TOOLBAR_H = 40;  // space reserved for the Edit toolbar
@@ -38,7 +38,8 @@ function WidgetShell({
   const initial = (mod.name || '?')[0].toUpperCase();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Inject CSS zoom into iframe content so fonts/layout scale with cell size
+  // Inject CSS zoom + grid span info into iframe content so fonts/layout
+  // scale with cell size and widgets can adapt to their actual cell count.
   const injectScale = useCallback(() => {
     try {
       const doc = iframeRef.current?.contentDocument;
@@ -48,10 +49,14 @@ function WidgetShell({
       s.id = '__selena_scale';
       s.textContent = `html { zoom: ${contentScale.toFixed(3)} !important; }`;
       doc.head.appendChild(s);
+      // Push grid span so widgets can switch layout based on real cell count
+      // (aspect ratio is unreliable because grid cells aren't square).
+      doc.documentElement.dataset.spanCols = String(spanCols);
+      doc.documentElement.dataset.spanRows = String(spanRows);
     } catch { /* cross-origin or not yet loaded */ }
-  }, [contentScale]);
+  }, [contentScale, spanCols, spanRows]);
 
-  // Re-inject whenever scale changes (e.g. window resize)
+  // Re-inject whenever scale or grid span changes
   useEffect(() => { injectScale(); }, [injectScale]);
 
   // Listen for openSettings postMessage from widget iframe
@@ -391,7 +396,7 @@ export default function Dashboard() {
 
   // Content scale: ratio of actual cell height to baseline 90px.
   // Applied as CSS zoom inside each widget iframe so fonts/layout grow with cell size.
-  const contentScale = cellH > 0 ? Math.round((cellH / 90) * 100) / 100 : 1;
+  const contentScale = cellH > 0 ? Math.round((cellH / 80) * 100) / 100 : 1;
 
   // ── Drag state ──────────────────────────────────────────────────────────────
   const [dragName, setDragName] = useState<string | null>(null);
@@ -433,16 +438,28 @@ export default function Dashboard() {
     return m ? { cols: parseInt(m[1], 10), rows: parseInt(m[2], 10) } : null;
   }
 
-  /** Returns the saved grid span; defaults to manifest size (or 1×1) */
-  function getWidgetSpan(mod: Module): { cols: number; rows: number } {
-    const custom = (widgetLayout.spans ?? {})[mod.name];
-    if (custom) return custom;
-    return parseSize(mod.ui?.widget?.size) || { cols: 1, rows: 1 };
-  }
-
   /** Returns max grid span from manifest max_size (or grid limits) */
   function getMaxSpan(mod: Module): { cols: number; rows: number } {
     return parseSize(mod.ui?.widget?.max_size) || { cols: GRID_COLS, rows: GRID_ROWS };
+  }
+
+  /** Returns min grid span from manifest min_size (or 1×1) */
+  function getMinSpan(mod: Module): { cols: number; rows: number } {
+    return parseSize(mod.ui?.widget?.min_size) || { cols: 1, rows: 1 };
+  }
+
+  /** Returns the saved grid span; defaults to manifest size (or 1×1).
+   *  Clamped by manifest min_size / max_size so manifest changes take effect
+   *  even when the user already has a saved span in their store. */
+  function getWidgetSpan(mod: Module): { cols: number; rows: number } {
+    const custom = (widgetLayout.spans ?? {})[mod.name];
+    const raw = custom || parseSize(mod.ui?.widget?.size) || { cols: 1, rows: 1 };
+    const min = getMinSpan(mod);
+    const max = getMaxSpan(mod);
+    return {
+      cols: Math.min(Math.max(raw.cols, min.cols), max.cols),
+      rows: Math.min(Math.max(raw.rows, min.rows), max.rows),
+    };
   }
 
   // Compute which slots are covered by non-anchor cells of multi-cell widgets.
@@ -533,15 +550,16 @@ export default function Dashboard() {
     } else if (resizeState && cellW > 0 && cellH > 0) {
       const deltaCols = Math.round((e.clientX - resizeState.startX) / (cellW + GRID_GAP));
       const deltaRows = Math.round((e.clientY - resizeState.startY) / (cellH + GRID_GAP));
-      // Clamp span to grid bounds and manifest max_size
+      // Clamp span to grid bounds and manifest min_size / max_size
       const anchorSlot = (widgetLayout.positions ?? {})[resizeState.name];
       const localIdx = anchorSlot !== undefined ? anchorSlot % PER_SCREEN : 0;
       const anchorCol = localIdx % GRID_COLS;
       const anchorRow = Math.floor(localIdx / GRID_COLS);
       const resizeMod = modules.find(m => m.name === resizeState.name);
       const maxSpan = resizeMod ? getMaxSpan(resizeMod) : { cols: GRID_COLS, rows: GRID_ROWS };
-      const newCols = Math.max(1, Math.min(GRID_COLS - anchorCol, maxSpan.cols, resizeState.startCols + deltaCols));
-      const newRows = Math.max(1, Math.min(GRID_ROWS - anchorRow, maxSpan.rows, resizeState.startRows + deltaRows));
+      const minSpan = resizeMod ? getMinSpan(resizeMod) : { cols: 1, rows: 1 };
+      const newCols = Math.max(minSpan.cols, Math.min(GRID_COLS - anchorCol, maxSpan.cols, resizeState.startCols + deltaCols));
+      const newRows = Math.max(minSpan.rows, Math.min(GRID_ROWS - anchorRow, maxSpan.rows, resizeState.startRows + deltaRows));
       if (newCols !== resizeState.currentCols || newRows !== resizeState.currentRows) {
         setResizeState(s => s ? { ...s, currentCols: newCols, currentRows: newRows } : null);
       }
