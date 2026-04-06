@@ -161,17 +161,10 @@ install_piper() {
         pip3 install --user piper-tts 2>/dev/null || pip3 install piper-tts || warn "Piper install failed"
     fi
 
-    # Download EN fallback voice (~5MB) for multilingual TTS support
+    # Single-voice TTS — only the primary voice is needed.
+    # The native piper-tts.service preloads it at startup (see scripts/piper-tts.service).
     local piper_models="${PIPER_MODELS_DIR:-$DATA_DIR/models/piper}"
     mkdir -p "$piper_models"
-    local fallback_voice="en_US-amy-low"
-    if [ ! -f "$piper_models/${fallback_voice}.onnx" ]; then
-        log "Downloading Piper fallback voice: $fallback_voice (~5MB)..."
-        local base_url="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/low"
-        curl -sL "$base_url/en_US-amy-low.onnx" -o "$piper_models/${fallback_voice}.onnx" || warn "Fallback voice download failed"
-        curl -sL "$base_url/en_US-amy-low.onnx.json" -o "$piper_models/${fallback_voice}.onnx.json" 2>/dev/null
-        log "Fallback voice downloaded: $fallback_voice"
-    fi
 }
 
 install_selenacore() {
@@ -292,7 +285,6 @@ ai:
 
 voice:
   tts_voice: "uk_UA-ukrainian_tts-medium"
-  tts_fallback_voice: "en_US-amy-low"
   wake_word_model: "привіт селена"
   stt_silence_timeout: 1.0
 

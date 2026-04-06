@@ -518,7 +518,7 @@ async def audio_test_output(body: dict[str, str]) -> dict[str, Any]:
 
         voice = ""
         try:
-            voice = read_config().get("voice", {}).get("tts", {}).get("fallback", {}).get("voice", "")
+            voice = read_config().get("voice", {}).get("tts", {}).get("primary", {}).get("voice", "")
         except Exception:
             pass
 

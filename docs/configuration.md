@@ -179,23 +179,12 @@ voice:
     primary:
       voice: "uk_UA-ukrainian_tts-medium"
       lang: "uk"
-      cuda: true
       settings:
         length_scale: 0.65
         noise_scale: 0.667
         noise_w_scale: 0.8
         volume: 0.7
         speaker: 1
-    fallback:
-      voice: "en_US-ryan-low"
-      lang: "en"
-      cuda: false
-      settings:
-        length_scale: 0.75
-        noise_scale: 0.667
-        noise_w_scale: 0.8
-        volume: 0.55
-        speaker: 0
 ```
 
 | Key | Type | Default | Description |
@@ -209,13 +198,9 @@ voice:
 | `audio_force_input` | `str\|null` | `null` | ALSA capture device (e.g., `plughw:0,0`). |
 | `audio_force_output` | `str\|null` | `null` | ALSA playback device (e.g., `plughw:1,3`). |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO pin for physical mic kill switch. |
-| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Primary Piper TTS voice. |
-| `tts.primary.lang` | `str` | `uk` | Primary voice language code. |
-| `tts.primary.cuda` | `bool` | `false` | GPU acceleration for primary voice. |
-| `tts.primary.settings.*` | `dict` | see above | Per-voice synthesis parameters. |
-| `tts.fallback.voice` | `str` | `en_US-ryan-low` | Fallback (English) voice. |
-| `tts.fallback.lang` | `str` | `en` | Fallback voice language. |
-| `tts.fallback.settings.*` | `dict` | see above | Per-voice synthesis parameters. |
+| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Piper TTS voice. Single-voice mode — preloaded by `piper-tts.service` on the host. |
+| `tts.primary.lang` | `str` | `uk` | Voice language code. |
+| `tts.primary.settings.*` | `dict` | see above | Synthesis parameters (passed to native Piper server over HTTP). |
 
 **TTS settings per voice:**
 
