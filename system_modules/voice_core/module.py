@@ -299,6 +299,7 @@ class VoiceCoreModule(SystemModule):
         self._state = STATE_IDLE
         self._privacy_mode = False
         self._system_speak_done = asyncio.Event()
+        self._pattern_response_spoken = False  # set when pipeline already spoke a template response → suppresses redundant LLM ack
         self._session: list[dict[str, str]] = []  # conversation history [{role, content}]
         self._session_ts: float = 0.0              # last interaction timestamp
         self._last_intent: str = ""                # last classified intent (for rephrase context)
@@ -1056,9 +1057,14 @@ class VoiceCoreModule(SystemModule):
                 or (result.source in ("llm", "cloud") and self._is_system_module_intent(result.intent))
             )
             if _is_system_handled:
+                # device.on / device.off defer all speech to device-control's
+                # speak_action() so the user hears the TRUTH (right room or
+                # not_found) instead of a speculative LLM response that may
+                # name a device that doesn't exist.
+                _defer_to_module = result.intent in ("device.on", "device.off")
                 # Speak the intermediate response (e.g. "Checking weather...")
                 # BEFORE waiting for module to complete its action
-                if result.response:
+                if result.response and not _defer_to_module:
                     self._log_live("tts", {
                         "text": result.response[:80],
                         "msg": "Озвучка промежуточного ответа...",
@@ -1066,6 +1072,12 @@ class VoiceCoreModule(SystemModule):
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text = sanitize_for_tts(result.response).lower()
                     if tts_text:
+                        # Mark BEFORE the await — module's _on_voice_intent
+                        # subscriber runs concurrently and may call
+                        # speak_action() while TTS is still playing. Setting
+                        # the flag now ensures _on_voice_event suppresses the
+                        # redundant LLM ack regardless of timing.
+                        self._pattern_response_spoken = True
                         done_ev = asyncio.Event()
                         await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
                         try:
@@ -1143,6 +1155,7 @@ class VoiceCoreModule(SystemModule):
         except Exception as exc:
             logger.error("Voice pipeline error: %s", exc)
         finally:
+            self._pattern_response_spoken = False
             self._state = self._idle_state()
             await self._broadcast_state(self._state)
 
@@ -1589,6 +1602,24 @@ class VoiceCoreModule(SystemModule):
         if event.type == "voice.speak" and self._tts:
             action_ctx = event.payload.get("action_context")
             speech_id = event.payload.get("speech_id")
+
+            # If the pipeline already spoke a pattern/template response for
+            # this intent AND the action succeeded, the module's post-action
+            # LLM ack is redundant. Errors/not_found must still be spoken so
+            # the user is not misled by the intermediate response.
+            if action_ctx and self._pattern_response_spoken:
+                action_result = str(action_ctx.get("result", "")).lower()
+                if action_result in ("", "ok", "success", "done"):
+                    self._log_live("skip_ack", {
+                        "intent": action_ctx.get("intent", ""),
+                        "msg": "Подавлено повторное озвучивание (паттерн уже озвучен)",
+                    })
+                    done_payload: dict[str, Any] = {"text": ""}
+                    if speech_id:
+                        done_payload["speech_id"] = speech_id
+                    await self.publish("voice.speak_done", done_payload)
+                    self._system_speak_done.set()
+                    return
 
             if action_ctx:
                 # LLM generates response from structured action context
