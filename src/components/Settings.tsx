@@ -779,6 +779,96 @@ function SystemSettings() {
 // ================================================================ //
 //  System Modules Settings                                           //
 // ================================================================ //
+function humanizeModuleName(name: string): string {
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+type SystemMod = {
+  name: string;
+  status: string;
+  port: number;
+  ui?: { icon?: string; widget?: { file?: string }; settings?: string };
+};
+
+function SystemModRow({
+  m, isSelected, isPinned, hasWidget, onSelect, onTogglePin,
+}: {
+  m: SystemMod;
+  isSelected: boolean;
+  isPinned: boolean;
+  hasWidget: boolean;
+  onSelect: () => void;
+  onTogglePin: () => void;
+}) {
+  const { t } = useTranslation();
+  const [iconFailed, setIconFailed] = useState(false);
+  const isRunning = m.status === 'RUNNING';
+  const friendly = t(`systemModuleNames.${m.name}`, { defaultValue: humanizeModuleName(m.name) });
+  const showIcon = !!m.ui?.icon && !iconFailed;
+
+  return (
+    <div
+      onClick={onSelect}
+      style={{
+        padding: '8px 10px', borderRadius: 8,
+        background: isSelected ? 'var(--sf2)' : 'var(--sf)',
+        border: `1px solid ${isSelected ? 'var(--b2)' : 'var(--b)'}`,
+        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10,
+        transition: 'all .15s',
+      }}
+    >
+      <div style={{
+        position: 'relative', width: 28, height: 28, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {showIcon ? (
+          <img
+            src={`/api/ui/modules/${m.name}/icon`}
+            alt={m.name}
+            onError={() => setIconFailed(true)}
+            style={{ width: 24, height: 24, objectFit: 'contain', borderRadius: 5 }}
+          />
+        ) : (
+          <span style={{ fontSize: 18, lineHeight: 1 }}>⚙️</span>
+        )}
+        <div style={{
+          position: 'absolute', right: -1, bottom: -1,
+          width: 7, height: 7, borderRadius: '50%',
+          background: isRunning ? 'var(--gr)' : 'var(--tx3)',
+          border: '1.5px solid var(--sf)',
+        }} />
+      </div>
+      <span style={{
+        fontSize: 12, fontWeight: 500, color: 'var(--tx)',
+        flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {friendly}
+      </span>
+      {hasWidget && (
+        <button
+          onClick={e => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
+          style={{
+            fontSize: 9, padding: '2px 7px', borderRadius: 4,
+            background: isPinned ? 'rgba(79,140,247,.15)' : 'var(--sf3)',
+            color: isPinned ? 'var(--ac)' : 'var(--tx3)',
+            border: `1px solid ${isPinned ? 'rgba(79,140,247,.3)' : 'var(--b)'}`,
+            cursor: 'pointer', fontWeight: 500, flexShrink: 0,
+          }}
+        >
+          {isPinned ? t('settings.pinned') : t('settings.pin')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SystemModulesSettings() {
   const { t } = useTranslation();
   const modules = useStore(s => s.modules);
@@ -810,55 +900,17 @@ function SystemModulesSettings() {
           ) : systemMods.map(m => {
             const isPinned = widgetLayout.pinned.includes(m.name);
             const isSelected = m.name === selectedMod;
-            const isRunning = m.status === 'RUNNING';
             const hasWidget = !!m.ui?.widget?.file;
             return (
-              <div
+              <SystemModRow
                 key={m.name}
-                onClick={() => setSelectedMod(isSelected ? null : m.name)}
-                style={{
-                  padding: '8px 10px', borderRadius: 8,
-                  background: isSelected ? 'var(--sf2)' : 'var(--sf)',
-                  border: `1px solid ${isSelected ? 'var(--b2)' : 'var(--b)'}`,
-                  cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 5,
-                  transition: 'all .15s',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{
-                    width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-                    background: isRunning ? 'var(--gr)' : 'var(--tx3)',
-                  }} />
-                  <span style={{
-                    fontSize: 12, fontWeight: 500, color: 'var(--tx)',
-                    flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {m.name}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: 10, color: 'var(--tx3)', fontFamily: 'var(--font-mono)' }}>
-                    :{m.port}
-                  </span>
-                  {hasWidget && (
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        isPinned ? unpinModule(m.name) : pinModule(m.name);
-                      }}
-                      style={{
-                        marginLeft: 'auto', fontSize: 9, padding: '2px 7px', borderRadius: 4,
-                        background: isPinned ? 'rgba(79,140,247,.15)' : 'var(--sf3)',
-                        color: isPinned ? 'var(--ac)' : 'var(--tx3)',
-                        border: `1px solid ${isPinned ? 'rgba(79,140,247,.3)' : 'var(--b)'}`,
-                        cursor: 'pointer', fontWeight: 500,
-                      }}
-                    >
-                      {isPinned ? t('settings.pinned') : t('settings.pin')}
-                    </button>
-                  )}
-                </div>
-              </div>
+                m={m}
+                isSelected={isSelected}
+                isPinned={isPinned}
+                hasWidget={hasWidget}
+                onSelect={() => setSelectedMod(isSelected ? null : m.name)}
+                onTogglePin={() => isPinned ? unpinModule(m.name) : pinModule(m.name)}
+              />
             );
           })}
         </div>

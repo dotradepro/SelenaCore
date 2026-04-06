@@ -331,11 +331,17 @@ export default function Modules() {
     }
   }
 
-  // Collect types that actually exist in the list
-  const presentTypes = ALL_TYPES.filter((tp) => modules.some((m) => m.type === tp));
+  // SYSTEM modules are managed on a separate /settings/system-modules page,
+  // so this page only ever lists user modules.
+  const userModules = modules.filter((m) => m.type !== 'SYSTEM');
+
+  // Collect types that actually exist in the user-modules list
+  const presentTypes = ALL_TYPES.filter(
+    (tp) => tp !== 'SYSTEM' && userModules.some((m) => m.type === tp),
+  );
 
   // Apply filters
-  const filtered = modules.filter((m) => {
+  const filtered = userModules.filter((m) => {
     if (search && !m.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (statusFilter !== 'all' && m.status !== statusFilter) return false;
     if (typeFilter !== 'all' && m.type !== typeFilter) return false;
@@ -345,7 +351,7 @@ export default function Modules() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageMods = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const running = modules.filter((m) => m.status === 'RUNNING').length;
+  const running = userModules.filter((m) => m.status === 'RUNNING').length;
 
   return (
     <div className="generic-page">
@@ -356,7 +362,7 @@ export default function Modules() {
             {t('modules.title')}
           </div>
           <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 1 }}>
-            {t('modules.total', { running, total: modules.length })}
+            {t('modules.total', { running, total: userModules.length })}
           </div>
         </div>
         <button
@@ -379,7 +385,7 @@ export default function Modules() {
       </div>
 
       {/* Filter bar — only show when there are modules */}
-      {modules.length > 0 && (
+      {userModules.length > 0 && (
         <FilterBar
           search={search} onSearch={setSearch}
           status={statusFilter} onStatus={setStatusFilter}
@@ -389,7 +395,7 @@ export default function Modules() {
       )}
 
       {/* Module list */}
-      {modules.length === 0 ? (
+      {userModules.length === 0 ? (
         <div style={{
           textAlign: 'center', padding: '40px 20px',
           color: 'var(--tx3)', fontSize: 11,

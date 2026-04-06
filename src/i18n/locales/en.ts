@@ -704,6 +704,32 @@ const en = {
             approved: 'Access granted!',
             qrDesc: 'Scan with a registered phone to unlock.',
         },
+
+        // Friendly display names for system modules (shown on /settings/system-modules).
+        // Falls back to a humanized slug if a key is missing.
+        systemModuleNames: {
+            'voice-core': 'Voice',
+            'media-player': 'Media Player',
+            'weather-service': 'Weather',
+            'device-watchdog': 'Device Watchdog',
+            'scheduler': 'Scheduler',
+            'hw-monitor': 'Hardware Monitor',
+            'automation-engine': 'Automation',
+            'backup-manager': 'Backup',
+            'energy-monitor': 'Energy Monitor',
+            'import-adapters': 'Import Adapters',
+            'llm-engine': 'LLM Engine',
+            'network-scanner': 'Network Scanner',
+            'notification-router': 'Notification Router',
+            'notify-push': 'Push Notifications',
+            'presence-detection': 'Presence Detection',
+            'protocol-bridge': 'Protocol Bridge',
+            'remote-access': 'Remote Access',
+            'secrets-vault': 'Secrets Vault',
+            'ui-core': 'UI Core',
+            'update-manager': 'Update Manager',
+            'user-manager': 'User Manager',
+        },
     },
 } as const;
 

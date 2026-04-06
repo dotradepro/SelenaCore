@@ -704,6 +704,32 @@ const uk = {
             approved: 'Доступ отримано!',
             qrDesc: 'Скануйте зареєстрованим телефоном для розблокування.',
         },
+
+        // Дружні назви системних модулів для /settings/system-modules.
+        // Якщо ключа немає — показується "олюднений" слаг.
+        systemModuleNames: {
+            'voice-core': 'Голос',
+            'media-player': 'Медіаплеєр',
+            'weather-service': 'Погода',
+            'device-watchdog': 'Моніторинг пристроїв',
+            'scheduler': 'Планувальник',
+            'hw-monitor': 'Моніторинг системи',
+            'automation-engine': 'Автоматизація',
+            'backup-manager': 'Резервні копії',
+            'energy-monitor': 'Енергомоніторинг',
+            'import-adapters': 'Імпорт',
+            'llm-engine': 'LLM',
+            'network-scanner': 'Сканер мережі',
+            'notification-router': 'Маршрутизатор сповіщень',
+            'notify-push': 'Push-сповіщення',
+            'presence-detection': 'Виявлення присутності',
+            'protocol-bridge': 'Міст протоколів',
+            'remote-access': 'Віддалений доступ',
+            'secrets-vault': 'Сховище секретів',
+            'ui-core': 'UI Core',
+            'update-manager': 'Оновлення',
+            'user-manager': 'Користувачі',
+        },
     },
 } as const;
 
