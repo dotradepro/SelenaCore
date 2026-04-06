@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 CHECK_INTERVAL_SEC = int(os.environ.get("AGENT_CHECK_INTERVAL", "30"))
 MAX_RESTORE_ATTEMPTS = int(os.environ.get("AGENT_MAX_RESTORE_ATTEMPTS", "3"))
+AGENT_MODE = os.environ.get("AGENT_MODE", "enforce").lower()  # "dev" | "enforce"
 LOG_PATH = "/var/log/selena/integrity.log"
 STATE_FILE = Path(
     os.environ.get("CORE_DATA_DIR", "/var/lib/selena")
@@ -96,6 +97,16 @@ async def run_check() -> None:
 
     changed = check_files(manifest)
     if changed:
+        if AGENT_MODE == "dev":
+            # Dev mode: silently re-baseline manifest, do not trigger response chain.
+            # See _private/INTEGRITY_AGENT_TODO.md for the full release checklist.
+            logger.info(
+                "[dev] Detected %d changed core files — rebaselining manifest",
+                len(changed),
+            )
+            create_manifest()
+            _write_state("ok")
+            return
         _write_state("violated", changed_files=changed)
         await trigger_response("files_changed", changed)
     else:
@@ -145,7 +156,8 @@ async def trigger_response(reason: str, changed: list[dict]) -> None:
 
 async def check_loop() -> None:
     logger.info(
-        "Integrity Agent started (interval=%ds, max_restore=%d)",
+        "Integrity Agent started (mode=%s, interval=%ds, max_restore=%d)",
+        AGENT_MODE,
         CHECK_INTERVAL_SEC,
         MAX_RESTORE_ATTEMPTS,
     )

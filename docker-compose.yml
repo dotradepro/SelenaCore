@@ -66,6 +66,11 @@ services:
       - selena_secure:/secure
       - ./agent:/opt/selena-core/agent:ro
       - /var/log/selena:/var/log/selena
+    environment:
+      # Dev mode: silently rebaseline manifest on edits, no SAFE MODE.
+      # MUST be removed (or set to "enforce") before first public release.
+      # See _private/INTEGRITY_AGENT_TODO.md
+      - AGENT_MODE=dev
     env_file:
       - .env
     depends_on:
