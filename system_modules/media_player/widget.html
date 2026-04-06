@@ -1028,7 +1028,14 @@
             _toastTimer = setTimeout(function () { el.className = 'toast'; }, 2500);
         }
 
-        var _szClass = 'sz-sm';
+        // Empty initial value so the FIRST updateSize() call always
+        // applies a size class to root — the HTML markup ships without
+        // any sz-* class, and pre-seeding _szClass='sz-sm' caused the
+        // first 2×1 computation (cls===_szClass) to skip the assignment
+        // entirely, leaving root with default CSS where ctrl-zone is a
+        // row flexbox and vol-row sat next to controls instead of
+        // wrapping to its own line.
+        var _szClass = '';
         function updateSize() {
             var root = document.getElementById('root');
             if (!root) return;
