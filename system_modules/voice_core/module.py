@@ -1592,7 +1592,12 @@ class VoiceCoreModule(SystemModule):
             ctx += f"{_json.dumps(ctx_parts, ensure_ascii=False, default=str)}\n"
 
         result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
-        if result and len(result) < 300:
+        if result:
+            # Multi-day forecasts and similar rich responses can legitimately
+            # exceed a few hundred characters in Ukrainian. Trim only when
+            # absurdly long (LLM ramble / hallucination).
+            if len(result) > 1200:
+                result = result[:1200].rsplit(".", 1)[0] + "."
             from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
             return preprocess_for_tts(result, lang)
 
