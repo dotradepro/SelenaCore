@@ -944,6 +944,20 @@ class VoiceCoreModule(SystemModule):
         """Return current language from config (Vosk uses per-language models)."""
         return self._lang
 
+    def _get_tts_for_lang(self, stt_lang: str) -> tuple:
+        """Select TTS engine and response language based on STT-detected language.
+
+        Returns (tts_engine, tts_lang):
+          - Default: primary TTS voice + primary lang (always the main voice)
+          - Fallback to EN voice ONLY when STT explicitly detects English
+            AND primary TTS is NOT English
+        """
+        # Always prefer primary TTS voice for the main response language
+        if not self._tts_fallback_lang or stt_lang != self._tts_fallback_lang:
+            return self._tts, self._tts_primary_lang
+        # STT detected the fallback language (e.g. English) explicitly
+        return self._tts_fallback, self._tts_fallback_lang
+
     @staticmethod
     def _is_system_module_intent(intent: str) -> bool:
         """Check if intent belongs to a registered system module (DB-driven)."""
@@ -984,7 +998,7 @@ class VoiceCoreModule(SystemModule):
 
             # Route through IntentRouter (includes LLM as Tier 3 fallback)
             stt_lang = self._detect_lang()
-            tts_lang = self._tts_primary_lang
+            tts_engine, tts_lang = self._get_tts_for_lang(stt_lang)
 
             self._log_live("routing", {
                 "text": text, "lang": stt_lang,
@@ -1098,10 +1112,11 @@ class VoiceCoreModule(SystemModule):
                     "text": tts_text[:80],
                     "msg": "Piper TTS озвучивает...",
                 })
+                use_voice = tts_engine.voice if tts_engine != self._tts else None
                 await self.publish("voice.response", {"text": tts_text, "query": text})
                 logger.info("Voice pipeline: speaking (tts_lang=%s)...", tts_lang)
                 done = asyncio.Event()
-                await self._enqueue_speech(tts_text, priority=0, done_event=done)
+                await self._enqueue_speech(tts_text, priority=0, done_event=done, voice=use_voice)
                 await done.wait()
                 await self.publish("voice.speak_done", {"text": result.response})
                 self._log_live("done", {
@@ -1248,10 +1263,10 @@ class VoiceCoreModule(SystemModule):
         """TTS playback: fetch raw PCM from native Piper server → aplay.
 
         Piper TTS runs natively on the host as piper-tts.service (GPU-accelerated).
-        Single voice — always the primary voice from config, unless
-        ``voice_override`` is given (e.g. UI test endpoint testing a non-default voice).
+        The container has no piper binary — all synthesis goes through HTTP.
+        voice_override: use specific voice (e.g. EN fallback) instead of config default.
         """
-        from system_modules.voice_core.tts import sanitize_for_tts, _load_tts_settings
+        from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
         clean = sanitize_for_tts(text)
         if not clean:
@@ -1260,19 +1275,34 @@ class VoiceCoreModule(SystemModule):
         # Force lowercase — Piper VITS models garble uppercase letters
         clean = clean.lower()
 
-        # Single voice: override or primary from config
+        # Select voice + settings: override > auto-detect from text language
+        import re as _re
+        is_primary = bool(_re.search(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
+
         if voice_override:
             voice = voice_override
         else:
             try:
                 from core.config_writer import read_config
                 cfg = read_config()
-                voice = cfg.get("voice", {}).get("tts", {}).get("primary", {}).get("voice", "") \
-                    or (self._tts.voice if self._tts else "")
+                tts_cfg = cfg.get("voice", {}).get("tts", {})
+                if is_primary:
+                    voice = tts_cfg.get("primary", {}).get("voice", "") or self._tts.voice
+                else:
+                    voice = tts_cfg.get("fallback", {}).get("voice", "") or self._tts.voice
             except Exception:
                 voice = self._tts.voice if self._tts else ""
 
-        settings = _load_tts_settings()
+        # Load per-voice settings from config
+        try:
+            from core.config_writer import read_config
+            cfg = read_config()
+            tts_cfg = cfg.get("voice", {}).get("tts", {})
+            role = "primary" if is_primary else "fallback"
+            voice_settings = tts_cfg.get(role, {}).get("settings", {})
+            settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
+        except Exception:
+            settings = _load_tts_settings()
         output_device = self._get_output_device()
         loop = asyncio.get_running_loop()
 
@@ -1587,28 +1617,48 @@ class VoiceCoreModule(SystemModule):
 
         self._stt = None  # legacy field, kept for API compat
 
-        # Single-voice TTS: load primary voice via TTSEngine (HTTP client)
+        # Dual TTS: load primary + fallback PiperVoice via new TTSEngine
         from system_modules.voice_core.tts import get_tts_engine
         tts_engine = get_tts_engine()
         primary_voice = self._config.get("tts_voice", "uk_UA-ukrainian_tts-medium")
+        fallback_voice = self._config.get("tts_fallback_voice", "en_US-ryan-low")
 
-        tts_cfg: dict = {}
+        # Check for new tts config format (voice.tts.primary/fallback)
+        tts_cfg = {}
         try:
             from core.config_writer import read_config
             cfg = read_config()
             tts_cfg = cfg.get("voice", {}).get("tts", {})
             if tts_cfg:
                 primary_voice = tts_cfg.get("primary", {}).get("voice", primary_voice)
+                fallback_voice = tts_cfg.get("fallback", {}).get("voice", fallback_voice)
+                primary_cuda = tts_cfg.get("primary", {}).get("cuda", False)
+                fallback_cuda = tts_cfg.get("fallback", {}).get("cuda", False)
+            else:
+                primary_cuda = False
+                fallback_cuda = False
         except Exception:
-            pass
+            primary_cuda = False
+            fallback_cuda = False
 
-        tts_engine.load_voices(primary=primary_voice)
+        tts_engine.load_voices(
+            primary=primary_voice,
+            fallback=fallback_voice,
+            primary_cuda=primary_cuda,
+            fallback_cuda=fallback_cuda,
+        )
         self._tts = tts_engine
-        # Primary language: from config, fallback to extraction from voice name
+        self._tts_fallback = tts_engine  # same engine, dual voice inside
+        # Languages ONLY from Piper config (voice.tts.primary.lang / fallback.lang)
+        # No hardcoded defaults — everything from config
         self._tts_primary_lang = tts_cfg.get("primary", {}).get("lang", "") if tts_cfg else ""
         if not self._tts_primary_lang:
+            # Extract from voice name: "uk_UA-model" → "uk"
             self._tts_primary_lang = primary_voice.split("_")[0] if "_" in primary_voice else primary_voice.split("-")[0]
-        logger.info("TTS language: %s (single voice)", self._tts_primary_lang)
+        self._tts_fallback_lang = tts_cfg.get("fallback", {}).get("lang", "") if tts_cfg else ""
+        if not self._tts_fallback_lang:
+            self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else fallback_voice.split("-")[0]
+        logger.info("TTS languages: primary=%s, fallback=%s (from config)", self._tts_primary_lang, self._tts_fallback_lang)
 
         # Set default lang from primary TTS voice (Vosk uses per-language models)
         self._lang = self._tts_primary_lang
@@ -1949,7 +1999,7 @@ class VoiceCoreModule(SystemModule):
                 lang = req.lang
             else:
                 lang = _detect_text_lang(text, svc._tts_primary_lang)
-            tts_lang = svc._tts_primary_lang
+            _tts_engine, tts_lang = svc._get_tts_for_lang(lang)
             result, trace_steps = await get_intent_router().route(
                 text, user_id=None, lang=lang, tts_lang=tts_lang, trace=True,
             )

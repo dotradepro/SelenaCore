@@ -1,14 +1,13 @@
 """
-system_modules/voice_core/tts.py — Piper TTS client (HTTP-only, single voice)
+system_modules/voice_core/tts.py — Piper TTS client (HTTP-only)
 
 Architecture:
   - Piper TTS runs NATIVELY on the host as piper-tts.service (port 5100).
   - The container has NO `piper-tts` package installed; this module only
     speaks to the native server over HTTP.
-  - Single primary voice is preloaded by piper-tts.service at startup
-    and stays hot in GPU memory.
-  - This client just routes synthesis requests to the primary voice
-    (or to an explicit voice override for UI test endpoints).
+  - Both voices (primary + fallback) are preloaded by piper-tts.service
+    at startup and stay hot in GPU memory.
+  - This client just routes synthesis requests with the right voice + settings.
 
 Live voice playback uses VoiceCoreModule._stream_speak() → _fetch_tts_raw()
 directly (also HTTP). This TTSEngine is used by:
@@ -18,8 +17,9 @@ directly (also HTTP). This TTSEngine is used by:
 
 Usage:
     engine = TTSEngine()
-    engine.load_voices(primary="uk_UA-ukrainian_tts-medium")
-    wav_bytes = await engine.synthesize("Привіт")
+    engine.load_voices(primary="uk_UA-ukrainian_tts-medium",
+                       fallback="en_US-amy-low")
+    wav_bytes = await engine.synthesize("Привіт", primary_lang="uk")
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")
 DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
+DEFAULT_FALLBACK = os.environ.get("PIPER_FALLBACK_VOICE", "en_US-amy-low")
 PIPER_GPU_URL = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
 
 
@@ -132,15 +133,17 @@ def _load_tts_settings() -> TTSSettings:
 class TTSEngine:
     """Piper TTS engine — HTTP client to native piper-tts.service.
 
-    Holds the primary voice name and its synthesis settings; all
-    synthesis is delegated to the native server via POST /synthesize/raw.
-    Single voice — no language splitting, no fallback voice.
+    Holds voice names and per-voice settings; all synthesis is delegated
+    to the native server via POST /synthesize/raw.
     """
 
     def __init__(self) -> None:
         self._primary_name: str = ""
+        self._fallback_name: str = ""
         self._primary_lang: str = "uk"
+        self._fallback_lang: str = "en"
         self._primary_settings: dict = {}
+        self._fallback_settings: dict = {}
         self._lock = asyncio.Lock()
         self._loaded = False
 
@@ -149,20 +152,28 @@ class TTSEngine:
         """Primary voice name (backward compat)."""
         return self._primary_name
 
-    def load_voices(self, primary: str = DEFAULT_VOICE, **_kwargs) -> None:
-        """Register the primary voice and load its settings.
+    def load_voices(
+        self,
+        primary: str = DEFAULT_VOICE,
+        fallback: str = DEFAULT_FALLBACK,
+        primary_cuda: bool = False,  # noqa: ARG002 — server decides
+        fallback_cuda: bool = False,  # noqa: ARG002 — server decides
+    ) -> None:
+        """Register voice names and per-language settings.
 
-        Extra kwargs (legacy ``fallback``, ``primary_cuda``, etc.) are
-        accepted and ignored for backward compatibility — the native
-        piper-tts.service is the single source of truth for what is
-        loaded and on which device.
+        Note: cuda flags are ignored — the native piper-tts.service decides
+        the device for all loaded models. Models are preloaded at server
+        startup (see scripts/piper-tts.service).
         """
         self._primary_name = primary
+        self._fallback_name = fallback
         self._primary_lang = primary.split("-")[0].split("_")[0]
+        self._fallback_lang = fallback.split("-")[0].split("_")[0] if fallback else "en"
 
         self.reload_settings()
 
-        # Health check — verify the server is up and primary voice is loaded
+        # Health check — verify the server is up and the requested voices
+        # are actually loaded (preloaded by --preload in piper-tts.service).
         try:
             import httpx
             resp = httpx.get(f"{PIPER_GPU_URL}/health", timeout=3)
@@ -180,6 +191,11 @@ class TTSEngine:
                         "TTS primary voice %s not preloaded — first request will be slow",
                         self._primary_name,
                     )
+                if self._fallback_name and self._fallback_name not in loaded:
+                    logger.warning(
+                        "TTS fallback voice %s not preloaded — first request will be slow",
+                        self._fallback_name,
+                    )
             else:
                 logger.error("Piper HTTP server unhealthy: %s", resp.status_code)
                 self._loaded = False
@@ -187,24 +203,33 @@ class TTSEngine:
             logger.error("Piper HTTP server not reachable at %s: %s", PIPER_GPU_URL, exc)
             self._loaded = False
 
-    def get_settings_for_lang(self, lang: str) -> dict:  # noqa: ARG002 — single voice
-        """Get TTS synthesis settings (single voice — lang argument ignored)."""
+    def get_settings_for_lang(self, lang: str) -> dict:
+        """Get TTS synthesis settings for a language."""
+        if lang == "en" and self._fallback_settings:
+            return self._fallback_settings
         return self._primary_settings or {}
 
     def reload_settings(self) -> None:
-        """Reload primary voice settings from config (called after settings change)."""
+        """Reload per-voice settings from config (called after settings change)."""
         try:
             from core.config_writer import read_config
             cfg = read_config()
             tts_cfg = cfg.get("voice", {}).get("tts", {})
             self._primary_settings = tts_cfg.get("primary", {}).get("settings", {})
+            self._fallback_settings = tts_cfg.get("fallback", {}).get("settings", {})
         except Exception:
             pass
 
-    def _select_voice(self, voice_override: str | None) -> tuple[str, dict]:
-        """Pick voice name + settings dict — primary unless explicit override."""
-        if voice_override and voice_override != self._primary_name:
+    def _select_voice(self, lang: str, voice_override: str | None) -> tuple[str, dict]:
+        """Pick voice name + settings dict for a language (or use override)."""
+        if voice_override:
+            # Explicit voice — use primary settings if it matches primary,
+            # fallback settings if it matches fallback, else primary as default.
+            if voice_override == self._fallback_name:
+                return voice_override, self._fallback_settings or {}
             return voice_override, self._primary_settings or {}
+        if lang == "en" and self._fallback_name:
+            return self._fallback_name, self._fallback_settings or {}
         return self._primary_name, self._primary_settings or {}
 
     async def _synthesize_raw_http(
@@ -237,14 +262,15 @@ class TTSEngine:
         return b"", 22050
 
     async def synthesize(
-        self, text: str, primary_lang: str = "uk",  # noqa: ARG002 — single voice
+        self, text: str, primary_lang: str = "uk",
         voice: str | None = None,
     ) -> bytes:
-        """Synthesize text to a WAV using the primary voice.
+        """Synthesize text to a single-voice WAV.
 
-        Single-voice synthesis. The ``primary_lang`` argument is kept
-        for backward compatibility but ignored — the primary voice is
-        always used unless ``voice`` explicitly overrides it.
+        Multi-language splitting is handled upstream in
+        VoiceCoreModule._stream_speak (which calls /synthesize/raw per
+        utterance directly). This method synthesizes a single phrase with
+        a single voice, used for warm-up and UI test endpoints.
 
         Returns WAV bytes (empty on failure).
         """
@@ -252,7 +278,7 @@ class TTSEngine:
         if not clean:
             return b""
 
-        chosen_voice, settings = self._select_voice(voice)
+        chosen_voice, settings = self._select_voice(primary_lang, voice)
         if not chosen_voice:
             logger.error("No TTS voice available")
             return b""

@@ -624,10 +624,48 @@
             </div>
         </div>
 
-        <!-- ── Save ── -->
+        <!-- ── Fallback Voice ── -->
+        <div class="card-inner mb12" id="fallbackVoiceCard">
+            <div class="row mb8">
+                <div>
+                    <div class="flex gap8">
+                        <span class="label-sm" style="font-weight:600" data-i18n="tts_fallback"></span>
+                        <span class="badge badge-ac">CPU</span>
+                        <span id="fallbackStatusBadge" class="badge badge-off"></span>
+                    </div>
+                    <div class="label-xs mono" id="fallbackVoiceName" style="margin-top:2px">—</div>
+                    <div class="label-xs" id="fallbackModelInfo" style="color:var(--tx3);margin-top:2px"></div>
+                </div>
+                <select id="fallbackVoiceSelect" style="max-width:200px;font-size:12px"></select>
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="fbSpeedVal">1.00</span></div>
+                <input type="range" id="fbSpeed" min="0.3" max="2.0" step="0.05" value="1.0">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_intonation"></span><span class="slider-value" id="fbNoiseVal">0.667</span></div>
+                <input type="range" id="fbNoise" min="0" max="1" step="0.01" value="0.667">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_phoneme"></span><span class="slider-value" id="fbNoiseWVal">0.800</span></div>
+                <input type="range" id="fbNoiseW" min="0" max="1" step="0.01" value="0.8">
+            </div>
+            <div class="slider-row">
+                <div class="slider-header"><span class="slider-label" data-i18n="tts_volume"></span><span class="slider-value" id="fbVolVal">1.00</span></div>
+                <input type="range" id="fbVol" min="0.1" max="3.0" step="0.05" value="1.0">
+            </div>
+            <div class="flex gap8 mt8">
+                <input type="text" id="fbTestText" style="flex:1;font-size:11px" placeholder="Test text...">
+                <button id="fbTestBtn" class="btn btn-blue" style="font-size:11px">Test</button>
+            </div>
+        </div>
+
+        <!-- ── Save + Mix Test ── -->
         <div class="flex gap8 mb8">
             <button id="dualSaveBtn" class="btn btn-green" data-i18n="save"></button>
+            <button id="dualTestBtn" class="btn btn-blue" data-i18n="tts_test_mix"></button>
         </div>
+        <div id="dualTestResult" class="hidden label-xs mono mb8" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
     </div>
 
     <!-- Catalog toggle -->
@@ -1116,9 +1154,11 @@
             subtitle: 'Manage STT, TTS, and LLM engines',
             stt_title: 'Speech-to-Text (STT)',
             tts_title: 'Text-to-Speech (TTS)',
-            tts_primary: 'Voice',
+            tts_primary: 'Primary Voice',
+            tts_fallback: 'Fallback Voice (EN)',
             tts_loaded: 'Loaded',
             tts_not_loaded: 'Not loaded',
+            tts_test_mix: 'Test Mix',
             llm_title: 'LLM Router',
             llm_desc: 'Language model provider management',
             installed: 'Installed',
@@ -1311,9 +1351,11 @@
             subtitle: 'Керування STT, TTS та LLM движками',
             stt_title: 'Розпiзнавання мовлення (STT)',
             tts_title: 'Синтез мовлення (TTS)',
-            tts_primary: 'Голос',
+            tts_primary: 'Основний голос',
+            tts_fallback: 'Резервний голос (EN)',
             tts_loaded: 'Завантажено',
             tts_not_loaded: 'Не завантажено',
+            tts_test_mix: 'Тест мікс',
             llm_title: 'LLM маршрутизатор',
             llm_desc: 'Керування провайдерами мовних моделей',
             installed: 'Встановлено',
@@ -2987,7 +3029,7 @@
     // ══════════════════════════════════════════════════════════════
     //  DUAL VOICE MANAGEMENT
     // ══════════════════════════════════════════════════════════════
-    state.dualVoice = { primary: {} };
+    state.dualVoice = { primary: {}, fallback: {} };
 
     async function loadDualVoiceStatus() {
         try {
@@ -2999,49 +3041,62 @@
 
     function renderDualVoice() {
         var dv = state.dualVoice;
-        if (!dv.primary) return;
+        if (!dv.primary || !dv.fallback) return;
 
-        var d = dv.primary;
-        $('primaryVoiceName').textContent = d.voice || '—';
-        $('primaryStatusBadge').textContent = d.installed ? t('tts_loaded') : t('tts_not_loaded');
-        $('primaryStatusBadge').className = 'badge ' + (d.installed ? 'badge-ok' : 'badge-off');
-        $('primaryModelInfo').textContent = d.sample_rate + 'Hz · ' + d.num_speakers + ' speaker' + (d.num_speakers > 1 ? 's' : '');
+        // Helper: apply settings to sliders
+        function applyRole(role, prefix) {
+            var d = dv[role];
+            $(prefix + 'VoiceName').textContent = d.voice || '—';
+            $(prefix + 'StatusBadge').textContent = d.installed ? t('tts_loaded') : t('tts_not_loaded');
+            $(prefix + 'StatusBadge').className = 'badge ' + (d.installed ? 'badge-ok' : 'badge-off');
+            $(prefix + 'ModelInfo').textContent = d.sample_rate + 'Hz · ' + d.num_speakers + ' speaker' + (d.num_speakers > 1 ? 's' : '');
 
-        var s = d.settings || {};
-        $('priSpeed').value = s.length_scale || 1.0;
-        $('priSpeedVal').textContent = (s.length_scale || 1.0).toFixed(2);
-        $('priNoise').value = s.noise_scale || 0.667;
-        $('priNoiseVal').textContent = (s.noise_scale || 0.667).toFixed(3);
-        $('priNoiseW').value = s.noise_w_scale || 0.8;
-        $('priNoiseWVal').textContent = (s.noise_w_scale || 0.8).toFixed(3);
-        $('priVol').value = s.volume || 1.0;
-        $('priVolVal').textContent = (s.volume || 1.0).toFixed(2);
+            var s = d.settings || {};
+            var p = prefix === 'primary' ? 'pri' : 'fb';
+            $(p + 'Speed').value = s.length_scale || 1.0;
+            $(p + 'SpeedVal').textContent = (s.length_scale || 1.0).toFixed(2);
+            $(p + 'Noise').value = s.noise_scale || 0.667;
+            $(p + 'NoiseVal').textContent = (s.noise_scale || 0.667).toFixed(3);
+            $(p + 'NoiseW').value = s.noise_w_scale || 0.8;
+            $(p + 'NoiseWVal').textContent = (s.noise_w_scale || 0.8).toFixed(3);
+            $(p + 'Vol').value = s.volume || 1.0;
+            $(p + 'VolVal').textContent = (s.volume || 1.0).toFixed(2);
 
-        if (d.num_speakers > 1 && $('priSpeakerRow')) {
-            show('priSpeakerRow');
-            $('priSpeaker').max = d.num_speakers - 1;
-            $('priSpeaker').value = s.speaker || 0;
-            $('priSpeakerVal').textContent = s.speaker || 0;
+            // Speaker selector (only for multi-speaker models)
+            if (d.num_speakers > 1 && $(p + 'SpeakerRow')) {
+                show(p + 'SpeakerRow');
+                $(p + 'Speaker').max = d.num_speakers - 1;
+                $(p + 'Speaker').value = s.speaker || 0;
+                $(p + 'SpeakerVal').textContent = s.speaker || 0;
+            }
         }
 
-        // Device badge from server (gpu/cpu)
-        $('primaryAccelBadge').textContent = d.cuda ? 'GPU' : 'CPU';
-        $('primaryAccelBadge').className = 'badge ' + (d.cuda ? 'badge-ok' : 'badge-ac');
-        $('primaryCuda').checked = !!d.cuda;
+        applyRole('primary', 'primary');
+        applyRole('fallback', 'fallback');
 
-        // Populate voice select
+        // Primary specific
+        $('primaryAccelBadge').textContent = dv.primary.cuda ? 'GPU' : 'CPU';
+        $('primaryAccelBadge').className = 'badge ' + (dv.primary.cuda ? 'badge-ok' : 'badge-ac');
+        $('primaryCuda').checked = !!dv.primary.cuda;
+
+        // Populate voice selects
         if (state.piperVoices && state.piperVoices.length > 0) {
-            var sel = $('primaryVoiceSelect');
-            sel.innerHTML = state.piperVoices.map(function(v) {
-                return '<option value="' + v.id + '"' + (v.id === d.voice ? ' selected' : '') + '>' + v.id + '</option>';
-            }).join('');
+            ['primaryVoiceSelect', 'fallbackVoiceSelect'].forEach(function(selId) {
+                var sel = $(selId);
+                var current = selId === 'primaryVoiceSelect' ? dv.primary.voice : dv.fallback.voice;
+                sel.innerHTML = state.piperVoices.map(function(v) {
+                    return '<option value="' + v.id + '"' + (v.id === current ? ' selected' : '') + '>' + v.id + '</option>';
+                }).join('');
+            });
         }
     }
 
-    // Slider events for primary voice controls
+    // Slider events for all dual voice controls
     var sliderMap = {
         priSpeed: 'priSpeedVal', priNoise: 'priNoiseVal', priNoiseW: 'priNoiseWVal',
         priVol: 'priVolVal', priSpeaker: 'priSpeakerVal',
+        fbSpeed: 'fbSpeedVal', fbNoise: 'fbNoiseVal', fbNoiseW: 'fbNoiseWVal',
+        fbVol: 'fbVolVal',
     };
     Object.keys(sliderMap).forEach(function(id) {
         if ($(id)) $(id).oninput = function() {
@@ -3051,25 +3106,33 @@
         };
     });
 
-    // Collect primary settings from sliders
-    function collectSettings() {
+    // Collect settings from sliders
+    function collectSettings(prefix) {
+        var p = prefix === 'primary' ? 'pri' : 'fb';
         return {
-            length_scale: parseFloat($('priSpeed').value),
-            noise_scale: parseFloat($('priNoise').value),
-            noise_w_scale: parseFloat($('priNoiseW').value),
-            volume: parseFloat($('priVol').value),
-            speaker: $('priSpeaker') ? parseInt($('priSpeaker').value) : 0,
+            length_scale: parseFloat($(p + 'Speed').value),
+            noise_scale: parseFloat($(p + 'Noise').value),
+            noise_w_scale: parseFloat($(p + 'NoiseW').value),
+            volume: parseFloat($(p + 'Vol').value),
+            speaker: $(p + 'Speaker') ? parseInt($(p + 'Speaker').value) : 0,
         };
     }
 
-    // Save primary config
+    // Save dual config
     $('dualSaveBtn').onclick = async function() {
         var cfg = {
             primary: {
                 voice: $('primaryVoiceSelect').value,
                 lang: (($('primaryVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'uk',
-                settings: collectSettings(),
+                cuda: $('primaryCuda').checked,
+                settings: collectSettings('primary'),
             },
+            fallback: {
+                voice: $('fallbackVoiceSelect').value,
+                lang: (($('fallbackVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'en',
+                cuda: false,
+                settings: collectSettings('fallback'),
+            }
         };
         try {
             await postJson('/setup/tts/dual-config', cfg);
@@ -3078,17 +3141,47 @@
         } catch(e) { showToast('Error: ' + e.message, 'error'); }
     };
 
-    // Test primary voice
-    $('priTestBtn').onclick = async function() {
-        var btn = $('priTestBtn');
+    // Test per-voice
+    function setupTestBtn(btnId, textId, voiceSelectId, settingsPrefix) {
+        $(btnId).onclick = async function() {
+            var btn = $(btnId);
+            btn.disabled = true;
+            var text = $(textId).value.trim() || (settingsPrefix === 'primary' ? 'привіт, я селена, тестування основного голосу' : 'hello, i am selena, testing fallback voice');
+            var voice = $(voiceSelectId).value;
+            try {
+                // Save current settings first
+                await postJson('/setup/tts/dual-config', {
+                    [settingsPrefix]: {
+                        voice: voice,
+                        settings: collectSettings(settingsPrefix),
+                    }
+                });
+                // Play test
+                await postJson('/setup/tts/test', { text: text.toLowerCase(), voice: voice, output_device: 'default' });
+            } catch(e) { /* ignore */ }
+            btn.disabled = false;
+        };
+    }
+    setupTestBtn('priTestBtn', 'priTestText', 'primaryVoiceSelect', 'primary');
+    setupTestBtn('fbTestBtn', 'fbTestText', 'fallbackVoiceSelect', 'fallback');
+
+    // Test mixed voice
+    $('dualTestBtn').onclick = async function() {
+        var btn = $('dualTestBtn');
         btn.disabled = true;
-        var text = $('priTestText').value.trim() || 'привіт, я селена, тестування голосу';
-        var voice = $('primaryVoiceSelect').value;
         try {
-            await postJson('/setup/tts/dual-config', {
-                primary: { voice: voice, settings: collectSettings() },
-            });
-            await postJson('/setup/tts/test', { text: text.toLowerCase(), voice: voice, output_device: 'default' });
+            var res = await postJson('/setup/tts/test-mix', {});
+            var resultEl = $('dualTestResult');
+            if (res.status === 'ok') {
+                var segs = (res.segments || []).map(function(s) {
+                    return '<span style="color:' + (s.lang === 'en' ? 'var(--ac)' : 'var(--gr)') + '">[' + s.lang + '] ' + s.text + '</span>';
+                }).join(' ');
+                resultEl.innerHTML = segs + ' <span style="color:var(--tx3)">(' + res.total_ms + 'ms)</span>';
+                show('dualTestResult');
+            } else {
+                resultEl.textContent = res.error || 'Error';
+                show('dualTestResult');
+            }
         } catch(e) { /* ignore */ }
         btn.disabled = false;
     };

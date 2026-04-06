@@ -21,8 +21,12 @@ Microphone (arecord, ALSA)
   Module executes action via EventBus
      |
      v
-  Native Piper TTS (HTTP, port 5100)
-     '-- Primary voice (system language, GPU, preloaded)
+  Dual Piper TTS
+     |-- Primary voice (system language, GPU)
+     '-- Fallback voice (English, CPU)
+     |
+     v
+  split_by_language() --> segments --> correct voice per segment
      |
      v
   aplay (ALSA direct) --> Speaker
@@ -35,12 +39,11 @@ Two language concepts -- do not mix:
 | Concept | Source | Purpose |
 |---------|--------|---------|
 | `stt_lang` | Vosk model language (from config) | Regex matching, cache key |
-| `tts_lang` | Piper config `voice.tts.primary.lang` | Response language |
+| `tts_lang` | Piper config `voice.tts.primary.lang` | Response language, voice selection |
 
 Rules:
-- All responses are spoken by the **single primary voice** configured in
-  `voice.tts.primary.voice`. Mixed-language phrases (e.g. Ukrainian text
-  containing Latin words like "WiFi") are spoken by the primary voice as-is.
+- `stt_lang == primary_lang` --> primary voice, response in primary language
+- `stt_lang != primary_lang` --> fallback EN voice, response in English
 - EventBus payload: intent/entity/location/params always in **English**
 - Response text: in `tts_lang`
 
@@ -71,19 +74,38 @@ Vosk also supports **grammar mode** for wake word detection -- a constrained voc
 
 Language is determined by the active model (per-language models, not auto-detected from speech).
 
-## TTS -- Native Piper (HTTP)
+## TTS -- Dual Piper (piper1-gpl)
 
-Single PiperVoice model loaded at startup on the **native** host service
-(`piper-tts.service`), kept hot in GPU memory. The container has no
-piper-tts package — synthesis is delegated over HTTP to `localhost:5100`.
+Two PiperVoice models loaded at startup, both hot in memory:
 
 | Voice | Purpose | Model | GPU | RAM |
 |-------|---------|-------|-----|-----|
-| Primary | System language | uk_UA-ukrainian_tts-medium | Yes | ~700-800 MB (incl. onnxruntime-gpu) |
+| Primary | System language (e.g. Ukrainian) | uk_UA-ukrainian_tts-medium | Yes | ~65 MB |
+| Fallback | English (for non-primary languages) | en_US-ryan-low | No | ~5 MB |
 
-Mixed-language phrases (e.g. "Вмикаю WiFi") are spoken entirely by the
-primary voice. Latin words may sound off — accept the trade-off in
-exchange for ~150 MB of saved GPU memory and a simpler pipeline.
+### Voice Selection Logic
+
+```
+Text to speak: "Light turned on"
+  --> has Cyrillic? No --> fallback EN voice
+  --> aplay with EN voice settings
+
+Text to speak: "Увiмкнено"
+  --> has Cyrillic? Yes --> primary UK voice
+  --> aplay with UK voice settings
+```
+
+### Mixed Language Text
+
+```
+"Вмикаю WiFi. Signal good. Температура 23 градуси"
+     |
+     v  split_by_language("uk")
+  ["вмикаю" (uk), "wifi. signal good." (en), "температура 23 градуси" (uk)]
+     |
+     v  Each segment synthesized by correct voice
+  voice_uk --> voice_en --> voice_uk --> concatenate --> aplay
+```
 
 ### Configuration
 
@@ -94,12 +116,23 @@ voice:
     primary:
       voice: "uk_UA-ukrainian_tts-medium"
       lang: "uk"
+      cuda: true
       settings:
         length_scale: 0.65        # Speed (0.3-2.0, lower = faster)
         noise_scale: 0.667        # Intonation variability (0.0-1.0)
         noise_w_scale: 0.8        # Phoneme width variability (0.0-1.0)
         volume: 0.7               # Synthesis volume (0.1-3.0)
         speaker: 1                # Speaker ID (for multi-speaker models)
+    fallback:
+      voice: "en_US-ryan-low"
+      lang: "en"
+      cuda: false
+      settings:
+        length_scale: 0.75
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.55
+        speaker: 0
 ```
 
 ### Piper HTTP Server
@@ -113,7 +146,7 @@ curl http://localhost:5100/health
 # Response:
 {
   "status": "ok",
-  "loaded_voices": ["uk_UA-ukrainian_tts-medium"]
+  "loaded_voices": ["uk_UA-ukrainian_tts-medium", "en_US-amy-low"]
 }
 ```
 
@@ -215,9 +248,10 @@ voice:
 | `/api/ui/setup/audio/sources/volume` | POST | Set module volume |
 | `/api/ui/setup/audio/test/output` | POST | Speaker test |
 | `/api/ui/setup/audio/test/input` | POST | Microphone test |
-| `/api/ui/setup/tts/dual-status` | GET | TTS voice status (live device + loaded state) |
-| `/api/ui/setup/tts/dual-config` | POST | Save TTS voice config |
-| `/api/ui/setup/tts/test` | POST | Synthesize and play test phrase |
+| `/api/ui/setup/tts/dual-status` | GET | Dual voice status |
+| `/api/ui/setup/tts/dual-config` | POST | Save dual voice config |
+| `/api/ui/setup/tts/test` | POST | Test specific voice |
+| `/api/ui/setup/tts/test-mix` | POST | Test mixed-language synthesis |
 
 ## LLM Configuration
 

@@ -645,14 +645,10 @@ TTS_DEFAULTS = {
 
 @router.get("/tts/dual-status")
 async def tts_dual_status() -> dict[str, Any]:
-    """Get TTS status (primary voice only).
-
-    Endpoint name kept as ``dual-status`` for backward compatibility with
-    legacy clients. ``cuda`` and ``installed`` come from the live Piper
-    TTS server, not from the stored config — the native piper-tts.service
-    is the source of truth for what is loaded and on which device.
-    """
+    """Get dual-voice TTS status: primary + fallback voice info."""
     config = read_config()
+
+    # New tts config format
     tts_cfg = config.get("voice", {}).get("tts", {})
 
     # Backward compat: old format → new
@@ -661,79 +657,71 @@ async def tts_dual_status() -> dict[str, Any]:
             "primary": {
                 "voice": config.get("voice", {}).get("tts_voice", "uk_UA-ukrainian_tts-medium"),
                 "lang": "uk",
+                "cuda": False,
                 "settings": config.get("voice", {}).get("tts_settings", TTS_DEFAULTS),
+            },
+            "fallback": {
+                "voice": config.get("voice", {}).get("tts_fallback_voice", "en_US-ryan-low"),
+                "lang": "en",
+                "cuda": False,
+                "settings": TTS_DEFAULTS.copy(),
             },
         }
 
-    # Probe the live Piper server for ground truth on device + loaded voices
-    server_device = None
-    server_loaded: list[str] = []
-    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
-    try:
-        async with httpx.AsyncClient(timeout=2) as client:
-            resp = await client.get(f"{gpu_url}/health")
-            if resp.status_code == 200:
-                data = resp.json()
-                server_device = data.get("device")
-                server_loaded = list(data.get("loaded_voices", []))
-    except Exception:
-        pass
-    server_cuda = server_device == "gpu"
+    result: dict[str, Any] = {"primary": {}, "fallback": {}}
 
-    primary_cfg = tts_cfg.get("primary", {})
-    voice_id = primary_cfg.get("voice") or os.environ.get(
-        "PIPER_VOICE", "uk_UA-ukrainian_tts-medium",
-    )
-    lang = primary_cfg.get("lang", "uk")
-    settings = {**TTS_DEFAULTS, **primary_cfg.get("settings", {})}
+    for role in ("primary", "fallback"):
+        role_cfg = tts_cfg.get(role, {})
+        voice_id = role_cfg.get("voice", "")
+        lang = role_cfg.get("lang", "en" if role == "fallback" else "uk")
+        cuda = role_cfg.get("cuda", False)
+        settings = {**TTS_DEFAULTS, **role_cfg.get("settings", {})}
 
-    if server_loaded:
-        installed = voice_id in server_loaded
-    else:
-        installed = (PIPER_MODELS_DIR / f"{voice_id}.onnx").exists() if voice_id else False
+        # Check if model file exists
+        model_exists = (PIPER_MODELS_DIR / f"{voice_id}.onnx").exists() if voice_id else False
 
-    num_speakers = 1
-    sample_rate = 22050
-    if voice_id:
-        json_file = PIPER_MODELS_DIR / f"{voice_id}.onnx.json"
-        if json_file.exists():
-            try:
-                model_cfg = json.loads(json_file.read_text())
-                num_speakers = model_cfg.get("num_speakers", 1)
-                sample_rate = model_cfg.get("audio", {}).get("sample_rate", 22050)
-            except Exception:
-                pass
+        # Read model info
+        num_speakers = 1
+        sample_rate = 22050
+        if voice_id:
+            json_file = PIPER_MODELS_DIR / f"{voice_id}.onnx.json"
+            if json_file.exists():
+                try:
+                    model_cfg = json.loads(json_file.read_text())
+                    num_speakers = model_cfg.get("num_speakers", 1)
+                    sample_rate = model_cfg.get("audio", {}).get("sample_rate", 22050)
+                except Exception:
+                    pass
 
-    return {
-        "primary": {
+        result[role] = {
             "voice": voice_id,
             "lang": lang,
-            "cuda": server_cuda,
-            "installed": installed,
+            "cuda": cuda,
+            "installed": model_exists,
             "num_speakers": num_speakers,
             "sample_rate": sample_rate,
             "settings": settings,
-        },
-    }
+        }
+
+    return result
 
 
 @router.post("/tts/dual-config")
 async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
-    """Save TTS config (primary voice only).
-
-    Endpoint name kept as ``dual-config`` for backward compatibility with
-    legacy clients. Any ``fallback`` key in the request body is silently
-    ignored — single-voice mode.
-    """
+    """Save dual-voice TTS config (primary + fallback)."""
     tts_cfg: dict[str, Any] = {}
 
-    role_data = req.get("primary")
-    if isinstance(role_data, dict):
+    for role in ("primary", "fallback"):
+        if role not in req:
+            continue
+        role_data = req[role]
         role_cfg: dict[str, Any] = {}
         if "voice" in role_data:
             role_cfg["voice"] = str(role_data["voice"])
         if "lang" in role_data:
             role_cfg["lang"] = str(role_data["lang"])
+        if "cuda" in role_data:
+            role_cfg["cuda"] = bool(role_data["cuda"])
         if "settings" in role_data:
             s = role_data["settings"]
             role_cfg["settings"] = {
@@ -743,7 +731,7 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
                 "volume": round(max(0.1, min(3.0, float(s.get("volume", 1.0)))), 2),
                 "speaker": int(s.get("speaker", 0)),
             }
-        tts_cfg["primary"] = role_cfg
+        tts_cfg[role] = role_cfg
 
     # Detect if primary TTS language changed
     old_cfg = read_config().get("voice", {}).get("tts", {})
@@ -759,6 +747,77 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
         _flush_llm_caches()
 
     return {"status": "ok"}
+
+
+@router.post("/tts/test-mix")
+async def tts_test_mix() -> dict[str, Any]:
+    """Test dual-voice TTS with mixed language text — synthesize + play each segment."""
+    import time as _time
+
+    config = read_config()
+    tts_cfg = config.get("voice", {}).get("tts", {})
+    primary_lang = tts_cfg.get("primary", {}).get("lang", "uk")
+    primary_voice = tts_cfg.get("primary", {}).get("voice", get_value("voice", "tts_voice", "uk_UA-ukrainian_tts-medium"))
+    fallback_voice = tts_cfg.get("fallback", {}).get("voice", get_value("voice", "tts_fallback_voice", "en_US-amy-low"))
+
+    test_texts = {
+        "uk": "Привіт, я Селена. WiFi підключено. Status online.",
+        "en": "Hello, I am Selena. Testing voice switching.",
+    }
+    test_text = test_texts.get(primary_lang, test_texts["en"])
+
+    try:
+        from system_modules.voice_core.tts import sanitize_for_tts
+        from system_modules.voice_core.tts_preprocessor import split_by_language
+
+        clean = sanitize_for_tts(test_text)
+        segments = split_by_language(clean, primary_lang)
+        segment_info = [{"text": s.text, "lang": s.lang} for s in segments]
+
+        # Resolve output device
+        device = get_value("voice", "audio_force_output", "") or "default"
+        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+        loop = asyncio.get_event_loop()
+        t0 = _time.monotonic()
+
+        # Load per-voice settings
+        pri_settings = tts_cfg.get("primary", {}).get("settings", {})
+        fb_settings = tts_cfg.get("fallback", {}).get("settings", {})
+
+        # Synthesize and play each segment with the correct voice + settings
+        for seg in segments:
+            is_fallback = seg.lang == "en"
+            voice = fallback_voice if is_fallback else primary_voice
+            s = fb_settings if is_fallback else pri_settings
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.post(f"{gpu_url}/synthesize/raw", json={
+                        "text": seg.text, "voice": voice,
+                        "length_scale": s.get("length_scale", 1.0),
+                        "noise_scale": s.get("noise_scale", 0.667),
+                        "noise_w_scale": s.get("noise_w_scale", 0.8),
+                        "speaker": s.get("speaker", 0),
+                        "volume": s.get("volume", 1.0),
+                    })
+                    if resp.status_code == 200 and resp.content:
+                        sample_rate = int(resp.headers.get("X-Audio-Rate", "22050"))
+                        await loop.run_in_executor(
+                            None, _aplay_raw_pcm, resp.content, device, sample_rate,
+                        )
+            except Exception as exc:
+                logger.warning("Test-mix segment failed (%s): %s", seg.lang, exc)
+
+        total_ms = int((_time.monotonic() - t0) * 1000)
+
+        return {
+            "status": "ok",
+            "test_text": test_text,
+            "segments": segment_info,
+            "primary_lang": primary_lang,
+            "total_ms": total_ms,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 @router.get("/tts/settings")

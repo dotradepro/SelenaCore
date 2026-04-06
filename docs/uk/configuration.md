@@ -179,12 +179,23 @@ voice:
     primary:
       voice: "uk_UA-ukrainian_tts-medium"
       lang: "uk"
+      cuda: true
       settings:
         length_scale: 0.65
         noise_scale: 0.667
         noise_w_scale: 0.8
         volume: 0.7
         speaker: 1
+    fallback:
+      voice: "en_US-ryan-low"
+      lang: "en"
+      cuda: false
+      settings:
+        length_scale: 0.75
+        noise_scale: 0.667
+        noise_w_scale: 0.8
+        volume: 0.55
+        speaker: 0
 ```
 
 | Ключ | Тип | За замовчуванням | Опис |
@@ -198,9 +209,13 @@ voice:
 | `audio_force_input` | `str\|null` | `null` | ALSA пристрій захоплення (напр., `plughw:0,0`). |
 | `audio_force_output` | `str\|null` | `null` | ALSA пристрій відтворення (напр., `plughw:1,3`). |
 | `privacy_gpio_pin` | `int\|null` | `null` | GPIO-пін для фізичного вимикача мікрофона. |
-| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Голос Piper TTS. Single-voice режим — preload через `piper-tts.service` на хості. |
-| `tts.primary.lang` | `str` | `uk` | Код мови голосу. |
-| `tts.primary.settings.*` | `dict` | див. вище | Параметри синтезу (передаються нативному Piper-серверу по HTTP). |
+| `tts.primary.voice` | `str` | `uk_UA-ukrainian_tts-medium` | Основний голос Piper TTS. |
+| `tts.primary.lang` | `str` | `uk` | Код мови основного голосу. |
+| `tts.primary.cuda` | `bool` | `false` | GPU-прискорення для основного голосу. |
+| `tts.primary.settings.*` | `dict` | див. вище | Параметри синтезу для кожного голосу. |
+| `tts.fallback.voice` | `str` | `en_US-ryan-low` | Резервний (англійський) голос. |
+| `tts.fallback.lang` | `str` | `en` | Мова резервного голосу. |
+| `tts.fallback.settings.*` | `dict` | див. вище | Параметри синтезу для кожного голосу. |
 
 **Налаштування TTS для кожного голосу:**
 
