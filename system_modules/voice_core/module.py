@@ -1990,11 +1990,14 @@ class VoiceCoreModule(SystemModule):
                     "raw_llm": result.raw_llm,
                 })
 
-            # Cloud LLM intents that map to system modules are handled
-            # by the module itself via EventBus (voice.intent → module.handle → module.speak)
+            # LLM/Cloud intents that map to system modules are handled by the
+            # module itself via EventBus (voice.intent → module.handle → module.speak).
+            # Must include both "llm" and "cloud" sources, otherwise the test
+            # endpoint speaks result.response while the module ALSO speaks via
+            # speak_action() — causing double TTS playback.
             _sys_handled = (
                 result.source == "system_module"
-                or (result.source == "llm" and svc._is_system_module_intent(result.intent))
+                or (result.source in ("llm", "cloud") and svc._is_system_module_intent(result.intent))
             )
             if req.speak and _sys_handled:
                 svc._system_speak_done.clear()
