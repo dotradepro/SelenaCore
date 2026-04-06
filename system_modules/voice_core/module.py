@@ -596,6 +596,12 @@ class VoiceCoreModule(SystemModule):
             logger.error("Voice loop: provider is not VoskProvider, exiting")
             return
 
+        # Privacy gate: do not start arecord at all while privacy is enabled.
+        # _on_privacy_change(False) will recreate this task when user disables it.
+        if self._privacy_mode:
+            logger.info("Voice loop: privacy mode ON — not starting arecord")
+            return
+
         # Wait if mic test is running
         while self._mic_test_active:
             await asyncio.sleep(0.5)
@@ -631,6 +637,7 @@ class VoiceCoreModule(SystemModule):
         wake_phrase = self._get_wake_phrase()
         wake_enabled = self._config.get("wake_word_enabled", True)
         self._state = STATE_IDLE if wake_enabled else STATE_LISTENING
+        await self._broadcast_state(self._state)
 
         # Speaker embedding buffer (only for voice focus)
         speaker_buffer = bytearray()
@@ -646,12 +653,12 @@ class VoiceCoreModule(SystemModule):
 
         try:
             while True:
-                if self._privacy_mode or self._mic_test_active:
-                    if self._mic_test_active:
-                        logger.info("Voice loop: pausing for mic test")
-                        break
-                    await asyncio.sleep(0.5)
-                    continue
+                if self._privacy_mode:
+                    logger.info("Voice loop: privacy mode toggled ON, exiting loop")
+                    break
+                if self._mic_test_active:
+                    logger.info("Voice loop: pausing for mic test")
+                    break
 
                 data = await loop.run_in_executor(
                     None, proc.stdout.read, BYTES_PER_CHUNK
@@ -707,6 +714,7 @@ class VoiceCoreModule(SystemModule):
                             self._drain_pipe(proc)
                             provider.reset_listening()
                             self._state = STATE_LISTENING
+                            await self._broadcast_state("listening")
                             command_dispatched = False
                             speaker_buffer.clear()
                             self._speech_chunks_in_buffer = 0
@@ -747,6 +755,7 @@ class VoiceCoreModule(SystemModule):
                         self._log_live("command", {"text": cmd_text, "lang": self._lang})
                         logger.info("Voice: command recognized: '%s' (lang=%s)", cmd_text, self._lang)
                         self._state = STATE_PROCESSING
+                        asyncio.create_task(self._broadcast_state("processing"))
                         self._speech_chunks_in_buffer = 0
                         last_speech_time = 0.0
                         listening_start = 0.0
@@ -767,6 +776,7 @@ class VoiceCoreModule(SystemModule):
                             _dispatch_command(text)
                         else:
                             self._state = self._idle_state()
+                            asyncio.create_task(self._broadcast_state(self._state))
                             self._speech_chunks_in_buffer = 0
                             last_speech_time = 0.0
                             self._preprocessor.clear_active_speaker()
@@ -782,6 +792,7 @@ class VoiceCoreModule(SystemModule):
                                 "msg": f"Таймаут прослушивания ({listen_timeout:.0f}с) — возврат в ожидание",
                             })
                             self._state = self._idle_state()
+                            asyncio.create_task(self._broadcast_state(self._state))
                             self._speech_chunks_in_buffer = 0
                             last_speech_time = 0.0
                             command_dispatched = False
@@ -795,6 +806,7 @@ class VoiceCoreModule(SystemModule):
                             _dispatch_command(text)
                         else:
                             self._state = self._idle_state()
+                            asyncio.create_task(self._broadcast_state(self._state))
                             self._speech_chunks_in_buffer = 0
                             last_speech_time = 0.0
                             self._preprocessor.clear_active_speaker()
@@ -812,7 +824,10 @@ class VoiceCoreModule(SystemModule):
             except Exception:
                 pass
 
-        # Auto-restart loop (unless module is stopping)
+        # Auto-restart loop (unless module is stopping or privacy is enabled)
+        if self._privacy_mode:
+            logger.info("Voice loop: not restarting — privacy mode active")
+            return
         if self._listen_task and not self._listen_task.cancelled():
             logger.info("Voice loop: restarting in 2s...")
             await asyncio.sleep(2)
@@ -1006,6 +1021,28 @@ class VoiceCoreModule(SystemModule):
             self._session_ts = time.monotonic()
             self._session.append({"role": "user", "content": text})
 
+            # Privacy mode is owned by voice-core itself — handle inline.
+            # Otherwise the intent would fall into the system_module branch
+            # below and hang for 15s waiting for an external module to ack.
+            if result.intent in ("privacy_on", "privacy_off"):
+                if result.response:
+                    from system_modules.voice_core.tts import sanitize_for_tts
+                    tts_text = sanitize_for_tts(result.response).lower()
+                    if tts_text:
+                        done_ev = asyncio.Event()
+                        await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
+                        try:
+                            await asyncio.wait_for(done_ev.wait(), timeout=8.0)
+                        except asyncio.TimeoutError:
+                            pass
+                from system_modules.voice_core.privacy import set_privacy_mode
+                await set_privacy_mode(result.intent == "privacy_on")
+                logger.info(
+                    "Voice pipeline: %s applied via voice command",
+                    result.intent,
+                )
+                return
+
             # System modules handle their own TTS via EventBus (voice.speak).
             _is_system_handled = (
                 result.source == "system_module"
@@ -1100,6 +1137,7 @@ class VoiceCoreModule(SystemModule):
             logger.error("Voice pipeline error: %s", exc)
         finally:
             self._state = self._idle_state()
+            await self._broadcast_state(self._state)
 
     # ── Chime ────────────────────────────────────────────────────────────
 
@@ -1175,6 +1213,8 @@ class VoiceCoreModule(SystemModule):
                 priority, _ts, text, done_event, voice_override = await self._speech_queue.get()
 
                 await self.publish("voice.tts_start", {"text": text})
+                if text != "__CHIME__":
+                    await self._broadcast_state("speaking")
                 await asyncio.sleep(0.15)  # let ducking take effect
 
                 try:
@@ -1186,6 +1226,8 @@ class VoiceCoreModule(SystemModule):
                     logger.error("Speech worker playback error: %s", exc)
                 finally:
                     await self.publish("voice.tts_done", {"text": text})
+                    if text != "__CHIME__" and not self._privacy_mode:
+                        await self._broadcast_state(self._idle_state())
                     if done_event:
                         done_event.set()
                     self._speech_queue.task_done()
@@ -1411,10 +1453,71 @@ class VoiceCoreModule(SystemModule):
 
     # ── Privacy ──────────────────────────────────────────────────────────
 
+    async def _broadcast_state(self, state: str) -> None:
+        """Push voice state to all connected UI clients via SyncManager WebSocket.
+
+        state ∈ {idle, listening, processing, speaking, privacy}
+        """
+        try:
+            from core.api.sync_manager import get_sync_manager
+            await get_sync_manager().publish("voice.state", {
+                "state": state,
+                "privacy_mode": self._privacy_mode,
+            })
+        except Exception as e:
+            logger.debug("voice.state broadcast failed: %s", e)
+
     async def _on_privacy_change(self, enabled: bool) -> None:
+        # Update internal flag FIRST so the audio loop sees it on next iteration
+        self._privacy_mode = enabled
+
+        if enabled:
+            # Hard-stop arecord and cancel the listen task — release the mic.
+            if self._arecord_proc is not None:
+                try:
+                    self._arecord_proc.kill()
+                    self._arecord_proc.wait(timeout=2)
+                except Exception:
+                    pass
+                self._arecord_proc = None
+
+            if self._listen_task and not self._listen_task.done():
+                self._listen_task.cancel()
+                try:
+                    await asyncio.wait_for(self._listen_task, timeout=2)
+                except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+                    pass
+                self._listen_task = None
+
+            # Reset Vosk grammar/listening state so leftover audio doesn't bleed through.
+            try:
+                provider = self._stt_provider
+                if provider is not None:
+                    provider.reset_idle()
+                    provider.reset_listening()
+            except Exception:
+                pass
+
+            # Belt-and-braces: ensure no stray arecord process is alive
+            try:
+                subprocess.run(
+                    ["pkill", "-f", "arecord.*S16_LE"],
+                    timeout=2,
+                    capture_output=True,
+                )
+            except Exception:
+                pass
+
+            await self._broadcast_state("privacy")
+        else:
+            # Recreate the audio loop task — it will start a fresh arecord.
+            if self._listen_task is None or self._listen_task.done():
+                self._listen_task = asyncio.create_task(self._audio_loop())
+            await self._broadcast_state(self._idle_state())
+
+        # Legacy module event for any subscribers (intent router, audit, etc.)
         event_type = "voice.privacy_on" if enabled else "voice.privacy_off"
         await self.publish(event_type, {"privacy_mode": enabled})
-        self._privacy_mode = enabled
 
     @staticmethod
     def _num2words_available() -> bool:
@@ -1937,6 +2040,37 @@ class VoiceCoreModule(SystemModule):
             svc._last_intent = result.intent
 
             tts_done = False
+
+            # Privacy mode is owned by voice-core itself — apply inline
+            if result.intent in ("privacy_on", "privacy_off"):
+                if req.speak and result.response:
+                    from system_modules.voice_core.tts import sanitize_for_tts
+                    tts_text = sanitize_for_tts(result.response).lower()
+                    if tts_text:
+                        try:
+                            await svc._stream_speak(tts_text)
+                            tts_done = True
+                        except Exception as tts_exc:
+                            logger.warning("test-command privacy TTS failed: %s", tts_exc)
+                from system_modules.voice_core.privacy import set_privacy_mode
+                await set_privacy_mode(result.intent == "privacy_on")
+                duration_ms = int((_time.monotonic() - start_ts) * 1000)
+                return JSONResponse({
+                    "ok": True,
+                    "input_text": text,
+                    "lang": lang,
+                    "intent": result.intent,
+                    "response": result.response,
+                    "source": result.source,
+                    "latency_ms": result.latency_ms,
+                    "duration_ms": duration_ms,
+                    "action": result.action,
+                    "params": result.params,
+                    "tts_played": tts_done,
+                    "trace": trace_steps,
+                    "raw_llm": result.raw_llm,
+                })
+
             # Cloud LLM intents that map to system modules are handled
             # by the module itself via EventBus (voice.intent → module.handle → module.speak)
             _sys_handled = (

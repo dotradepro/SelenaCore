@@ -7,239 +7,345 @@
     <title>Voice Core</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
         * { margin: 0; padding: 0; box-sizing: border-box }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent;
+        }
 
         body {
             font-family: "DM Sans", system-ui, sans-serif;
-            background: transparent;
             color: var(--tx);
-            font-size: 12px;
-            line-height: 1.4;
-            padding: 8px 10px;
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
-        }
-
-        .top {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .lbl {
-            font-size: 9px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: .07em;
-            color: var(--tx3)
-        }
-
-        .sdot {
-            width: 5px;
-            height: 5px;
-            border-radius: 50%;
-            transition: all .3s
-        }
-        .sdot.ok { background: var(--gr) }
-        .sdot.off { background: var(--rd) }
-
-        .center {
-            display: flex;
             align-items: center;
             justify-content: center;
-            flex: 1;
-            gap: 12px;
+            gap: 6px;
+            padding: 6px;
         }
 
-        .mic {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            background: rgba(79, 140, 247, .1);
-            border: 1.5px solid rgba(79, 140, 247, .25);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        /* ── Mic button ── */
+        .mic-btn {
             position: relative;
-            color: var(--tx);
-            transition: all .2s;
-        }
-        .mic svg { width: 20px; height: 20px }
-
-        .privacy-btn {
-            width: 32px;
-            height: 32px;
+            width: 60px;
+            height: 60px;
             border-radius: 50%;
-            border: 1.5px solid var(--b2);
-            background: var(--sf2);
+            border: 2px solid var(--ac);
+            background: rgba(79, 140, 247, .12);
+            color: var(--tx);
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all .2s;
-            color: var(--tx3);
-            font-size: 16px;
+            padding: 0;
+            transition: border-color .25s, background .25s, transform .15s, box-shadow .25s;
+            outline: none;
+        }
+        .mic-btn:active { transform: scale(.94) }
+        .mic-btn:disabled { opacity: .6; cursor: wait }
+
+        .mic-icon {
+            width: 26px;
+            height: 26px;
+            position: relative;
+            z-index: 2;
+            transition: opacity .25s, filter .25s;
+        }
+
+        .mic-slash {
             position: absolute;
-            right: 8px;
-        }
-        .privacy-btn:hover {
-            border-color: var(--tx3);
-            color: var(--tx2);
-        }
-        .privacy-btn.active {
-            background: rgba(224, 84, 84, .15);
-            border-color: var(--rd);
-            color: var(--rd);
-        }
-        .privacy-btn.active:hover {
-            background: rgba(224, 84, 84, .25);
+            inset: 0;
+            margin: auto;
+            width: 60px;
+            height: 60px;
+            stroke: var(--rd);
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            opacity: 0;
+            transition: opacity .25s;
+            pointer-events: none;
+            z-index: 3;
         }
 
-        .bottom {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end
-        }
-
-        .status {
-            font-size: 10px;
-            transition: color .3s
-        }
-
-        .info {
-            display: flex;
-            gap: 8px;
-            font-size: 9px;
-            color: var(--tx3)
-        }
-        .info .dot {
-            width: 5px;
-            height: 5px;
+        /* ── Ripples ── */
+        .mic-ripples {
+            position: absolute;
+            inset: -2px;
             border-radius: 50%;
-            display: inline-block;
-            margin-right: 2px;
-            vertical-align: middle
+            pointer-events: none;
+            z-index: 1;
         }
-        .info .dot.ok { background: var(--gr) }
-        .info .dot.off { background: var(--rd) }
+        .mic-ripples i {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            border: 2px solid var(--ac);
+            opacity: 0;
+            transform: scale(1);
+        }
+
+        /* ── Caption ── */
+        .caption {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .04em;
+            color: var(--tx2);
+            text-align: center;
+            transition: color .25s;
+            white-space: nowrap;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ═══ STATES ═══ */
+
+        /* IDLE — soft breathing pulse, green-ish accent */
+        body.state-idle .mic-btn {
+            border-color: var(--gr);
+            background: rgba(46, 201, 138, .10);
+            box-shadow: 0 0 0 0 rgba(46, 201, 138, .35);
+            animation: breathe 3s ease-in-out infinite;
+        }
+        body.state-idle .caption { color: var(--gr) }
+
+        @keyframes breathe {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(46, 201, 138, .25) }
+            50%      { box-shadow: 0 0 0 6px rgba(46, 201, 138, 0) }
+        }
+
+        /* LISTENING — three concentric ripples expanding outward */
+        body.state-listening .mic-btn {
+            border-color: var(--ac);
+            background: rgba(79, 140, 247, .18);
+            animation: pulse-blue 1.4s ease-out infinite;
+        }
+        body.state-listening .mic-ripples i {
+            animation: ripple 1.8s ease-out infinite;
+            border-color: var(--ac);
+        }
+        body.state-listening .mic-ripples i:nth-child(2) { animation-delay: .6s }
+        body.state-listening .mic-ripples i:nth-child(3) { animation-delay: 1.2s }
+        body.state-listening .caption { color: var(--ac) }
+
+        @keyframes ripple {
+            0%   { transform: scale(1);   opacity: .55 }
+            80%  { opacity: 0 }
+            100% { transform: scale(2.2); opacity: 0 }
+        }
+        @keyframes pulse-blue {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(79, 140, 247, .45) }
+            50%      { box-shadow: 0 0 12px 2px rgba(79, 140, 247, .55) }
+        }
+
+        /* PROCESSING — rotating conic-gradient ring */
+        body.state-processing .mic-btn {
+            border-color: transparent;
+            background: rgba(79, 140, 247, .14);
+        }
+        body.state-processing .mic-btn::before {
+            content: "";
+            position: absolute;
+            inset: -2px;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, var(--ac) 0%, transparent 65%);
+            -webkit-mask: radial-gradient(circle, transparent 60%, #000 62%);
+                    mask: radial-gradient(circle, transparent 60%, #000 62%);
+            animation: spin 1.1s linear infinite;
+        }
+        body.state-processing .caption { color: var(--ac) }
+        @keyframes spin {
+            to { transform: rotate(360deg) }
+        }
+
+        /* SPEAKING — faster purple/orange ripples */
+        body.state-speaking .mic-btn {
+            border-color: #c864ff;
+            background: rgba(200, 100, 255, .15);
+            animation: pulse-purple .9s ease-out infinite;
+        }
+        body.state-speaking .mic-ripples i {
+            animation: ripple .9s ease-out infinite;
+            border-color: #c864ff;
+        }
+        body.state-speaking .mic-ripples i:nth-child(2) { animation-delay: .3s }
+        body.state-speaking .mic-ripples i:nth-child(3) { animation-delay: .6s }
+        body.state-speaking .caption { color: #c864ff }
+
+        @keyframes pulse-purple {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(200, 100, 255, .45) }
+            50%      { box-shadow: 0 0 14px 3px rgba(200, 100, 255, .60) }
+        }
+
+        /* PRIVACY — red, slashed, no animation */
+        body.state-privacy .mic-btn {
+            border-color: var(--rd);
+            background: rgba(224, 84, 84, .15);
+            animation: none;
+            box-shadow: none;
+        }
+        body.state-privacy .mic-icon {
+            opacity: .55;
+            filter: grayscale(1);
+        }
+        body.state-privacy .mic-slash { opacity: 1 }
+        body.state-privacy .mic-ripples i { animation: none; opacity: 0 }
+        body.state-privacy .caption { color: var(--rd) }
     </style>
 </head>
 
-<body>
+<body class="state-idle">
 
-    <!-- Top label -->
-    <div class="top">
-        <div class="lbl" data-i18n="voice_label"></div>
-        <div class="sdot" id="statusDot"></div>
-    </div>
-
-    <!-- Center: mic icon + privacy button -->
-    <div class="center" style="position:relative">
-        <div class="mic" id="micIcon">
-            <svg viewBox="0 0 26 26" fill="none">
-                <rect x="9" y="2" width="8" height="13" rx="4" stroke="currentColor" stroke-width="1.5" />
-                <path d="M4.5 12c0 4.7 3.8 8.5 8.5 8.5S21.5 16.7 21.5 12M13 20.5V24M9 24h8" stroke="currentColor"
-                    stroke-width="1.5" stroke-linecap="round" />
-            </svg>
-        </div>
-        <button class="privacy-btn" id="privacyBtn" title="Privacy Mode">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="1" y1="1" x2="23" y2="23"/>
-                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
-                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2c0 .76-.13 1.49-.35 2.17"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-        </button>
-    </div>
-
-    <!-- Bottom: status + info -->
-    <div class="bottom">
-        <div class="status" id="statusText" style="color:var(--tx3)" data-i18n="ready"></div>
-        <div class="info">
-            <span><span class="dot" id="sttDot"></span>STT</span>
-            <span><span class="dot" id="wakeDot"></span>Wake</span>
-            <span><span class="dot" id="ttsDot"></span>TTS</span>
-        </div>
-    </div>
+    <button class="mic-btn" id="micButton" title="">
+        <span class="mic-ripples"><i></i><i></i><i></i></span>
+        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3"/>
+            <path d="M5 11a7 7 0 0 0 14 0"/>
+            <line x1="12" y1="18" x2="12" y2="22"/>
+            <line x1="9" y1="22" x2="15" y2="22"/>
+        </svg>
+        <svg class="mic-slash" viewBox="0 0 60 60" fill="none">
+            <line x1="12" y1="12" x2="48" y2="48"/>
+        </svg>
+    </button>
+    <div class="caption" id="caption" data-i18n="idle"></div>
 
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { voice_label: 'Voice · Core', ready: 'Ready', offline: 'Offline', priv_on: 'Privacy ON', priv_off: 'Privacy OFF' },
-            uk: { voice_label: 'Voice · Core', ready: 'Готово', offline: 'Офлайн', priv_on: 'Приватнiсть УВIМК', priv_off: 'Приватнiсть ВИМК' }
+            en: {
+                idle: 'Ready', listening: 'Listening…', processing: 'Thinking…',
+                speaking: 'Speaking…', privacy: 'Muted',
+                toggle_privacy: 'Toggle privacy mode'
+            },
+            uk: {
+                idle: 'Готово', listening: 'Слухаю…', processing: 'Думаю…',
+                speaking: 'Говорю…', privacy: 'Вимкнено',
+                toggle_privacy: 'Перемкнути режим приватності'
+            }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+
         (function () {
             var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-            var $ = function(id) { return document.getElementById(id); };
+            var $ = function (id) { return document.getElementById(id); };
+            var currentState = 'idle';
             var privacyMode = false;
 
-            async function load() {
-                try {
-                    var cfg = await (await fetch(BASE + '/config')).json();
-                    privacyMode = cfg.privacy_mode || false;
-                    $('statusDot').className = 'sdot ' + (privacyMode ? 'off' : 'ok');
-                    updatePrivacyBtn();
-                    $('sttDot').className = 'dot ok';
-                    $('ttsDot').className = 'dot ok';
-                    $('statusText').textContent = t('ready');
-                    $('statusText').style.color = 'var(--tx3)';
-                } catch(e) {
-                    $('statusDot').className = 'sdot off';
-                    $('sttDot').className = 'dot off';
-                    $('ttsDot').className = 'dot off';
-                    $('wakeDot').className = 'dot off';
-                    $('statusText').textContent = t('offline');
-                    $('statusText').style.color = 'var(--rd)';
-                }
-                try {
-                    var wk = await (await fetch(BASE + '/wakeword/status')).json();
-                    $('wakeDot').className = wk.running ? 'dot ok' : 'dot off';
-                } catch(e) { $('wakeDot').className = 'dot off'; }
+            // ── Apply size class from dashboard data-span attributes ────────
+            function applySize() {
+                var ds = document.documentElement.dataset || {};
+                document.body.dataset.span = (ds.spanCols || '1') + 'x' + (ds.spanRows || '1');
+            }
+            if (window.MutationObserver) {
+                new MutationObserver(applySize).observe(document.documentElement, {
+                    attributes: true, attributeFilter: ['data-span-cols', 'data-span-rows']
+                });
+            }
+            applySize();
+
+            // ── State application ───────────────────────────────────────────
+            function applyState(state, isPrivacy) {
+                privacyMode = !!isPrivacy;
+                currentState = privacyMode ? 'privacy' : (state || 'idle');
+                document.body.className = 'state-' + currentState;
+                $('caption').textContent = t(currentState);
+                var btn = $('micButton');
+                btn.title = t(currentState);
+                btn.setAttribute('aria-label', t('toggle_privacy'));
             }
 
-            function updatePrivacyBtn() {
-                var btn = $('privacyBtn');
-                if (privacyMode) {
-                    btn.classList.add('active');
-                    btn.title = t('priv_on');
-                } else {
-                    btn.classList.remove('active');
-                    btn.title = t('priv_off');
-                }
+            // ── Initial sync via /config (in case sync replay misses) ──────
+            function loadInitial() {
+                fetch(BASE + '/config')
+                    .then(function (r) { return r.json(); })
+                    .then(function (cfg) {
+                        applyState(cfg.state || 'idle', !!cfg.privacy_mode);
+                    })
+                    .catch(function () {
+                        applyState('idle', false);
+                    });
             }
 
-            $('privacyBtn').addEventListener('click', async function() {
-                this.style.opacity = '0.5';
-                this.style.pointerEvents = 'none';
+            // ── WebSocket sync to receive voice.state events live ──────────
+            var ws = null;
+            var reconnectTimer = null;
+            function connectSync() {
+                if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
                 try {
-                    var res = await fetch(BASE + '/privacy/toggle', { method: 'POST' });
-                    var data = await res.json();
-                    privacyMode = data.privacy_mode;
-                    $('statusDot').className = 'sdot ' + (privacyMode ? 'off' : 'ok');
-                    updatePrivacyBtn();
-                    // Reload wake word status
-                    try {
-                        var wk = await (await fetch(BASE + '/wakeword/status')).json();
-                        $('wakeDot').className = wk.running ? 'dot ok' : 'dot off';
-                    } catch(e) {}
-                } catch(e) { /* ignore */ }
-                this.style.opacity = '';
-                this.style.pointerEvents = '';
+                    var proto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+                    ws = new WebSocket(proto + location.host + '/api/ui/sync');
+                } catch (e) { scheduleReconnect(); return; }
+
+                ws.addEventListener('open', function () { /* connected */ });
+                ws.addEventListener('message', function (ev) {
+                    var msg;
+                    try { msg = JSON.parse(ev.data); } catch (e) { return; }
+
+                    // Server pings client every 5s — must reply pong
+                    if (msg.type === 'ping') {
+                        try { ws.send(JSON.stringify({ type: 'pong' })); } catch (_) {}
+                        return;
+                    }
+
+                    var events = [];
+                    if (msg.type === 'event') {
+                        events = [msg];
+                    } else if (msg.type === 'replay' && Array.isArray(msg.events)) {
+                        events = msg.events;
+                    }
+
+                    events.forEach(function (e) {
+                        var et = e.event_type || e.type;
+                        if (et === 'voice.state') {
+                            var p = e.payload || {};
+                            applyState(p.state || 'idle', !!p.privacy_mode);
+                        }
+                    });
+                });
+                ws.addEventListener('close', scheduleReconnect);
+                ws.addEventListener('error', function () { try { ws.close(); } catch (_) {} });
+            }
+            function scheduleReconnect() {
+                if (reconnectTimer) return;
+                reconnectTimer = setTimeout(connectSync, 2500);
+            }
+
+            // ── Click toggles privacy on backend ───────────────────────────
+            $('micButton').addEventListener('click', function () {
+                var btn = this;
+                btn.disabled = true;
+                fetch(BASE + '/privacy/toggle', { method: 'POST' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        // Optimistic update — voice.state from sync will follow
+                        applyState(data.privacy_mode ? 'privacy' : 'idle', !!data.privacy_mode);
+                    })
+                    .catch(function () { /* ignore */ })
+                    .then(function () { btn.disabled = false; });
             });
 
-            load();
-            setInterval(load, 30000);
+            // ── i18n live re-render on language change ─────────────────────
+            window.addEventListener('message', function (e) {
+                if (e.data && e.data.type === 'lang_changed') {
+                    try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
+                    applyLang();
+                    applyState(currentState, privacyMode);
+                }
+            });
+
+            applyLang();
+            loadInitial();
+            connectSync();
         })();
-        applyLang();
     </script>
     <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
