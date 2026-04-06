@@ -41,20 +41,20 @@
             flex-direction: column;
             width: 100%;
             height: 100%;
-            padding: 14px 16px 12px;
-            gap: 10px;
+            padding: 8px 11px 7px;
+            gap: 6px;
         }
 
         /* ── Top: big reading ── */
         .top {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             flex-shrink: 0;
         }
 
         .main-emoji {
-            font-size: 2.8rem;
+            font-size: 2.6rem;
             line-height: 1;
             filter: drop-shadow(0 2px 8px rgba(100, 160, 255, .3));
             flex-shrink: 0;
@@ -66,7 +66,7 @@
         }
 
         .main-temp {
-            font-size: 2.4rem;
+            font-size: 2.6rem;
             font-weight: 700;
             letter-spacing: -0.03em;
             line-height: 1;
@@ -74,14 +74,14 @@
         }
 
         .main-temp .unit {
-            font-size: 1.1rem;
+            font-size: 1.2rem;
             font-weight: 400;
             color: var(--tx3);
             margin-left: 1px;
         }
 
         .main-cond {
-            font-size: 0.82rem;
+            font-size: 0.95rem;
             color: var(--tx2);
             margin-top: 3px;
             white-space: nowrap;
@@ -92,7 +92,7 @@
         /* ── Pills row ── */
         .pills {
             display: flex;
-            gap: 6px;
+            gap: 5px;
             flex-wrap: wrap;
             flex-shrink: 0;
         }
@@ -104,8 +104,8 @@
             background: var(--b);
             border: 1px solid var(--b);
             border-radius: 20px;
-            padding: 4px 10px;
-            font-size: 0.75rem;
+            padding: 4px 9px;
+            font-size: 0.85rem;
             color: var(--tx2);
             white-space: nowrap;
         }
@@ -126,21 +126,20 @@
             flex-shrink: 0;
         }
 
-        /* ── Forecast strip — stretches to fill remaining height ── */
+        /* ── Forecast strip — sized to content, doesn't stretch ── */
         .forecast {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            flex: 1;
+            gap: 5px;
+            flex: 0 0 auto;
             min-height: 0;
-            /* crucial: lets flex child shrink below content */
         }
 
         .fday {
             background: var(--b);
             border: 1px solid var(--b);
-            border-radius: 10px;
-            padding: 8px 6px;
+            border-radius: 9px;
+            padding: 6px 5px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -150,7 +149,7 @@
         }
 
         .fday-date {
-            font-size: 0.65rem;
+            font-size: 0.72rem;
             color: var(--tx3);
             text-transform: uppercase;
             letter-spacing: 0.04em;
@@ -158,12 +157,12 @@
         }
 
         .fday-emoji {
-            font-size: 1.35rem;
+            font-size: 1.5rem;
             line-height: 1;
         }
 
         .fday-cond {
-            font-size: 0.61rem;
+            font-size: 0.68rem;
             color: var(--tx3);
             text-align: center;
             line-height: 1.2;
@@ -174,7 +173,7 @@
         }
 
         .fday-temps {
-            font-size: 0.75rem;
+            font-size: 0.85rem;
             white-space: nowrap;
         }
 
@@ -193,7 +192,7 @@
         }
 
         .fday-prec {
-            font-size: 0.6rem;
+            font-size: 0.68rem;
             color: #4878a0;
         }
 
@@ -203,10 +202,11 @@
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
+            margin-top: auto;
         }
 
         .feels {
-            font-size: 0.72rem;
+            font-size: 0.82rem;
             color: var(--tx3);
         }
 
@@ -215,7 +215,7 @@
         }
 
         .updated {
-            font-size: 0.63rem;
+            font-size: 0.72rem;
             color: var(--tx3);
         }
 
@@ -253,30 +253,145 @@
             }
         }
 
-        /* ── Compact mode: auto-applied when height < 190px ──
-       Hides condition text in forecast, shrinks fonts          */
-        .compact .main-emoji {
-            font-size: 2rem;
+        /* ═══ Per-size layouts (driven by data-span-cols/rows from dashboard) ═══ */
+
+        /* sz-1x1 — minimal: large emoji + temperature, centered */
+        .sz-1x1 {
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            gap: 8px;
         }
 
-        .compact .main-temp {
-            font-size: 1.9rem;
+        .sz-1x1 .top {
+            gap: 8px;
+            align-items: center;
         }
 
-        .compact .fday-emoji {
-            font-size: 1.05rem;
+        .sz-1x1 .main-emoji {
+            font-size: 3rem;
         }
 
-        .compact .fday-cond {
+        .sz-1x1 .main-temp {
+            font-size: 2.8rem;
+        }
+
+        .sz-1x1 .main-temp .unit {
+            font-size: 1.2rem;
+        }
+
+        .sz-1x1 .main-cond,
+        .sz-1x1 .pills,
+        .sz-1x1 .divider,
+        .sz-1x1 .forecast,
+        .sz-1x1 .bottom-bar {
             display: none;
         }
 
-        .compact .pill {
-            padding: 3px 8px;
-            font-size: 0.68rem;
+        /* sz-2x1 — single horizontal row: emoji + temp + humidity + wind */
+        .sz-2x1 {
+            flex-direction: row;
+            align-items: center;
+            padding: 7px 12px 6px;
+            gap: 10px;
         }
 
-        .compact .bottom-bar {
+        .sz-2x1 .top {
+            flex: 0 0 auto;
+            gap: 8px;
+        }
+
+        .sz-2x1 .main-emoji {
+            font-size: 2rem;
+        }
+
+        .sz-2x1 .main-temp {
+            font-size: 2rem;
+        }
+
+        .sz-2x1 .main-temp .unit {
+            font-size: 1rem;
+        }
+
+        .sz-2x1 .main-cond {
+            display: none;
+        }
+
+        .sz-2x1 .pills {
+            flex: 1;
+            justify-content: flex-end;
+            gap: 5px;
+            flex-wrap: nowrap;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sz-2x1 .pill {
+            padding: 3px 8px;
+            font-size: 0.78rem;
+        }
+
+        .sz-2x1 .pill:nth-child(n+3) {
+            display: none;
+        }
+
+        .sz-2x1 .divider,
+        .sz-2x1 .forecast,
+        .sz-2x1 .bottom-bar {
+            display: none;
+        }
+
+        /* sz-2x2 — top + pills + 3-day forecast.
+           Forecast stretches to fill remaining height so there's no empty
+           space at the bottom on taller PC displays. */
+        .sz-2x2 {
+            padding: 9px 11px 9px;
+            gap: 6px;
+        }
+
+        .sz-2x2 .main-emoji {
+            font-size: 2.2rem;
+        }
+
+        .sz-2x2 .main-temp {
+            font-size: 2.2rem;
+        }
+
+        .sz-2x2 .main-cond {
+            display: none;
+        }
+
+        .sz-2x2 .divider {
+            display: none;
+        }
+
+        .sz-2x2 .forecast {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        .sz-2x2 .fday {
+            padding: 6px 5px;
+        }
+
+        .sz-2x2 .fday-cond {
+            display: none;
+        }
+
+        .sz-2x2 .fday-emoji {
+            font-size: 1.35rem;
+        }
+
+        .sz-2x2 .fday-temps {
+            font-size: 0.82rem;
+        }
+
+        .sz-2x2 .fday-prec {
+            display: none;
+        }
+
+        .sz-2x2 .bottom-bar {
             display: none;
         }
     </style>
@@ -314,10 +429,24 @@
                 });
             }
 
-            function checkCompact() {
+            // Apply size class based on grid span injected by dashboard.
+            // Falls back to height heuristic when running outside the dashboard.
+            const SIZE_CLASSES = ['sz-1x1', 'sz-2x1', 'sz-1x2', 'sz-2x2', 'sz-2x3', 'sz-3x2', 'sz-3x3'];
+
+            function applySize() {
                 const el = document.getElementById('root');
                 if (!el) return;
-                el.classList.toggle('compact', el.offsetHeight < 190);
+                const ds = document.documentElement.dataset || {};
+                const cols = parseInt(ds.spanCols || '0', 10);
+                const rows = parseInt(ds.spanRows || '0', 10);
+                SIZE_CLASSES.forEach(c => el.classList.remove(c));
+                if (cols >= 1 && rows >= 1) {
+                    el.classList.add('sz-' + cols + 'x' + rows);
+                } else if (el.offsetHeight < 130) {
+                    el.classList.add('sz-2x1');
+                } else if (el.offsetHeight < 200) {
+                    el.classList.add('sz-2x2');
+                }
             }
 
             function render(cur, forecast) {
@@ -366,7 +495,7 @@
         <div class="updated">↻ ${now}</div>
       </div>`;
 
-                checkCompact();
+                applySize();
             }
 
             async function load() {
@@ -390,9 +519,16 @@
 
             window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
             applyLang();
+            applySize();
             load();
             setInterval(load, 5 * 60 * 1000);
-            window.addEventListener('resize', checkCompact);
+            window.addEventListener('resize', applySize);
+            // React to dashboard injecting new data-span-cols/rows on <html>
+            if (window.MutationObserver) {
+                new MutationObserver(applySize).observe(document.documentElement, {
+                    attributes: true, attributeFilter: ['data-span-cols', 'data-span-rows']
+                });
+            }
         })();
     </script>
     <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
