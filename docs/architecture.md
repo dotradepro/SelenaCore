@@ -29,7 +29,7 @@ SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run
 
 | Component       | Technology                          |
 |-----------------|-------------------------------------|
-| Web framework   | FastAPI (port 7070)                 |
+| Web framework   | FastAPI (port 80)                 |
 | Database        | SQLite via SQLAlchemy 2.0 async     |
 | Async driver    | aiosqlite                           |
 | Event loop      | Single asyncio loop                 |
@@ -43,7 +43,7 @@ SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run
 ```
 +------------------------------------------------------------------+
 |                         SelenaCore Process                        |
-|   port 7070 (FastAPI)                                            |
+|   port 80 (FastAPI)                                            |
 |                                                                  |
 |  +------------------+   +------------------+   +--------------+  |
 |  | 21 SYSTEM        |   |    EventBus      |   |  Device      |  |
@@ -105,7 +105,7 @@ The startup procedure is defined in the FastAPI lifespan handler in `core/main.p
 8. Scan modules/ -> start user modules
    |  Docker containers launched, bus connections accepted
    v
-9. "SelenaCore ready on port 7070"
+9. "SelenaCore ready on port 80"
 ```
 
 ---
@@ -147,7 +147,7 @@ notify_push          secrets_vault        weather_service
 | Base class        | `SmartHomeModule` (`sdk/base_module.py`)        |
 | Execution         | Individual Docker containers                    |
 | Communication     | WebSocket Module Bus                            |
-| Bus endpoint      | `ws://core:7070/api/v1/bus?token=TOKEN`         |
+| Bus endpoint      | `ws://core/api/v1/bus?token=TOKEN`         |
 | Individual ports  | None -- all traffic through the single bus      |
 
 **User module types:**
@@ -283,6 +283,29 @@ If a module fails to respond within 30 seconds, the bus activates a circuit brea
 ### ACL Permissions
 
 Each module type has a predefined set of allowed message types and event subscriptions. The bus enforces these permissions on every message.
+
+---
+
+## UI Sync (WebSocket)
+
+**Source:** `core/api/sync_manager.py`, `core/api/routes/ui.py`
+
+Real-time synchronization of UI state (theme, language, widget layout) across all connected clients via WebSocket `/api/ui/sync`.
+
+| Property | Value |
+|----------|-------|
+| Endpoint | `ws://host/api/ui/sync?v=<version>` |
+| Protocol | JSON messages with monotonic versioning |
+| State | Settings (theme, language) + widget layout |
+| On connect | Full snapshot (`hello`) or delta replay (`replay`) |
+| Health check | Server ping every 5s, client pong required within 15s |
+| Backend | `SyncManager` singleton with `deque(256)` event log |
+| Frontend | Zustand store `connectSyncStream()` with exponential backoff reconnect |
+| Kiosk safety | `useConnectionHealth` hook — force reload after 60s of silence |
+
+The SPA (React) and all API endpoints are served from a **single process on port 80**. HTTPS on port 443 is handled by a lightweight TLS proxy (~5 MB RAM).
+
+> See [UI Sync Architecture](ui-sync-architecture.md) for full protocol details and migration notes.
 
 ---
 
@@ -493,7 +516,7 @@ Managed by **Pydantic BaseSettings** in `core/config.py` via the `CoreSettings` 
 
 | Variable          | Default               | Description                    |
 |-------------------|-----------------------|--------------------------------|
-| `CORE_PORT`       | 7070                  | FastAPI listening port         |
+| `CORE_PORT`       | 80                  | FastAPI listening port         |
 | `CORE_DATA_DIR`   | /var/lib/selena       | Persistent data directory      |
 | `CORE_SECURE_DIR` | /secure               | Tokens and secrets storage     |
 | `DEBUG`           | false                 | Enable debug mode and /docs    |

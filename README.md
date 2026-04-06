@@ -59,8 +59,8 @@ docker compose build
 docker compose up -d
 ```
 
-**Core API:** `http://localhost:7070`
-**UI (PWA):** `http://localhost:80` or `http://smarthome.local:80`
+**Core API + UI (unified):** `http://localhost` or `http://smarthome.local`
+**HTTPS:** `https://localhost` (TLS proxy, self-signed certificate)
 
 ### First Launch — Onboarding Wizard
 
@@ -77,15 +77,15 @@ Connect from your phone, open browser at `192.168.4.1`, follow the 9-step wizard
 
 ## Architecture
 
-SelenaCore runs as a single FastAPI application on port 7070 with two types of modules:
+SelenaCore runs as a single FastAPI application on port 80 with two types of modules:
 
 ```
 ┌───────────────────────────────────────────────────────┐
-│                  SelenaCore (FastAPI :7070)            │
+│                  SelenaCore (FastAPI :80)            │
 │                                                       │
 │  ┌─────────────────────────────────────────────────┐  │
 │  │           Module Bus (WebSocket Hub)             │  │
-│  │         ws://core:7070/api/v1/bus               │──┼──── User Modules
+│  │         ws://core/api/v1/bus               │──┼──── User Modules
 │  └──────────────────────┬──────────────────────────┘  │     (Docker containers)
 │                         │                             │
 │  EventBus (asyncio.Queue, in-process pub/sub)         │
@@ -103,7 +103,7 @@ SelenaCore runs as a single FastAPI application on port 7070 with two types of m
 
 **System modules** (21 built-in) run in-process via `importlib` — zero network overhead, direct EventBus and database access.
 
-**User modules** run in Docker containers and connect to core through the **WebSocket Module Bus** at `ws://core:7070/api/v1/bus`. No individual ports per module — all communication goes through a single bus endpoint.
+**User modules** run in Docker containers and connect to core through the **WebSocket Module Bus** at `ws://core/api/v1/bus`. No individual ports per module — all communication goes through a single bus endpoint.
 
 ### Project Structure
 
@@ -122,7 +122,7 @@ selena-core/
   system_modules/            # 21 built-in in-process modules
     voice_core/              # STT (Whisper), TTS (Piper), wake-word
     llm_engine/              # Ollama, Fast Matcher, Intent Router
-    ui_core/                 # Web UI server (:80)
+    ui_core/                 # SPA static files + PWA (served by Core)
     user_manager/            # Profiles, PIN, Face ID, audit log
     secrets_vault/           # AES-256-GCM token storage
     ...                      # 17 more modules
@@ -146,7 +146,7 @@ selena-core/
 
 ## Core API
 
-Base URL: `http://localhost:7070/api/v1`
+Base URL: `http://localhost/api/v1`
 Auth: `Authorization: Bearer <module_token>`
 
 | Method | Path | Description |
@@ -166,7 +166,7 @@ Auth: `Authorization: Bearer <module_token>`
 | GET | `/integrity/status` | Integrity Agent status |
 | WS | `/bus?token=TOKEN` | Module Bus (WebSocket) |
 
-Swagger UI: `http://localhost:7070/docs` — only available when `DEBUG=true`.
+Swagger UI: `http://localhost/docs` — only available when `DEBUG=true`.
 
 Full reference: [docs/api-reference.md](docs/api-reference.md)
 
@@ -240,7 +240,7 @@ Full guide: [docs/module-development.md](docs/module-development.md)
 Copy `.env.example` to `.env`:
 
 ```bash
-CORE_PORT=7070
+CORE_PORT=80
 CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO

@@ -41,7 +41,7 @@ All settings below are defined in `core/config.py` as a Pydantic `BaseSettings` 
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `CORE_PORT` | `int` | `7070` | TCP port the core API server listens on. |
+| `CORE_PORT` | `int` | `80` | TCP port the core API server listens on. |
 | `CORE_DATA_DIR` | `str` | `/var/lib/selena` | Directory for persistent data (database, module state). |
 | `CORE_SECURE_DIR` | `str` | `/secure` | Directory for secrets and sensitive files (tokens, keys). |
 | `CORE_LOG_LEVEL` | `str` | `INFO` | Logging verbosity. One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
@@ -51,8 +51,9 @@ All settings below are defined in `core/config.py` as a Pydantic `BaseSettings` 
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `UI_PORT` | `int` | `80` | TCP port the web UI is served on. |
-| `UI_HTTPS` | `bool` | `True` | Whether the UI should be served over HTTPS. |
+| `UI_HTTPS` | `bool` | `True` | Whether HTTPS TLS proxy should be started on port 443. |
+
+> **Note:** The UI is served by the same process as the Core API on port 80. There is no separate `UI_PORT` — it was removed when the UI proxy server was merged into Core.
 
 ### Agent
 
@@ -104,7 +105,7 @@ The YAML configuration file is intended for settings that may be changed at runt
 ```yaml
 core:
   host: "0.0.0.0"
-  port: 7070
+  port: 80
   data_dir: "/var/lib/selena"
   secure_dir: "/secure"
   log_level: "INFO"
@@ -114,7 +115,7 @@ core:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `host` | `str` | `0.0.0.0` | Bind address for the core API server. |
-| `port` | `int` | `7070` | TCP port for the core API server. |
+| `port` | `int` | `80` | TCP port for the core API server. |
 | `data_dir` | `str` | `/var/lib/selena` | Persistent data directory. |
 | `secure_dir` | `str` | `/secure` | Secure storage directory for secrets. |
 | `log_level` | `str` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). |
@@ -312,7 +313,7 @@ These variables are not part of `CoreSettings` but are used by supporting servic
 | Variable | Description |
 |----------|-------------|
 | `GEMINI_API_KEY` | API key for Google Gemini, used as a cloud LLM fallback when local inference is unavailable. |
-| `APP_URL` | Base URL of the core API (e.g., `http://localhost:7070`). Used by external services that need to call back into SelenaCore. |
+| `APP_URL` | Base URL of the core API (e.g., `http://localhost`). Used by external services that need to call back into SelenaCore. |
 | `HOST_UID` | Host user ID, passed into containers for PulseAudio socket permissions. |
 | `OLLAMA_MODELS_DIR` | Override directory where Ollama stores downloaded models. |
 | `DEV_MODULE_TOKEN` | A static bearer token accepted during development for module API testing. Do not use in production. |

@@ -1,6 +1,6 @@
 # SelenaCore REST API Reference
 
-**Base URL:** `http://localhost:7070/api/v1`
+**Base URL:** `http://localhost/api/v1`
 
 ---
 

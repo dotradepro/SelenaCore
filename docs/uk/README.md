@@ -59,7 +59,7 @@ docker compose build
 docker compose up -d
 ```
 
-**Core API:** `http://localhost:7070`
+**Core API:** `http://localhost`
 **UI (PWA):** `http://localhost:80` або `http://smarthome.local:80`
 
 ### Перший запуск — Майстер налаштування
@@ -77,15 +77,15 @@ Password: smarthome
 
 ## Архітектура
 
-SelenaCore працює як єдиний FastAPI-додаток на порті 7070 з двома типами модулів:
+SelenaCore працює як єдиний FastAPI-додаток на порті 80 з двома типами модулів:
 
 ```
 ┌───────────────────────────────────────────────────────┐
-│                  SelenaCore (FastAPI :7070)            │
+│                  SelenaCore (FastAPI :80)            │
 │                                                       │
 │  ┌─────────────────────────────────────────────────┐  │
 │  │           Module Bus (WebSocket Hub)             │  │
-│  │         ws://core:7070/api/v1/bus               │──┼──── Користувацькі модулі
+│  │         ws://core/api/v1/bus               │──┼──── Користувацькі модулі
 │  └──────────────────────┬──────────────────────────┘  │     (Docker-контейнери)
 │                         │                             │
 │  EventBus (asyncio.Queue, внутрішній pub/sub)         │
@@ -103,7 +103,7 @@ SelenaCore працює як єдиний FastAPI-додаток на порті
 
 **Системні модулі** (21 вбудовані) працюють у процесі через `importlib` — нуль мережевих витрат, прямий доступ до EventBus та бази даних.
 
-**Користувацькі модулі** працюють у Docker-контейнерах і підключаються до ядра через **WebSocket Module Bus** за адресою `ws://core:7070/api/v1/bus`. Жодних окремих портів для модулів — уся комунікація проходить через єдину точку входу bus.
+**Користувацькі модулі** працюють у Docker-контейнерах і підключаються до ядра через **WebSocket Module Bus** за адресою `ws://core/api/v1/bus`. Жодних окремих портів для модулів — уся комунікація проходить через єдину точку входу bus.
 
 ### Структура проєкту
 
@@ -146,7 +146,7 @@ selena-core/
 
 ## Core API
 
-Базова URL-адреса: `http://localhost:7070/api/v1`
+Базова URL-адреса: `http://localhost/api/v1`
 Автентифікація: `Authorization: Bearer <module_token>`
 
 | Метод | Шлях | Опис |
@@ -166,7 +166,7 @@ selena-core/
 | GET | `/integrity/status` | Статус Integrity Agent |
 | WS | `/bus?token=TOKEN` | Module Bus (WebSocket) |
 
-Swagger UI: `http://localhost:7070/docs` — доступний лише коли `DEBUG=true`.
+Swagger UI: `http://localhost/docs` — доступний лише коли `DEBUG=true`.
 
 Повна довідка: [api-reference.md](../api-reference.md)
 
@@ -240,7 +240,7 @@ if __name__ == "__main__":
 Скопіюйте `.env.example` у `.env`:
 
 ```bash
-CORE_PORT=7070
+CORE_PORT=80
 CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO

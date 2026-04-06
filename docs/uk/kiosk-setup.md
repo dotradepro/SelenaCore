@@ -123,7 +123,7 @@ systemd (multi-user.target)
   │                 ├── очікування API health
   │                 └── xinit → Xorg + Chromium кіоск
   ├── docker (контейнер selena-core)
-  │     └── FastAPI :7070 + UI :80
+  │     └── FastAPI :80 (єдиний API + SPA) + TLS-проксі :443
   ├── vosk-server.service
   │     └── Vosk STT (нативно, без контейнера)
   └── pulseaudio (сесія користувача)

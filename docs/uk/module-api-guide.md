@@ -36,7 +36,7 @@ SelenaCore підтримує два типи модулів з принципо
 
 - Працюють як **окремі процеси** у Docker-контейнерах
 - Наслідують базовий клас `SmartHomeModule` (`sdk/base_module.py`)
-- Спілкуються з ядром через **WebSocket Module Bus** (`ws://core:7070/api/v1/bus`)
+- Спілкуються з ядром через **WebSocket Module Bus** (`ws://core/api/v1/bus`)
 - Повна ізоляція: окремий процес, окрема файлова система
 - Типи: `UI`, `INTEGRATION`, `DRIVER`, `AUTOMATION`, `IMPORT_SOURCE`
 
@@ -445,7 +445,7 @@ WebSocket Module Bus — комунікаційний рівень між ядр
 ### Точка підключення
 
 ```
-ws://<host>:7070/api/v1/bus?token=<module_token>
+ws://<host>/api/v1/bus?token=<module_token>
 ```
 
 Вся комунікація між модулем та ядром проходить через цю єдину точку. Окремих портів для кожного модуля немає.

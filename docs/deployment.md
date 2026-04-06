@@ -78,8 +78,8 @@ The primary container running the SelenaCore application.
 - **Network mode:** `host` (required for audio and device access)
 - **Privileged:** `true` (required for hardware access)
 - **Exposed ports:**
-  - `7070` — API server
-  - `80` — Web UI
+  - `80` — Unified API + Web UI (single process)
+  - `443` — HTTPS (TLS proxy to :80)
 - **Volumes:**
   - `/var/run/docker.sock` — Docker socket for managing module containers
   - `selena_data:/var/lib/selena` — Database, voice models, backups
@@ -153,7 +153,7 @@ All configuration is managed through the `.env` file in the project root. Copy `
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORE_PORT` | `7070` | API server port |
+| `CORE_PORT` | `80` | API server port |
 | `CORE_DATA_DIR` | `/var/lib/selena` | Data directory (DB, models) |
 | `CORE_SECURE_DIR` | `/secure` | Encrypted secrets directory |
 | `CORE_LOG_LEVEL` | `INFO` | Log level |
@@ -262,7 +262,7 @@ On first start, SelenaCore enters setup mode and walks the user through initial 
 Verify the system is running correctly:
 
 ```bash
-curl http://localhost:7070/api/v1/health
+curl http://localhost/api/v1/health
 ```
 
 Expected response:
@@ -337,7 +337,7 @@ sudo cp -r /secure/ /path/to/backup/selena_secure/
 
 | Problem | Solution |
 |---------|----------|
-| **Port 7070 in use** | Change `CORE_PORT` in `.env` and restart |
+| **Port 80 in use** | Change `CORE_PORT` in `.env` and restart |
 | **No audio output or input** | Check `/dev/snd` is mounted in `docker-compose.yml`; verify devices with `aplay -l` and `arecord -l` inside the container; use `plughw:X,Y` device IDs for ALSA |
 | **Module will not connect** | Verify `MODULE_TOKEN` and `SELENA_BUS_URL` are set correctly in the module environment |
 | **System entered Safe Mode** | Check integrity agent logs (`docker compose logs selena-agent`); verify core file hashes match expected values |

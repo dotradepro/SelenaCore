@@ -302,7 +302,7 @@ self._log.error("Something failed: %s", error_message)
 
 | Змінна | Опис | За замовчуванням |
 |----------|-------------|---------|
-| `SELENA_BUS_URL` | WebSocket-адреса шини | `ws://localhost:7070/api/v1/bus` |
+| `SELENA_BUS_URL` | WebSocket-адреса шини | `ws://localhost/api/v1/bus` |
 | `MODULE_TOKEN` | Токен автентифікації для підключення до шини | (генерується ядром) |
 | `MODULE_DIR` | Абсолютний шлях до робочого каталогу модуля | (встановлюється ядром) |
 | `PYTHONPATH` | Включає кореневий каталог проєкту та каталог модуля | (встановлюється ядром) |
@@ -479,7 +479,7 @@ if __name__ == "__main__":
 python mock_core.py
 
 # Термінал 2: Запуск вашого модуля
-SELENA_BUS_URL=ws://localhost:7070/api/v1/bus \
+SELENA_BUS_URL=ws://localhost/api/v1/bus \
 MODULE_TOKEN=test-token \
 MODULE_DIR=./my-module \
 python my-module/main.py
@@ -507,7 +507,7 @@ zip -r ../my-module-1.0.0.zip manifest.json main.py locales/ widget.html setting
 Завантажте ZIP-файл на запущений екземпляр SelenaCore:
 
 ```bash
-curl -X POST http://localhost:7070/api/v1/modules/install \
+curl -X POST http://localhost/api/v1/modules/install \
   -F "file=@my-module-1.0.0.zip"
 ```
 

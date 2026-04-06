@@ -1,6 +1,6 @@
 # Довідник REST API SelenaCore
 
-**Базова URL-адреса:** `http://localhost:7070/api/v1`
+**Базова URL-адреса:** `http://localhost/api/v1`
 
 ---
 

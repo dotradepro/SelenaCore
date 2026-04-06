@@ -48,10 +48,10 @@ Complete reference for building system and user modules that communicate with th
 
 ## Architecture Overview
 
-SelenaCore uses a **hub-and-spoke** architecture. The core process runs FastAPI on port 7070 and manages all modules, devices, and events. Modules are **fully isolated** from each other. No module may import from another module. All inter-module communication passes through the core EventBus.
+SelenaCore uses a **hub-and-spoke** architecture. The core process runs FastAPI on port 80 and manages all modules, devices, and events. Modules are **fully isolated** from each other. No module may import from another module. All inter-module communication passes through the core EventBus.
 
 ```
-                    SelenaCore Process (port 7070)
+                    SelenaCore Process (port 80)
                     +-----------------------------+
                     |  EventBus   DeviceRegistry   |
                     |  IntentRouter  ModuleBus     |
@@ -613,13 +613,13 @@ Published only by the core. Modules cannot publish `core.*` events (403 Forbidde
 
 User modules connect to the core via WebSocket.
 
-**URL:** `ws://core:7070/api/v1/bus?token=<MODULE_TOKEN>`
+**URL:** `ws://core/api/v1/bus?token=<MODULE_TOKEN>`
 
 **Environment variables** (set by the container runtime):
 
 | Variable | Description |
 |----------|-------------|
-| `SELENA_BUS_URL` | WebSocket URL (default: `ws://localhost:7070/api/v1/bus`) |
+| `SELENA_BUS_URL` | WebSocket URL (default: `ws://localhost/api/v1/bus`) |
 | `MODULE_TOKEN` | Authentication token for this module |
 | `MODULE_DIR` | Path to the module directory |
 

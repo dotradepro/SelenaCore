@@ -2,7 +2,7 @@
 **Executor:** AI coding agent
 **Priority:** High
 **Branch:** `feat/<N>-system-modules`
-**Depends on:** core/ fully implemented and running (Core API :7070, Event Bus, Device Registry, Module Loader)
+**Depends on:** core/ fully implemented and running (Core API :80, Event Bus, Device Registry, Module Loader)
 
 ---
 
@@ -3035,21 +3035,21 @@ arping                 # system package
 
 ### Purpose
 
-User interface web server. Serves PWA (React SPA) on port :80. Reverse proxy to Core API :7070. Onboarding Wizard (9 first-run steps). Auto-detect display mode.
+User interface web server. Serves PWA (React SPA) on port :80. Reverse proxy to Core API :80. Onboarding Wizard (9 first-run steps). Auto-detect display mode.
 
 ### 18.1 FastAPI server
 
 ```python
 # Port: 80 (UI_PORT)
 # Content: PWA static files from /static/ (built via npx vite build)
-# Proxy: /api/* -> Core API :7070 (CoreApiProxyMiddleware)
+# Proxy: /api/* -> Core API :80 (CoreApiProxyMiddleware)
 # SSE: streaming support via pure ASGI (not BaseHTTPMiddleware)
 ```
 
 ### 18.2 CoreApiProxyMiddleware
 
 ```python
-# Reverse proxy for /api/* requests to Core API :7070
+# Reverse proxy for /api/* requests to Core API :80
 # X-Forwarded-For / X-Real-IP for client tracking
 # SSE support (non-buffered, direct ASGI send)
 # Automatic host/scheme detection
@@ -3117,7 +3117,7 @@ WIZARD_STEPS = [
 /manifest.json       -> PWA manifest
 /sw.js               -> Service Worker
 /icons/*             -> icons
-/api/*               -> reverse proxy to :7070 (Core API)
+/api/*               -> reverse proxy to :80 (Core API)
 /api/ui/wizard/*     -> Wizard endpoints
 /api/ui/modules/*    -> system module endpoints (mounted via get_router())
 ```
@@ -3125,7 +3125,7 @@ WIZARD_STEPS = [
 ### Settings
 
 ```
-CORE_API_BASE=http://127.0.0.1:7070
+CORE_API_BASE=http://127.0.0.1:80
 UI_PORT=80
 UI_HTTPS=true
 STATIC_DIR=/opt/selena-core/system_modules/ui_core/static/
@@ -3144,7 +3144,7 @@ qrcode>=7.4           # QR for AP mode
 
 ```python
 # test: GET / returns index.html
-# test: /api/* proxied to :7070 (mock httpx)
+# test: /api/* proxied to :80 (mock httpx)
 # test: wizard status returns current step
 # test: wizard step validates data
 # test: wizard step advancing saves state

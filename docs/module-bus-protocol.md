@@ -5,7 +5,7 @@ SelenaCore Module Bus is a CAN-bus inspired communication layer where the core a
 ## Endpoint
 
 ```
-ws://<host>:7070/api/v1/bus?token=<module_token>
+ws://<host>/api/v1/bus?token=<module_token>
 ```
 
 All module-to-core communication goes through this single endpoint. There are no per-module ports.
@@ -415,7 +415,7 @@ When a user query arrives, the core resolves it through the bus:
 A minimal module session:
 
 ```
-1. Connect:    ws://localhost:7070/api/v1/bus?token=abc123
+1. Connect:    ws://localhost/api/v1/bus?token=abc123
 2. Send:       {"type":"announce","module":"my-module","version":"0.1.0","capabilities":{"intents":[],"subscriptions":["device.*"],"publishes":[]}}
 3. Receive:    {"type":"announce_ack","bus_id":"550e8400-e29b-41d4-a716-446655440000","warnings":[]}
 4. Receive:    {"type":"ping","ts":1711900000}
