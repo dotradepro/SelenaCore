@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useStore } from './store/useStore';
+import { useConnectionHealth } from './hooks/useConnectionHealth';
 import Wizard from './components/Wizard';
 import LanguageSelect from './components/LanguageSelect';
 import Layout from './components/Layout';
@@ -9,6 +10,8 @@ import Settings from './components/Settings';
 import KioskElevationGate from './components/KioskElevationGate';
 
 export default function App() {
+  // Kiosk watchdog: force-reload if WebSocket sync is unresponsive > 60s
+  useConnectionHealth();
   const isConfigured = useStore((state) => state.isConfigured);
   const wizardLoading = useStore((state) => state.wizardLoading);
   const setupStage = useStore((state) => state.setupStage);

@@ -189,6 +189,7 @@ interface AppState {
   setWidgetSpan: (name: string, cols: number, rows: number) => void;
   addScreen: () => void;
   connectSyncStream: () => () => void;
+  lastServerContact: number;
   toast: Toast | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
@@ -620,77 +621,147 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   connectSyncStream: () => {
-    // Fetch layout from backend first (authoritative, shared across devices)
-    fetch('/api/ui/layout')
-      .then(r => r.json())
-      .then((raw: Record<string, unknown>) => {
-        if (raw && Array.isArray(raw.pinned)) {
-          const layout: WidgetLayout = {
-            pinned: raw.pinned as string[],
-            sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
-            hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
-            screens: typeof raw.screens === 'number' ? raw.screens : 1,
-            positions: (raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions))
-              ? raw.positions as Record<string, number> : {},
-            spans: (raw.spans && typeof raw.spans === 'object' && !Array.isArray(raw.spans))
-              ? raw.spans as Record<string, { cols: number; rows: number }> : {},
-          };
-          try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
-          set({ widgetLayout: layout });
-        }
-      })
-      .catch(() => { /* ignore */ });
+    let lastVersion = 0;
+    let ws: WebSocket | null = null;
+    let backoff = 2000;
+    let destroyed = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    // Open SSE stream for real-time sync
-    const es = new EventSource('/api/ui/stream');
-    es.onmessage = (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { type: string; payload?: unknown };
-        if (msg.type === 'layout_changed' && msg.payload) {
-          const raw = msg.payload as Record<string, unknown>;
-          const layout: WidgetLayout = {
-            pinned: Array.isArray(raw.pinned) ? raw.pinned as string[] : [],
-            sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
-            hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
-            screens: typeof raw.screens === 'number' ? raw.screens : 1,
-            positions: (raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions))
-              ? raw.positions as Record<string, number> : {},
-            spans: (raw.spans && typeof raw.spans === 'object' && !Array.isArray(raw.spans))
-              ? raw.spans as Record<string, { cols: number; rows: number }> : {},
-          };
-          try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
-          set({ widgetLayout: layout });
-        } else if (
-          msg.type === 'module.started' ||
-          msg.type === 'module.stopped' ||
-          msg.type === 'module.removed'
-        ) {
-          debounceFetchModules(get);
-        } else if (msg.type === 'settings_changed' && msg.payload) {
-          const p = msg.payload as Record<string, string>;
-          if (p.theme && p.theme !== get().theme) {
-            localStorage.setItem('selena-theme', p.theme);
-            const mode = p.theme as ThemeMode;
-            applyThemeClass(mode);
-            set({ theme: mode });
-            broadcastThemeToIframes();
-          }
-          if (p.language && p.language !== get().selectedLanguage) {
-            localStorage.setItem('selena-lang', p.language);
-            changeLanguage(p.language);
-            set({ selectedLanguage: p.language });
-            document.querySelectorAll('iframe').forEach(f => {
-              try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { }
-            });
-          }
+    // Parse layout from raw object
+    function parseLayout(raw: Record<string, unknown>): WidgetLayout {
+      return {
+        pinned: Array.isArray(raw.pinned) ? raw.pinned as string[] : [],
+        sizes: (raw.sizes ?? {}) as Record<string, 'compact' | 'normal'>,
+        hidden: Array.isArray(raw.hidden) ? raw.hidden as string[] : [],
+        screens: typeof raw.screens === 'number' ? raw.screens : 1,
+        positions: (raw.positions && typeof raw.positions === 'object' && !Array.isArray(raw.positions))
+          ? raw.positions as Record<string, number> : {},
+        spans: (raw.spans && typeof raw.spans === 'object' && !Array.isArray(raw.spans))
+          ? raw.spans as Record<string, { cols: number; rows: number }> : {},
+      };
+    }
+
+    // Apply full authoritative state from server (overwrite localStorage)
+    function applyFullState(settings: Record<string, string>, layout: Record<string, unknown>) {
+      // Settings: theme
+      if (settings.theme && settings.theme !== get().theme) {
+        localStorage.setItem('selena-theme', settings.theme);
+        const mode = settings.theme as ThemeMode;
+        applyThemeClass(mode);
+        set({ theme: mode });
+        broadcastThemeToIframes();
+      }
+      // Settings: language
+      if (settings.language && settings.language !== get().selectedLanguage) {
+        localStorage.setItem('selena-lang', settings.language);
+        changeLanguage(settings.language);
+        set({ selectedLanguage: settings.language });
+        document.querySelectorAll('iframe').forEach(f => {
+          try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { /* cross-origin */ }
+        });
+      }
+      // Layout
+      if (layout && (Array.isArray(layout.pinned) || layout.hidden !== undefined)) {
+        const parsed = parseLayout(layout);
+        try { localStorage.setItem('selena-widget-layout', JSON.stringify(parsed)); } catch { /* ignore */ }
+        set({ widgetLayout: parsed });
+      }
+    }
+
+    // Apply a single delta event
+    function applyEvent(msg: { event_type: string; payload?: unknown }) {
+      const eventType = msg.event_type;
+      const payload = msg.payload as Record<string, unknown> | undefined;
+      if (!payload) return;
+
+      if (eventType === 'layout_changed') {
+        const layout = parseLayout(payload);
+        try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
+        set({ widgetLayout: layout });
+      } else if (
+        eventType === 'module.started' ||
+        eventType === 'module.stopped' ||
+        eventType === 'module.removed'
+      ) {
+        debounceFetchModules(get);
+      } else if (eventType === 'settings_changed') {
+        const p = payload as Record<string, string>;
+        if (p.theme && p.theme !== get().theme) {
+          localStorage.setItem('selena-theme', p.theme);
+          const mode = p.theme as ThemeMode;
+          applyThemeClass(mode);
+          set({ theme: mode });
+          broadcastThemeToIframes();
         }
-      } catch { /* ignore */ }
+        if (p.language && p.language !== get().selectedLanguage) {
+          localStorage.setItem('selena-lang', p.language);
+          changeLanguage(p.language);
+          set({ selectedLanguage: p.language });
+          document.querySelectorAll('iframe').forEach(f => {
+            try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { /* cross-origin */ }
+          });
+        }
+      }
+    }
+
+    function connect() {
+      if (destroyed) return;
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/api/ui/sync?v=${lastVersion}`);
+
+      ws.onopen = () => {
+        backoff = 2000; // reset backoff on successful connect
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          set({ lastServerContact: Date.now() });
+
+          if (msg.type === 'hello') {
+            lastVersion = msg.version ?? 0;
+            applyFullState(msg.settings ?? {}, msg.layout ?? {});
+          } else if (msg.type === 'replay') {
+            const events = msg.events as Array<{ version: number; event_type: string; payload?: unknown }>;
+            for (const e of events) {
+              applyEvent(e);
+              lastVersion = Math.max(lastVersion, e.version ?? 0);
+            }
+          } else if (msg.type === 'event') {
+            lastVersion = msg.version ?? lastVersion;
+            applyEvent(msg);
+          } else if (msg.type === 'ping') {
+            lastVersion = msg.version ?? lastVersion;
+            ws?.send('{"type":"pong"}');
+          }
+        } catch { /* ignore malformed messages */ }
+      };
+
+      ws.onclose = () => {
+        ws = null;
+        if (!destroyed) {
+          reconnectTimer = setTimeout(() => {
+            connect();
+          }, backoff);
+          backoff = Math.min(backoff * 1.5, 30000);
+        }
+      };
+
+      ws.onerror = () => {
+        // onclose will fire after onerror — reconnection happens there
+      };
+    }
+
+    connect();
+
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
     };
-    es.onerror = () => {
-      // Reconnect handled automatically by EventSource; nothing to do here.
-    };
-    return () => es.close();
   },
+
+  lastServerContact: Date.now(),
 
   toast: null,
   showToast: (message, type = 'success') => {
