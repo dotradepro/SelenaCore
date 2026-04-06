@@ -635,6 +635,16 @@ def _get_module_or_404(name: str):
     return module
 
 
+# Headers that force Chromium (especially the kiosk profile, which has a
+# persistent disk cache at /tmp/chromium-kiosk) to revalidate widget HTML
+# on every load instead of serving stale markup after a deploy.
+_NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
 @router.get("/modules/{name}/widget")
 async def ui_module_widget(name: str) -> HTMLResponse:
     """Serve module widget HTML from module_dir."""
@@ -645,7 +655,7 @@ async def ui_module_widget(name: str) -> HTMLResponse:
     fpath = Path(module.module_dir) / widget_file
     if not fpath.is_file():
         raise HTTPException(status_code=404, detail="Widget file not found")
-    return HTMLResponse(fpath.read_text(encoding="utf-8"))
+    return HTMLResponse(fpath.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
 
 
 @router.get("/modules/{name}/settings")
@@ -658,7 +668,7 @@ async def ui_module_settings(name: str) -> HTMLResponse:
     fpath = Path(module.module_dir) / settings_file
     if not fpath.is_file():
         raise HTTPException(status_code=404, detail="Settings file not found")
-    return HTMLResponse(fpath.read_text(encoding="utf-8"))
+    return HTMLResponse(fpath.read_text(encoding="utf-8"), headers=_NO_CACHE_HEADERS)
 
 
 @router.get("/modules/{name}/icon")
