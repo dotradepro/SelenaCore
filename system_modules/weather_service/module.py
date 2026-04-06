@@ -39,10 +39,13 @@ class WeatherServiceModule(SystemModule):
         self._voice: WeatherVoiceHandler = WeatherVoiceHandler(self)
 
     async def start(self) -> None:
-        lat = float(os.getenv("WEATHER_LAT", "50.4501"))
-        lon = float(os.getenv("WEATHER_LON", "30.5234"))
-        interval = int(os.getenv("WEATHER_INTERVAL", "1800"))
-        units = os.getenv("WEATHER_UNITS", "metric")
+        from core.config_writer import read_config
+        saved = read_config().get("weather", {}) or {}
+
+        lat = float(saved.get("latitude", os.getenv("WEATHER_LAT", "50.4501")))
+        lon = float(saved.get("longitude", os.getenv("WEATHER_LON", "30.5234")))
+        interval = int(saved.get("update_interval_sec", os.getenv("WEATHER_INTERVAL", "1800")))
+        units = saved.get("units", os.getenv("WEATHER_UNITS", "metric"))
 
         self._weather = WeatherService(
             publish_event_cb=self.publish,
@@ -50,6 +53,12 @@ class WeatherServiceModule(SystemModule):
             longitude=lon,
             update_interval_sec=interval,
             units=units,
+        )
+        # Apply optional fields that aren't constructor args
+        self._weather.configure(
+            location_name=saved.get("location_name"),
+            alert_rain_mm=saved.get("alert_rain_mm"),
+            alert_wind_kmh=saved.get("alert_wind_kmh"),
         )
         await self._weather.start()
 
@@ -134,6 +143,11 @@ class WeatherServiceModule(SystemModule):
                 alert_rain_mm=req.alert_rain_mm,
                 alert_wind_kmh=req.alert_wind_kmh,
             )
+            # Persist only the fields the user actually sent — survives container restart
+            from core.config_writer import update_section
+            persisted = req.model_dump(exclude_none=True)
+            if persisted:
+                update_section("weather", persisted)
             return JSONResponse({"ok": True, "status": svc._weather.get_status()})
 
         @router.get("/weather/geocode")
