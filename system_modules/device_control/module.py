@@ -265,6 +265,12 @@ class DeviceControlModule(SystemModule):
                 rows = list((await session.execute(stmt)).scalars())
                 if len(rows) == 1:
                     return _row_to_dict(rows[0])
+                # User explicitly specified a location but nothing matched —
+                # do NOT fall through to entity-only / single-device fallback,
+                # otherwise we'd silently switch rooms (e.g. "kitchen light"
+                # turning off the office light). Return None so the caller
+                # speaks a "not found" error for the requested location.
+                return None
 
             # Tier 3: entity-type alone.
             if entity:
