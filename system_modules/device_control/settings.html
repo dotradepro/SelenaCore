@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Device Control</title>
+<style>
+:root{
+  --bg:#0f1115;--card:#171a21;--b:#262a33;--fg:#e6e8ee;--mut:#9aa1b1;
+  --pr:#a855f7;--gr:#22c55e;--rd:#ef4444;--am:#f59e0b;--ac:#38bdf8;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px}
+.wrap{padding:14px;max-width:980px;margin:0 auto}
+h2{margin:0 0 12px;font-size:16px;font-weight:600}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--b);margin-bottom:14px;flex-wrap:wrap}
+.tab{padding:8px 14px;cursor:pointer;border:none;background:transparent;color:var(--mut);font-size:13px;border-bottom:2px solid transparent}
+.tab.active{color:var(--fg);border-bottom-color:var(--pr)}
+.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px}
+.label-sm{font-size:12px;color:var(--mut);margin-bottom:4px}
+.label-xs{font-size:11px;color:var(--mut)}
+input,select,textarea{width:100%;padding:7px 9px;background:var(--bg);border:1px solid var(--b);border-radius:6px;color:var(--fg);font-size:13px;font-family:inherit}
+textarea{font-family:'DM Mono',monospace;font-size:11px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pr)}
+.btn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;font-family:inherit}
+.btn-green{background:var(--gr);color:#fff}
+.btn-blue{background:var(--ac);color:#fff}
+.btn-red{background:var(--rd);color:#fff}
+.btn-amber{background:var(--am);color:#000}
+.btn-ghost{background:transparent;color:var(--mut);border:1px solid var(--b)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;margin-bottom:8px;align-items:flex-end;flex-wrap:wrap}
+.row > *{flex:1;min-width:140px}
+.row .narrow{flex:0 0 120px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--b)}
+th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge-on{background:rgba(34,197,94,.18);color:var(--gr)}
+.badge-off{background:rgba(239,68,68,.18);color:var(--rd)}
+.badge-mut{background:rgba(154,161,177,.15);color:var(--mut)}
+.badge-pr{background:rgba(168,85,247,.18);color:var(--pr)}
+.muted{color:var(--mut)}
+.hidden{display:none !important}
+.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.mt8{margin-top:8px}
+.flex{display:flex}.gap6{gap:6px}.gap8{gap:8px}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--card);border:1px solid var(--b);padding:10px 16px;border-radius:8px;z-index:1000;animation:slide .25s}
+.toast.error{border-color:var(--rd);color:var(--rd)}
+@keyframes slide{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.help{font-size:11px;color:var(--mut);line-height:1.55}
+.help ol{padding-left:18px;margin:6px 0}
+.help code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:10px}
+.dps-row{display:grid;grid-template-columns:1fr 1fr 30px;gap:6px;margin-bottom:4px;align-items:center}
+.dps-row button{padding:4px 8px;background:var(--bg);color:var(--mut);border:1px solid var(--b);border-radius:4px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 data-i18n="title">Device Control</h2>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="devices" data-i18n="tab_devices">Devices</button>
+    <button class="tab" data-tab="wizard" data-i18n="tab_wizard">Tuya Cloud Wizard</button>
+  </div>
+
+  <!-- TAB: Devices ------------------------------------------------------- -->
+  <div id="tab-devices" class="tab-pane">
+    <div class="card">
+      <div class="flex gap8 mb12" style="justify-content:space-between;align-items:center">
+        <div class="label-sm" data-i18n="dev_count_label">Registered devices</div>
+        <button id="refreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <table id="devicesTable">
+        <thead><tr>
+          <th data-i18n="col_name">Name</th>
+          <th data-i18n="col_type">Type</th>
+          <th data-i18n="col_location">Location</th>
+          <th data-i18n="col_protocol">Protocol</th>
+          <th data-i18n="col_state">State</th>
+          <th data-i18n="col_actions">Actions</th>
+        </tr></thead>
+        <tbody id="devicesBody"><tr><td colspan="6" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Edit device modal -------------------------------------------------- -->
+  <div id="editModal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div class="card" style="max-width:560px;width:100%;margin:0;max-height:90vh;overflow-y:auto">
+      <div class="flex gap8 mb12" style="justify-content:space-between;align-items:center">
+        <h3 style="margin:0;font-size:15px" data-i18n="edit_title">Edit device</h3>
+        <button id="editCloseBtn" class="btn btn-ghost">×</button>
+      </div>
+      <input type="hidden" id="editDeviceId">
+      <div class="grid2">
+        <div>
+          <div class="label-sm" data-i18n="lbl_name">Name (displayed)</div>
+          <input id="editName">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="lbl_name_en">Name in English (for voice patterns)</div>
+          <input id="editNameEn" placeholder="kitchen light">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="lbl_entity_type">Entity type</div>
+          <select id="editEntityType">
+            <option value="light">light</option>
+            <option value="switch">switch</option>
+            <option value="outlet">outlet</option>
+            <option value="fan">fan</option>
+            <option value="thermostat">thermostat</option>
+            <option value="sensor">sensor</option>
+          </select>
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="lbl_location">Location (room, English)</div>
+          <input id="editLocation" placeholder="kitchen">
+        </div>
+      </div>
+      <div class="help mt8" data-i18n="edit_help">Name in English is used to generate voice command patterns (e.g. "turn on the kitchen light"). It is not shown in the UI.</div>
+      <div class="flex gap8 mt8">
+        <button id="editSaveBtn" class="btn btn-green" data-i18n="save">Save</button>
+        <button id="editCancelBtn" class="btn btn-ghost" data-i18n="cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Tuya Cloud Wizard (user-code flow) --------------------------- -->
+  <div id="tab-wizard" class="tab-pane hidden">
+    <div class="card">
+      <div id="wizardStatus" class="mb12"></div>
+      <div class="help mb12">
+        <div data-i18n="wizard_help_intro">Pair your Smart Life account with SelenaCore using your app authorization code — no developer account needed.</div>
+        <ol>
+          <li data-i18n="wizard_step_1">Open the <b>Smart Life</b> (or <b>Tuya Smart</b>) app on your phone</li>
+          <li data-i18n="wizard_step_2">Tap <b>Me</b> in the bottom bar → ⚙️ icon top-right → <b>Authorization code</b></li>
+          <li data-i18n="wizard_step_3">Copy the 6-8 character code (valid for ~10 minutes)</li>
+          <li data-i18n="wizard_step_4">Paste the code below and click "Start"</li>
+          <li data-i18n="wizard_step_5">SelenaCore will show a QR. Tap "+" in Smart Life → Scan → point at the QR</li>
+          <li data-i18n="wizard_step_6">Tap "Authorize" in the app. SelenaCore will automatically import all your devices.</li>
+        </ol>
+      </div>
+      <div id="wizardStep1">
+        <div class="grid2">
+          <div>
+            <div class="label-sm" data-i18n="lbl_user_code">Authorization code</div>
+            <input id="wUserCode" placeholder="ABC1234" autocomplete="off" maxlength="12" style="text-transform:uppercase;letter-spacing:.08em;font-family:'DM Mono',monospace">
+          </div>
+          <div></div>
+        </div>
+        <div class="flex gap8 mt8">
+          <button id="wStartBtn" class="btn btn-green" data-i18n="wizard_start">Start</button>
+          <button id="wRefreshBtn" class="btn btn-blue hidden" data-i18n="wizard_refresh">Refresh devices</button>
+          <button id="wDisconnectBtn" class="btn btn-ghost hidden" data-i18n="wizard_disconnect">Disconnect</button>
+        </div>
+      </div>
+      <div id="wizardStep2" class="hidden mt8">
+        <div class="label-sm mb8" data-i18n="wizard_scan_instructions">Scan this QR with the Smart Life app (+ → Scan):</div>
+        <div id="wQrCode" style="display:flex;justify-content:center;padding:14px;background:#fff;border-radius:8px"></div>
+        <div class="label-xs muted mt8" style="text-align:center">
+          <span data-i18n="wizard_waiting">Waiting for you to scan and confirm in the app…</span>
+          <span id="wSpinner" style="display:inline-block;width:12px;height:12px;border:2px solid #666;border-top-color:#a855f7;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:6px"></span>
+        </div>
+        <div class="flex gap8 mt8" style="justify-content:center">
+          <button id="wCancelBtn" class="btn btn-ghost" data-i18n="wizard_cancel">Cancel</button>
+        </div>
+      </div>
+      <div id="wizardResults" class="mt8"></div>
+    </div>
+  </div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+</div>
+
+<script>
+// ── i18n ─────────────────────────────────────────────────────────────────
+var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var L = {
+  en: {
+    title:'Device Control',
+    tab_devices:'Devices', tab_wizard:'Tuya Cloud Wizard',
+    dev_count_label:'Registered devices', refresh:'Refresh',
+    col_name:'Name', col_type:'Type', col_location:'Location', col_protocol:'Protocol', col_state:'State', col_actions:'Actions',
+    loading:'Loading…', no_devices:'No devices yet — add them via the Tuya Cloud Wizard tab.',
+    lbl_name:'Name', lbl_name_en:'Name in English (for voice patterns)',
+    lbl_entity_type:'Entity type', lbl_location:'Location (room, English)',
+    edit_title:'Edit device',
+    edit_help:'Name in English is used to generate voice command patterns (e.g. "turn on the kitchen light"). It is not shown in the UI.',
+    btn_test:'Test', btn_edit:'Edit', btn_del:'Delete',
+    save:'Save', cancel:'Cancel',
+    confirm_del:'Delete this device?',
+    saved:'Saved', deleted:'Deleted', test_ok:'Test OK', test_fail:'Test failed',
+    wizard_help_intro:'Pair your Smart Life account with SelenaCore using your app authorization code — no developer account needed.',
+    wizard_step_1:'Open the Smart Life (or Tuya Smart) app on your phone',
+    wizard_step_2:'Tap Me in the bottom bar → ⚙️ icon top-right → Authorization code',
+    wizard_step_3:'Copy the 6-8 character code (valid for ~10 minutes)',
+    wizard_step_4:'Paste the code below and click "Start"',
+    wizard_step_5:'SelenaCore will show a QR. Tap "+" in Smart Life → Scan → point at the QR',
+    wizard_step_6:'Tap "Authorize" in the app. SelenaCore will automatically import all your devices.',
+    lbl_user_code:'Authorization code',
+    wizard_start:'Start',
+    wizard_cancel:'Cancel',
+    wizard_refresh:'Refresh devices',
+    wizard_disconnect:'Disconnect',
+    wizard_confirm_disconnect:'Disconnect Tuya Smart Life? All linked devices will stop working until you reconnect.',
+    wizard_disconnected:'Disconnected',
+    wizard_scan_instructions:'Scan this QR with the Smart Life app (+ → Scan):',
+    wizard_waiting:'Waiting for you to scan and confirm in the app…',
+    wizard_connected:'Connected', wizard_not_connected:'Not connected',
+    wizard_found:'Devices found',
+    wizard_no_devices:'No devices found in your Smart Life account. Add a device in the app first.',
+    wizard_import_all:'Import all', wizard_import:'Import',
+    wizard_imported:'Imported',
+    fill_required:'Fill required fields',
+  },
+  uk: {
+    title:'Керування пристроями',
+    tab_devices:'Пристрої', tab_wizard:'Tuya Cloud майстер',
+    dev_count_label:'Зареєстровані пристрої', refresh:'Оновити',
+    col_name:'Назва', col_type:'Тип', col_location:'Розташування', col_protocol:'Протокол', col_state:'Стан', col_actions:'Дії',
+    loading:'Завантаження…', no_devices:'Немає пристроїв — додайте через Tuya Cloud майстер.',
+    lbl_name:'Назва (відображувана)', lbl_name_en:'Назва англійською (для голосових патернів)',
+    lbl_entity_type:'Тип сутності', lbl_location:'Кімната (англійською)',
+    edit_title:'Редагування пристрою',
+    edit_help:'Назва англійською використовується для генерації голосових команд (наприклад "turn on the kitchen light"). В інтерфейсі вона не відображається.',
+    btn_test:'Тест', btn_edit:'Редагувати', btn_del:'Видалити',
+    save:'Зберегти', cancel:'Скасувати',
+    confirm_del:'Видалити цей пристрій?',
+    saved:'Збережено', deleted:'Видалено', test_ok:'Тест OK', test_fail:'Тест провалився',
+    wizard_help_intro:'Прив\'яжіть ваш Smart Life акаунт до SelenaCore через код авторизації з додатка — без developer-акаунта.',
+    wizard_step_1:'Відкрийте додаток Smart Life (або Tuya Smart) на телефоні',
+    wizard_step_2:'Внизу натисніть Me → ⚙️ вгорі справа → Authorization code (Код авторизації)',
+    wizard_step_3:'Скопіюйте 6-8 символьний код (діє ~10 хвилин)',
+    wizard_step_4:'Вставте код нижче і натисніть "Почати"',
+    wizard_step_5:'SelenaCore покаже QR. У Smart Life натисніть "+" → Scan → наведіть камеру на QR',
+    wizard_step_6:'Натисніть "Authorize" у додатку. SelenaCore автоматично імпортує всі пристрої.',
+    lbl_user_code:'Код авторизації',
+    wizard_start:'Почати',
+    wizard_cancel:'Скасувати',
+    wizard_refresh:'Оновити пристрої',
+    wizard_disconnect:'Від\'єднати',
+    wizard_confirm_disconnect:'Від\'єднати Tuya Smart Life? Всі прив\'язані пристрої перестануть працювати до переприєднання.',
+    wizard_disconnected:'Від\'єднано',
+    wizard_scan_instructions:'Скануйте цей QR у додатку Smart Life (+ → Scan):',
+    wizard_waiting:'Чекаю поки ви відскануєте і підтвердите в додатку…',
+    wizard_connected:'Підключено', wizard_not_connected:'Не підключено',
+    wizard_found:'Знайдено пристроїв',
+    wizard_no_devices:'У вашому Smart Life акаунті немає пристроїв. Додайте пристрій у додатку спочатку.',
+    wizard_import_all:'Імпортувати всі', wizard_import:'Імпорт',
+    wizard_imported:'Імпортовано',
+    fill_required:'Заповніть обов\'язкові поля',
+  }
+};
+function t(k){return (L[LANG]||L.en)[k]||k;}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+}
+window.addEventListener('message',function(e){
+  if(e.data && e.data.type==='lang_changed'){
+    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
+    applyLang(); loadDevices(); loadWizardStatus();
+  }
+});
+
+// ── helpers ──────────────────────────────────────────────────────────────
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+function $(id){return document.getElementById(id);}
+function show(id){$(id).classList.remove('hidden');}
+function hide(id){$(id).classList.add('hidden');}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function api(path,opts){
+  opts=opts||{};
+  return fetch(BASE+path,{
+    method:opts.method||'GET',
+    headers:opts.body?{'Content-Type':'application/json'}:{},
+    body:opts.body?JSON.stringify(opts.body):null,
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
+    return r.json();
+  });
+}
+function toast(msg,err){
+  var t=document.createElement('div');
+  t.className='toast'+(err?' error':'');
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(function(){t.remove();},2200);
+}
+
+// ── tabs ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(function(b){
+  b.onclick=function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('active');});
+    b.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(function(p){p.classList.add('hidden');});
+    show('tab-'+b.getAttribute('data-tab'));
+    if(b.getAttribute('data-tab')==='wizard') loadWizardStatus();
+    if(b.getAttribute('data-tab')==='devices') loadDevices();
+  };
+});
+
+// ── Devices tab ──────────────────────────────────────────────────────────
+function loadDevices(){
+  api('/devices').then(function(res){
+    var rows = (res.devices||[]);
+    var tb = $('devicesBody');
+    if(rows.length===0){
+      tb.innerHTML='<tr><td colspan="6" class="muted">'+esc(t('no_devices'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(d){
+      var on = d.state && d.state.on;
+      var stateBadge = (on===true) ? '<span class="badge badge-on">ON</span>' :
+                       (on===false) ? '<span class="badge badge-off">OFF</span>' :
+                       '<span class="badge badge-mut">?</span>';
+      return '<tr>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td>'+esc(d.entity_type||'—')+'</td>'+
+        '<td>'+esc(d.location||'—')+'</td>'+
+        '<td><span class="badge badge-pr">'+esc(d.protocol)+'</span></td>'+
+        '<td>'+stateBadge+'</td>'+
+        '<td>'+
+          '<button class="btn btn-blue" onclick="testDev(\''+d.device_id+'\')">'+esc(t('btn_test'))+'</button> '+
+          '<button class="btn btn-ghost" onclick="editDev(\''+d.device_id+'\')">'+esc(t('btn_edit'))+'</button> '+
+          '<button class="btn btn-red" onclick="delDev(\''+d.device_id+'\')">'+esc(t('btn_del'))+'</button>'+
+        '</td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){toast(e.message,true);});
+}
+$('refreshBtn').onclick = loadDevices;
+window.testDev = function(id){
+  api('/devices/'+id+'/test',{method:'POST'}).then(function(){toast(t('test_ok'));loadDevices();}).catch(function(e){toast(t('test_fail')+': '+e.message,true);});
+};
+window.delDev = function(id){
+  if(!confirm(t('confirm_del'))) return;
+  api('/devices/'+id,{method:'DELETE'}).then(function(){toast(t('deleted'));loadDevices();}).catch(function(e){toast(e.message,true);});
+};
+
+// ── Edit device modal ────────────────────────────────────────────────────
+var _editCurrent = null;  // cached device row while editing
+
+window.editDev = function(id){
+  api('/devices').then(function(res){
+    var d = (res.devices||[]).filter(function(x){return x.device_id===id;})[0];
+    if(!d){toast('Device not found',true);return;}
+    _editCurrent = d;
+    $('editDeviceId').value = d.device_id;
+    $('editName').value = d.name || '';
+    $('editNameEn').value = (d.meta && d.meta.name_en) || '';
+    $('editEntityType').value = d.entity_type || 'switch';
+    $('editLocation').value = d.location || '';
+    show('editModal');
+  }).catch(function(e){toast(e.message,true);});
+};
+$('editCloseBtn').onclick = function(){ hide('editModal'); _editCurrent=null; };
+$('editCancelBtn').onclick = function(){ hide('editModal'); _editCurrent=null; };
+
+$('editSaveBtn').onclick = function(){
+  if(!_editCurrent) return;
+  var id = _editCurrent.device_id;
+  // Merge name_en into existing meta without losing tuya.* keys
+  var newMeta = Object.assign({}, _editCurrent.meta || {});
+  var nameEn = ($('editNameEn').value||'').trim();
+  if(nameEn) newMeta.name_en = nameEn; else delete newMeta.name_en;
+
+  var body = {
+    name: ($('editName').value||'').trim(),
+    entity_type: $('editEntityType').value,
+    location: ($('editLocation').value||'').trim(),
+    meta: newMeta,
+  };
+  this.disabled=true;
+  api('/devices/'+id,{method:'PATCH',body:body}).then(function(){
+    toast(t('saved'));
+    hide('editModal');
+    _editCurrent=null;
+    loadDevices();
+  }).catch(function(e){toast(e.message,true);}).finally(function(){
+    $('editSaveBtn').disabled=false;
+  });
+};
+
+// ── Wizard tab (user-code flow) ───────────────────────────────────────────
+var _currentUserCode = '';
+var _pollAbort = false;
+
+function loadWizardStatus(){
+  api('/tuya/wizard/status').then(function(s){
+    if(s && s.connected){
+      $('wizardStatus').innerHTML='<span class="badge badge-on">'+esc(t('wizard_connected'))+'</span> &nbsp; <span class="muted">user_code: '+esc(s.user_code||'?')+' · uid: '+esc((s.uid||'').slice(0,10)+'…')+'</span>';
+      if($('wDisconnectBtn')) $('wDisconnectBtn').classList.remove('hidden');
+      if($('wRefreshBtn')) $('wRefreshBtn').classList.remove('hidden');
+    } else {
+      $('wizardStatus').innerHTML='<span class="badge badge-mut">'+esc(t('wizard_not_connected'))+'</span>';
+      if($('wDisconnectBtn')) $('wDisconnectBtn').classList.add('hidden');
+      if($('wRefreshBtn')) $('wRefreshBtn').classList.add('hidden');
+    }
+  }).catch(function(e){
+    console.warn('wizard status error:', e);
+    $('wizardStatus').innerHTML='<span class="badge badge-mut">'+esc(t('wizard_not_connected'))+'</span>';
+  });
+}
+
+// Auto-refresh wizard status every 10 seconds while the wizard tab is open.
+setInterval(function(){
+  var activeTab = document.querySelector('.tab.active');
+  if(activeTab && activeTab.getAttribute('data-tab') === 'wizard'){
+    loadWizardStatus();
+  }
+}, 10000);
+
+function _showQr(qrUrl){
+  var qrSrc = BASE + '/tuya/wizard/qr.png?url=' + encodeURIComponent(qrUrl);
+  $('wQrCode').innerHTML = '<img src="'+esc(qrSrc)+'" style="max-width:240px;height:auto" alt="QR">';
+  $('wizardStep1').classList.add('hidden');
+  $('wizardStep2').classList.remove('hidden');
+}
+
+function _resetWizardUi(){
+  $('wizardStep1').classList.remove('hidden');
+  $('wizardStep2').classList.add('hidden');
+  $('wQrCode').innerHTML='';
+  _pollAbort = false;
+}
+
+$('wStartBtn').onclick = function(){
+  var code = ($('wUserCode').value||'').trim().toUpperCase();
+  if(!code){toast(t('fill_required'),true);return;}
+  _currentUserCode = code;
+  this.disabled=true;
+  $('wizardResults').innerHTML='';
+  api('/tuya/wizard/start',{method:'POST',body:{user_code:code}}).then(function(res){
+    _showQr(res.qr_url);
+    // Start polling in parallel
+    _pollAbort = false;
+    api('/tuya/wizard/poll',{method:'POST',body:{user_code:code}}).then(function(p){
+      if(_pollAbort) return;
+      loadWizardStatus();
+      _resetWizardUi();
+      _renderDeviceList(p.devices||[]);
+    }).catch(function(e){
+      if(_pollAbort) return;
+      _resetWizardUi();
+      $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+    }).finally(function(){
+      $('wStartBtn').disabled=false;
+    });
+  }).catch(function(e){
+    $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+    $('wStartBtn').disabled=false;
+  });
+};
+
+$('wCancelBtn').onclick = function(){
+  _pollAbort = true;
+  _resetWizardUi();
+  $('wStartBtn').disabled=false;
+};
+
+$('wDisconnectBtn').onclick = function(){
+  if(!confirm(t('wizard_confirm_disconnect'))) return;
+  api('/tuya/wizard/disconnect',{method:'POST'}).then(function(){
+    loadWizardStatus();
+    $('wizardResults').innerHTML='';
+    toast(t('wizard_disconnected'));
+  }).catch(function(e){toast(e.message,true);});
+};
+
+$('wRefreshBtn').onclick = function(){
+  this.disabled=true;
+  $('wizardResults').innerHTML='<div class="muted">…</div>';
+  api('/tuya/wizard/refresh',{method:'POST'}).then(function(res){
+    _renderDeviceList(res.devices||[]);
+  }).catch(function(e){
+    $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+  }).finally(function(){
+    $('wRefreshBtn').disabled=false;
+  });
+};
+
+function _renderDeviceList(devs){
+  if(devs.length===0){
+    $('wizardResults').innerHTML='<div class="muted">'+esc(t('wizard_no_devices'))+'</div>';
+    return;
+  }
+  var html='<div class="label-sm mb8">'+esc(t('wizard_found'))+': '+devs.length+'</div>';
+  html += '<div class="flex gap8 mb8"><button class="btn btn-green" id="importAllBtn">'+esc(t('wizard_import_all'))+'</button></div>';
+  html += '<table><thead><tr><th></th><th>'+esc(t('col_name'))+'</th><th>Category</th><th>IP</th><th>Online</th></tr></thead><tbody>';
+  devs.forEach(function(d){
+    html += '<tr><td><input type="checkbox" class="wsel" data-id="'+esc(d.id)+'" checked></td>'+
+      '<td>'+esc(d.name||'—')+'</td>'+
+      '<td>'+esc(d.category||'—')+'</td>'+
+      '<td>'+esc(d.ip||'—')+'</td>'+
+      '<td>'+(d.online?'<span class="badge badge-on">on</span>':'<span class="badge badge-off">off</span>')+'</td></tr>';
+  });
+  html += '</tbody></table>';
+  $('wizardResults').innerHTML=html;
+  $('importAllBtn').onclick = function(){
+    var ids=[];
+    document.querySelectorAll('.wsel').forEach(function(c){if(c.checked) ids.push(c.getAttribute('data-id'));});
+    if(ids.length===0) return;
+    this.disabled=true;
+    api('/tuya/wizard/import',{method:'POST',body:{selected_ids:ids}}).then(function(r){
+      toast(t('wizard_imported')+': '+(r.created||[]).length);
+      document.querySelector('.tab[data-tab="devices"]').click();
+    }).catch(function(e){toast(e.message,true);}).finally(function(){
+      var b=$('importAllBtn'); if(b) b.disabled=false;
+    });
+  };
+}
+
+// ── boot ─────────────────────────────────────────────────────────────────
+applyLang();
+loadDevices();
+</script>
+</body>
+</html>

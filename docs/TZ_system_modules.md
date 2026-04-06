@@ -122,7 +122,7 @@ Step 6:  weather_service     <- used in automation_engine
 Step 7:  energy_monitor
 Step 8:  notification_router <- used in automation_engine
 Step 9:  update_manager
-Step 10: import_adapters     <- refactoring of existing code
+Step 10: device_control      <- smart device manager (Tuya cloud/local), owns device.on/off
 Step 9.5: media_player      <- depends on scheduler (sleep timer), voice_core (TTS)
 Step 11: pytest for all modules
 ```
@@ -1765,200 +1765,154 @@ httpx>=0.27
 
 ---
 
-## Module 10: `import_adapters`
+## Module 10: `device_control`
 
 **Type:** SYSTEM
-**ui_profile:** SETTINGS_ONLY
-**Memory:** 128 MB
+**ui_profile:** FULL
+**Memory:** 64 MB
 
 ### Purpose
 
-Import devices from existing ecosystems. The user already uses Home Assistant, Tuya, or Philips Hue — they need to migrate all devices to SelenaCore with a single click. This was a separate module; now we are extending the specification.
+Universal smart-device manager. Owns the `device.on` / `device.off` voice
+intents, stores devices in the shared `Device` registry (module_id
+`device-control`), and dispatches commands via pluggable drivers. Designed
+for personal-use installations — **no Tuya developer account required**.
 
-### 10.1 Home Assistant import
+### 10.1 Architecture
+
+```
+voice.intent (device.on/off)
+    ↓
+DeviceControlModule._on_voice_intent
+    ↓  _resolve_device(entity, location)  — 4-tier search:
+    ↓    1. entity_type + location strict
+    ↓    2. location keyword vs location/name/meta.name_en
+    ↓    3. entity_type alone
+    ↓    4. single-device fallback
+    ↓
+driver = get_driver(device.protocol, meta)
+    ↓  tuya_local (tinytuya, persistent socket, push events)
+    ↓  tuya_cloud (tuya-device-sharing-sdk)
+    ↓  mqtt      (via protocol-bridge, stub)
+    ↓
+driver.set_state({"on": True/False})
+    ↓
+patch_device_state + publish("device.state_changed")
+    ↓
+speak_action → rephrase → TTS acknowledgement
+```
+
+### 10.2 Tuya onboarding — user-code wizard (no developer account)
+
+Uses the same flow as Home Assistant 2024.2+ "Smart Life" integration:
+
+1. User opens the Smart Life / Tuya Smart mobile app → Me → ⚙️ → "Authorization code" (or "User code")
+2. User enters the 6-8 character code in the SelenaCore wizard
+3. Backend calls `LoginControl.qr_code(HA_CLIENT_ID, "haauthorize", user_code)` and renders the returned QR as a PNG
+4. User scans the QR inside the same Smart Life app (+ → Scan)
+5. Backend polls `LoginControl.login_result(...)` every 2 s until Tuya returns `{access_token, refresh_token, endpoint, terminal_id, uid}`
+6. Credentials are stored encrypted in `SecretsVault` (service: `device-control_tuya_cloud`) and the token is auto-refreshed by the SDK
+7. `Manager.update_device_cache()` pulls the full device list; user picks devices → bulk import creates `Device` rows with `protocol=tuya_local` (if IP + local_key present) or `tuya_cloud` (fallback)
+
+### 10.3 Pluggable driver architecture
+
+Each driver subclasses `DeviceDriver` and implements:
 
 ```python
-# Connection via HA Long-Lived Access Token
-
-async def import_from_ha(self, ha_url: str, token: str):
-    async with httpx.AsyncClient(
-        base_url=ha_url,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30.0
-    ) as client:
-        # Get all states
-        resp = await client.get("/api/states")
-        states = resp.json()
-
-    imported = 0
-    for state in states:
-        entity_id = state["entity_id"]
-        domain    = entity_id.split(".")[0]
-
-        # Mapping HA domain -> SelenaCore type
-        device_type = HA_DOMAIN_MAP.get(domain)
-        if not device_type:
-            continue   # skip unknown domains
-
-        await self.register_device(
-            name         = state["attributes"].get("friendly_name", entity_id),
-            type         = device_type,
-            protocol     = "ha_import",
-            capabilities = _extract_ha_capabilities(state),
-            meta         = {
-                "ha_entity_id": entity_id,
-                "ha_url":       ha_url,
-                "imported_at":  datetime.utcnow().isoformat(),
-            }
-        )
-        imported += 1
-
-    await self.publish("import.completed", {
-        "source":   "home_assistant",
-        "imported": imported,
-        "total":    len(states)
-    })
+async def connect(self) -> dict                # initial logical state
+async def disconnect(self) -> None
+async def set_state(self, state: dict) -> None # e.g. {"on": True}
+async def get_state(self) -> dict
+async def stream_events(self) -> AsyncGenerator[dict, None]  # push
 ```
 
-**HA Domain mapping:**
+One watcher asyncio task per device holds the persistent connection and
+yields state changes as the device pushes them (no polling).
 
-```python
-HA_DOMAIN_MAP = {
-    "light":         "light",
-    "switch":        "switch",
-    "sensor":        "sensor",
-    "binary_sensor": "binary_sensor",
-    "climate":       "climate",
-    "cover":         "cover",      # blinds, curtains
-    "fan":           "fan",
-    "lock":          "lock",
-    "media_player":  "media_player",
-    "camera":        "camera",
-}
-```
+### 10.4 Auto-downgrade local → cloud
 
-### 10.2 Tuya import
+If `tuya_local` driver gets `Err 905: Device Unreachable` twice in a row,
+the module automatically patches `device.protocol = "tuya_cloud"` and
+continues through the cloud path. This handles mixed-subnet / mesh-router
+setups where LAN broadcast cannot reach the device.
 
-```python
-# Via Tuya Open API (requires developer account)
-# Tokens via Secrets Vault (secrets.oauth)
+### 10.5 Auto-translation of display names
 
-async def import_from_tuya(self, region: str):
-    # region: "eu" | "us" | "cn" | "in"
-    token = await self._get_secret("tuya_access_token")
+On wizard import and on `PATCH /devices`, the display name is translated
+to English via `core.api.helpers.translate_to_en` and stored in
+`meta.name_en`. `PatternGenerator._gen_device` uses `meta.name_en` (if
+present) as the source for the auto-generated English regex patterns,
+falling back to `device.name` only if it is already ASCII.
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            f"https://openapi.tuya{region}.com/v2.0/cloud/thing/device",
-            headers={
-                "client_id":     self._config["tuya_client_id"],
-                "access_token":  token,
-                "sign_method":   "HMAC-SHA256",
-                # HMAC signature computed per Tuya API spec
-            }
-        )
-        devices = resp.json()["result"]["list"]
-
-    for device in devices:
-        await self.register_device(
-            name         = device["name"],
-            type         = _tuya_category_to_type(device["category"]),
-            protocol     = "tuya",
-            capabilities = [],
-            meta         = {
-                "tuya_device_id": device["id"],
-                "tuya_product_id": device["product_id"],
-                "tuya_category": device["category"],
-            }
-        )
-```
-
-### 10.3 Philips Hue import
-
-```python
-# Via local Hue Bridge API (no cloud)
-# Authorization: press button on Bridge -> get username
-
-async def import_from_hue(self, bridge_ip: str, username: str):
-    async with httpx.AsyncClient(
-        base_url=f"http://{bridge_ip}/api/{username}",
-        timeout=10.0
-    ) as client:
-        lights  = (await client.get("/lights")).json()
-        sensors = (await client.get("/sensors")).json()
-
-    for light_id, light in lights.items():
-        await self.register_device(
-            name         = light["name"],
-            type         = "light",
-            protocol     = "hue",
-            capabilities = ["brightness", "color", "color_temp"],
-            meta         = {
-                "hue_light_id":  light_id,
-                "hue_bridge_ip": bridge_ip,
-                "hue_username":  username,
-                "hue_type":      light["type"],
-            }
-        )
-```
-
-### 10.4 Events
-
-**Published:**
+### 10.6 Events
 
 ```
-import.started      { source }
-import.progress     { source, imported, total }
-import.completed    { source, imported, skipped, total }
-import.failed       { source, error }
+device.registered    { device_id, name }
+device.removed       { device_id }
+device.online        { device_id }
+device.offline       { device_id }
+device.state_changed { device_id, new_state, source: "device-control" }
 ```
 
-### REST endpoints (mounted at `/api/ui/modules/import_adapters/` via `get_router()`)
+### REST endpoints (mounted at `/api/ui/modules/device-control/`)
 
 ```
-POST /import/ha            -> import from Home Assistant
-POST /import/tuya          -> import from Tuya
-POST /import/hue           -> import from Philips Hue
-GET  /import/history       -> import history
-GET  /health               -> {"status": "ok"}
+GET    /devices                          -> list devices we own
+POST   /devices                          -> manual add
+PATCH  /devices/{id}                     -> edit (auto-translates name_en)
+DELETE /devices/{id}                     -> delete + purge auto_entity patterns
+POST   /devices/{id}/test                -> toggle on→off→on
+POST   /devices/{id}/command             -> {state: {...}}
+GET    /drivers                          -> available driver types
+GET    /tuya/wizard/status               -> vault summary
+POST   /tuya/wizard/start                -> user_code → qr payload
+POST   /tuya/wizard/poll                 -> block until user scans
+POST   /tuya/wizard/refresh              -> re-query with stored creds
+POST   /tuya/wizard/import               -> bulk-import selected cloud devices
+POST   /tuya/wizard/disconnect           -> wipe credentials
+GET    /tuya/wizard/qr.png?url=...       -> render QR as PNG
+GET    /widget                           -> compact device list
+GET    /settings                         -> 2-tab UI (Devices + Tuya wizard)
 ```
 
 ### Settings (settings.html)
 
 ```
-"Home Assistant" tab:
-  URL: http://homeassistant.local:8123
-  Token: [Enter Long-Lived Token]
-  [Import] button
+Tab "Devices":
+  Table of devices: name, type, location, protocol, state, [Test][Edit][Delete]
 
-"Tuya" tab:
-  Client ID, Client Secret
-  Region: EU / US / CN / IN
-  [Authorize via OAuth] -> [Import]
+Tab "Tuya Cloud Wizard":
+  Status badge (connected/not connected)
+  Step instructions (Smart Life → Me → ⚙️ → User code)
+  Authorization code input + [Start] button
+  QR display (after Start) + polling spinner
+  [Refresh devices] button (re-use stored creds for new devices)
+  [Disconnect] button
 
-"Philips Hue" tab:
-  Bridge IP address
-  [Press button on Bridge] -> [Get token] -> [Import]
-
-Import history:
-  Date | Source | Imported | Status
+Edit dialog:
+  Name (displayed, any language)
+  Name in English (for voice patterns — auto-translated if empty)
+  Entity type (light / switch / outlet / fan / thermostat / sensor)
+  Location (room, English — auto-translated if non-ASCII)
 ```
 
 **Dependencies:**
 
 ```
-httpx>=0.27
+tinytuya>=1.13.0
+tuya-device-sharing-sdk>=0.2
+qrcode (already in core requirements)
 ```
 
 **Tests:**
 
 ```python
-# test: HA states imported correctly (mock httpx)
-# test: unknown HA domain skipped without error
-# test: Tuya HMAC signature computed correctly
-# test: Hue lights registered with correct capabilities
-# test: import.completed event with correct counts
-# test: import.failed on connection error
+# test: wizard/start returns qr_url containing the tuyaSmart-- prefix
+# test: _resolve_device 4-tier search (strict/location/entity/single)
+# test: auto-downgrade on Err 905 switches protocol in DB
+# test: PATCH name=... + empty name_en auto-translates via llm_call
+# test: PATCH without location does NOT wipe existing location
+# test: ASCII guard skips devices with no English name
 ```
 
 ---
@@ -2029,7 +1983,7 @@ git commit -m "feat(weather_service): add open-meteo integration [#N]"
 git commit -m "feat(energy_monitor): add power tracking and anomalies [#N]"
 git commit -m "feat(notification_router): add TTS/Telegram/push routing [#N]"
 git commit -m "feat(update_manager): add OTA with SHA256 verification [#N]"
-git commit -m "feat(import_adapters): add HA/Tuya/Hue import [#N]"
+git commit -m "feat(device_control): smart device manager + Tuya Smart Life wizard [#N]"
 git commit -m "test(system_modules): add integration tests [#N]"
 
 # Merge
@@ -3451,7 +3405,7 @@ tailscale              # system package on host
 | 7 | energy_monitor | SYSTEM | FULL | 64 MB | 0.1 | Energy consumption monitoring |
 | 8 | notification_router | SYSTEM | SETTINGS_ONLY | 64 MB | 0.1 | Notification router |
 | 9 | update_manager | SYSTEM | FULL | 64 MB | 0.1 | OTA updates with SHA256 verification |
-| 10 | import_adapters | SYSTEM | SETTINGS_ONLY | 128 MB | 0.2 | Import from HA / Tuya / Hue |
+| 10 | device_control | SYSTEM | FULL | 64 MB | 0.1 | Smart device manager + Tuya Smart Life wizard (owns `device.on/off`) |
 | 11 | media_player | SYSTEM | FULL | 128 MB | 0.5 | Media player: radio, USB, SMB |
 | 12 | voice_core | SYSTEM | FULL | 256 MB | 0.5 | STT (Vosk) / TTS / Wake-word / Speaker ID |
 | 13 | llm_engine | SYSTEM | SETTINGS_ONLY | 512+ MB | 1.0+ | 4-tier Intent Router + Ollama LLM |

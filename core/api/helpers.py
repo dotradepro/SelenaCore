@@ -89,7 +89,7 @@ async def get_entity_patterns(factory: Any, entity_ref: str) -> list[str]:
 # ── Entity-change invalidation ──────────────────────────────────────────────
 
 
-async def on_entity_changed(entity_type: str, entity_id: int, action: str) -> None:
+async def on_entity_changed(entity_type: str, entity_id: int | str, action: str) -> None:
     """Generate/delete patterns + invalidate caches after entity data change."""
     try:
         from system_modules.llm_engine.pattern_generator import get_pattern_generator

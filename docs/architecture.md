@@ -136,7 +136,7 @@ user_manager         automation_engine    scheduler
 device_watchdog      protocol_bridge      notification_router
 media_player         presence_detection   hw_monitor
 backup_manager       remote_access        network_scanner
-import_adapters      energy_monitor       update_manager
+device_control       energy_monitor       update_manager
 notify_push          secrets_vault        weather_service
 ```
 

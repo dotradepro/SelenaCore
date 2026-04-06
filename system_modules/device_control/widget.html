@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:#171a21;color:#e6e8ee;font-size:12px;height:100vh;overflow:hidden}
+.wrap{padding:10px;height:100%;display:flex;flex-direction:column;gap:6px}
+.h{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#9aa1b1;text-transform:uppercase;letter-spacing:.04em}
+.list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#0f1115;border:1px solid #262a33;border-radius:6px}
+.row .name{font-weight:500;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .loc{font-size:10px;color:#9aa1b1}
+.toggle{width:34px;height:18px;border-radius:9px;background:#262a33;border:none;cursor:pointer;position:relative;flex-shrink:0}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#9aa1b1;transition:all .15s}
+.toggle.on{background:rgba(34,197,94,.3)}
+.toggle.on::after{left:18px;background:#22c55e}
+.empty{color:#9aa1b1;font-size:11px;text-align:center;padding:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="h"><span data-i18n="title">Devices</span><span id="onlineCount" class="loc"></span></div>
+  <div id="list" class="list"><div class="empty" data-i18n="loading">Loading…</div></div>
+</div>
+<script>
+var LANG=(function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var L={
+  en:{title:'Devices',loading:'Loading…',empty:'No devices'},
+  uk:{title:'Пристрої',loading:'Завантаження…',empty:'Немає пристроїв'},
+};
+function t(k){return (L[LANG]||L.en)[k]||k;}
+function applyLang(){document.querySelectorAll('[data-i18n]').forEach(function(el){el.textContent=t(el.getAttribute('data-i18n'));});}
+window.addEventListener('message',function(e){if(e.data&&e.data.type==='lang_changed'){try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}applyLang();load();}});
+
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
+function load(){
+  fetch(BASE+'/devices').then(function(r){return r.json();}).then(function(res){
+    var list=$id('list');
+    var devs=res.devices||[];
+    if(devs.length===0){list.innerHTML='<div class="empty">'+esc(t('empty'))+'</div>';return;}
+    var on=0;
+    list.innerHTML=devs.map(function(d){
+      var st=(d.state&&d.state.on)===true;
+      if(st) on++;
+      return '<div class="row"><div class="name">'+esc(d.name)+(d.location?' <span class="loc">· '+esc(d.location)+'</span>':'')+'</div>'+
+        '<button class="toggle '+(st?'on':'')+'" data-id="'+esc(d.device_id)+'" data-on="'+(st?'1':'0')+'"></button></div>';
+    }).join('');
+    $id('onlineCount').textContent=on+' / '+devs.length;
+    document.querySelectorAll('.toggle').forEach(function(b){
+      b.onclick=function(){
+        var id=b.getAttribute('data-id');
+        var newState = b.getAttribute('data-on')!=='1';
+        b.classList.toggle('on',newState);
+        b.setAttribute('data-on',newState?'1':'0');
+        fetch(BASE+'/devices/'+id+'/command',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({state:{on:newState}}),
+        }).catch(function(){load();});
+      };
+    });
+  }).catch(function(){$id('list').innerHTML='<div class="empty">×</div>';});
+}
+function $id(i){return document.getElementById(i);}
+applyLang();load();
+setInterval(load,5000);
+</script>
+</body>
+</html>

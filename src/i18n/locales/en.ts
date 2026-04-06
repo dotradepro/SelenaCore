@@ -253,7 +253,7 @@ const en = {
             userPromptLabel: 'Your instructions (cloud models)',
             userPromptDesc: 'Personality and behavior for OpenAI, Gemini, etc.',
             compactUserLabel: 'Your instructions (local models)',
-            compactUserDesc: 'Short instructions for Ollama / llama.cpp',
+            compactUserDesc: 'Short instructions for Ollama',
             hiddenSystemLabel: 'Auto-generated system prompt (name, language, rules):',
             showHidden: 'Show system prompt',
             customPrompt: 'custom',
@@ -274,15 +274,11 @@ const en = {
             keyInvalid: 'Invalid key',
             selectModel: 'Select model',
             cloudModelsLoading: 'Loading models…',
-            llamacppDesc: 'llama.cpp uses Ollama models (pull via Ollama first). Faster cold start, direct CUDA inference.',
-            llamacppNoModels: 'No models available. Switch to Ollama tab and pull a model first.',
 
             // Switch steps
             switchStopOllama: 'Stopping Ollama server…',
-            switchStopLlamacpp: 'Stopping llama.cpp server…',
             switchSelectProvider: 'Switching provider…',
             switchStartOllama: 'Starting Ollama server…',
-            switchStartLlamacpp: 'Starting llama.cpp server…',
             switchLoadingModel: 'Loading model into memory…',
             switchReady: 'Ready',
 
@@ -717,7 +713,7 @@ const en = {
             'automation-engine': 'Automation',
             'backup-manager': 'Backup',
             'energy-monitor': 'Energy Monitor',
-            'import-adapters': 'Import Adapters',
+            'device-control': 'Smart Devices',
             'llm-engine': 'LLM Engine',
             'network-scanner': 'Network Scanner',
             'notification-router': 'Notification Router',

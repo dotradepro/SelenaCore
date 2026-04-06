@@ -33,6 +33,18 @@ logger = logging.getLogger(__name__)
 # Max patterns per entity (prevent unbounded growth)
 MAX_PATTERNS_PER_ENTITY = 5
 
+# Hardcoded English-only system prompt for entity pattern generation.
+# NOT user-editable, NOT in DB — pattern generation is an internal English
+# operation that powers the 0-ms regex tier (auto_entity rows). User-edited
+# variants in any non-English language would silently break voice activation
+# of radio stations / devices / scenes.
+_PATTERN_SYSTEM_EN = (
+    "You generate short English voice commands for a smart home system. "
+    "Reply ONLY with a JSON array of lowercase ASCII strings. "
+    "Each string is a 2-5 word English command. "
+    "No explanations, no markdown, no non-ASCII characters."
+)
+
 
 class PatternGenerator:
     """Generates English-only intent_patterns rows from entity data in the DB."""
@@ -136,7 +148,13 @@ class PatternGenerator:
         try:
             from core.llm import llm_call
 
-            raw = await llm_call(prompt, prompt_key="pattern", temperature=0.1, timeout=10.0)
+            raw = await llm_call(
+                prompt,
+                system=_PATTERN_SYSTEM_EN,  # hardcoded English, not user-editable
+                json_mode=True,
+                temperature=0.1,
+                timeout=10.0,
+            )
             if not raw:
                 return []
 
@@ -155,11 +173,19 @@ class PatternGenerator:
             if not isinstance(phrases, list):
                 return []
 
-            # Filter and clean
+            # Filter, clean, and ASCII-gate (defence in depth — even if the
+            # model leaks Cyrillic, the pattern never reaches the DB).
             result: list[str] = []
             for p in phrases[:MAX_PATTERNS_PER_ENTITY]:
-                if isinstance(p, str) and len(p.strip()) >= 3:
-                    result.append(p.strip().lower())
+                if not isinstance(p, str):
+                    continue
+                phrase = p.strip().lower()
+                if len(phrase) < 3:
+                    continue
+                if not phrase.isascii():
+                    logger.debug("Dropping non-ASCII pattern phrase: %r", phrase)
+                    continue
+                result.append(phrase)
             return result
 
         except Exception as exc:
@@ -255,14 +281,38 @@ class PatternGenerator:
             delete(IntentPattern).where(IntentPattern.entity_ref == ref)
         )
 
-        name = device.name.lower()
-        name_esc = re.escape(name)
+        # Prefer an explicit English name from meta.name_en (set via the
+        # "Edit device" dialog in device-control settings). Falls back to
+        # the display name — which may be Cyrillic or product code and
+        # therefore useless for English voice commands.
+        import json as _json
+        meta_dict: dict = {}
+        try:
+            meta_dict = _json.loads(device.meta) if device.meta else {}
+        except Exception:
+            meta_dict = {}
+        name_en = (meta_dict.get("name_en") or "").strip().lower()
+        raw_name = name_en or device.name.lower()
+
+        # Skip pattern generation if the name is not ASCII (e.g. only a
+        # non-English display name is set). The ASCII guard in
+        # phrase_to_regex would reject it anyway, but short-circuiting
+        # here avoids creating empty intent_patterns rows.
+        if not raw_name.isascii():
+            logger.debug(
+                "Skipping device %s: no ASCII name — set meta.name_en "
+                "in the Edit dialog to enable voice patterns",
+                device.device_id,
+            )
+            return 0
+        name_esc = re.escape(raw_name)
 
         # Location suffix
         loc_part = ""
         if device.location:
             loc_esc = re.escape(device.location.lower())
-            loc_part = f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?{loc_esc})?"
+            if loc_esc.isascii():
+                loc_part = f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?{loc_esc})?"
 
         verbs_on_en = await self._get_vocab_words(session, "en", "verb", "on")
         verbs_off_en = await self._get_vocab_words(session, "en", "verb", "off")

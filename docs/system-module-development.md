@@ -674,7 +674,7 @@ SelenaCore ships with 22 system modules:
 | `backup_manager` | Local and cloud backups |
 | `remote_access` | Tailscale VPN integration |
 | `network_scanner` | Network device discovery (ARP, mDNS, SSDP) |
-| `import_adapters` | Home Assistant, Tuya, Hue device import |
+| `device_control` | Smart device manager (Tuya via tuya-device-sharing-sdk) + `device.on/off` intents |
 | `energy_monitor` | Power consumption tracking |
 | `update_manager` | Core and module updates |
 | `notify_push` | Web Push VAPID notifications |

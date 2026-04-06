@@ -253,7 +253,7 @@ const uk = {
             userPromptLabel: 'Ваші інструкції (хмарні моделі)',
             userPromptDesc: 'Особистість та поведінка для OpenAI, Gemini тощо',
             compactUserLabel: 'Ваші інструкції (локальні моделі)',
-            compactUserDesc: 'Короткі інструкції для Ollama / llama.cpp',
+            compactUserDesc: 'Короткі інструкції для Ollama',
             hiddenSystemLabel: 'Автоматичний системний промпт (ім\'я, мова, правила):',
             showHidden: 'Показати системний промпт',
             customPrompt: 'свій',
@@ -274,15 +274,11 @@ const uk = {
             keyInvalid: 'Невалідний ключ',
             selectModel: 'Обрати модель',
             cloudModelsLoading: 'Завантаження моделей…',
-            llamacppDesc: 'llama.cpp використовує моделі Ollama (скачайте через Ollama). Швидший холодний старт, пряме CUDA прискорення.',
-            llamacppNoModels: 'Немає моделей. Перейдіть на вкладку Ollama і скачайте модель.',
 
             // Switch steps
             switchStopOllama: 'Зупинка Ollama сервера…',
-            switchStopLlamacpp: 'Зупинка llama.cpp сервера…',
             switchSelectProvider: 'Перемикання провайдера…',
             switchStartOllama: 'Запуск Ollama сервера…',
-            switchStartLlamacpp: 'Запуск llama.cpp сервера…',
             switchLoadingModel: 'Завантаження моделі в пам\'ять…',
             switchReady: 'Готово',
 
@@ -717,7 +713,7 @@ const uk = {
             'automation-engine': 'Автоматизація',
             'backup-manager': 'Резервні копії',
             'energy-monitor': 'Енергомоніторинг',
-            'import-adapters': 'Імпорт',
+            'device-control': 'Розумні пристрої',
             'llm-engine': 'LLM',
             'network-scanner': 'Сканер мережі',
             'notification-router': 'Маршрутизатор сповіщень',

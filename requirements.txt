@@ -25,6 +25,13 @@ num2words==0.5.14
 piper-tts>=1.4.0
 # transliterate removed — replaced by split_by_language() + dual PiperVoice
 
+# Vosk STT (Vosk model files live under /var/lib/selena/models/vosk)
+vosk>=0.3.45
+
+# Smart device drivers (used by system_modules/device_control)
+tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persistent socket)
+tuya-device-sharing-sdk>=0.2  # Tuya Smart Life / Tuya Smart OAuth via user-code (no developer account needed)
+
 # Pinned transitive dependencies (security)
 h11>=0.16.0
 anyio>=4.4.0
