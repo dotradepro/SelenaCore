@@ -583,11 +583,24 @@ class IntentRouter:
                                     lines.append(f"  {m.name}: {desc}")
                             parts.append("\nConnected modules:\n" + "\n".join(lines))
 
-                        # Devices
+                        # Devices — always send the English voice-pattern name
+                        # (meta.name_en, set via "Назва англійською" in the UI)
+                        # so the LLM extracts English entity/location values
+                        # regardless of the TTS language.
                         devices = list((await session.execute(select(Device))).scalars().all())
                         if devices:
-                            names = [d.name for d in devices[:30]]
-                            parts.append(f"\nKnown devices: {', '.join(names)}")
+                            import json as _json
+                            names: list[str] = []
+                            for d in devices[:30]:
+                                try:
+                                    meta = _json.loads(d.meta) if d.meta else {}
+                                except Exception:
+                                    meta = {}
+                                en = (meta.get("name_en") or "").strip()
+                                if en:
+                                    names.append(en)
+                            if names:
+                                parts.append(f"\nKnown devices: {', '.join(names)}")
 
                         # Radio stations
                         stmt = select(RadioStation).where(RadioStation.enabled == True)
