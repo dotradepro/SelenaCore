@@ -450,12 +450,6 @@ class IntentRouter:
         tts_lang_name = _lang_name(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
-        self._live_log("llm_prompt", {
-            "provider": "llm_call",
-            "user_prompt": user_prompt,
-            "extra_context_len": len(catalog),
-        })
-
         raw = await llm_call(
             user_prompt,
             prompt_key="intent",
@@ -467,7 +461,6 @@ class IntentRouter:
         if not raw:
             return None
 
-        self._live_log("llm_raw", {"provider": "llm_call", "raw": raw})
         return self._parse_llm_response(raw, source="llm")
 
     # ── Cloud LLM ──────────────────────────────────────────────────────
@@ -518,12 +511,6 @@ class IntentRouter:
         tts_lang_name = _lang_name(tts_lang)
         user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
 
-        self._live_log("llm_prompt", {
-            "provider": "llm_call (cloud)",
-            "user_prompt": user_prompt,
-            "extra_context_len": len(catalog),
-        })
-
         raw = await llm_call(
             user_prompt,
             prompt_key="intent",
@@ -535,7 +522,6 @@ class IntentRouter:
         if not raw:
             return None
 
-        self._live_log("llm_raw", {"provider": "llm_call (cloud)", "raw": raw})
         return self._parse_llm_response(raw, source="cloud")
 
     # ── Prompt building ────────────────────────────────────────────────
