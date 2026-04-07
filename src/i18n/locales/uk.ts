@@ -22,6 +22,7 @@ const uk = {
             finish: 'Завершити',
             search: 'Пошук',
             refresh: 'Оновити',
+            retry: 'Повторити',
             all: 'Усі',
             on: 'Увімк',
             off: 'Вимк',
@@ -463,6 +464,20 @@ const uk = {
             userPin: 'PIN-код (4-8 цифр)',
             userPinPlaceholder: '••••',
             userPinRequired: 'Обов\'язково — цей PIN потрібен щоб пізніше відкрити Налаштування. Пропустити не можна.',
+
+            // Онлайн каталог (кроки 5 + 6)
+            filterAllLanguages: 'Усі мови',
+            filterAllQualities: 'Усі якості',
+            filterSearch: 'Пошук…',
+            perPage: 'стор',
+            loadingCatalog: 'Завантаження каталогу',
+            catalogError: 'Каталог недоступний',
+            colName: 'Назва',
+            colLang: 'Мова',
+            colSize: 'Розмір',
+            colType: 'Тип',
+            colQuality: 'Якість',
+            paginationTotal: '{{total}} моделей',
 
             // Step 8 - Home devices
             homeDevicesTitle: 'Реєстрація пристроїв',

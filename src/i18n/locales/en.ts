@@ -22,6 +22,7 @@ const en = {
             finish: 'Finish',
             search: 'Search',
             refresh: 'Refresh',
+            retry: 'Retry',
             all: 'All',
             on: 'On',
             off: 'Off',
@@ -463,6 +464,20 @@ const en = {
             userPin: 'PIN code (4-8 digits)',
             userPinPlaceholder: '••••',
             userPinRequired: 'Required — you will need this PIN to unlock Settings later. Cannot be skipped.',
+
+            // Online catalog (steps 5 + 6)
+            filterAllLanguages: 'All languages',
+            filterAllQualities: 'All qualities',
+            filterSearch: 'Search…',
+            perPage: 'page',
+            loadingCatalog: 'Loading catalog',
+            catalogError: 'Catalog unavailable',
+            colName: 'Name',
+            colLang: 'Lang',
+            colSize: 'Size',
+            colType: 'Type',
+            colQuality: 'Quality',
+            paginationTotal: '{{total}} models',
 
             // Step 8 - Home devices
             homeDevicesTitle: 'Register devices',

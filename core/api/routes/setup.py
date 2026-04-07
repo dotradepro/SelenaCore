@@ -964,6 +964,159 @@ async def tts_voices() -> dict[str, Any]:
     return {"voices": result, "active": active_voice}
 
 
+# ── Online Piper voice catalog (Hugging Face) ─────────────────────── #
+
+_PIPER_CATALOG_URL = "https://huggingface.co/rhasspy/piper-voices/raw/main/voices.json"
+_PIPER_CATALOG_CACHE = "/var/lib/selena/piper_catalog_cache.json"
+_PIPER_CACHE_MAX_AGE_DAYS = 14
+
+
+async def _load_piper_catalog() -> list[dict[str, Any]] | None:
+    """Fetch + cache the Piper voices.json catalog from Hugging Face.
+
+    Returns a normalized list of voice dicts:
+        { id, name, lang, lang_label, country, quality, size_mb, num_speakers }
+    """
+    import json
+    import time
+    cache_path = Path(_PIPER_CATALOG_CACHE)
+
+    cached: dict[str, Any] | None = None
+    if cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text())
+            age_days = (time.time() - cached.get("_ts", 0)) / 86400
+            if age_days < _PIPER_CACHE_MAX_AGE_DAYS:
+                return cached.get("voices") or []
+        except Exception:
+            cached = None
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(_PIPER_CATALOG_URL)
+            resp.raise_for_status()
+            raw = resp.json()
+    except Exception as exc:
+        logger.warning("Piper catalog fetch failed: %s", exc)
+        # Fall back to stale cache rather than failing the wizard outright.
+        return (cached or {}).get("voices") if cached else None
+
+    voices: list[dict[str, Any]] = []
+    for key, v in raw.items():
+        if not isinstance(v, dict):
+            continue
+        lang_info = v.get("language") or {}
+        files = v.get("files") or {}
+        size_bytes = 0
+        for fname, finfo in files.items():
+            if fname.endswith(".onnx") and isinstance(finfo, dict):
+                size_bytes = int(finfo.get("size_bytes") or 0)
+                break
+        voices.append({
+            "id": key,
+            "name": v.get("name") or key,
+            "lang": (lang_info.get("family") or "").lower(),
+            "locale": lang_info.get("code") or "",
+            "lang_label": lang_info.get("name_native") or lang_info.get("name_english") or "",
+            "country": lang_info.get("country_english") or "",
+            "quality": v.get("quality") or "",
+            "size_mb": round(size_bytes / (1024 * 1024)) if size_bytes else 0,
+            "num_speakers": int(v.get("num_speakers") or 1),
+        })
+
+    voices.sort(key=lambda x: (x["lang"], x["name"], x["quality"]))
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps({"_ts": time.time(), "voices": voices}))
+    except Exception as exc:
+        logger.debug("Could not write Piper catalog cache: %s", exc)
+    return voices
+
+
+@router.get("/tts/catalog")
+async def tts_catalog(
+    lang: str = "",
+    quality: str = "",
+    q: str = "",
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    """Online Piper voice catalog with pagination + language/quality filters.
+
+    Source: https://huggingface.co/rhasspy/piper-voices/raw/main/voices.json
+    Cached at /var/lib/selena/piper_catalog_cache.json for 14 days.
+    """
+    if page < 1:
+        page = 1
+    per_page = max(1, min(per_page, 100))
+
+    voices = await _load_piper_catalog()
+    if voices is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Piper voice catalog unavailable (no cache, no internet)",
+        )
+
+    # Mark installed/active by scanning models_dir
+    models_dir = _piper_models_dir()
+    installed_ids: set[str] = set()
+    if models_dir.is_dir():
+        for f in models_dir.iterdir():
+            if f.is_file() and f.suffix == ".onnx":
+                installed_ids.add(f.stem)
+
+    active_voice = (
+        get_nested("voice.tts.primary.voice")
+        or get_value("voice", "tts_voice", "")
+        or os.environ.get("PIPER_VOICE", "")
+    )
+
+    for v in voices:
+        v["installed"] = v["id"] in installed_ids
+        v["active"] = v["id"] == active_voice
+
+    # Language facets across the FULL catalog (before filtering)
+    lang_counts: dict[str, dict[str, Any]] = {}
+    for v in voices:
+        code = v["lang"]
+        if not code:
+            continue
+        node = lang_counts.setdefault(code, {"code": code, "label": v["lang_label"] or code.upper(), "count": 0})
+        node["count"] += 1
+    languages = sorted(lang_counts.values(), key=lambda x: (-x["count"], x["code"]))
+
+    # Apply filters
+    filtered = voices
+    if lang:
+        lang_l = lang.lower()
+        filtered = [v for v in filtered if v["lang"] == lang_l]
+    if quality:
+        q_l = quality.lower()
+        filtered = [v for v in filtered if v["quality"].lower() == q_l]
+    if q:
+        q_l = q.lower()
+        filtered = [
+            v for v in filtered
+            if q_l in v["id"].lower()
+            or q_l in v["name"].lower()
+            or q_l in v["country"].lower()
+        ]
+
+    total = len(filtered)
+    start = (page - 1) * per_page
+    end = start + per_page
+    return {
+        "voices": filtered[start:end],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page if per_page else 1,
+        "languages": languages,
+        "qualities": ["x_low", "low", "medium", "high"],
+    }
+
+
 @router.post("/tts/select")
 async def tts_select(req: SelectVoiceRequest) -> dict[str, Any]:
     """Select and persist TTS voice."""

@@ -193,40 +193,63 @@ async def vosk_status() -> dict[str, Any]:
 @router.get("/catalog")
 async def vosk_catalog(
     lang: str = Query("", description="Filter by language code (e.g. 'en', 'uk')"),
+    quality: str = Query("", description="Filter by model type: 'small' | 'big' | ''"),
     q: str = Query("", description="Search by model name"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
-    """Model catalog from alphacephei.com with caching, filtering, pagination."""
+    """Model catalog from alphacephei.com with caching, filtering, pagination.
+
+    Returns:
+        models: page slice of filtered models
+        total / page / per_page / pages: pagination metadata
+        languages: sorted list of {code, label, count} facets across the
+                   FULL catalog (so the frontend can populate the language
+                   dropdown without fetching every page)
+        offline / cached_at: cache status
+    """
     catalog = await _load_catalog()
 
     if not catalog:
         raise HTTPException(status_code=503, detail="Model catalog unavailable (no cache, no internet)")
 
-    models = catalog.get("models", [])
-    if not models and isinstance(catalog, list):
-        models = catalog
+    all_models = catalog.get("models", [])
+    if not all_models and isinstance(catalog, list):
+        all_models = catalog
 
-    # Enrich with installed/active status
+    # Enrich with installed/active status (mutates catalog dicts in cache —
+    # acceptable since the cache is per-process)
     installed_names = {m["name"] for m in _installed_models()}
     active = _active_model()
-
-    for m in models:
+    for m in all_models:
         m["installed"] = m.get("name", "") in installed_names
         m["active"] = m.get("name", "") == active
 
-    # Filter by language
+    # Build language facets from the FULL catalog before any filter is
+    # applied, so dropdown options never disappear when the user filters.
+    lang_counts: dict[str, dict[str, Any]] = {}
+    for m in all_models:
+        code = (m.get("lang") or "").lower()
+        if not code:
+            continue
+        label = m.get("lang_text") or code.upper()
+        node = lang_counts.setdefault(code, {"code": code, "label": label, "count": 0})
+        node["count"] += 1
+    languages = sorted(lang_counts.values(), key=lambda x: (-x["count"], x["code"]))
+
+    # Apply filters
+    models = all_models
     if lang:
         lang_lower = lang.lower()
-        models = [m for m in models if lang_lower in m.get("lang", "").lower()
-                  or lang_lower in m.get("name", "").lower()]
-
-    # Search by name
+        models = [m for m in models if (m.get("lang") or "").lower() == lang_lower]
+    if quality:
+        q_lower = quality.lower()
+        models = [m for m in models if (m.get("type") or "").lower() == q_lower]
     if q:
         q_lower = q.lower()
-        models = [m for m in models if q_lower in m.get("name", "").lower()
-                  or q_lower in m.get("lang", "").lower()
-                  or q_lower in m.get("type", "").lower()]
+        models = [m for m in models if q_lower in (m.get("name") or "").lower()
+                  or q_lower in (m.get("lang") or "").lower()
+                  or q_lower in (m.get("type") or "").lower()]
 
     # Pagination
     total = len(models)
@@ -240,6 +263,7 @@ async def vosk_catalog(
         "page": page,
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page,
+        "languages": languages,
         "offline": catalog.get("_offline", False),
         "cached_at": catalog.get("_cached_at", ""),
     }

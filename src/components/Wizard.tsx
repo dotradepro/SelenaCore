@@ -124,6 +124,23 @@ export default function Wizard() {
   const [tzSearch, setTzSearch] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
+  // Online STT (Vosk) catalog state
+  const [sttCatalog, setSttCatalog] = useState<any[]>([]);
+  const [sttLanguages, setSttLanguages] = useState<{ code: string; label: string; count: number }[]>([]);
+  const [sttFilter, setSttFilter] = useState({ lang: '', quality: '', q: '', page: 1, per_page: 20 });
+  const [sttPagination, setSttPagination] = useState({ total: 0, pages: 1 });
+  const [sttLoading, setSttLoading] = useState(false);
+  const [sttError, setSttError] = useState<string | null>(null);
+
+  // Online TTS (Piper) catalog state
+  const [ttsCatalog, setTtsCatalog] = useState<any[]>([]);
+  const [ttsLanguages, setTtsLanguages] = useState<{ code: string; label: string; count: number }[]>([]);
+  const [ttsQualities, setTtsQualities] = useState<string[]>(['x_low', 'low', 'medium', 'high']);
+  const [ttsFilter, setTtsFilter] = useState({ lang: '', quality: '', q: '', page: 1, per_page: 20 });
+  const [ttsPagination, setTtsPagination] = useState({ total: 0, pages: 1 });
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const [ttsError, setTtsError] = useState<string | null>(null);
+
   // Provisioning state
   const [provisioning, setProvisioning] = useState(false);
   const [provisionTasks, setProvisionTasks] = useState<{ id: string; label: string; status: string; error?: string }[]>([]);
@@ -301,8 +318,8 @@ export default function Wizard() {
       fetchNetworkStatus();
     }
     if (step === 4 && !tzData) fetchTimezones();
-    if (step === 5 && sttModels.length === 0) fetchSttModels();
-    if (step === 6 && ttsVoices.length === 0) fetchTtsVoices();
+    // step 5 (Vosk) and step 6 (Piper) catalogs are fetched by their own
+    // useEffects below — they react to filter changes too.
   }, [step]);
 
   const fetchNetworkStatus = async () => {
@@ -412,50 +429,97 @@ export default function Wizard() {
     } catch { /* fallback to hardcoded list */ }
   };
 
-  const fetchSttModels = async () => {
+  // Online catalogs — no hardcoded fallback. SelenaCore uses Vosk (STT)
+  // and Piper (TTS); the catalogs live at /vosk/catalog (alphacephei) and
+  // /tts/catalog (Hugging Face piper-voices). Both support filtering by
+  // language + quality + free-text search and proper pagination.
+
+  const fetchSttCatalog = async () => {
+    setSttLoading(true);
+    setSttError(null);
     try {
-      // SelenaCore uses Vosk for STT (see core/stt/factory.py). The real
-      // catalog comes from /vosk/catalog (cached from alphacephei.com), not
-      // a non-existent /stt/models — that older URL would 404 and we'd fall
-      // through to a stale Whisper fallback.
-      const res = await fetch('/api/ui/setup/vosk/catalog?per_page=50');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const params = new URLSearchParams();
+      if (sttFilter.lang) params.set('lang', sttFilter.lang);
+      if (sttFilter.quality) params.set('quality', sttFilter.quality);
+      if (sttFilter.q) params.set('q', sttFilter.q);
+      params.set('page', String(sttFilter.page));
+      params.set('per_page', String(sttFilter.per_page));
+      const res = await fetch('/api/ui/setup/vosk/catalog?' + params.toString());
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       const raw = Array.isArray(data.models) ? data.models : [];
-      // Map Vosk catalog rows to the SttModel shape this component expects.
-      const mapped: SttModel[] = raw.map((m: any) => {
-        const sizeBytes = typeof m.size === 'number' ? m.size : 0;
-        const sizeMb = sizeBytes ? Math.round(sizeBytes / (1024 * 1024)) : 0;
-        const isBig = (m.type || '').toLowerCase() === 'big' || sizeMb > 200;
-        return {
-          id: m.name,
-          name: m.name,
-          lang: (m.lang || 'auto').slice(0, 2),
-          ram_mb: 0,
-          size_mb: sizeMb,
-          quality: isBig ? 'high' : 'ok',
-          installed: !!m.installed,
-          active: !!m.active,
-          fits_ram: true,
-        };
-      });
-      setSttModels(mapped);
-      const activeModel = mapped.find(m => m.active);
-      if (activeModel) setFormData(prev => ({ ...prev, stt: activeModel.id }));
-      else if (mapped.length > 0) setFormData(prev => ({ ...prev, stt: mapped[0].id }));
-    } catch {
-      // Catalog unreachable — fall through to hardcoded Vosk defaults below
+      setSttCatalog(raw);
+      setSttPagination({ total: data.total || 0, pages: data.pages || 1 });
+      if (Array.isArray(data.languages) && data.languages.length) {
+        setSttLanguages(data.languages);
+      }
+      // Auto-select on first load if nothing chosen yet
+      if (!formData.stt || formData.stt === 'small') {
+        const active = raw.find((m: any) => m.active);
+        const pick = active || raw[0];
+        if (pick) setFormData(prev => ({ ...prev, stt: pick.name }));
+      }
+    } catch (e: any) {
+      setSttCatalog([]);
+      setSttPagination({ total: 0, pages: 1 });
+      setSttError(e?.message || 'Catalog unreachable');
+    } finally {
+      setSttLoading(false);
     }
   };
 
-  const fetchTtsVoices = async () => {
+  const fetchTtsCatalog = async () => {
+    setTtsLoading(true);
+    setTtsError(null);
     try {
-      const res = await fetch('/api/ui/setup/tts/voices');
+      const params = new URLSearchParams();
+      if (ttsFilter.lang) params.set('lang', ttsFilter.lang);
+      if (ttsFilter.quality) params.set('quality', ttsFilter.quality);
+      if (ttsFilter.q) params.set('q', ttsFilter.q);
+      params.set('page', String(ttsFilter.page));
+      params.set('per_page', String(ttsFilter.per_page));
+      const res = await fetch('/api/ui/setup/tts/catalog?' + params.toString());
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
-      setTtsVoices(data.voices || []);
-      if (data.active) setFormData(prev => ({ ...prev, tts: data.active }));
-    } catch { /* use defaults */ }
+      const raw = Array.isArray(data.voices) ? data.voices : [];
+      setTtsCatalog(raw);
+      setTtsPagination({ total: data.total || 0, pages: data.pages || 1 });
+      if (Array.isArray(data.languages) && data.languages.length) {
+        setTtsLanguages(data.languages);
+      }
+      if (Array.isArray(data.qualities) && data.qualities.length) {
+        setTtsQualities(data.qualities);
+      }
+      if (!formData.tts || formData.tts === 'uk_UA-ukrainian_tts-medium') {
+        const active = raw.find((v: any) => v.active);
+        const pick = active || raw[0];
+        if (pick) setFormData(prev => ({ ...prev, tts: pick.id }));
+      }
+    } catch (e: any) {
+      setTtsCatalog([]);
+      setTtsPagination({ total: 0, pages: 1 });
+      setTtsError(e?.message || 'Catalog unreachable');
+    } finally {
+      setTtsLoading(false);
+    }
   };
+
+  // Re-fetch when filters change while the user is on the relevant step
+  useEffect(() => {
+    if (step === 5) fetchSttCatalog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, sttFilter.lang, sttFilter.quality, sttFilter.q, sttFilter.page, sttFilter.per_page]);
+
+  useEffect(() => {
+    if (step === 6) fetchTtsCatalog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, ttsFilter.lang, ttsFilter.quality, ttsFilter.q, ttsFilter.page, ttsFilter.per_page]);
 
   const connectWifi = async () => {
     if (!formData.wifi) return;
@@ -1104,45 +1168,114 @@ export default function Wizard() {
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.sttTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.sttDesc')}</p>
-                      {sttRamInfo.available > 0 && (
-                        <div className="text-xs text-zinc-500">
-                          RAM: {sttRamInfo.available} MB {t('wizard.sttAvailable')} / {sttRamInfo.total} MB {t('wizard.sttTotal')}
+
+                      {/* Filters */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={sttFilter.lang}
+                          onChange={(e) => setSttFilter({ ...sttFilter, lang: e.target.value, page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          <option value="">{t('wizard.filterAllLanguages')}</option>
+                          {sttLanguages.map(l => (
+                            <option key={l.code} value={l.code}>{l.label} ({l.count})</option>
+                          ))}
+                        </select>
+                        <select
+                          value={sttFilter.quality}
+                          onChange={(e) => setSttFilter({ ...sttFilter, quality: e.target.value, page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          <option value="">{t('wizard.filterAllQualities')}</option>
+                          <option value="small">small</option>
+                          <option value="big">big</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder={t('wizard.filterSearch')}
+                          value={sttFilter.q}
+                          onChange={(e) => setSttFilter({ ...sttFilter, q: e.target.value, page: 1 })}
+                          className="flex-1 min-w-[120px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        />
+                        <select
+                          value={sttFilter.per_page}
+                          onChange={(e) => setSttFilter({ ...sttFilter, per_page: Number(e.target.value), page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}/{t('wizard.perPage')}</option>)}
+                        </select>
+                      </div>
+
+                      {/* Catalog state */}
+                      {sttLoading && (
+                        <div className="text-xs text-zinc-500 py-4 text-center">{t('wizard.loadingCatalog')}…</div>
+                      )}
+                      {sttError && !sttLoading && (
+                        <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                          {t('wizard.catalogError')}: {sttError}
+                          <button onClick={() => fetchSttCatalog()} className="ml-2 underline">{t('common.retry')}</button>
                         </div>
                       )}
-                      <div className="space-y-2">
-                        {(sttModels.length > 0 ? sttModels : [
-                          { id: 'vosk-model-small-en-us-0.15', name: 'vosk-model-small-en-us-0.15', lang: 'en', ram_mb: 0, size_mb: 40,   quality: 'ok',   installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-en-us-0.22',       name: 'vosk-model-en-us-0.22',       lang: 'en', ram_mb: 0, size_mb: 1800, quality: 'high', installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-small-uk-v3-small',name: 'vosk-model-small-uk-v3-small',lang: 'uk', ram_mb: 0, size_mb: 75,   quality: 'ok',   installed: false, active: false, fits_ram: true },
-                          { id: 'vosk-model-uk-v3',            name: 'vosk-model-uk-v3',            lang: 'uk', ram_mb: 0, size_mb: 350,  quality: 'high', installed: false, active: false, fits_ram: true },
-                        ]).map(m => (
-                          <button
-                            key={m.id}
-                            onClick={() => setFormData({ ...formData, stt: m.id })}
-                            disabled={!m.fits_ram}
-                            className={cn(
-                              "w-full px-3 py-2.5 rounded-lg border flex items-center justify-between text-left transition-all",
-                              !m.fits_ram ? "border-zinc-800 bg-zinc-900/50 opacity-50 cursor-not-allowed" :
-                                formData.stt === m.id
-                                  ? "border-emerald-500 bg-emerald-500/10"
-                                  : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                            )}
-                          >
-                            <div>
-                              <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
-                                {m.name}
-                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400">{m.size_mb} MB</span>
-                                {m.installed && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500">{t('wizard.sttInstalled')}</span>}
-                                {!m.fits_ram && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400">{t('wizard.sttNoRam')}</span>}
-                              </div>
-                              <div className="text-xs text-zinc-400 mt-0.5">
-                                {m.quality === 'high' ? t('wizard.sttLarge' + m.lang.charAt(0).toUpperCase() + m.lang.slice(1)) : t('wizard.sttSmall' + m.lang.charAt(0).toUpperCase() + m.lang.slice(1))}
-                              </div>
-                            </div>
-                            {formData.stt === m.id && <Check size={16} className="text-emerald-500" />}
-                          </button>
-                        ))}
-                      </div>
+
+                      {/* Table */}
+                      {!sttLoading && !sttError && sttCatalog.length > 0 && (
+                        <div className="border border-zinc-800 rounded-lg overflow-hidden">
+                          <div className="grid grid-cols-[1fr_60px_60px_70px_24px] gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 bg-zinc-900 border-b border-zinc-800">
+                            <div>{t('wizard.colName')}</div>
+                            <div>{t('wizard.colLang')}</div>
+                            <div>{t('wizard.colSize')}</div>
+                            <div>{t('wizard.colType')}</div>
+                            <div></div>
+                          </div>
+                          <div className="max-h-[280px] overflow-y-auto">
+                            {sttCatalog.map((m: any) => {
+                              const sizeMb = m.size ? Math.round(m.size / (1024 * 1024)) : (m.size_mb || 0);
+                              const selected = formData.stt === m.name;
+                              return (
+                                <button
+                                  key={m.name}
+                                  onClick={() => setFormData({ ...formData, stt: m.name })}
+                                  className={cn(
+                                    "w-full grid grid-cols-[1fr_60px_60px_70px_24px] gap-2 px-3 py-2 text-xs text-left items-center border-b border-zinc-900 last:border-b-0 transition-colors",
+                                    selected ? "bg-emerald-500/15 text-emerald-300" : "hover:bg-zinc-900"
+                                  )}
+                                >
+                                  <div className="truncate">
+                                    <span className="font-mono">{m.name}</span>
+                                    {m.installed && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400">{t('wizard.sttInstalled')}</span>}
+                                  </div>
+                                  <div className="text-zinc-400">{(m.lang || '').toUpperCase()}</div>
+                                  <div className="text-zinc-400">{sizeMb ? `${sizeMb} MB` : '—'}</div>
+                                  <div className="text-zinc-500">{m.type || '—'}</div>
+                                  <div>{selected && <Check size={14} className="text-emerald-400" />}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pagination */}
+                      {!sttLoading && !sttError && sttPagination.total > 0 && (
+                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                          <div>
+                            {t('wizard.paginationTotal', { total: sttPagination.total })}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => setSttFilter({ ...sttFilter, page: Math.max(1, sttFilter.page - 1) })}
+                              disabled={sttFilter.page <= 1}
+                              className="px-2 py-1 rounded border border-zinc-800 hover:bg-zinc-900 disabled:opacity-30"
+                            >‹</button>
+                            <span>{sttFilter.page} / {sttPagination.pages}</span>
+                            <button
+                              onClick={() => setSttFilter({ ...sttFilter, page: Math.min(sttPagination.pages, sttFilter.page + 1) })}
+                              disabled={sttFilter.page >= sttPagination.pages}
+                              className="px-2 py-1 rounded border border-zinc-800 hover:bg-zinc-900 disabled:opacity-30"
+                            >›</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1150,49 +1283,123 @@ export default function Wizard() {
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.ttsTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.ttsDesc')}</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(ttsVoices.length > 0 ? ttsVoices : [
-                          { id: 'uk_UA-ukrainian_tts-medium', name: 'Tetiana', language: 'uk', gender: 'female', size_mb: 50, installed: false, active: false },
-                          { id: 'uk_UA-lada-x_low', name: 'Lada', language: 'uk', gender: 'female', size_mb: 21, installed: false, active: false },
-                          { id: 'ru_RU-irina-medium', name: 'Irina', language: 'ru', gender: 'female', size_mb: 50, installed: false, active: false },
-                          { id: 'ru_RU-ruslan-medium', name: 'Ruslan', language: 'ru', gender: 'male', size_mb: 50, installed: false, active: false },
-                          { id: 'en_US-amy-medium', name: 'Amy', language: 'en', gender: 'female', size_mb: 50, installed: false, active: false },
-                          { id: 'en_US-ryan-high', name: 'Ryan', language: 'en', gender: 'male', size_mb: 60, installed: false, active: false },
-                        ]).map(v => (
-                          <div
-                            key={v.id}
-                            className={cn(
-                              "px-3 py-2.5 rounded-lg border transition-all",
-                              formData.tts === v.id
-                                ? "border-emerald-500 bg-emerald-500/10"
-                                : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                            )}
-                          >
-                            <button
-                              onClick={() => setFormData({ ...formData, tts: v.id })}
-                              className="w-full text-left"
-                            >
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className={cn("text-sm font-medium", formData.tts === v.id && "text-emerald-500")}>
-                                  {v.name}
-                                </span>
-                                {v.installed && <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-500">{t('wizard.sttInstalled')}</span>}
-                              </div>
-                              <div className="text-[10px] text-zinc-500">
-                                {v.language.toUpperCase()} · {v.gender === 'female' ? t('wizard.ttsFemale') : t('wizard.ttsMale')} · {v.size_mb}MB
-                              </div>
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
-                              disabled={previewingVoice !== null}
-                              className="mt-1.5 flex items-center gap-1 text-[10px] text-zinc-400 hover:text-emerald-400 transition-colors disabled:opacity-50"
-                            >
-                              <Play size={12} className={previewingVoice === v.id ? 'animate-pulse text-emerald-500' : ''} />
-                              {previewingVoice === v.id ? t('wizard.ttsPlaying') : t('wizard.ttsPreview')}
-                            </button>
-                          </div>
-                        ))}
+
+                      {/* Filters */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={ttsFilter.lang}
+                          onChange={(e) => setTtsFilter({ ...ttsFilter, lang: e.target.value, page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          <option value="">{t('wizard.filterAllLanguages')}</option>
+                          {ttsLanguages.map(l => (
+                            <option key={l.code} value={l.code}>{l.label} ({l.count})</option>
+                          ))}
+                        </select>
+                        <select
+                          value={ttsFilter.quality}
+                          onChange={(e) => setTtsFilter({ ...ttsFilter, quality: e.target.value, page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          <option value="">{t('wizard.filterAllQualities')}</option>
+                          {ttsQualities.map(q => <option key={q} value={q}>{q}</option>)}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder={t('wizard.filterSearch')}
+                          value={ttsFilter.q}
+                          onChange={(e) => setTtsFilter({ ...ttsFilter, q: e.target.value, page: 1 })}
+                          className="flex-1 min-w-[120px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        />
+                        <select
+                          value={ttsFilter.per_page}
+                          onChange={(e) => setTtsFilter({ ...ttsFilter, per_page: Number(e.target.value), page: 1 })}
+                          className="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-50 focus:outline-none focus:border-emerald-500"
+                        >
+                          {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}/{t('wizard.perPage')}</option>)}
+                        </select>
                       </div>
+
+                      {/* Catalog state */}
+                      {ttsLoading && (
+                        <div className="text-xs text-zinc-500 py-4 text-center">{t('wizard.loadingCatalog')}…</div>
+                      )}
+                      {ttsError && !ttsLoading && (
+                        <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                          {t('wizard.catalogError')}: {ttsError}
+                          <button onClick={() => fetchTtsCatalog()} className="ml-2 underline">{t('common.retry')}</button>
+                        </div>
+                      )}
+
+                      {/* Table */}
+                      {!ttsLoading && !ttsError && ttsCatalog.length > 0 && (
+                        <div className="border border-zinc-800 rounded-lg overflow-hidden">
+                          <div className="grid grid-cols-[1fr_60px_60px_70px_36px_24px] gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-zinc-500 bg-zinc-900 border-b border-zinc-800">
+                            <div>{t('wizard.colName')}</div>
+                            <div>{t('wizard.colLang')}</div>
+                            <div>{t('wizard.colSize')}</div>
+                            <div>{t('wizard.colQuality')}</div>
+                            <div></div>
+                            <div></div>
+                          </div>
+                          <div className="max-h-[280px] overflow-y-auto">
+                            {ttsCatalog.map((v: any) => {
+                              const selected = formData.tts === v.id;
+                              return (
+                                <div
+                                  key={v.id}
+                                  className={cn(
+                                    "grid grid-cols-[1fr_60px_60px_70px_36px_24px] gap-2 px-3 py-2 text-xs items-center border-b border-zinc-900 last:border-b-0 transition-colors",
+                                    selected ? "bg-emerald-500/15" : "hover:bg-zinc-900"
+                                  )}
+                                >
+                                  <button
+                                    onClick={() => setFormData({ ...formData, tts: v.id })}
+                                    className={cn("text-left truncate", selected && "text-emerald-300")}
+                                  >
+                                    <span className="font-mono">{v.id}</span>
+                                    {v.installed && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400">{t('wizard.sttInstalled')}</span>}
+                                  </button>
+                                  <div className="text-zinc-400">{(v.lang || '').toUpperCase()}</div>
+                                  <div className="text-zinc-400">{v.size_mb ? `${v.size_mb} MB` : '—'}</div>
+                                  <div className="text-zinc-500">{v.quality || '—'}</div>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); previewVoice(v.id); }}
+                                    disabled={previewingVoice !== null}
+                                    title={t('wizard.ttsPreview')}
+                                    className="flex items-center justify-center text-zinc-400 hover:text-emerald-400 disabled:opacity-50"
+                                  >
+                                    <Play size={12} className={previewingVoice === v.id ? 'animate-pulse text-emerald-500' : ''} />
+                                  </button>
+                                  <div>{selected && <Check size={14} className="text-emerald-400" />}</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pagination */}
+                      {!ttsLoading && !ttsError && ttsPagination.total > 0 && (
+                        <div className="flex items-center justify-between text-xs text-zinc-500">
+                          <div>
+                            {t('wizard.paginationTotal', { total: ttsPagination.total })}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => setTtsFilter({ ...ttsFilter, page: Math.max(1, ttsFilter.page - 1) })}
+                              disabled={ttsFilter.page <= 1}
+                              className="px-2 py-1 rounded border border-zinc-800 hover:bg-zinc-900 disabled:opacity-30"
+                            >‹</button>
+                            <span>{ttsFilter.page} / {ttsPagination.pages}</span>
+                            <button
+                              onClick={() => setTtsFilter({ ...ttsFilter, page: Math.min(ttsPagination.pages, ttsFilter.page + 1) })}
+                              disabled={ttsFilter.page >= ttsPagination.pages}
+                              className="px-2 py-1 rounded border border-zinc-800 hover:bg-zinc-900 disabled:opacity-30"
+                            >›</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
