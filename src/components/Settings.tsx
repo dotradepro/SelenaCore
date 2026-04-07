@@ -81,7 +81,7 @@ export default function Settings() {
           <Route path="/system"         element={<FormPage><SystemSettings /></FormPage>} />
           <Route path="/system-info"    element={<SystemPage />} />
           <Route path="/system-info/:tab" element={<SystemPage />} />
-          <Route path="/system-modules" element={<FormPage><SystemModulesSettings /></FormPage>} />
+          <Route path="/system-modules" element={<SystemModulesSettings />} />
           <Route path="*" element={<FormPage><div className="text-zinc-400">{t('common.inDevelopment')}</div></FormPage>} />
         </Routes>
       </div>
@@ -894,13 +894,17 @@ function SystemModulesSettings() {
   const selected = systemMods.find(m => m.name === selectedMod);
 
   return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
+    <div style={{
+      height: '100%', minHeight: 0,
+      display: 'flex', flexDirection: 'column',
+      padding: 12, gap: 12,
+    }}>
+      <div style={{ flexShrink: 0 }}>
         <h3 className="text-xl font-semibold mb-1">{t('settings.systemModules')}</h3>
         <p className="text-sm text-zinc-400">{t('settings.systemModulesDesc')}</p>
       </div>
 
-      <div style={{ display: 'flex', gap: 16, height: 520 }}>
+      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
         {/* Module list */}
         <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto' }}>
           {systemMods.length === 0 ? (
