@@ -281,7 +281,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* ═══════════ BODY ═══════════ */}
-      <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      {/* minHeight: 0 is required so the flex child can actually shrink and
+          let nested scroll containers (Settings, Modules, ModuleDetail) work
+          instead of being pushed beyond the viewport. */}
+      <main style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {children}
       </main>
 

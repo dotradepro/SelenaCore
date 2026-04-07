@@ -27,8 +27,16 @@ export default function Settings() {
     tabs.find(tab => location.pathname === tab.path || location.pathname.startsWith(tab.path + '/'))?.id ??
     (location.pathname === '/settings' ? 'appearance' : '');
 
+  // Wrapper for tabs whose root content is just a form / list with no
+  // built-in scroll container. .generic-page provides height:100% +
+  // overflow-y:auto + padding so the content scrolls within the viewport
+  // instead of being clipped.
+  const FormPage = ({ children }: { children: React.ReactNode }) => (
+    <div className="generic-page">{children}</div>
+  );
+
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {/* Horizontal tab bar */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--b)', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
         {tabs.map((tab) => {
@@ -54,21 +62,27 @@ export default function Settings() {
         })}
       </div>
 
-      {/* Settings content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+      {/* Settings content
+          flex:1 + minHeight:0 makes this region take exactly the remaining
+          viewport height. overflow:hidden delegates scrolling to the inner
+          page (so we never get a double scrollbar). Pages that already
+          manage their own scroll (Modules, ModuleDetail, SystemPage,
+          IntegrityPage) render directly; simple form tabs are wrapped
+          in <FormPage> which provides the .generic-page scroller. */}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <Routes>
-          <Route path="/" element={<AppearanceSettings />} />
-          <Route path="/appearance" element={<AppearanceSettings />} />
-          <Route path="/audio" element={<AudioSettings />} />
-          <Route path="/network" element={<NetworkSettings />} />
-          <Route path="/users" element={<UsersSettings />} />
-          <Route path="/modules" element={<Modules />} />
-          <Route path="/modules/:name" element={<ModuleDetail />} />
-          <Route path="/system" element={<SystemSettings />} />
-          <Route path="/system-info" element={<SystemPage />} />
+          <Route path="/"               element={<FormPage><AppearanceSettings /></FormPage>} />
+          <Route path="/appearance"     element={<FormPage><AppearanceSettings /></FormPage>} />
+          <Route path="/audio"          element={<FormPage><AudioSettings /></FormPage>} />
+          <Route path="/network"        element={<FormPage><NetworkSettings /></FormPage>} />
+          <Route path="/users"          element={<FormPage><UsersSettings /></FormPage>} />
+          <Route path="/modules"        element={<Modules />} />
+          <Route path="/modules/:name"  element={<ModuleDetail />} />
+          <Route path="/system"         element={<FormPage><SystemSettings /></FormPage>} />
+          <Route path="/system-info"    element={<SystemPage />} />
           <Route path="/system-info/:tab" element={<SystemPage />} />
-          <Route path="/system-modules" element={<SystemModulesSettings />} />
-          <Route path="*" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
+          <Route path="/system-modules" element={<FormPage><SystemModulesSettings /></FormPage>} />
+          <Route path="*" element={<FormPage><div className="text-zinc-400">{t('common.inDevelopment')}</div></FormPage>} />
         </Routes>
       </div>
     </div>
