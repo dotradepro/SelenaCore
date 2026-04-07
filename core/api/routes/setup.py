@@ -1558,10 +1558,9 @@ async def _provision_download_llm(model_id: str) -> None:
 
 
 async def _provision_download_stt(model_id: str) -> None:
-    """Download Vosk STT model into configured models_dir.
+    """Download Vosk STT model into configured models_dir AND activate it.
 
     `model_id` is the alphacephei.com model identifier (e.g. vosk-model-small-en-us-0.15).
-    Falls back silently if the model is already on disk or no URL is known.
     """
     if not model_id or model_id == "small":
         return
@@ -1569,22 +1568,47 @@ async def _provision_download_stt(model_id: str) -> None:
         get_nested("stt.vosk.models_dir", "/var/lib/selena/models/vosk")
     )
     models_dir.mkdir(parents=True, exist_ok=True)
-    if (models_dir / model_id).is_dir():
-        return
-    url = f"https://alphacephei.com/vosk/models/{model_id}.zip"
-    import httpx
-    import zipfile
-    import io
-    async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
-        async with client.stream("GET", url, follow_redirects=True) as resp:
-            resp.raise_for_status()
-            buf = io.BytesIO()
-            async for chunk in resp.aiter_bytes(chunk_size=131072):
-                buf.write(chunk)
-    buf.seek(0)
-    with zipfile.ZipFile(buf) as zf:
-        zf.extractall(models_dir)
-    logger.info("STT model %s installed to %s", model_id, models_dir)
+    target_dir = models_dir / model_id
+    if not target_dir.is_dir():
+        url = f"https://alphacephei.com/vosk/models/{model_id}.zip"
+        import httpx
+        import zipfile
+        import io
+        async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+            async with client.stream("GET", url, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                buf = io.BytesIO()
+                async for chunk in resp.aiter_bytes(chunk_size=131072):
+                    buf.write(chunk)
+        buf.seek(0)
+        with zipfile.ZipFile(buf) as zf:
+            zf.extractall(models_dir)
+        logger.info("STT model %s installed to %s", model_id, models_dir)
+    else:
+        logger.info("STT model %s already on disk, skipping download", model_id)
+
+    # Activate the model on the live voice-core STT provider so the wizard
+    # finalize step doesn't leave the engine reporting "not installed".
+    try:
+        from core.module_loader.sandbox import get_sandbox
+        from core.stt.vosk_provider import VoskProvider
+        vc = get_sandbox().get_in_process_module("voice-core")
+        if vc and hasattr(vc, "_stt_provider"):
+            p = vc._stt_provider
+            lang = "en"
+            name_lower = model_id.lower()
+            for code in ("uk", "ru", "en", "de", "fr", "es", "it", "pl"):
+                if code in name_lower:
+                    lang = code
+                    break
+            if isinstance(p, VoskProvider):
+                await p.reload_model(str(target_dir), lang)
+            else:
+                from core.stt.factory import create_stt_provider
+                vc._stt_provider = create_stt_provider()
+            logger.info("STT provider activated with model %s (lang=%s)", model_id, lang)
+    except Exception as exc:
+        logger.warning("STT provider activation failed (non-fatal): %s", exc)
 
 
 def _copy_local_piper_voice(voice_id: str, dest_dir: Path) -> bool:

@@ -262,6 +262,69 @@ install_host_packages() {
     fi
 }
 
+# ── Phase 2.5: Native AI runtimes (Ollama + Piper) ─────────────────
+# These run on the HOST, not inside the docker container, because the
+# wizard cannot install host-level binaries from inside the sandbox.
+# install.sh runs them once during bootstrap; the wizard then handles
+# model downloads via the already-installed CLIs.
+
+install_native_runtimes() {
+    title "Installing native AI runtimes (Ollama + Piper)"
+    install_ollama
+    install_piper_runtime
+}
+
+install_ollama() {
+    if command -v ollama >/dev/null 2>&1; then
+        log "Ollama already installed: $(ollama --version 2>/dev/null | head -1)"
+        run systemctl enable --now ollama 2>/dev/null || true
+        return 0
+    fi
+    if $DRY_RUN; then
+        echo "    [dry-run] curl -fsSL https://ollama.com/install.sh | sh"
+        return 0
+    fi
+    log "Installing Ollama via official installer (https://ollama.com/install.sh)"
+    if ! curl -fsSL https://ollama.com/install.sh | sh; then
+        warn "Ollama install script failed — LLM features will be unavailable until installed manually"
+        return 0
+    fi
+    # The official installer creates ollama.service. Make sure it's enabled.
+    systemctl enable --now ollama 2>/dev/null || \
+        warn "Could not enable ollama.service — start it manually with: sudo systemctl start ollama"
+    log "Ollama installed: $(ollama --version 2>/dev/null | head -1 || echo unknown)"
+}
+
+install_piper_runtime() {
+    # The Piper Python package + a small runner that the wizard's
+    # piper-tts.service expects. Install for the SUDO_USER (the operator),
+    # not root, so the systemd unit's User=__USER__ template can find it.
+    local piper_user="${SUDO_USER:-root}"
+    local piper_home
+    piper_home="$(getent passwd "$piper_user" | cut -d: -f6 || true)"
+    [ -z "$piper_home" ] && piper_home="/root"
+
+    if su - "$piper_user" -c "python3 -c 'import piper, aiohttp' 2>/dev/null"; then
+        log "Piper TTS Python package already installed for $piper_user"
+        return 0
+    fi
+    if $DRY_RUN; then
+        echo "    [dry-run] su - $piper_user -c 'pip3 install --user --break-system-packages piper-tts aiohttp'"
+        return 0
+    fi
+    log "Installing Piper TTS Python package for user '$piper_user' (~80 MB onnxruntime)"
+    # --break-system-packages tolerates PEP 668 on noble/bookworm
+    if ! su - "$piper_user" -c "pip3 install --user --break-system-packages piper-tts aiohttp" 2>/dev/null; then
+        # Older pip without the flag
+        if ! su - "$piper_user" -c "pip3 install --user piper-tts aiohttp" 2>/dev/null; then
+            warn "pip install piper-tts failed — TTS will be unavailable until installed manually"
+            return 0
+        fi
+    fi
+    install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
+    log "Piper TTS Python package installed for $piper_user"
+}
+
 # ── Phase 3: Robust Docker installation ────────────────────────────
 
 install_docker() {
@@ -633,6 +696,7 @@ main() {
     if ! $SKIP_DEPS; then
         install_host_packages
         install_docker
+        install_native_runtimes
     fi
 
     create_user_and_dirs
