@@ -71,26 +71,16 @@ sudo systemctl daemon-reload
 sudo systemctl restart getty@tty1.service
 ```
 
-### 4. Kiosk Startup Script
+### 4. Kiosk Startup
 
-The file `scripts/kiosk-start.sh` is launched automatically from `~/.bash_profile` on tty1:
+Kiosk display is now installed automatically by the wizard's
+`install_native_services` provisioning step (via [scripts/install-systemd.sh](../scripts/install-systemd.sh)).
+The script detects whether `cage` and a connected DRM output are present and
+generates a `selena-display.service` unit pointing at
+[scripts/start-display.sh](../scripts/start-display.sh), which then launches
+`cage + chromium` in kiosk mode on the active VT.
 
-```bash
-# ~/.bash_profile
-if [ -f "$HOME/.profile" ]; then
-    . "$HOME/.profile"
-fi
-
-# Auto-start kiosk on tty1 only
-if [ "$(tty)" = "/dev/tty1" ]; then
-    exec /path/to/SelenaCore/scripts/kiosk-start.sh
-fi
-```
-
-The script:
-1. Waits for SelenaCore API to be ready (up to 60 seconds)
-2. Writes a temporary `.xinitrc` (disables screen blanking, hides cursor)
-3. Launches `xinit` with Chromium in kiosk mode on `vt1`
+No manual `~/.bash_profile` or autologin agetty hack is needed anymore.
 
 ### 5. PulseAudio for Voice
 
@@ -186,7 +176,8 @@ When no HDMI is connected and kiosk is not configured:
 - System boots to headless TTY
 - Managed entirely via SSH
 - QR code displayed via `tty_status.py` for mobile setup
-- `smarthome-display.service` runs TUI status on tty1
+- Status TUI can be run manually:
+  `docker compose exec core python -m system_modules.ui_core.tty_status`
 
 ---
 

@@ -29,24 +29,35 @@
 
 ## Встановлення
 
-### Автоматичне налаштування (рекомендовано)
+### Єдиний інсталятор (рекомендовано)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-sudo bash scripts/setup.sh
+sudo ./install.sh
 ```
 
-Скрипт налаштування виконує наступні кроки по порядку:
+`install.sh` — **єдиний** скрипт, який запускає користувач. Він робить мінімум,
+щоб система стала доступна в браузері, і друкує URL виду `http://<lan-ip>/`.
+Решту установки (вибір моделей, скачування, створення адміністратора,
+реєстрація на платформі, нативні systemd-сервіси) ви проходите у **майстрі
+першого запуску** з прогрес-баром.
 
-1. Встановлення системних пакетів (FFmpeg, PortAudio, VLC, ALSA utils)
-2. Встановлення Docker та Docker Compose
-3. Встановлення Python 3.11 та pip
-4. Створення директорій даних (`/var/lib/selena`, `/secure`)
-5. Генерація токенів автентифікації модулів
-6. Збірка Docker-образів
-7. Запуск усіх сервісів
-8. Відображення URL-адреси для доступу
+Що робить `install.sh`:
+
+1. Виявляє апаратну платформу (Jetson / Raspberry / CUDA / generic Linux)
+2. `apt-get install` пакети хоста (Docker, FFmpeg, arp-scan, pulseaudio, nmcli, …)
+3. Створює системного користувача `selena` і додає в групи docker/audio/video
+4. Створює `/var/lib/selena/{models,…}`, `/var/log/selena`, `/secure`
+5. Сідує Piper-голоси з `~/.local/share/piper/models/` (якщо є)
+6. Копіює `config/core.yaml.example` → `config/core.yaml` з `wizard.completed=false`
+7. `npx vite build` (фронтенд)
+8. `docker compose up -d --build` (selena-core + selena-agent)
+9. Стейджить `smarthome-core.service` / `smarthome-agent.service` у `/etc/systemd/system/` (поки не enable — це робить майстер)
+10. Друкує банер з URL майстра
+
+`install.sh` НЕ качає Whisper / Vosk / Piper-голоси / Ollama-моделі — це робить
+майстер, із прогресом у браузері.
 
 ### Ручне налаштування
 
@@ -167,7 +178,7 @@ curl http://localhost:11434/api/tags
 | `CORE_SECURE_DIR` | `/secure` | Директорія зашифрованих секретів |
 | `CORE_LOG_LEVEL` | `INFO` | Рівень логування |
 | `DEBUG` | `false` | Увімкнути режим налагодження та Swagger UI |
-| `PLATFORM_API_URL` | `https://smarthome-lk.com/api/v1` | URL хмарної платформи |
+| `PLATFORM_API_URL` | `https://selenehome.tech/api/v1` | URL хмарної платформи |
 | `PLATFORM_DEVICE_HASH` | *(порожнє)* | Хеш ідентифікації пристрою |
 | `UI_PORT` | `80` | Порт веб-інтерфейсу |
 | `UI_HTTPS` | `true` | Увімкнути HTTPS для інтерфейсу |
@@ -227,8 +238,8 @@ sudo systemctl start smarthome-core.service
 | Сервіс | Призначення |
 |--------|-------------|
 | `smarthome-agent.service` | Агент моніторингу цілісності |
-| `smarthome-modules.service` | Шлюз Module Bus |
-| `selena-display.service` | Режим кіоску для інтерфейсу (дивіться [Налаштування кіоску](kiosk-setup.md)) |
+| `piper-tts.service` | Нативний Piper TTS HTTP-сервер (встановлюється тільки коли `voice.tts.primary.cuda: true`) |
+| `selena-display.service` | Wayland kiosk-дисплей (встановлюється автоматично коли є `cage` + підключений DRM-вихід) |
 
 ---
 

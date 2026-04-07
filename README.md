@@ -30,33 +30,63 @@ Three principles:
 
 ### Requirements
 
-- Raspberry Pi 4/5 (4-8 GB RAM), NVIDIA Jetson Orin Nano (8 GB), or any Linux SBC (ARM64/x86_64)
+- Raspberry Pi 4/5 (4–8 GB RAM), NVIDIA Jetson Orin Nano (8 GB), or any Linux SBC (ARM64 / x86_64)
 - Ubuntu 22.04+ (or Raspberry Pi OS)
-- Docker + Docker Compose (auto-installed by setup script)
+- Docker + Docker Compose (installed automatically by `install.sh`)
 
-### Launch (automatic)
+### One-shot install (recommended)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-
-cp .env.example .env
-# Set GEMINI_API_KEY and other values in .env
-
-sudo bash scripts/setup.sh
+sudo ./install.sh
 ```
 
-The setup script installs all dependencies, builds Docker images, configures the kiosk display service, and starts everything automatically.
+`install.sh` does the bare minimum to get the system up and prints a URL like
+`http://<lan-ip>/`. Open that URL in any browser — the rest of the
+installation (model downloads, voice selection, LLM, admin user, platform
+registration, native systemd services) happens inside the **first-run wizard**
+with a live progress bar.
 
-### Launch (manual)
+What `install.sh` actually does:
+
+| Step                          | Why                                                |
+| ----------------------------- | -------------------------------------------------- |
+| `apt-get install` base pkgs   | docker, ffmpeg, arp-scan, pulseaudio, nmcli, …     |
+| Create `selena` system user   | required by the systemd units                      |
+| Create `/var/lib/selena/...`  | data, logs, model directories, `/secure`           |
+| Seed local Piper voices       | copies voices from `~/.local/share/piper/models`   |
+| `cp config/core.yaml.example` | initializes `wizard.completed=false`               |
+| `npx vite build`              | builds the frontend bundle                         |
+| `docker compose up -d`        | starts `selena-core` and `selena-agent` containers |
+| Stage systemd units           | placed in `/etc/systemd/system` (not enabled yet)  |
+
+The wizard's **provisioning** stage then handles everything else: STT/TTS/LLM
+download, applying language and timezone, creating the admin (owner) account,
+issuing a session token, and finally enabling the systemd units via
+`scripts/install-systemd.sh`. After it finishes the page automatically navigates
+to the dashboard of a fully working device.
+
+> All model and voice paths used to be hardcoded. They now live in
+> `config/core.yaml` (`voice.tts.models_dir`, `stt.vosk.models_dir`,
+> `voice.speaker_id.embeddings_dir`, etc.) and are written by the wizard so
+> nothing needs manual editing.
+
+### Re-running the wizard
+
+```bash
+curl -X POST http://localhost/api/ui/wizard/reset
+# then reload the browser
+```
+
+### Launch (manual, no installer)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-
 cp .env.example .env
-docker compose build
-docker compose up -d
+cp config/core.yaml.example config/core.yaml
+docker compose up -d --build
 ```
 
 **Core API + UI (unified):** `http://localhost` or `http://smarthome.local`
@@ -245,7 +275,7 @@ CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
 UI_PORT=80
-PLATFORM_API_URL=https://smarthome-lk.com/api/v1
+PLATFORM_API_URL=https://selenehome.tech/api/v1
 PLATFORM_DEVICE_HASH=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

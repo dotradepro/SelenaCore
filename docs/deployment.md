@@ -29,24 +29,35 @@ This guide covers hardware requirements, installation, configuration, and ongoin
 
 ## Installation
 
-### Automatic Setup (Recommended)
+### Unified Installer (Recommended)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-sudo bash scripts/setup.sh
+sudo ./install.sh
 ```
 
-The setup script performs the following steps in order:
+`install.sh` is the **only** script users run. It does the bare minimum to get
+the system reachable in a browser, then prints a URL like `http://<lan-ip>/`.
+Open that URL — the rest of the setup happens inside the **first-run wizard**
+(model selection, downloads, admin user, platform registration, native systemd
+services) with a live progress bar.
 
-1. Install system packages (FFmpeg, PortAudio, VLC, ALSA utils)
-2. Install Docker and Docker Compose
-3. Install Python 3.11 and pip
-4. Create data directories (`/var/lib/selena`, `/secure`)
-5. Generate module authentication tokens
-6. Build Docker images
-7. Start all services
-8. Display the access URL
+What `install.sh` does:
+
+1. Detects hardware (Jetson / Raspberry / CUDA / generic Linux)
+2. `apt-get install` host packages (Docker, FFmpeg, arp-scan, pulseaudio, nmcli, …)
+3. Creates the `selena` system user and adds it to docker/audio/video groups
+4. Creates `/var/lib/selena/{models,…}`, `/var/log/selena`, `/secure`
+5. Seeds Piper voices from `~/.local/share/piper/models/` if present
+6. Copies `config/core.yaml.example` → `config/core.yaml` with `wizard.completed=false`
+7. `npx vite build` (frontend bundle)
+8. `docker compose up -d --build` (selena-core + selena-agent)
+9. Stages `smarthome-core.service` / `smarthome-agent.service` into `/etc/systemd/system/` (not enabled — the wizard does that)
+10. Prints a banner with the wizard URL
+
+`install.sh` does NOT download Whisper / Vosk / Piper voices / Ollama models —
+those are downloaded by the wizard with progress visible in the browser.
 
 ### Manual Setup
 
@@ -169,7 +180,7 @@ All configuration is managed through the `.env` file in the project root. Copy `
 | `CORE_SECURE_DIR` | `/secure` | Encrypted secrets directory |
 | `CORE_LOG_LEVEL` | `INFO` | Log level |
 | `DEBUG` | `false` | Enable debug mode and Swagger UI |
-| `PLATFORM_API_URL` | `https://smarthome-lk.com/api/v1` | Cloud platform URL |
+| `PLATFORM_API_URL` | `https://selenehome.tech/api/v1` | Cloud platform URL |
 | `PLATFORM_DEVICE_HASH` | *(empty)* | Device identification hash |
 | `UI_PORT` | `80` | Web UI port |
 | `UI_HTTPS` | `true` | Enable HTTPS for UI |
@@ -229,8 +240,8 @@ sudo systemctl start smarthome-core.service
 | Service | Purpose |
 |---------|---------|
 | `smarthome-agent.service` | Integrity monitoring agent |
-| `smarthome-modules.service` | Module bus gateway |
-| `getty@tty1` (with override) | Headless kiosk mode (see [Kiosk Setup](kiosk-setup.md)) |
+| `piper-tts.service` | Native Piper TTS HTTP server (installed only when `voice.tts.primary.cuda: true`) |
+| `selena-display.service` | Wayland kiosk display (installed automatically when `cage` + connected DRM output detected) |
 | `vosk-server.service` | Vosk STT server |
 | `piper-tts.service` | Piper TTS server (native, GPU) |
 

@@ -71,26 +71,16 @@ sudo systemctl daemon-reload
 sudo systemctl restart getty@tty1.service
 ```
 
-### 4. Скрипт запуску кіоску
+### 4. Запуск кіоску
 
-Файл `scripts/kiosk-start.sh` запускається автоматично з `~/.bash_profile` на tty1:
+Кіоск-дисплей тепер встановлюється автоматично майстром (крок провижінінга
+`install_native_services`) через [scripts/install-systemd.sh](../../scripts/install-systemd.sh).
+Скрипт визначає наявність `cage` та підключеного DRM-виходу і генерує
+`selena-display.service`, що вказує на [scripts/start-display.sh](../../scripts/start-display.sh),
+який запускає `cage + chromium` у kiosk-режимі на активному VT.
 
-```bash
-# ~/.bash_profile
-if [ -f "$HOME/.profile" ]; then
-    . "$HOME/.profile"
-fi
-
-# Автозапуск кіоску тільки на tty1
-if [ "$(tty)" = "/dev/tty1" ]; then
-    exec /path/to/SelenaCore/scripts/kiosk-start.sh
-fi
-```
-
-Скрипт:
-1. Чекає готовності SelenaCore API (до 60 секунд)
-2. Створює тимчасовий `.xinitrc` (вимикає затемнення екрану, ховає курсор)
-3. Запускає `xinit` з Chromium у режимі кіоску на `vt1`
+Ніяких ручних модифікацій `~/.bash_profile` чи autologin agetty більше не
+потрібно.
 
 ### 5. PulseAudio для голосу
 
@@ -183,7 +173,8 @@ sudo reboot
 - Система завантажується в headless TTY
 - Управління повністю через SSH
 - QR-код для мобільного налаштування через `tty_status.py`
-- `smarthome-display.service` показує статус TUI на tty1
+- TUI-статус можна запустити вручну:
+  `docker compose exec core python -m system_modules.ui_core.tty_status`
 
 ---
 

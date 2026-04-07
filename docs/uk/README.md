@@ -34,29 +34,50 @@ SelenaCore — це відкрите (MIT) ядро розумного дому,
 - Ubuntu 22.04+ (або Raspberry Pi OS)
 - Docker + Docker Compose (автоматично встановлюється скриптом налаштування)
 
-### Запуск (автоматичний)
+### Установка одною командою (рекомендовано)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-
-cp .env.example .env
-# Вкажіть GEMINI_API_KEY та інші значення у .env
-
-sudo bash scripts/setup.sh
+sudo ./install.sh
 ```
 
-Скрипт налаштування встановлює всі залежності, збирає Docker-образи, налаштовує сервіс кіоск-дисплея та запускає все автоматично.
+`install.sh` робить мінімум, щоб система стала доступна в браузері, і друкує
+URL виду `http://<lan-ip>/`. Решту установки (вибір моделей STT/TTS/LLM,
+скачування, створення адміністратора, реєстрація на платформі, нативні systemd
+сервіси) ви проходите у **майстрі першого запуску** з прогрес-баром.
 
-### Запуск (ручний)
+Що робить `install.sh`:
+
+| Крок | Навіщо |
+|------|--------|
+| `apt-get install` базові пакети | docker, ffmpeg, arp-scan, pulseaudio, nmcli, … |
+| Створення системного користувача `selena` | потрібен для systemd-юнітів |
+| Створення `/var/lib/selena/{models,…}`, `/secure` | каталоги даних і моделей |
+| Сідування Piper-голосів | копіює голоси з `~/.local/share/piper/models` |
+| `cp config/core.yaml.example` | `wizard.completed=false` |
+| `npx vite build` | збирає фронтенд |
+| `docker compose up -d` | стартує `selena-core` + `selena-agent` |
+| Стейджинг systemd-юнітів | копіює до `/etc/systemd/system/` (поки не enable) |
+
+Майстер потім сам качає STT/TTS/LLM моделі, створює адміна, видає сесію
+браузеру і вмикає systemd-юніти через `scripts/install-systemd.sh`. Після
+цього сторінка автоматично переходить на дашборд робочого пристрою.
+
+### Перезапуск майстра
+
+```bash
+curl -X POST http://localhost/api/ui/wizard/reset
+```
+
+### Запуск (ручний, без installer.sh)
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
 cd SelenaCore
-
 cp .env.example .env
-docker compose build
-docker compose up -d
+cp config/core.yaml.example config/core.yaml
+docker compose up -d --build
 ```
 
 **Core API:** `http://localhost`
@@ -245,7 +266,7 @@ CORE_DATA_DIR=/var/lib/selena
 CORE_SECURE_DIR=/secure
 CORE_LOG_LEVEL=INFO
 UI_PORT=80
-PLATFORM_API_URL=https://smarthome-lk.com/api/v1
+PLATFORM_API_URL=https://selenehome.tech/api/v1
 PLATFORM_DEVICE_HASH=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
