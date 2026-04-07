@@ -457,25 +457,59 @@ create_user_and_dirs() {
         "$DATA_DIR" \
         "$DATA_DIR/models" \
         "$DATA_DIR/models/piper" \
-        "$DATA_DIR/models/vosk" \
         "$DATA_DIR/models/whisper" \
         "$DATA_DIR/speaker_embeddings" \
         "$LOG_DIR"
 
     run install -d -m 0750 -o "$SELENA_USER" -g "$SELENA_USER" "$SECURE_DIR"
 
+    # Canonical model directories on the HOST (not docker volumes), so the
+    # native services (piper-tts.service, ollama.service) and the container
+    # both see the same files. The user can later add/remove voices via the
+    # Settings UI OR by simply dropping files into these dirs.
+    create_shared_model_dirs
     seed_piper_voices_from_host
 }
 
+create_shared_model_dirs() {
+    local origin_user="${SUDO_USER:-root}"
+    local origin_home
+    origin_home="$(getent passwd "$origin_user" | cut -d: -f6 || echo /root)"
+
+    # Piper voices live in the operator's home (matches scripts/piper-tts.service
+    # which gets templated with __USER__/__HOME__ pointing at SUDO_USER).
+    PIPER_HOST_DIR="$origin_home/.local/share/piper/models"
+    run install -d -m 0775 -o "$origin_user" -g "$origin_user" "$origin_home/.local/share/piper"
+    run install -d -m 0775 -o "$origin_user" -g "$origin_user" "$PIPER_HOST_DIR"
+
+    # Vosk lives under /var/lib/selena/models/vosk, owned by the operator so
+    # they can drop/delete models manually. The container (root) has rwx
+    # everywhere by virtue of running privileged.
+    VOSK_HOST_DIR="$DATA_DIR/models/vosk"
+    run install -d -m 0775 -o "$origin_user" -g "$origin_user" "$VOSK_HOST_DIR"
+
+    # Ollama models live where the official installer put them. The wizard's
+    # provisioning calls the host ollama.service over HTTP, so we just need
+    # to make sure the dir exists; ollama.service writes to it.
+    OLLAMA_HOST_DIR="/usr/share/ollama/.ollama/models"
+    [ -d "$OLLAMA_HOST_DIR" ] || run install -d -m 0755 "$OLLAMA_HOST_DIR" 2>/dev/null || true
+
+    log "Shared model dirs:"
+    echo "    Piper:  $PIPER_HOST_DIR"
+    echo "    Vosk:   $VOSK_HOST_DIR"
+    echo "    Ollama: $OLLAMA_HOST_DIR"
+}
+
 seed_piper_voices_from_host() {
-    local dest="$DATA_DIR/models/piper"
+    # Voices already in the operator's piper dir don't need seeding — they're
+    # already there. We only copy from /usr/local/share/piper or /root caches
+    # if they exist.
+    local dest="${PIPER_HOST_DIR:-}"
+    [ -z "$dest" ] && return 0
+    local origin_user="${SUDO_USER:-root}"
     local copied=0
-    local origin_user="${SUDO_USER:-}"
     local candidates=()
-    if [ -n "$origin_user" ] && [ -d "/home/$origin_user/.local/share/piper/models" ]; then
-        candidates+=("/home/$origin_user/.local/share/piper/models")
-    fi
-    [ -d "/root/.local/share/piper/models" ] && candidates+=("/root/.local/share/piper/models")
+    [ -d "/root/.local/share/piper/models" ] && [ "/root/.local/share/piper/models" != "$dest" ] && candidates+=("/root/.local/share/piper/models")
     [ -d "/usr/local/share/piper" ] && candidates+=("/usr/local/share/piper")
 
     [ ${#candidates[@]} -eq 0 ] && return 0
@@ -493,7 +527,7 @@ seed_piper_voices_from_host() {
         done
     done
     if [ "$copied" -gt 0 ]; then
-        chown -R "$SELENA_USER:$SELENA_USER" "$dest"
+        chown -R "$origin_user:$origin_user" "$dest"
         log "Seeded $copied Piper voice file(s) from host cache → $dest"
     fi
 }
@@ -536,6 +570,10 @@ bootstrap_config() {
         log "Created .env from example"
     fi
 
+    # Pin docker-compose mounts to the canonical host paths so the container
+    # and the native services share the same model directories.
+    write_env_overrides
+
     if $DRY_RUN; then
         echo "    [dry-run] would force wizard.completed=False / system.initialized=False"
         return
@@ -546,9 +584,49 @@ p = pathlib.Path("$INSTALL_DIR/config/core.yaml")
 cfg = yaml.safe_load(p.read_text()) or {}
 cfg.setdefault("wizard", {})["completed"] = False
 cfg.setdefault("system", {})["initialized"] = False
+# Make the in-process voice/STT readers point at the SAME directories the
+# wizard's provisioning step writes into and the host services consume.
+cfg.setdefault("voice", {}).setdefault("tts", {})["models_dir"] = "/var/lib/selena/models/piper"
+cfg.setdefault("stt", {}).setdefault("vosk", {})["models_dir"] = "/var/lib/selena/models/vosk"
 p.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
-print("[+] wizard.completed=False persisted")
+print("[+] wizard.completed=False, model dirs pinned in core.yaml")
 PYEOF
+}
+
+write_env_overrides() {
+    # Append/update the docker-compose env vars that drive the bind mounts:
+    #   PIPER_MODELS_DIR  → mounted at /var/lib/selena/models/piper inside core
+    #   VOSK_MODELS_DIR   → mounted at /var/lib/selena/models/vosk inside core
+    #   OLLAMA_MODELS_DIR → mounted RO at the same path inside core
+    #   HOST_UID          → for the PulseAudio socket path
+    local env_file="$INSTALL_DIR/.env"
+    [ -f "$env_file" ] || run touch "$env_file"
+    local origin_user="${SUDO_USER:-root}"
+    local origin_uid
+    origin_uid="$(id -u "$origin_user" 2>/dev/null || echo 0)"
+    local piper_dir="${PIPER_HOST_DIR:-/root/.local/share/piper/models}"
+    local vosk_dir="${VOSK_HOST_DIR:-$DATA_DIR/models/vosk}"
+    local ollama_dir="${OLLAMA_HOST_DIR:-/usr/share/ollama/.ollama/models}"
+
+    if $DRY_RUN; then
+        echo "    [dry-run] would write PIPER_MODELS_DIR=$piper_dir VOSK_MODELS_DIR=$vosk_dir OLLAMA_MODELS_DIR=$ollama_dir HOST_UID=$origin_uid into $env_file"
+        return
+    fi
+    _set_env_var "$env_file" PIPER_MODELS_DIR  "$piper_dir"
+    _set_env_var "$env_file" VOSK_MODELS_DIR   "$vosk_dir"
+    _set_env_var "$env_file" OLLAMA_MODELS_DIR "$ollama_dir"
+    _set_env_var "$env_file" HOST_UID          "$origin_uid"
+    chown "$SELENA_USER:$SELENA_USER" "$env_file" 2>/dev/null || true
+    log "Pinned docker-compose env: PIPER/VOSK/OLLAMA dirs + HOST_UID=$origin_uid"
+}
+
+_set_env_var() {
+    local file="$1" key="$2" value="$3"
+    if grep -qE "^${key}=" "$file"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$file"
+    fi
 }
 
 # ── Phase 4: Frontend (skipped by default — bundle is committed) ───
