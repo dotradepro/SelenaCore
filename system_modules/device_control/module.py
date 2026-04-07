@@ -95,9 +95,18 @@ class DeviceControlModule(SystemModule):
     # ── Public helpers used by routes.py ─────────────────────────────────
 
     async def add_device_watcher(self, device_id: str) -> None:
-        """Spawn a watcher for a newly added device. Called from POST /devices."""
+        """Spawn a watcher for a newly added device. Called from POST /devices.
+
+        Skips disabled devices — they are visible in the registry but not
+        actively managed (no driver connection, no command dispatch).
+        """
         if device_id in self._watch_tasks:
             return
+        async with self._db_session() as session:
+            from core.registry.models import Device
+            d = await session.get(Device, device_id)
+            if d is None or not bool(d.enabled):
+                return
         task = asyncio.create_task(self._watch_device(device_id))
         self._watch_tasks[device_id] = task
 
@@ -120,21 +129,39 @@ class DeviceControlModule(SystemModule):
         """Apply a state update to a device through its driver. Used by
         the routes for /devices/{id}/command and /devices/{id}/test.
 
-        On network failure tries to auto-downgrade tuya_local → tuya_cloud
-        once, then retries the command on the new driver.
+        Refuses to operate on disabled devices — those are intentionally
+        offline (typically tuya_cloud entries where local control isn't
+        available). The user must explicitly enable them first.
         """
-        async def _run_once() -> None:
+        async with self._db_session() as session:
+            from core.registry.models import Device
+            d = await session.get(Device, device_id)
+            if d is None:
+                raise DriverError(f"Device {device_id} not found in registry")
+            if not bool(d.enabled):
+                raise DriverError(
+                    "Device is disabled — local control unavailable. "
+                    "Enable it via PATCH /devices/{id} {\"enabled\": true} "
+                    "if you accept cloud-only control."
+                )
+
+        # First attempt against the (possibly cached) driver. On any
+        # DriverError, drop the cached instance and try once more with a
+        # fresh connection. This recovers from session-key desync without
+        # waiting for the watcher's exponential backoff.
+        drv: DeviceDriver | None = None
+        try:
             drv = await self._get_or_create_driver(device_id)
             await drv.set_state(state)
-
-        try:
-            await _run_once()
-        except DriverError as exc:
-            # Attempt one auto-downgrade retry for network-level errors.
-            if await self._maybe_downgrade_to_cloud(device_id, exc):
-                await _run_once()
-            else:
-                raise
+        except DriverError:
+            stale = self._drivers.pop(device_id, None)
+            if stale is not None:
+                try:
+                    await stale.disconnect()
+                except Exception:
+                    pass
+            drv = await self._get_or_create_driver(device_id)
+            await drv.set_state(state)
 
         await self.patch_device_state(device_id, state)
         await self.publish("device.state_changed", {
@@ -237,7 +264,10 @@ class DeviceControlModule(SystemModule):
             }
 
         async with self._db_session() as session:
-            base = select(Device).where(Device.module_id == self.name)
+            base = select(Device).where(
+                Device.module_id == self.name,
+                Device.enabled == True,  # noqa: E712
+            )
 
             # Tier 1: both entity_type AND location.
             if entity and location:
@@ -292,7 +322,10 @@ class DeviceControlModule(SystemModule):
         async with self._db_session() as session:
             from core.registry.models import Device
             result = await session.execute(
-                select(Device.device_id).where(Device.module_id == self.name)
+                select(Device.device_id).where(
+                    Device.module_id == self.name,
+                    Device.enabled == True,  # noqa: E712
+                )
             )
             ids = [r[0] for r in result.all()]
         for did in ids:
@@ -346,17 +379,10 @@ class DeviceControlModule(SystemModule):
                 self._drivers.pop(device_id, None)
                 attempt += 1
 
-                # Auto-downgrade tuya_local → tuya_cloud after 2 consecutive
-                # "Device Unreachable" / network errors. This covers the case
-                # where the device sits behind a different router/subnet and
-                # the LAN protocol cannot reach it — Tuya cloud works over
-                # the internet so the fallback is the correct strategy.
-                if attempt >= 2 and await self._maybe_downgrade_to_cloud(device_id, exc):
-                    # Reset backoff so we immediately try cloud path.
-                    attempt = 0
-                    await asyncio.sleep(0.5)
-                    continue
-
+                # No automatic downgrade to cloud — local control is the
+                # whole point. The device just stays "offline" until LAN
+                # comes back. The user can manually flip enabled=true on a
+                # cloud-only device if they accept the internet dependency.
                 delay = min(60, 2 ** min(attempt, 6))
                 try:
                     await asyncio.sleep(delay)
@@ -390,61 +416,6 @@ class DeviceControlModule(SystemModule):
             "device.online" if online else "device.offline",
             {"device_id": device_id},
         )
-
-    async def _maybe_downgrade_to_cloud(
-        self, device_id: str, error: Exception,
-    ) -> bool:
-        """If a tuya_local device is unreachable, switch it to tuya_cloud.
-
-        Returns True if the device was downgraded (the caller should retry
-        with the new driver immediately).
-        """
-        err_text = str(error).lower()
-        # Only downgrade on clearly network-level errors — not auth / config.
-        is_network_error = (
-            "unreachable" in err_text
-            or "network error" in err_text
-            or "err 905" in err_text
-            or "'err': '905'" in err_text
-            or "timed out" in err_text
-            or "timeout" in err_text
-        )
-        if not is_network_error:
-            return False
-
-        async with self._db_session() as session:
-            from core.registry.models import Device
-            d = await session.get(Device, device_id)
-            if d is None:
-                return False
-            if d.protocol != "tuya_local":
-                return False  # already cloud or other driver
-            meta = json.loads(d.meta) if d.meta else {}
-            cloud_id = (meta.get("tuya") or {}).get("cloud_device_id") or \
-                       (meta.get("tuya") or {}).get("device_id", "")
-            if not cloud_id:
-                return False  # no cloud fallback possible
-            # Check the cloud session is actually available before downgrading.
-            try:
-                from .drivers.tuya_cloud import TuyaCloudClient
-                await TuyaCloudClient.get().ensure_manager()
-            except Exception as exc:
-                logger.warning(
-                    "device-control: cannot downgrade %s to cloud — no session: %s",
-                    device_id, exc,
-                )
-                return False
-            d.protocol = "tuya_cloud"
-            await session.commit()
-
-        logger.warning(
-            "device-control: %s downgraded from tuya_local → tuya_cloud "
-            "(LAN unreachable, using Tuya cloud fallback)",
-            device_id,
-        )
-        # Drop cached driver so next _get_or_create_driver builds cloud one.
-        self._drivers.pop(device_id, None)
-        return True
 
     # ── Intent ownership claim ────────────────────────────────────────────
 

@@ -60,6 +60,7 @@ class PatchDeviceBody(BaseModel):
     location: str | None = None
     capabilities: list[str] | None = None
     meta: dict[str, Any] | None = None
+    enabled: bool | None = None
 
 
 class CommandBody(BaseModel):
@@ -87,6 +88,59 @@ class WizardImportBody(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
+def _is_private_ip(ip: str) -> bool:
+    """Return True if ``ip`` looks like an RFC1918 LAN address.
+
+    Tuya cloud often returns the public WAN IP of the user's router in the
+    device's ``ip`` field — that address is useless for tinytuya which needs
+    to TCP-connect on port 6668 inside the local network. We use this to
+    decide whether the cloud-supplied IP is trustworthy.
+    """
+    if not ip:
+        return False
+    try:
+        import ipaddress
+        return ipaddress.ip_address(ip).is_private
+    except (ValueError, TypeError):
+        return False
+
+
+async def _scan_tuya_lan() -> dict[str, dict[str, Any]]:
+    """Run tinytuya LAN broadcast scan, return ``{gwId: {ip, version}}``.
+
+    Blocks for ~15 seconds while listening for Tuya UDP broadcasts on
+    ports 6666/6667/6668. Tuya devices broadcast every few seconds, so
+    ``maxretry=15`` (matching tinytuya default) catches each device with
+    high reliability. Runs in a thread to keep the event loop alive.
+    Returns an empty dict on any failure (we treat scan as best-effort —
+    devices not found just stay disabled).
+    """
+    def _do_scan() -> dict[str, dict[str, Any]]:
+        try:
+            import tinytuya  # type: ignore
+        except ImportError:
+            return {}
+        try:
+            raw = tinytuya.deviceScan(
+                verbose=False, maxretry=15, color=False, poll=False, forcescan=False,
+            )
+        except Exception as exc:
+            logger.warning("tinytuya LAN scan failed: %s", exc)
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for ip, info in (raw or {}).items():
+            gw_id = info.get("gwId") or info.get("id")
+            if not gw_id:
+                continue
+            out[str(gw_id)] = {
+                "ip": str(ip),
+                "version": str(info.get("version") or "3.3"),
+            }
+        return out
+
+    return await asyncio.to_thread(_do_scan)
+
+
 async def _device_to_dict(d: Any) -> dict[str, Any]:
     return {
         "device_id": d.device_id,
@@ -100,6 +154,7 @@ async def _device_to_dict(d: Any) -> dict[str, Any]:
         "state": json.loads(d.state) if d.state else {},
         "last_seen": d.last_seen.timestamp() if d.last_seen else None,
         "module_id": d.module_id,
+        "enabled": bool(d.enabled),
     }
 
 
@@ -234,6 +289,8 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     d.location = final_location
                 if body.capabilities is not None:
                     d.set_capabilities(body.capabilities)
+                if body.enabled is not None:
+                    d.enabled = bool(body.enabled)
                 d.set_meta(new_meta)
                 payload = await _device_to_dict(d)
         try:
@@ -241,6 +298,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         except Exception as exc:
             logger.warning("device-control: pattern regen failed: %s", exc)
         # Restart watcher to pick up new meta (e.g. new IP / DPS map).
+        # add_device_watcher itself skips disabled devices.
         await svc.remove_device_watcher(device_id)
         await svc.add_device_watcher(device_id)
         return payload
@@ -344,6 +402,73 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         TuyaCloudClient.reset()
         return {"status": "ok"}
 
+    @router.post("/tuya/wizard/lan-rescan")
+    async def wizard_lan_rescan() -> dict[str, Any]:
+        """Re-scan the LAN and update IP/version for existing Tuya devices.
+
+        Use this when an imported device shows as offline because the cloud
+        gave us a wrong IP. We discover the real LAN IP via tinytuya
+        broadcast and update meta.tuya.ip / meta.tuya.version in place.
+        Devices that are now reachable are switched to tuya_local + enabled.
+        Devices not found on the LAN are left untouched.
+        """
+        from core.registry.models import Device
+
+        lan_map = await _scan_tuya_lan()
+        logger.info(
+            "tuya lan-rescan: found %d device(s) on LAN: %s",
+            len(lan_map), list(lan_map.keys()),
+        )
+
+        updated: list[dict[str, Any]] = []
+        async with svc._db_session() as session:
+            res = await session.execute(
+                select(Device).where(Device.module_id == svc.name)
+            )
+            devices = list(res.scalars())
+
+        for d in devices:
+            meta = json.loads(d.meta) if d.meta else {}
+            tuya_meta = meta.get("tuya") or {}
+            cloud_id = tuya_meta.get("cloud_device_id") or tuya_meta.get("device_id")
+            if not cloud_id:
+                continue
+            lan = lan_map.get(cloud_id)
+            if not lan:
+                continue
+            old_ip = tuya_meta.get("ip", "")
+            old_version = tuya_meta.get("version", "")
+            if lan["ip"] == old_ip and lan["version"] == old_version:
+                continue
+            tuya_meta["ip"] = lan["ip"]
+            tuya_meta["version"] = lan["version"]
+            meta["tuya"] = tuya_meta
+
+            async with svc._db_session() as session:
+                async with session.begin():
+                    fresh = await session.get(Device, d.device_id)
+                    if fresh is None:
+                        continue
+                    fresh.set_meta(meta)
+                    # If device has a local_key and we now have a real LAN
+                    # IP, promote to tuya_local + enabled.
+                    if tuya_meta.get("local_key"):
+                        fresh.protocol = "tuya_local"
+                        fresh.enabled = True
+
+            # Restart watcher to pick up new IP / promoted protocol.
+            await svc.remove_device_watcher(d.device_id)
+            await svc.add_device_watcher(d.device_id)
+            updated.append({
+                "device_id": d.device_id,
+                "name": d.name,
+                "old_ip": old_ip,
+                "new_ip": lan["ip"],
+                "version": lan["version"],
+            })
+
+        return {"status": "ok", "updated": updated, "lan_devices_found": len(lan_map)}
+
     @router.post("/tuya/wizard/refresh")
     async def wizard_refresh() -> dict[str, Any]:
         """Re-query the Smart Life account for its current device list.
@@ -387,6 +512,17 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         wanted = {d["id"] for d in cloud_devices if d["id"] in set(body.selected_ids)}
         cloud_by_id = {d["id"]: d for d in cloud_devices}
 
+        # Run a single LAN broadcast scan to discover real LAN IPs +
+        # protocol versions. The cloud's ``ip`` field is unreliable — Tuya
+        # often returns the router's WAN IP (e.g. 209.x.x.x) which tinytuya
+        # cannot reach. We trust the LAN scan over the cloud whenever the
+        # device responds to broadcasts.
+        lan_map = await _scan_tuya_lan()
+        logger.info(
+            "tuya import: LAN scan discovered %d device(s): %s",
+            len(lan_map), list(lan_map.keys()),
+        )
+
         created: list[dict[str, Any]] = []
         skipped: list[str] = []
 
@@ -395,9 +531,23 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             if cd is None:
                 skipped.append(cid)
                 continue
-            # Pick local LAN if we have ip + local_key, else fall back to cloud.
-            has_local = bool(cd.get("ip")) and bool(cd.get("local_key"))
+            # Prefer LAN scan results over cloud-reported ip/version.
+            lan = lan_map.get(cid)
+            if lan:
+                effective_ip = lan["ip"]
+                effective_version = lan["version"]
+            else:
+                cloud_ip = cd.get("ip", "") or ""
+                # Fall back to cloud-reported IP only if it's a private LAN
+                # address. Public IPs are router WAN addresses — useless.
+                effective_ip = cloud_ip if _is_private_ip(cloud_ip) else ""
+                effective_version = str(cd.get("version") or "3.3")
+
+            # tuya_local requires real LAN IP + local_key. Without either,
+            # save as inactive cloud-only entry.
+            has_local = bool(effective_ip) and bool(cd.get("local_key"))
             protocol = "tuya_local" if has_local else "tuya_cloud"
+            enabled = has_local
             # Auto-detect the "switch" code: Tuya devices expose their on/off
             # status under one of several codes ("switch", "switch_1",
             # "switch_led", etc.). Pick the first one we recognise; fall back
@@ -422,8 +572,8 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "device_id": cd["id"],
                     "cloud_device_id": cd["id"],
                     "local_key": cd.get("local_key", ""),
-                    "ip": cd.get("ip", ""),
-                    "version": str(cd.get("version", "3.3")),
+                    "ip": effective_ip,
+                    "version": effective_version,
                     "dps_map": {"on": "1"},        # local LAN DPS index (default)
                     "code_map": {"on": on_code},   # cloud status code (auto-detected)
                     "category": cd.get("category", ""),
@@ -442,6 +592,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                         protocol=protocol,
                         entity_type="switch",
                         module_id=svc.name,
+                        enabled=enabled,
                     )
                     device.set_capabilities(["on", "off"])
                     device.set_meta(meta)
@@ -452,8 +603,14 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 await on_entity_changed("device", device_id, "created")
             except Exception:
                 pass
+            # add_device_watcher itself skips disabled devices.
             await svc.add_device_watcher(device_id)
-            created.append({"device_id": device_id, "name": cd.get("name", cid), "protocol": protocol})
+            created.append({
+                "device_id": device_id,
+                "name": cd.get("name", cid),
+                "protocol": protocol,
+                "enabled": enabled,
+            })
 
         return {"status": "ok", "created": created, "skipped": skipped}
 

@@ -70,8 +70,19 @@ class TuyaLocalDriver(DeviceDriver):
             version=self._version,
         )
         d.set_socketPersistent(True)
-        d.set_socketTimeout(15)
-        d.set_socketRetryLimit(0)  # we handle retries at the watcher level
+        # Short receive timeout (1s) lets stream_events() yield the lock
+        # quickly so set_state() / get_state() can interleave without
+        # waiting for the watcher to finish a long blocking recv. tinytuya
+        # returns None on timeout (treated as heartbeat). With this value
+        # the worst-case command latency is ~1s instead of 15s.
+        d.set_socketTimeout(1)
+        # Tuya v3.4/3.5 negotiate a session key on the first command — that
+        # handshake takes 2-3 inner retries before it stabilises. Setting
+        # retry=0 made every status() on a v3.4 device fail with Err 905
+        # "Device Unreachable". Leave the tinytuya default (5) so the
+        # handshake succeeds. The watcher's exponential backoff still
+        # protects against truly-offline devices.
+        d.set_socketRetryLimit(5)
         return d
 
     def _dps_to_logical(self, dps: dict[str, Any] | None) -> dict[str, Any]:
@@ -134,34 +145,44 @@ class TuyaLocalDriver(DeviceDriver):
             return
         if self._dev is None:
             await self.connect()
-        try:
-            await asyncio.to_thread(
-                lambda: self._dev.set_multiple_values(dps, nowait=False)
-            )
-        except Exception as exc:
-            raise DriverError(f"Tuya set_state failed: {exc}") from exc
+        # Serialize against stream_events()'s receive() loop. Without this,
+        # tinytuya v3.4 frequently corrupts its internal session-key state
+        # and returns Err 914 "Check device key or version".
+        async with self._lock:
+            try:
+                await asyncio.to_thread(
+                    lambda: self._dev.set_multiple_values(dps, nowait=False)
+                )
+            except Exception as exc:
+                raise DriverError(f"Tuya set_state failed: {exc}") from exc
 
     async def get_state(self) -> dict[str, Any]:
         if self._dev is None:
             return await self.connect()
-        try:
-            status = await asyncio.to_thread(self._dev.status)
-        except Exception as exc:
-            raise DriverError(f"Tuya get_state failed: {exc}") from exc
+        async with self._lock:
+            try:
+                status = await asyncio.to_thread(self._dev.status)
+            except Exception as exc:
+                raise DriverError(f"Tuya get_state failed: {exc}") from exc
         return self._dps_to_logical((status or {}).get("dps"))
 
     async def stream_events(self) -> AsyncGenerator[dict[str, Any], None]:
         if self._dev is None:
             await self.connect()
         # tinytuya.receive() is a blocking sync call. Run each call in a
-        # thread so the event loop stays responsive.
+        # thread so the event loop stays responsive. The lock is acquired
+        # PER ITERATION so set_state()/get_state() can interleave between
+        # receives instead of waiting for the watcher to finish.
         while True:
-            try:
-                payload = await asyncio.to_thread(self._dev.receive)
-            except Exception as exc:
-                raise DriverError(f"Tuya socket dropped: {exc}") from exc
+            async with self._lock:
+                try:
+                    payload = await asyncio.to_thread(self._dev.receive)
+                except Exception as exc:
+                    raise DriverError(f"Tuya socket dropped: {exc}") from exc
             if payload is None:
                 # tinytuya returns None on heartbeat / nothing — keep waiting.
+                # Brief yield so the lock can be picked up by set_state.
+                await asyncio.sleep(0)
                 continue
             if not isinstance(payload, dict):
                 continue

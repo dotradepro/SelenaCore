@@ -72,6 +72,18 @@ def _migrate_entity_location_columns(connection) -> None:
         logger.info("Migration: added location column to devices")
 
 
+def _migrate_enabled_column(connection) -> None:
+    """Add enabled column to devices table if missing."""
+    import sqlalchemy as sa
+    inspector = sa.inspect(connection)
+    columns = {c["name"] for c in inspector.get_columns("devices")}
+    if "enabled" not in columns:
+        connection.execute(sa.text(
+            "ALTER TABLE devices ADD COLUMN enabled BOOLEAN DEFAULT 1 NOT NULL"
+        ))
+        logger.info("Migration: added enabled column to devices")
+
+
 async def _preload_module_registry(session_factory) -> None:
     """Load registered_modules from DB into in-memory ModuleRegistry.
 
@@ -124,6 +136,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await conn.run_sync(_migrate_keywords_columns)
         # Migration: add entity_type + location columns (Phase 6)
         await conn.run_sync(_migrate_entity_location_columns)
+        # Migration: add enabled column for inactive cloud-only Tuya devices
+        await conn.run_sync(_migrate_enabled_column)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     app.state.db_session_factory = session_factory
     app.state.db_engine = engine

@@ -46,6 +46,7 @@ class Device(Base):
     location: Mapped[str | None] = mapped_column(String(100), nullable=True)     # e.g. "kitchen", "bedroom", "living_room"
     keywords_user: Mapped[str] = mapped_column(Text, default="[]")  # JSON: user-entered keywords in any language
     keywords_en: Mapped[str] = mapped_column(Text, default="[]")    # JSON: auto-translated EN keywords for matching
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow
     )
