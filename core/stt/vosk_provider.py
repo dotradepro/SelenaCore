@@ -142,6 +142,21 @@ class VoskProvider(STTProvider):
         self._idle_rec = vosk.KaldiRecognizer(self._model, self._sample_rate, grammar)
         logger.info("Vosk IDLE grammar set: %s", phrases)
 
+    def set_idle_free_vocab(self) -> None:
+        """Create IDLE recognizer in free-vocabulary mode (no grammar restriction).
+
+        Used when grammar mode is disabled or unsupported by the model.
+        Wake word matching then happens via free recognition + phrase comparison.
+        """
+        import vosk
+
+        if not self._ensure_model():
+            return
+
+        self._grammar_phrases = []
+        self._idle_rec = vosk.KaldiRecognizer(self._model, self._sample_rate)
+        logger.info("Vosk IDLE recognizer set to free-vocabulary mode (no grammar)")
+
     def reset_idle(self) -> None:
         """Reset IDLE recognizer state (after wake word detected)."""
         if self._idle_rec is not None:

@@ -1945,6 +1945,41 @@
     // (WebSocket is only for dedicated STT test stream, not used here —
     //  the main voice loop handles STT and live-log shows the results)
 
+    // ── Vosk grammar toggle ─────────────────────────────────────────
+    // Reads/writes voice.vosk_use_grammar.
+    // OFF = IDLE recognizer in free-vocabulary mode (use when grammar mode
+    //       produces no output, e.g., compact uk-v3-small/nano models that
+    //       cannot acoustically match rare proper-noun wake words).
+    async function loadVoskGrammarToggle() {
+        try {
+            var cfg = await moduleApi('/config');
+            var on = cfg.vosk_use_grammar !== false; // default true
+            $('liveSttGrammar').checked = on;
+        } catch(e) { /* ignore */ }
+    }
+    if ($('liveSttGrammar')) {
+        $('liveSttGrammar').onchange = async function() {
+            var on = this.checked;
+            this.disabled = true;
+            try {
+                var resp = await fetch(MODULE_BASE + '/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ vosk_use_grammar: on }),
+                });
+                if (resp.ok) {
+                    showToast(on ? t('vosk_grammar_on') + ': ON' : t('vosk_grammar_on') + ': OFF');
+                } else {
+                    showToast('Error: ' + resp.status, 3000);
+                }
+            } catch(e) {
+                showToast('Error: ' + e.message, 3000);
+            }
+            this.disabled = false;
+        };
+        loadVoskGrammarToggle();
+    }
+
     // ── STT Test ──────────────────────────────────────────────────
     $('sttTestBtn').onclick = async function() {
         state.recording = true;

@@ -40,6 +40,8 @@ class VoiceConfigRequest(BaseModel):
     stt_model: str | None = None
     tts_voice: str | None = None
     wake_word_model: str | None = None
+    wake_word_enabled: bool | None = None
+    vosk_use_grammar: bool | None = None
     privacy_mode: bool | None = None
     speaker_threshold: float | None = Field(None, ge=0.3, le=1.0)
     stt_silence_timeout: float | None = Field(None, ge=0.5, le=5.0)
@@ -356,6 +358,7 @@ class VoiceCoreModule(SystemModule):
             "tts_voice": os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"),
             "wake_word_model": os.getenv("WAKE_WORD_MODEL", "селена"),
             "wake_word_enabled": True,  # False = always listening (no wake word needed)
+            "vosk_use_grammar": True,   # False = IDLE recognizer in free-vocab mode (debugging / weak models)
             "privacy_mode": False,
             "speaker_threshold": float(os.getenv("SPEAKER_THRESHOLD", "0.75")),
         }
@@ -844,14 +847,25 @@ class VoiceCoreModule(SystemModule):
     # ── Vosk grammar setup ─────────────────────────────────────────────
 
     def _setup_vosk_grammar(self) -> None:
-        """Configure Vosk grammar recognizer with wake word phrases.
+        """Configure Vosk IDLE/LISTENING recognizers.
 
-        Loads saved wake word variants from config and sets them as grammar
-        for the IDLE mode recognizer. Also creates LISTENING recognizer.
+        If vosk_use_grammar=True (default): IDLE recognizer is restricted to wake
+        word phrases. Required for compact models that benefit from grammar but
+        ignored by full models that only support pre-compiled HCLG.
+        If vosk_use_grammar=False: IDLE recognizer runs in free-vocabulary mode,
+        wake word is matched after free recognition. Useful when grammar mode
+        produces no output (e.g., weak acoustic match against rare proper names).
         """
         from core.stt.vosk_provider import VoskProvider
         p = self._stt_provider
         if not isinstance(p, VoskProvider):
+            return
+
+        use_grammar = bool(self._config.get("vosk_use_grammar", True))
+
+        if not use_grammar:
+            p.set_idle_free_vocab()
+            p.create_listening_recognizer()
             return
 
         # Load wake word variants from config (try both new and legacy formats)
@@ -1763,6 +1777,18 @@ class VoiceCoreModule(SystemModule):
                     svc._listen_task.cancel()
                     await asyncio.sleep(0.5)
                     svc._listen_task = asyncio.create_task(svc._audio_loop())
+
+            # Toggle Vosk grammar mode on the fly: rebuild IDLE recognizer in place.
+            # The voice loop holds a reference to the provider, not the recognizer,
+            # so swapping _idle_rec inside the provider takes effect on the next chunk
+            # without restarting arecord (which would race with the loop's self-restart
+            # path and trigger "Device or resource busy").
+            if "vosk_use_grammar" in updates:
+                try:
+                    svc._setup_vosk_grammar()
+                    logger.info("Vosk grammar mode set to: %s", updates["vosk_use_grammar"])
+                except Exception as e:
+                    logger.warning("Failed to switch Vosk grammar mode: %s", e)
 
             if "speaker_threshold" in updates:
                 import system_modules.voice_core.speaker_id as sid
