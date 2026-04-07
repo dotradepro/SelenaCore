@@ -321,108 +321,196 @@ install_piper_runtime() {
     piper_home="$(getent passwd "$piper_user" | cut -d: -f6 || true)"
     [ -z "$piper_home" ] && piper_home="/root"
 
-    local py="python3"
-    # piper-phonemize (transitive dep of piper-tts) does not publish wheels
-    # for Python 3.8 — Ubuntu 20.04 / Debian 10 ship 3.8 by default. Detect
-    # this and install a newer Python from deadsnakes when possible.
-    local sys_py_minor
-    sys_py_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
-    if [ "$sys_py_minor" -lt 9 ] 2>/dev/null; then
-        log "System python3 is 3.$sys_py_minor (too old for piper-tts wheels) — trying python3.10"
-        if ! _install_python310; then
-            log "Native Piper TTS not installed on this OS. The wizard's TTS step will still work via the docker container build."
-            return 0
-        fi
-        py="python3.10"
+    # Resolve a python3.9+ interpreter that can install piper-tts wheels.
+    # Strategy (first that works wins):
+    #   1. System python3 >= 3.9 (jammy+, bookworm, Pi OS Bookworm, Jetson JetPack 6)
+    #   2. deadsnakes apt PPA (Ubuntu jammy+/noble — gives python3.10)
+    #   3. uv-managed standalone python3.11 (focal, bullseye, buster, old Pi OS)
+    #
+    # If none work — log an informative message and continue without native
+    # Piper (container TTS still renders the wizard's voice selection step).
+    local py=""
+    if ! py="$(_ensure_piper_python "$piper_user" "$piper_home")" || [ -z "$py" ]; then
+        log "Native Piper TTS not installed on this OS. The wizard's TTS step will still work via the docker container build."
+        return 0
     fi
 
-    if su -s /bin/bash - "$piper_user" -c "$py -c 'import piper, aiohttp' 2>/dev/null"; then
+    if su -s /bin/bash - "$piper_user" -c "'$py' -c 'import piper, aiohttp' 2>/dev/null"; then
         log "Piper TTS Python package already installed for $piper_user (via $py)"
         install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
-        PIPER_PYTHON="$(command -v "$py" 2>/dev/null || echo "$py")"
+        PIPER_PYTHON="$py"
         return 0
     fi
     if $DRY_RUN; then
-        echo "    [dry-run] su - $piper_user -c '$py -m pip install --user piper-tts aiohttp'"
+        echo "    [dry-run] install piper-tts + aiohttp via $py for $piper_user"
         PIPER_PYTHON="$py"
         return 0
     fi
 
     log "Installing Piper TTS Python package for user '$piper_user' via $py (~80 MB onnxruntime)"
-    local pip_cmd="$py -m pip install --user piper-tts aiohttp"
+    local pip_cmd="'$py' -m pip install --user piper-tts aiohttp"
     # --break-system-packages tolerates PEP 668 on noble/bookworm where the
     # system python is externally-managed.
     if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd --break-system-packages 2>&1" >/tmp/_piper_pip.log; then
-        # Older pip without the flag
         if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd 2>&1" >/tmp/_piper_pip.log; then
             warn "pip install piper-tts failed — TTS will be unavailable until installed manually"
-            tail -n 8 /tmp/_piper_pip.log >&2
+            tail -n 10 /tmp/_piper_pip.log >&2
             return 0
         fi
     fi
     install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
-    PIPER_PYTHON="$(command -v "$py" 2>/dev/null || echo "$py")"
+    PIPER_PYTHON="$py"
     log "Piper TTS Python package installed for $piper_user (via $PIPER_PYTHON)"
 }
 
-_install_python310() {
-    # Install python3.10 + venv + pip from the appropriate channel for the
-    # detected distro. Returns 0 on success, 1 on failure.
+# ── Piper Python resolver ─────────────────────────────────────────── #
+
+_ensure_piper_python() {
+    # Prints the absolute path of a python3.9+ interpreter usable by
+    # SUDO_USER. Returns 1 if none can be installed on this platform.
+    #
+    # IMPORTANT: this function's stdout is captured by the caller, so every
+    # diagnostic must be written to stderr. Only the final interpreter path
+    # goes to stdout on the last line.
+    local piper_user="$1"
+    local piper_home="$2"
+
+    # 1. System python3 >= 3.9
+    local sys_minor
+    sys_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
+    if [ "$sys_minor" -ge 9 ] 2>/dev/null; then
+        command -v python3
+        return 0
+    fi
+
+    log "System python3 is 3.$sys_minor (too old for piper-tts wheels) — looking for an alternative" >&2
+
+    # 2. deadsnakes apt PPA — only for Ubuntu jammy+ / derivatives
+    if _try_deadsnakes_python310 >&2; then
+        command -v python3.10
+        return 0
+    fi
+
+    # 3. uv fallback — works on any modern-glibc Linux amd64/arm64
+    local uv_py=""
+    if uv_py="$(_try_uv_python "$piper_user" "$piper_home")" && [ -n "$uv_py" ]; then
+        printf '%s\n' "$uv_py"
+        return 0
+    fi
+
+    return 1
+}
+
+_try_deadsnakes_python310() {
+    # Install python3.10 from deadsnakes PPA on supported Ubuntu releases.
+    # Returns 0 if python3.10 is on PATH afterwards, 1 otherwise.
     if command -v python3.10 >/dev/null 2>&1; then
         return 0
     fi
 
-    # Skip OS releases where deadsnakes no longer publishes packages.
-    # Ubuntu 20.04 (focal) reached EOL in April 2025; the deadsnakes PPA's
-    # main/binary-*/Packages file is empty there, so apt cannot find python3.10.
+    # Skip releases where deadsnakes no longer publishes packages.
     case "$OS_CODENAME" in
-        focal|bionic|xenial|buster|stretch)
-            log "$OS_ID $OS_CODENAME is EOL; deadsnakes no longer ships python3.10 there. Native Piper will be skipped (use container TTS or upgrade the OS)."
+        focal|bionic|xenial|buster|stretch|bullseye)
+            log "$OS_ID $OS_CODENAME: deadsnakes does not ship python3.10 here — will try uv instead"
+            return 1
+            ;;
+    esac
+    case "$OS_ID" in
+        ubuntu|pop|linuxmint) ;;
+        *)
+            log "$OS_ID: deadsnakes PPA is Ubuntu-only — will try uv instead"
             return 1
             ;;
     esac
 
-    case "$OS_ID" in
-        ubuntu|pop|linuxmint)
-            install_apt gnupg curl ca-certificates
-            install -d -m 0755 /etc/apt/keyrings
-            local key_url="https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776"
-            if ! curl -fsSL "$key_url" | gpg --dearmor --batch --yes -o /etc/apt/keyrings/deadsnakes.gpg 2>/dev/null; then
-                warn "Could not download deadsnakes GPG key"
-                return 1
-            fi
-            chmod 0644 /etc/apt/keyrings/deadsnakes.gpg
-            local repo_codename="$OS_CODENAME"
-            case "$repo_codename" in
-                jammy|noble|oracular|plucky) ;;
-                *) repo_codename="jammy" ;;  # safe fallback for unmapped Ubuntu derivatives
-            esac
-            echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $repo_codename main" \
-                > /etc/apt/sources.list.d/deadsnakes.list
-            apt_update
-            # Verify the PPA actually has python3.10 for this codename
-            if ! apt-cache madison python3.10 2>/dev/null | grep -q .; then
-                warn "deadsnakes PPA for $repo_codename does not publish python3.10 — skipping"
-                rm -f /etc/apt/sources.list.d/deadsnakes.list
-                return 1
-            fi
-            install_apt python3.10 python3.10-venv python3.10-distutils python3.10-dev
-            ;;
-        debian|raspbian|kali)
-            warn "On $OS_ID we cannot install a newer Python automatically; install python3.10 manually if you need native Piper"
-            return 1
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-    if ! command -v python3.10 >/dev/null 2>&1; then
+    install_apt gnupg curl ca-certificates
+    install -d -m 0755 /etc/apt/keyrings
+    local key_url="https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776"
+    if ! curl -fsSL "$key_url" | gpg --dearmor --batch --yes -o /etc/apt/keyrings/deadsnakes.gpg 2>/dev/null; then
+        warn "Could not download deadsnakes GPG key"
         return 1
     fi
+    chmod 0644 /etc/apt/keyrings/deadsnakes.gpg
+    local repo_codename="$OS_CODENAME"
+    case "$repo_codename" in
+        jammy|noble|oracular|plucky) ;;
+        *) repo_codename="jammy" ;;
+    esac
+    echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $repo_codename main" \
+        > /etc/apt/sources.list.d/deadsnakes.list
+    apt_update
+    if ! apt-cache madison python3.10 2>/dev/null | grep -q .; then
+        warn "deadsnakes PPA for $repo_codename does not publish python3.10 — skipping"
+        rm -f /etc/apt/sources.list.d/deadsnakes.list
+        return 1
+    fi
+    install_apt python3.10 python3.10-venv python3.10-distutils python3.10-dev
+    command -v python3.10 >/dev/null 2>&1 || return 1
     # Bootstrap pip for python3.10 if it's missing
     if ! python3.10 -m pip --version >/dev/null 2>&1; then
         curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.10 || return 1
     fi
+    return 0
+}
+
+_try_uv_python() {
+    # Install uv (a ~15MB single-binary Python package manager from Astral)
+    # and use it to download a standalone CPython 3.11 — works on any
+    # Linux with modern glibc, independent of distro repos.
+    #
+    # Prints the absolute path of the uv-managed python3.11 on stdout on
+    # success. ALL diagnostics MUST go to stderr because the caller
+    # captures our stdout.
+    local piper_user="$1"
+    local piper_home="$2"
+
+    # uv doesn't publish armv7 or old-glibc builds — bail on unsupported arches.
+    case "$ARCH" in
+        amd64|arm64) ;;
+        *)
+            log "uv does not ship a $ARCH binary — cannot install a newer Python automatically" >&2
+            return 1
+            ;;
+    esac
+
+    # 1. Ensure uv is installed (for SUDO_USER, ~/.local/bin/uv)
+    local uv_bin="$piper_home/.local/bin/uv"
+    if [ ! -x "$uv_bin" ]; then
+        if $DRY_RUN; then
+            echo "    [dry-run] curl -LsSf https://astral.sh/uv/install.sh | sh  (as $piper_user)" >&2
+            printf '%s\n' "$piper_home/.local/share/uv/python/cpython-3.11/bin/python3.11"
+            return 0
+        fi
+        log "Installing uv (~15 MB standalone package manager) for user '$piper_user'" >&2
+        if ! su -s /bin/bash - "$piper_user" -c \
+                'curl -LsSf https://astral.sh/uv/install.sh | sh' >/tmp/_uv_install.log 2>&1; then
+            warn "uv installer script failed — see /tmp/_uv_install.log" >&2
+            return 1
+        fi
+    fi
+    if [ ! -x "$uv_bin" ]; then
+        warn "uv binary not found at $uv_bin after installer ran" >&2
+        return 1
+    fi
+    log "uv ready: $uv_bin" >&2
+
+    # 2. Install a standalone CPython 3.11
+    if ! su -s /bin/bash - "$piper_user" -c "'$uv_bin' python install 3.11" >/tmp/_uv_python.log 2>&1; then
+        warn "uv failed to install Python 3.11 — see /tmp/_uv_python.log" >&2
+        tail -n 10 /tmp/_uv_python.log >&2
+        return 1
+    fi
+
+    # 3. Resolve its absolute path. `uv python find 3.11` prints the path.
+    local uv_py
+    uv_py="$(su -s /bin/bash - "$piper_user" -c "'$uv_bin' python find 3.11" 2>/dev/null | head -1)"
+    if [ -z "$uv_py" ] || [ ! -x "$uv_py" ]; then
+        warn "uv reported no usable python3.11 at '$uv_py'" >&2
+        return 1
+    fi
+
+    log "uv-managed Python 3.11 ready: $uv_py" >&2
+    printf '%s\n' "$uv_py"
     return 0
 }
 
