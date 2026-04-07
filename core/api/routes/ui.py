@@ -45,6 +45,21 @@ def _broadcast(event: dict[str, Any]) -> None:
 def broadcast_event(event_type: str, payload: dict[str, Any] | None = None) -> None:
     _broadcast({"type": event_type, "payload": payload or {}})
 
+# ── Sticky caches for slow native-service probes ─────────────────────────────
+# Both probes can occasionally take longer than the wall budget (Ollama under
+# load, Piper preloading a voice, …). Serving the previous good value avoids
+# the LLM/Native cards from flickering on the system-info page.
+_ollama_cache: dict[str, Any] | None = None
+_ollama_cache_ts: float = 0.0
+_OLLAMA_CACHE_TTL = 10.0
+_OLLAMA_STALE_TTL = 120.0
+
+_native_cache: list[dict[str, Any]] | None = None
+_native_cache_ts: float = 0.0
+_NATIVE_CACHE_TTL = 10.0
+_NATIVE_STALE_TTL = 120.0
+
+
 # ── Layout persistence ───────────────────────────────────────────────────────
 _LAYOUT_PATH = Path(os.environ.get("CORE_DATA_DIR", "/var/lib/selena")) / "widget_layout.json"
 
@@ -173,41 +188,84 @@ def _read_hw_metrics() -> dict[str, Any]:
         }
 
 
-def _read_ollama_status() -> dict[str, Any]:
-    """Read Ollama/LLM status (best-effort).
+def _ollama_http_get(url: str, timeout: float = 4.0) -> dict[str, Any] | None:
+    """Blocking HTTP GET helper — call only via asyncio.to_thread()."""
+    import urllib.request
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status == 200:
+            return json.loads(resp.read())
+    return None
 
-    Ollama typically runs natively on the host while Selena runs in a
-    container, so the host binary is NOT on the container's PATH and
-    ``shutil.which("ollama")`` would return ``None``. The HTTP API is the
-    authoritative source: if ``/api/tags`` answers, Ollama is reachable
-    and we treat it as both installed and running.
+
+async def _read_ollama_status() -> dict[str, Any]:
+    """Read Ollama/LLM status (best-effort, non-blocking, sticky-cached).
+
+    Ollama runs natively on the host while Selena runs in a container, so the
+    host binary is NOT on the container's PATH and ``shutil.which("ollama")``
+    would return ``None``. The HTTP API is the authoritative source: if
+    ``/api/tags`` answers, Ollama is reachable and we treat it as both
+    installed and running.
+
+    Behaviour:
+    - Probes are run in a worker thread (non-blocking for the event loop).
+    - ``/api/tags`` and ``/api/ps`` are issued in parallel.
+    - Successful results are cached for ``_OLLAMA_CACHE_TTL`` seconds.
+    - On a transient probe failure, the previous good result is reused for
+      up to ``_OLLAMA_STALE_TTL`` seconds — this prevents the system-info
+      card from flickering when Ollama is briefly busy.
     """
+    global _ollama_cache, _ollama_cache_ts
+
+    # Active model name is read fresh from config every call — it changes
+    # the moment the user switches LLM provider and must NOT be cached.
+    try:
+        from core.config import get_yaml_config
+        voice_cfg = get_yaml_config().get("voice", {})
+        active_model = voice_cfg.get("llm_model") or os.environ.get("OLLAMA_MODEL", "phi3:mini")
+    except Exception:
+        active_model = os.environ.get("OLLAMA_MODEL", "phi3:mini")
+
+    now = time.monotonic()
+    if _ollama_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_CACHE_TTL:
+        cached = dict(_ollama_cache)
+        cached["model"] = active_model
+        return cached
+
+    url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
     result: dict[str, Any] = {
         "installed": False,
         "running": False,
         "model": None,
         "model_loaded": False,
-        "url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+        "url": url,
     }
-    try:
-        import urllib.request
-        req = urllib.request.Request(
-            f"{result['url']}/api/tags",
-            method="GET",
-        )
-        req.add_header("Accept", "application/json")
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            if resp.status == 200:
-                result["running"] = True
-                result["installed"] = True
-                data = json.loads(resp.read())
-                models = data.get("models", [])
-                result["models"] = [
-                    {"name": m.get("name", ""), "size_mb": round(m.get("size", 0) / 1e6)}
-                    for m in models
-                ]
-    except Exception:
-        pass
+
+    tags_data, ps_data = await asyncio.gather(
+        asyncio.to_thread(_ollama_http_get, f"{url}/api/tags", 4.0),
+        asyncio.to_thread(_ollama_http_get, f"{url}/api/ps", 4.0),
+        return_exceptions=True,
+    )
+
+    probe_failed = True
+    if isinstance(tags_data, dict):
+        probe_failed = False
+        result["running"] = True
+        result["installed"] = True
+        models = tags_data.get("models", [])
+        result["models"] = [
+            {"name": m.get("name", ""), "size_mb": round(m.get("size", 0) / 1e6)}
+            for m in models
+        ]
+
+    if isinstance(ps_data, dict):
+        probe_failed = False
+        running_models = ps_data.get("models", [])
+        result["model_loaded"] = len(running_models) > 0
+        if running_models:
+            result["loaded_model"] = running_models[0].get("name", "")
+
     # Binary-on-PATH fallback for the rare case where the API is down but
     # the local binary is present (e.g. service stopped on this same host).
     if not result["installed"]:
@@ -215,32 +273,232 @@ def _read_ollama_status() -> dict[str, Any]:
             result["installed"] = shutil.which("ollama") is not None
         except Exception:
             pass
-    # Check active model from config
-    try:
-        from core.config import get_yaml_config
-        cfg = get_yaml_config()
-        voice_cfg = cfg.get("voice", {})
-        result["model"] = voice_cfg.get("llm_model") or os.environ.get("OLLAMA_MODEL", "phi3:mini")
-    except Exception:
-        result["model"] = os.environ.get("OLLAMA_MODEL", "phi3:mini")
-    # Check if model is actually loaded (ps endpoint)
-    if result["running"]:
-        try:
-            import urllib.request
-            req = urllib.request.Request(
-                f"{result['url']}/api/ps",
-                method="GET",
-            )
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                if resp.status == 200:
-                    data = json.loads(resp.read())
-                    running_models = data.get("models", [])
-                    result["model_loaded"] = len(running_models) > 0
-                    if running_models:
-                        result["loaded_model"] = running_models[0].get("name", "")
-        except Exception:
-            pass
+
+    # Active model from config (independent of liveness probe).
+    result["model"] = active_model
+
+    # Sticky cache: serve last-good on transient probe failure.
+    if probe_failed and _ollama_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_STALE_TTL:
+        cached = dict(_ollama_cache)
+        cached["model"] = active_model
+        return cached
+
+    _ollama_cache = result
+    _ollama_cache_ts = now
     return result
+
+
+async def _read_llm_engine_status() -> dict[str, Any]:
+    """Aggregate LLM engine state: active provider, configured cloud
+    providers (without exposing API keys) and intent-cache stats.
+    """
+    from core.config_writer import read_config
+
+    config = read_config()
+    voice_cfg = config.get("voice", {}) if isinstance(config, dict) else {}
+    provider_configs = voice_cfg.get("providers", {}) if isinstance(voice_cfg, dict) else {}
+
+    active_provider = voice_cfg.get("llm_provider", "ollama") or "ollama"
+    active_model = (
+        voice_cfg.get("llm_model")
+        or os.environ.get("OLLAMA_MODEL", "phi3:mini")
+    )
+    two_step = bool(voice_cfg.get("llm_two_step", False))
+
+    cloud_providers: list[dict[str, Any]] = []
+    try:
+        from system_modules.llm_engine.cloud_providers import PROVIDERS
+        for pid, meta in PROVIDERS.items():
+            if not meta.get("needs_key", True):
+                continue  # skip ollama — it has its own card
+            p_cfg = provider_configs.get(pid, {}) if isinstance(provider_configs, dict) else {}
+            cloud_providers.append({
+                "id": pid,
+                "name": meta.get("name", pid),
+                "configured": bool(p_cfg.get("api_key")),
+                "model": p_cfg.get("model", "") or "",
+                "active": pid == active_provider,
+            })
+    except Exception as exc:
+        logger.debug("LLM cloud providers enumeration failed: %s", exc)
+
+    cache_size = 0
+    cache_hot = 0
+    try:
+        from system_modules.llm_engine.intent_cache import get_intent_cache
+        ic = get_intent_cache()
+        cache_size = ic.count
+        frequent = await ic.get_frequent(min_count=5)
+        cache_hot = len(frequent)
+    except Exception as exc:
+        logger.debug("LLM intent cache stats failed: %s", exc)
+
+    return {
+        "provider": active_provider,
+        "model": active_model,
+        "two_step": two_step,
+        "cloud_providers": cloud_providers,
+        "intent_cache": {"size": cache_size, "hot": cache_hot},
+    }
+
+
+def _probe_piper_blocking(url: str, timeout: float = 3.0) -> dict[str, Any] | None:
+    """Blocking Piper /health probe — call via asyncio.to_thread()."""
+    try:
+        return _ollama_http_get(f"{url}/health", timeout)
+    except Exception:
+        return None
+
+
+def _probe_pulseaudio_blocking() -> bool:
+    """Detect a running PulseAudio/PipeWire instance from inside the container."""
+    import glob
+    if glob.glob("/run/user/*/pulse/native"):
+        return True
+    if os.path.exists("/tmp/pulse-PKdhtXMmr18n/native"):
+        return True
+    try:
+        proc = subprocess.run(
+            ["pactl", "info"],
+            capture_output=True, text=True, timeout=1,
+        )
+        if proc.returncode == 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _probe_alsa_blocking() -> dict[str, Any]:
+    """Enumerate ALSA cards from /dev/snd."""
+    import glob
+    cards = sorted({
+        os.path.basename(p).split("p")[0].replace("pcmC", "card")
+        for p in glob.glob("/dev/snd/pcmC*")
+    })
+    return {"running": len(cards) > 0, "cards": len(cards)}
+
+
+def _probe_vosk_blocking() -> dict[str, Any]:
+    """Vosk is loaded in-process; we report whether models exist on disk."""
+    models_dir = os.environ.get("VOSK_MODELS_DIR", "/var/lib/selena/models/vosk")
+    try:
+        if os.path.isdir(models_dir):
+            entries = [
+                e for e in os.listdir(models_dir)
+                if os.path.isdir(os.path.join(models_dir, e))
+            ]
+            return {"running": len(entries) > 0, "models": len(entries), "path": models_dir}
+    except Exception:
+        pass
+    return {"running": False, "models": 0, "path": models_dir}
+
+
+def _probe_dbus_blocking() -> bool:
+    return os.path.exists("/var/run/dbus/system_bus_socket")
+
+
+async def _read_native_services() -> list[dict[str, Any]]:
+    """Probe all native (host-side) services that Core depends on.
+
+    Returns a list of dicts ``{name, running, url?, extra}``. Result is
+    cached with the same sticky-cache strategy as ``_read_ollama_status``
+    so transient hiccups don't blank out the system-info card.
+    """
+    global _native_cache, _native_cache_ts
+
+    now = time.monotonic()
+    if _native_cache is not None and (now - _native_cache_ts) < _NATIVE_CACHE_TTL:
+        return _native_cache
+
+    piper_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+
+    ollama_status, piper_health, pulse_ok, alsa_info, vosk_info, dbus_ok = await asyncio.gather(
+        _read_ollama_status(),
+        asyncio.to_thread(_probe_piper_blocking, piper_url, 3.0),
+        asyncio.to_thread(_probe_pulseaudio_blocking),
+        asyncio.to_thread(_probe_alsa_blocking),
+        asyncio.to_thread(_probe_vosk_blocking),
+        asyncio.to_thread(_probe_dbus_blocking),
+        return_exceptions=True,
+    )
+
+    services: list[dict[str, Any]] = []
+
+    # Ollama
+    if isinstance(ollama_status, dict):
+        services.append({
+            "name": "ollama",
+            "running": bool(ollama_status.get("running")),
+            "url": ollama_status.get("url"),
+            "extra": {
+                "model": ollama_status.get("model"),
+                "model_loaded": bool(ollama_status.get("model_loaded")),
+                "models_count": len(ollama_status.get("models") or []),
+            },
+        })
+    else:
+        services.append({"name": "ollama", "running": False, "url": None, "extra": {}})
+
+    # Piper
+    if isinstance(piper_health, dict):
+        loaded = piper_health.get("loaded_voices") or []
+        services.append({
+            "name": "piper",
+            "running": True,
+            "url": piper_url,
+            "extra": {
+                "device": piper_health.get("device", ""),
+                "voices": len(loaded) if isinstance(loaded, list) else 0,
+            },
+        })
+    else:
+        services.append({"name": "piper", "running": False, "url": piper_url, "extra": {}})
+
+    # PulseAudio
+    services.append({
+        "name": "pulseaudio",
+        "running": bool(pulse_ok) if not isinstance(pulse_ok, Exception) else False,
+        "url": None,
+        "extra": {},
+    })
+
+    # ALSA
+    if isinstance(alsa_info, dict):
+        services.append({
+            "name": "alsa",
+            "running": bool(alsa_info.get("running")),
+            "url": None,
+            "extra": {"cards": alsa_info.get("cards", 0)},
+        })
+    else:
+        services.append({"name": "alsa", "running": False, "url": None, "extra": {}})
+
+    # Vosk
+    if isinstance(vosk_info, dict):
+        services.append({
+            "name": "vosk",
+            "running": bool(vosk_info.get("running")),
+            "url": None,
+            "extra": {
+                "models": vosk_info.get("models", 0),
+                "path": vosk_info.get("path", ""),
+            },
+        })
+    else:
+        services.append({"name": "vosk", "running": False, "url": None, "extra": {}})
+
+    # D-Bus
+    services.append({
+        "name": "dbus",
+        "running": bool(dbus_ok) if not isinstance(dbus_ok, Exception) else False,
+        "url": None,
+        "extra": {},
+    })
+
+    _native_cache = services
+    _native_cache_ts = now
+    return services
 
 
 def _read_processes(sort_by: str = "cpu", limit: int = 30) -> list[dict[str, Any]]:
@@ -302,13 +560,23 @@ def _read_processes(sort_by: str = "cpu", limit: int = 30) -> list[dict[str, Any
 
 @router.get("/system")
 async def ui_system() -> dict[str, Any]:
-    """Combined system endpoint: core health + hardware metrics + LLM status."""
+    """Combined system endpoint: core health + hardware metrics + LLM status
+    + native services. Slow probes (Ollama, Piper) are non-blocking and
+    sticky-cached so this stays snappy and the UI does not flicker.
+    """
     from core.api.routes.system import _start_time as core_start_time
     from core.api.routes.system import get_system_mode
     mode = get_system_mode()
 
     hw = _read_hw_metrics()
-    ollama = _read_ollama_status()
+
+    ollama, llm_engine, native_services = await asyncio.gather(
+        _read_ollama_status(),
+        _read_llm_engine_status(),
+        _read_native_services(),
+    )
+
+    settings = get_settings()
 
     return {
         "core": {
@@ -317,9 +585,12 @@ async def ui_system() -> dict[str, Any]:
             "mode": mode,
             "uptime": int(time.time() - core_start_time),
             "integrity": "ok",
+            "core_port": settings.core_port,
         },
         "hardware": hw,
         "ollama": ollama,
+        "llm_engine": llm_engine,
+        "native_services": native_services,
     }
 
 
