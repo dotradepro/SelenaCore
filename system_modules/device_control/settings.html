@@ -1,16 +1,24 @@
 <!doctype html>
 <html lang="en">
 <head>
+<link rel="stylesheet" href="/api/shared/theme.css">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Device Control</title>
 <style>
+/* Alias the legacy local variable names to shared theme tokens so we can
+   keep the existing markup/classes intact while picking up dark/light mode
+   from the parent app. --b, --gr, --rd, --am, --ac already exist in the
+   shared theme — we let those fall through unchanged. */
 :root{
-  --bg:#0f1115;--card:#171a21;--b:#262a33;--fg:#e6e8ee;--mut:#9aa1b1;
-  --pr:#a855f7;--gr:#22c55e;--rd:#ef4444;--am:#f59e0b;--ac:#38bdf8;
+  --bg:var(--sf2);
+  --card:var(--sf);
+  --fg:var(--tx);
+  --mut:var(--tx2);
+  --pr:var(--ac);
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:13px}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
 .wrap{padding:14px;max-width:980px;margin:0 auto}
 h2{margin:0 0 12px;font-size:16px;font-weight:600}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--b);margin-bottom:14px;flex-wrap:wrap}
@@ -162,7 +170,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
         <div id="wQrCode" style="display:flex;justify-content:center;padding:14px;background:#fff;border-radius:8px"></div>
         <div class="label-xs muted mt8" style="text-align:center">
           <span data-i18n="wizard_waiting">Waiting for you to scan and confirm in the app…</span>
-          <span id="wSpinner" style="display:inline-block;width:12px;height:12px;border:2px solid #666;border-top-color:#a855f7;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:6px"></span>
+          <span id="wSpinner" style="display:inline-block;width:12px;height:12px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:6px"></span>
         </div>
         <div class="flex gap8 mt8" style="justify-content:center">
           <button id="wCancelBtn" class="btn btn-ghost" data-i18n="wizard_cancel">Cancel</button>
@@ -518,5 +526,6 @@ function _renderDeviceList(devs){
 applyLang();
 loadDevices();
 </script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

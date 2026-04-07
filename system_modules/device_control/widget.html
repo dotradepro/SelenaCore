@@ -1,22 +1,29 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
+<link rel="stylesheet" href="/api/shared/theme.css">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:#171a21;color:#e6e8ee;font-size:12px;height:100vh;overflow:hidden}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif}
+body{background:transparent;color:var(--tx);font-size:12px}
 .wrap{padding:10px;height:100%;display:flex;flex-direction:column;gap:6px}
-.h{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#9aa1b1;text-transform:uppercase;letter-spacing:.04em}
+.h{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em}
 .list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px}
-.row{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:#0f1115;border:1px solid #262a33;border-radius:6px}
-.row .name{font-weight:500;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .loc{font-size:10px;color:#9aa1b1}
-.toggle{width:34px;height:18px;border-radius:9px;background:#262a33;border:none;cursor:pointer;position:relative;flex-shrink:0}
-.toggle::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#9aa1b1;transition:all .15s}
-.toggle.on{background:rgba(34,197,94,.3)}
-.toggle.on::after{left:18px;background:#22c55e}
-.empty{color:#9aa1b1;font-size:11px;text-align:center;padding:14px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;background:var(--b);border:1px solid var(--b);border-radius:6px;gap:6px}
+.row.disabled{opacity:.5}
+.row .name{font-weight:500;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
+.row .loc{font-size:10px;color:var(--tx3)}
+.proto{font-size:13px;flex-shrink:0;width:14px;text-align:center;line-height:1}
+.proto.local{color:var(--gr)}
+.proto.cloud{color:var(--tx3)}
+.toggle{width:34px;height:18px;border-radius:9px;background:var(--b2);border:none;cursor:pointer;position:relative;flex-shrink:0}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--tx2);transition:all .15s}
+.toggle.on{background:color-mix(in srgb,var(--gr) 30%,transparent)}
+.toggle.on::after{left:18px;background:var(--gr)}
+.toggle:disabled{opacity:.4;cursor:not-allowed}
+.empty{color:var(--tx3);font-size:11px;text-align:center;padding:14px}
 </style>
 </head>
 <body>
@@ -27,8 +34,8 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:#171a21;colo
 <script>
 var LANG=(function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
 var L={
-  en:{title:'Devices',loading:'Loading…',empty:'No devices'},
-  uk:{title:'Пристрої',loading:'Завантаження…',empty:'Немає пристроїв'},
+  en:{title:'Devices',loading:'Loading…',empty:'No devices',protoLocal:'Local control',protoCloud:'Cloud-only (inactive)'},
+  uk:{title:'Пристрої',loading:'Завантаження…',empty:'Немає пристроїв',protoLocal:'Локальне керування',protoCloud:'Лише хмара (неактивно)'},
 };
 function t(k){return (L[LANG]||L.en)[k]||k;}
 function applyLang(){document.querySelectorAll('[data-i18n]').forEach(function(el){el.textContent=t(el.getAttribute('data-i18n'));});}
@@ -46,11 +53,21 @@ function load(){
     list.innerHTML=devs.map(function(d){
       var st=(d.state&&d.state.on)===true;
       if(st) on++;
-      return '<div class="row"><div class="name">'+esc(d.name)+(d.location?' <span class="loc">· '+esc(d.location)+'</span>':'')+'</div>'+
-        '<button class="toggle '+(st?'on':'')+'" data-id="'+esc(d.device_id)+'" data-on="'+(st?'1':'0')+'"></button></div>';
+      var isLocal=(d.protocol==='tuya_local');
+      var icon=isLocal?'\u2302':'\u2601';
+      var iconClass=isLocal?'local':'cloud';
+      var iconTitle=isLocal?t('protoLocal'):t('protoCloud');
+      var disabled=(d.enabled===false);
+      var rowClass='row'+(disabled?' disabled':'');
+      return '<div class="'+rowClass+'">'+
+        '<span class="proto '+iconClass+'" title="'+esc(iconTitle)+'">'+icon+'</span>'+
+        '<div class="name">'+esc(d.name)+(d.location?' <span class="loc">· '+esc(d.location)+'</span>':'')+'</div>'+
+        '<button class="toggle '+(st?'on':'')+'" data-id="'+esc(d.device_id)+'" data-on="'+(st?'1':'0')+'"'+(disabled?' disabled':'')+'></button>'+
+        '</div>';
     }).join('');
     $id('onlineCount').textContent=on+' / '+devs.length;
     document.querySelectorAll('.toggle').forEach(function(b){
+      if(b.disabled) return;
       b.onclick=function(){
         var id=b.getAttribute('data-id');
         var newState = b.getAttribute('data-on')!=='1';
@@ -68,5 +85,6 @@ function $id(i){return document.getElementById(i);}
 applyLang();load();
 setInterval(load,5000);
 </script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>
