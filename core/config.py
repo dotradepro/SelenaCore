@@ -21,7 +21,7 @@ class CoreSettings(BaseSettings):
     )
 
     # Platform
-    platform_api_url: str = "https://smarthome-lk.com/api/v1"
+    platform_api_url: str = "https://selenehome.tech/api/v1"
     platform_device_hash: str = ""
     mock_platform: bool = False
 

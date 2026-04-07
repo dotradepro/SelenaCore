@@ -262,7 +262,7 @@ Password: smarthome
 - Встановити модулі → `/modules/install` (маркетплейс)
 - Налаштувати голосовий асистент → `/settings/voice`
 - Додати додаток на головний екран → кнопка "Встановити PWA"
-- Документація та відео → `docs.smarthome-lk.com`
+- Документація та відео → `docs.selenehome.tech`
 
 ---
 
@@ -734,7 +734,7 @@ smarthome dev
 ### 14.6 Документація API
 
 - Swagger UI: `http://smarthome.local:7070/docs` (автогенерується FastAPI)
-- Публічна документація: `docs.smarthome-lk.com/module-sdk`
+- Публічна документація: `docs.selenehome.tech/module-sdk`
 
 ---
 

@@ -33,7 +33,7 @@ All settings below are defined in `core/config.py` as a Pydantic `BaseSettings` 
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `PLATFORM_API_URL` | `str` | `https://smarthome-lk.com/api/v1` | URL of the SelenaCore cloud platform API. |
+| `PLATFORM_API_URL` | `str` | `https://selenehome.tech/api/v1` | URL of the SelenaCore cloud platform API. |
 | `PLATFORM_DEVICE_HASH` | `str` | `""` | Unique device identifier registered with the platform. |
 | `MOCK_PLATFORM` | `bool` | `False` | When `True`, all platform API calls return stubbed responses. Useful for offline development. |
 
@@ -261,7 +261,7 @@ llm:
 
 ```yaml
 platform:
-  api_url: "https://smarthome-lk.com/api/v1"
+  api_url: "https://selenehome.tech/api/v1"
   device_hash: ""
   heartbeat_interval_sec: 60
   mock: false
@@ -269,7 +269,7 @@ platform:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `api_url` | `str` | `https://smarthome-lk.com/api/v1` | Cloud platform API endpoint. |
+| `api_url` | `str` | `https://selenehome.tech/api/v1` | Cloud platform API endpoint. |
 | `device_hash` | `str` | `""` | Device identifier for platform registration. |
 | `heartbeat_interval_sec` | `int` | `60` | Interval in seconds between heartbeat pings to the platform. |
 | `mock` | `bool` | `false` | Stub all platform API responses for offline development. |

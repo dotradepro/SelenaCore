@@ -478,7 +478,7 @@ Cloud connectivity is optional and designed to be minimal. The core never depend
 
 | Parameter             | Value                              |
 |-----------------------|------------------------------------|
-| Remote server         | smarthome-lk.com                   |
+| Remote server         | selenehome.tech                   |
 | Heartbeat interval    | 60 seconds                         |
 | Request signing       | HMAC-SHA256                        |
 | Command poll timeout  | 55 seconds (long-poll)             |
@@ -487,7 +487,7 @@ Cloud connectivity is optional and designed to be minimal. The core never depend
 | Backoff strategy      | Exponential                        |
 
 ```
-  SelenaCore                          smarthome-lk.com
+  SelenaCore                          selenehome.tech
      |                                      |
      |--- heartbeat (HMAC-SHA256) --------->|
      |<-- 200 OK ---------------------------|
