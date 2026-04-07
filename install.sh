@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
-# SelenaCore — unified bootstrap installer.
+# SelenaCore — universal capability-based bootstrap installer.
 #
-# Single entry point for fresh devices. After this script finishes you
-# get a URL to a browser-based wizard that completes the installation
-# (model downloads, voices, LLM, admin user, platform registration).
+# One command for any Debian/Ubuntu-family device — Raspberry Pi 4/5,
+# NVIDIA Jetson Orin, x86 laptop, or headless cloud VM. The script
+# auto-detects OS, architecture, GPU, audio, display and bluetooth
+# capabilities and installs only what is actually needed for that host.
+#
+# After it finishes you get a URL to a browser-based wizard that
+# completes the installation (model downloads, voices, LLM, admin user,
+# platform registration).
 #
 # Usage:
 #   git clone https://github.com/dotradepro/SelenaCore.git
@@ -11,12 +16,14 @@
 #   sudo ./install.sh
 #
 # Optional flags:
-#   --no-build         Skip the frontend (Vite) build
-#   --no-docker        Don't start docker compose (assume host already manages it)
 #   --skip-deps        Skip apt-get package installation
-#   --profile NAME     Force a hardware profile (jetson|raspberry|linux_cuda|linux_cpu|minimal)
+#   --no-docker        Don't start docker compose (assume external manager)
+#   --build-frontend   Install Node.js and re-run vite build (default: skip,
+#                      use the committed bundle in system_modules/ui_core/static)
+#   --dry-run          Print the planned actions and exit without changes
+#   --no-build         (compatibility alias for --build-frontend off, ignored)
 #
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${SELENA_INSTALL_DIR:-/opt/selena-core}"
@@ -24,6 +31,11 @@ DATA_DIR="${SELENA_DATA_DIR:-/var/lib/selena}"
 LOG_DIR="${SELENA_LOG_DIR:-/var/log/selena}"
 SECURE_DIR="${SELENA_SECURE_DIR:-/secure}"
 SELENA_USER="${SELENA_USER:-selena}"
+APT_QUIET="-qq"
+DRY_RUN=false
+BUILD_FRONTEND=false
+SKIP_DEPS=false
+SKIP_DOCKER=false
 
 # Colors
 RED='\033[0;31m'
@@ -38,6 +50,8 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[x]${NC} $*" >&2; }
 title() { echo -e "${BOLD}${BLUE}== $* ==${NC}"; }
 
+trap 'err "Installer aborted on line $LINENO. Re-run: sudo ./install.sh   |   inspect: docker compose logs core"' ERR
+
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
         err "This installer must be run as root: sudo ./install.sh"
@@ -45,92 +59,297 @@ require_root() {
     fi
 }
 
-# ── Hardware Detection (kept for profile-aware messaging) ──────────
+run() {
+    # Wrapper that respects --dry-run.
+    if $DRY_RUN; then
+        echo "    [dry-run] $*"
+    else
+        "$@"
+    fi
+}
 
-detect_hardware() {
-    HW_ARCH=$(uname -m)
-    HW_RAM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-    HW_RAM_GB=$(( HW_RAM_MB / 1024 ))
-    HW_JETSON=false
-    HW_RASPBERRY=false
-    HW_CUDA=false
+# Filter known-noise warnings from apt without swallowing real errors.
+apt_update() {
+    if $DRY_RUN; then echo "    [dry-run] apt-get update $APT_QUIET"; return; fi
+    apt-get update $APT_QUIET 2> >(grep -v 'is configured multiple times' >&2) || true
+}
+
+# Install a list of packages, surfacing real errors. If the batch fails,
+# retry packages one-by-one so a single missing optional doesn't kill
+# everything (and prints which package was the offender).
+install_apt() {
+    [ $# -eq 0 ] && return 0
+    if $DRY_RUN; then
+        echo "    [dry-run] apt-get install -y $*"
+        return
+    fi
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$@" \
+            2> >(grep -v 'is configured multiple times' >&2); then
+        return 0
+    fi
+    warn "Batch install failed; retrying individually so we can isolate the bad package"
+    local pkg
+    for pkg in "$@"; do
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$pkg" \
+                2> >(grep -v 'is configured multiple times' >&2); then
+            warn "  ✗ $pkg — skipped"
+        fi
+    done
+}
+
+# ── Phase 1: Environment detection ─────────────────────────────────
+
+detect_environment() {
+    title "Detecting environment"
+
+    # OS family
+    if [ ! -r /etc/os-release ]; then
+        err "/etc/os-release missing — unsupported OS"
+        exit 1
+    fi
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_ID="${ID:-unknown}"
+    OS_LIKE="${ID_LIKE:-$OS_ID}"
+    OS_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+    OS_VERSION_ID="${VERSION_ID:-}"
+
+    # Reject non-Debian-family distros up front
+    if ! echo "$OS_LIKE $OS_ID" | grep -qiE 'debian|ubuntu'; then
+        err "$OS_ID is not in the Debian/Ubuntu family. This installer supports"
+        err "Debian, Ubuntu, Raspberry Pi OS, Pop!_OS, Linux Mint, Kali, JetPack."
+        err "For other distros, see docs/deployment.md."
+        exit 1
+    fi
+
+    # Architecture
+    ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+
+    # Hardware identification
     HW_MODEL=""
-    HW_PROFILE="linux_cpu"
+    if [ -r /proc/device-tree/model ]; then
+        HW_MODEL=$(tr -d '\0' </proc/device-tree/model 2>/dev/null || echo "")
+    fi
 
-    if [ -f /proc/device-tree/model ]; then
-        HW_MODEL=$(tr -d '\0' < /proc/device-tree/model)
-        if echo "$HW_MODEL" | grep -qi "jetson"; then
-            HW_JETSON=true
-        elif echo "$HW_MODEL" | grep -qi "raspberry"; then
-            HW_RASPBERRY=true
+    IS_RPI=false
+    echo "$HW_MODEL" | grep -qi raspberry && IS_RPI=true
+
+    IS_JETSON=false
+    [ -f /etc/nv_tegra_release ] && IS_JETSON=true
+    echo "$HW_MODEL" | grep -qi jetson && IS_JETSON=true
+
+    IS_VM=false
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        local v
+        v=$(systemd-detect-virt 2>/dev/null || echo none)
+        [ "$v" != "none" ] && IS_VM=true
+    fi
+
+    # GPU detection (CUDA / NVIDIA)
+    HAS_NVIDIA=false
+    if command -v nvidia-smi >/dev/null 2>&1 \
+       || [ -e /dev/nvidia0 ] \
+       || [ -d /usr/local/cuda ] \
+       || [ -d /usr/lib/aarch64-linux-gnu/tegra ] \
+       || $IS_JETSON; then
+        HAS_NVIDIA=true
+    fi
+
+    # Audio: presence of any ALSA card
+    HAS_AUDIO=false
+    if ls /proc/asound/card[0-9]* >/dev/null 2>&1; then
+        HAS_AUDIO=true
+    fi
+
+    # Display: any DRM connector with status "connected"
+    HAS_DISPLAY=false
+    if ls /sys/class/drm/*/status >/dev/null 2>&1; then
+        if grep -lqs '^connected$' /sys/class/drm/*/status 2>/dev/null; then
+            HAS_DISPLAY=true
         fi
     fi
 
-    if command -v nvidia-smi &>/dev/null || [ -d /usr/local/cuda ]; then
-        HW_CUDA=true
+    # Bluetooth: hci device or rfkill bluetooth entry
+    HAS_BT=false
+    if ls /sys/class/bluetooth/hci* >/dev/null 2>&1; then
+        HAS_BT=true
     fi
 
-    if $HW_JETSON; then
-        HW_PROFILE="jetson"
-    elif $HW_RASPBERRY; then
-        HW_PROFILE="raspberry"
-    elif $HW_CUDA; then
-        HW_PROFILE="linux_cuda"
+    HEADLESS=false
+    if ! $HAS_AUDIO && ! $HAS_DISPLAY; then HEADLESS=true; fi
+
+    # RAM bucket
+    local mem_kb
+    mem_kb=$(awk '/MemTotal/{print $2}' /proc/meminfo)
+    RAM_GB=$(( mem_kb / 1024 / 1024 ))
+
+    # Friendly profile label (informational only)
+    if $IS_JETSON; then        PROFILE="jetson"
+    elif $IS_RPI; then         PROFILE="raspberry"
+    elif $HAS_NVIDIA; then     PROFILE="linux_cuda"
+    elif $HEADLESS; then       PROFILE="cloud_headless"
+    else                       PROFILE="linux_cpu"
     fi
 
-    log "Hardware detected:"
-    echo "    Architecture: $HW_ARCH"
-    echo "    RAM:          ${HW_RAM_GB} GB"
-    echo "    Device:       ${HW_MODEL:-Unknown}"
-    echo "    CUDA:         $HW_CUDA"
-    echo "    Profile:      $HW_PROFILE"
+    log "Environment:"
+    echo "    OS:        $OS_ID $OS_VERSION_ID ($OS_CODENAME), like=$OS_LIKE"
+    echo "    Arch:      $ARCH"
+    echo "    Hardware:  ${HW_MODEL:-generic}"
+    echo "    RAM:       ${RAM_GB} GB"
+    echo "    Flags:     RPi=$IS_RPI Jetson=$IS_JETSON VM=$IS_VM"
+    echo "               NVIDIA=$HAS_NVIDIA Audio=$HAS_AUDIO Display=$HAS_DISPLAY"
+    echo "               Bluetooth=$HAS_BT Headless=$HEADLESS"
+    echo "    Profile:   $PROFILE"
 }
 
-# ── Host packages ──────────────────────────────────────────────────
+# ── Phase 2: Conditional package install ───────────────────────────
+
+BASE_PACKAGES=(
+    ca-certificates curl wget git jq unzip
+    python3 python3-venv python3-pip python3-yaml
+    ffmpeg libsndfile1
+    arp-scan arping iproute2 net-tools
+    network-manager
+    sqlite3
+    build-essential
+)
 
 install_host_packages() {
     title "Installing host packages"
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq
+    apt_update
+    install_apt "${BASE_PACKAGES[@]}"
 
-    local packages=(
-        ca-certificates curl wget git jq unzip
-        python3 python3-venv python3-pip
-        ffmpeg libsndfile1
-        arp-scan arping
-        pulseaudio-utils alsa-utils
-        network-manager
-        sqlite3
-        build-essential
-    )
-
-    # Optional kiosk helpers
-    apt-get install -y -qq cage wtype >/dev/null 2>&1 || true
-
-    apt-get install -y -qq "${packages[@]}" >/dev/null
-    log "Base packages installed"
-
-    # Docker (official convenience script if not present)
-    if ! command -v docker &>/dev/null; then
-        log "Installing Docker engine via get.docker.com"
-        curl -fsSL https://get.docker.com | sh >/dev/null
+    if $HAS_AUDIO; then
+        log "Audio detected — installing pulseaudio/alsa utilities"
+        install_apt pulseaudio-utils alsa-utils
     else
-        log "Docker already installed: $(docker --version)"
+        log "No audio devices — skipping pulseaudio/alsa"
     fi
 
-    # docker compose plugin (newer Docker installs include it)
-    if ! docker compose version &>/dev/null; then
-        warn "docker compose plugin not found — installing"
-        apt-get install -y -qq docker-compose-plugin >/dev/null || \
-            warn "docker-compose-plugin install failed; install manually"
+    if $HAS_BT; then
+        log "Bluetooth detected — installing bluez"
+        install_apt bluez bluez-tools
     fi
 
-    # Node.js (only needed if we will run vite build)
-    if ! command -v node &>/dev/null; then
-        log "Installing Node.js LTS"
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1 || \
-            warn "NodeSource setup failed; will skip Vite build"
-        apt-get install -y -qq nodejs >/dev/null 2>&1 || true
+    if $HAS_DISPLAY && ! $HEADLESS; then
+        log "Display detected — installing kiosk helpers (cage, wtype, seatd)"
+        install_apt cage wtype seatd
+    else
+        log "No display — skipping kiosk helpers"
+    fi
+}
+
+# ── Phase 3: Robust Docker installation ────────────────────────────
+
+install_docker() {
+    title "Installing Docker"
+
+    # 1. Already working?
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        log "Docker + compose plugin already present: $(docker --version)"
+        run systemctl enable --now docker 2>/dev/null || true
+        if $HAS_NVIDIA && ! $IS_JETSON; then
+            install_nvidia_container_toolkit
+        fi
+        return 0
+    fi
+
+    # 2. Jetson — JetPack ships docker pre-configured with nvidia runtime
+    if $IS_JETSON; then
+        if command -v docker >/dev/null 2>&1; then
+            log "Jetson: using JetPack-provided Docker ($(docker --version))"
+            run systemctl enable --now docker 2>/dev/null || true
+            return 0
+        fi
+        warn "Jetson without Docker is unusual — proceeding via apt"
+    fi
+
+    # 3. Official Docker repo
+    local repo_id="$OS_ID"
+    case "$OS_ID" in
+        raspbian)            repo_id=debian ;;
+        pop|linuxmint|kali)  repo_id=ubuntu ;;
+    esac
+    local key_url="https://download.docker.com/linux/$repo_id/gpg"
+    local repo_url="https://download.docker.com/linux/$repo_id"
+
+    log "Installing Docker via official repo ($repo_id $OS_CODENAME)"
+    if _install_docker_official "$repo_id" "$key_url" "$repo_url"; then
+        log "Docker installed via official repo"
+    else
+        warn "Official Docker repo failed — falling back to distro packages"
+        _install_docker_distro_fallback
+    fi
+
+    run systemctl enable --now docker 2>/dev/null || \
+        warn "Could not enable docker via systemctl (no systemd?). Start it manually."
+
+    # NVIDIA container toolkit (skip on Jetson, where it's already wired)
+    if $HAS_NVIDIA && ! $IS_JETSON; then
+        install_nvidia_container_toolkit
+    fi
+
+    # Verify
+    if ! docker compose version >/dev/null 2>&1 && ! docker-compose version >/dev/null 2>&1; then
+        err "Docker compose is not available after install. Aborting."
+        exit 1
+    fi
+}
+
+_install_docker_official() {
+    local repo_id="$1" key_url="$2" repo_url="$3"
+    install_apt ca-certificates curl gnupg
+    run install -m 0755 -d /etc/apt/keyrings
+    if ! $DRY_RUN; then
+        curl -fsSL "$key_url" -o /etc/apt/keyrings/docker.asc || return 1
+        chmod a+r /etc/apt/keyrings/docker.asc
+        echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] $repo_url $OS_CODENAME stable" \
+            > /etc/apt/sources.list.d/docker.list
+    fi
+    apt_update
+    # Explicit minimal package list — no docker-model-plugin, no rootless-extras
+    install_apt docker-ce docker-ce-cli containerd.io \
+                docker-buildx-plugin docker-compose-plugin
+    command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+_install_docker_distro_fallback() {
+    install_apt docker.io
+    if ! docker compose version >/dev/null 2>&1; then
+        install_apt docker-compose-v2 || true
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        install_apt docker-compose-plugin || true
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        install_apt docker-compose || true
+    fi
+}
+
+install_nvidia_container_toolkit() {
+    if command -v nvidia-ctk >/dev/null 2>&1; then
+        log "nvidia-container-toolkit already installed"
+        return 0
+    fi
+    log "Installing nvidia-container-toolkit"
+    if ! $DRY_RUN; then
+        local distribution
+        distribution="$(. /etc/os-release; echo "${ID}${VERSION_ID}")"
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+            | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
+        curl -fsSL "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" \
+            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+            > /etc/apt/sources.list.d/nvidia-container-toolkit.list 2>/dev/null || \
+            warn "NVIDIA toolkit repo not available for $distribution — skipping"
+    fi
+    apt_update
+    install_apt nvidia-container-toolkit || {
+        warn "nvidia-container-toolkit install failed — GPU passthrough may not work"
+        return 0
+    }
+    if ! $DRY_RUN; then
+        nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
+        systemctl restart docker 2>/dev/null || true
     fi
 }
 
@@ -139,17 +358,16 @@ install_host_packages() {
 create_user_and_dirs() {
     title "Creating selena user + directory layout"
     if ! id "$SELENA_USER" &>/dev/null; then
-        useradd --system --create-home --shell /usr/sbin/nologin \
+        run useradd --system --create-home --shell /usr/sbin/nologin \
             --home-dir "/var/lib/$SELENA_USER" "$SELENA_USER"
         log "Created system user '$SELENA_USER'"
     fi
 
-    # Add the selena user to docker + audio so it can speak to host services
     for grp in docker audio video render bluetooth; do
-        getent group "$grp" >/dev/null 2>&1 && usermod -aG "$grp" "$SELENA_USER" || true
+        getent group "$grp" >/dev/null 2>&1 && run usermod -aG "$grp" "$SELENA_USER" || true
     done
 
-    install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" \
+    run install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" \
         "$DATA_DIR" \
         "$DATA_DIR/models" \
         "$DATA_DIR/models/piper" \
@@ -158,10 +376,8 @@ create_user_and_dirs() {
         "$DATA_DIR/speaker_embeddings" \
         "$LOG_DIR"
 
-    install -d -m 0750 -o "$SELENA_USER" -g "$SELENA_USER" "$SECURE_DIR"
+    run install -d -m 0750 -o "$SELENA_USER" -g "$SELENA_USER" "$SECURE_DIR"
 
-    # Seed Piper voices from common host caches so the wizard picker shows
-    # them as already-installed (avoids re-downloading 60-80MB models).
     seed_piper_voices_from_host
 }
 
@@ -176,10 +392,13 @@ seed_piper_voices_from_host() {
     [ -d "/root/.local/share/piper/models" ] && candidates+=("/root/.local/share/piper/models")
     [ -d "/usr/local/share/piper" ] && candidates+=("/usr/local/share/piper")
 
+    [ ${#candidates[@]} -eq 0 ] && return 0
+    $DRY_RUN && { echo "    [dry-run] would seed Piper voices from ${candidates[*]}"; return; }
+
+    local src f base
     for src in "${candidates[@]}"; do
         for f in "$src"/*.onnx "$src"/*.onnx.json; do
             [ -f "$f" ] || continue
-            local base
             base=$(basename "$f")
             if [ ! -f "$dest/$base" ]; then
                 cp "$f" "$dest/$base"
@@ -193,46 +412,48 @@ seed_piper_voices_from_host() {
     fi
 }
 
-# ── Repo materialization (/opt/selena-core) ────────────────────────
+# ── Repo materialization ───────────────────────────────────────────
 
 install_repo() {
-    title "Materializing /opt/selena-core"
-    install -d -m 0755 "$INSTALL_DIR"
+    title "Materializing $INSTALL_DIR"
+    run install -d -m 0755 "$INSTALL_DIR"
     if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
-        # Use rsync if available — faster + preserves perms; fall back to cp
-        if command -v rsync &>/dev/null; then
-            rsync -a --delete \
+        if command -v rsync >/dev/null 2>&1; then
+            run rsync -a --delete \
                 --exclude='.git' --exclude='node_modules' --exclude='.venv' \
                 "$SCRIPT_DIR/" "$INSTALL_DIR/"
         else
-            cp -r "$SCRIPT_DIR"/. "$INSTALL_DIR/"
+            run cp -r "$SCRIPT_DIR"/. "$INSTALL_DIR/"
         fi
         log "Repo synced to $INSTALL_DIR"
     else
         log "Already running from $INSTALL_DIR"
     fi
-    chown -R "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR"
+    run chown -R "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR"
 }
 
 # ── Config bootstrap ───────────────────────────────────────────────
 
 bootstrap_config() {
     title "Bootstrapping configuration"
-    install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" "$INSTALL_DIR/config"
+    run install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" "$INSTALL_DIR/config"
 
     if [ ! -f "$INSTALL_DIR/config/core.yaml" ] && [ -f "$INSTALL_DIR/config/core.yaml.example" ]; then
-        cp "$INSTALL_DIR/config/core.yaml.example" "$INSTALL_DIR/config/core.yaml"
-        chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/config/core.yaml"
+        run cp "$INSTALL_DIR/config/core.yaml.example" "$INSTALL_DIR/config/core.yaml"
+        run chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/config/core.yaml"
         log "Created config/core.yaml from example"
     fi
 
     if [ ! -f "$INSTALL_DIR/.env" ] && [ -f "$INSTALL_DIR/.env.example" ]; then
-        cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
-        chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/.env"
+        run cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+        run chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/.env"
         log "Created .env from example"
     fi
 
-    # Force first-run flags
+    if $DRY_RUN; then
+        echo "    [dry-run] would force wizard.completed=False / system.initialized=False"
+        return
+    fi
     python3 - <<PYEOF
 import yaml, pathlib
 p = pathlib.Path("$INSTALL_DIR/config/core.yaml")
@@ -244,28 +465,58 @@ print("[+] wizard.completed=False persisted")
 PYEOF
 }
 
-# ── Frontend build ─────────────────────────────────────────────────
+# ── Phase 4: Frontend (skipped by default — bundle is committed) ───
 
 build_frontend() {
+    # Check both SCRIPT_DIR (the repo we just cloned) and INSTALL_DIR (the
+    # rsync target) — in dry-run mode the rsync is a no-op but the bundle
+    # is still committed in SCRIPT_DIR.
+    local present=false
+    [ -f "$SCRIPT_DIR/system_modules/ui_core/static/index.html" ] && present=true
+    [ -f "$INSTALL_DIR/system_modules/ui_core/static/index.html" ] && present=true
+    if $present && ! $BUILD_FRONTEND; then
+        log "Frontend bundle already present (committed). Skipping vite build."
+        log "  Pass --build-frontend to force a rebuild."
+        return
+    fi
     title "Building frontend (vite)"
-    if ! command -v npm &>/dev/null; then
-        warn "npm not available — using pre-built static files (if any)"
+    if ! command -v node >/dev/null 2>&1; then
+        log "Installing Node.js LTS for vite build"
+        if ! $DRY_RUN; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1 || \
+                { warn "NodeSource setup failed; cannot build frontend"; return; }
+        fi
+        install_apt nodejs
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+        warn "npm still missing — cannot build frontend"
         return
     fi
     cd "$INSTALL_DIR"
     if [ ! -d node_modules ]; then
-        npm install --silent || warn "npm install reported issues"
+        run npm install --silent || warn "npm install reported issues"
     fi
-    npx vite build || warn "vite build failed; UI may be stale"
+    run npx vite build || warn "vite build failed; UI may be stale"
     cd "$SCRIPT_DIR"
 }
 
-# ── Docker compose ─────────────────────────────────────────────────
+# ── Phase 5: GPU-aware compose start ───────────────────────────────
 
 start_docker_stack() {
     title "Starting docker compose stack"
+    local compose_args=(-f "$INSTALL_DIR/docker-compose.yml")
+    if $HAS_NVIDIA && [ -f "$INSTALL_DIR/docker-compose.gpu.yml" ]; then
+        compose_args+=(-f "$INSTALL_DIR/docker-compose.gpu.yml")
+        log "Using GPU compose override (docker-compose.gpu.yml)"
+    fi
+
+    if $DRY_RUN; then
+        echo "    [dry-run] cd $INSTALL_DIR && docker compose ${compose_args[*]} up -d --build"
+        return
+    fi
+
     cd "$INSTALL_DIR"
-    docker compose up -d --build
+    docker compose "${compose_args[@]}" up -d --build
     cd "$SCRIPT_DIR"
 
     log "Waiting for core to become healthy"
@@ -281,7 +532,7 @@ start_docker_stack() {
     log "Core is healthy"
 }
 
-# ── Systemd unit staging (NOT enabled) ─────────────────────────────
+# ── Systemd unit staging (NOT enabled — wizard does that) ──────────
 
 stage_systemd_units() {
     title "Staging systemd units (not enabled)"
@@ -291,36 +542,44 @@ stage_systemd_units() {
     fi
     for unit in smarthome-core.service smarthome-agent.service scripts/piper-tts.service; do
         if [ -f "$INSTALL_DIR/$unit" ]; then
-            cp "$INSTALL_DIR/$unit" "/etc/systemd/system/$(basename "$unit")"
+            run cp "$INSTALL_DIR/$unit" "/etc/systemd/system/$(basename "$unit")"
             log "Staged $(basename "$unit")"
         fi
     done
-    systemctl daemon-reload || true
+    run systemctl daemon-reload || true
     log "Units staged. The wizard's 'install_native_services' step will enable them."
 }
 
-# ── Banner ─────────────────────────────────────────────────────────
+# ── Phase 7: Banner with environment summary ───────────────────────
 
 print_banner() {
-    local ip
+    local ip caps=()
     ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<lan-ip>")
+    [ -z "$ip" ] && ip="<lan-ip>"
+    $HAS_NVIDIA && caps+=("NVIDIA")
+    $HAS_AUDIO  && caps+=("audio")
+    $HAS_DISPLAY && caps+=("display")
+    $HAS_BT     && caps+=("bluetooth")
+    $HEADLESS   && caps+=("headless")
+    local caps_str
+    caps_str=$(IFS=,; echo "${caps[*]:-none}")
+
     echo ""
-    echo -e "${BOLD}${GREEN}"
-    echo "  ┌────────────────────────────────────────────────────────┐"
-    echo "  │                                                        │"
-    echo "  │    SelenaCore is up.  Open the browser wizard:         │"
-    echo "  │                                                        │"
-    printf "  │      http://%-44s│\n" "${ip}/"
-    echo "  │                                                        │"
-    echo "  │    The wizard will:                                    │"
-    echo "  │     • let you pick STT / TTS / LLM models              │"
-    echo "  │     • download them with progress                      │"
-    echo "  │     • create the admin user                            │"
-    echo "  │     • register the device with the platform            │"
-    echo "  │     • install the native systemd services              │"
-    echo "  │                                                        │"
-    echo "  └────────────────────────────────────────────────────────┘"
-    echo -e "${NC}"
+    echo -e "${BOLD}${GREEN}SelenaCore is up.${NC}"
+    echo ""
+    echo "  Detected:  $OS_ID $OS_VERSION_ID ($OS_CODENAME), $ARCH"
+    echo "             RAM ${RAM_GB} GB, $caps_str"
+    echo "             Profile: $PROFILE"
+    echo ""
+    echo -e "  ${BOLD}Wizard:    http://${ip}/${NC}"
+    echo ""
+    echo "  The wizard will:"
+    echo "    • let you pick STT / TTS / LLM models"
+    echo "    • download them with progress"
+    echo "    • create the admin user"
+    echo "    • register the device with the platform"
+    echo "    • install the native systemd services"
+    echo ""
     echo "  Logs:"
     echo "    docker compose logs -f core"
     echo "    docker compose logs -f agent"
@@ -330,17 +589,13 @@ print_banner() {
 # ── Main ───────────────────────────────────────────────────────────
 
 main() {
-    local skip_build=false
-    local skip_docker=false
-    local skip_deps=false
-    local forced_profile=""
-
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --no-build)   skip_build=true; shift ;;
-            --no-docker)  skip_docker=true; shift ;;
-            --skip-deps)  skip_deps=true; shift ;;
-            --profile)    forced_profile="$2"; shift 2 ;;
+            --skip-deps)        SKIP_DEPS=true; shift ;;
+            --no-docker)        SKIP_DOCKER=true; shift ;;
+            --build-frontend)   BUILD_FRONTEND=true; shift ;;
+            --no-build)         BUILD_FRONTEND=false; shift ;;
+            --dry-run)          DRY_RUN=true; shift ;;
             -h|--help)
                 grep -E '^# ' "$0" | sed 's/^# //'
                 exit 0 ;;
@@ -350,17 +605,29 @@ main() {
 
     title "SelenaCore unified installer"
     require_root
-    detect_hardware
-    [ -n "$forced_profile" ] && HW_PROFILE="$forced_profile"
+    detect_environment
 
-    [ "$skip_deps" = true ] || install_host_packages
+    if ! $SKIP_DEPS; then
+        install_host_packages
+        install_docker
+    fi
+
     create_user_and_dirs
     install_repo
     bootstrap_config
-    [ "$skip_build" = true ] || build_frontend
-    [ "$skip_docker" = true ] || start_docker_stack
+    build_frontend
+
+    if ! $SKIP_DOCKER; then
+        start_docker_stack
+    fi
+
     stage_systemd_units
     print_banner
+
+    if $DRY_RUN; then
+        echo ""
+        log "Dry-run complete — no changes were made."
+    fi
 }
 
 main "$@"
