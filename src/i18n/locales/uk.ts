@@ -462,6 +462,7 @@ const uk = {
             userName: 'Ім\'я',
             userPin: 'PIN-код (4-8 цифр)',
             userPinPlaceholder: '••••',
+            userPinRequired: 'Обов\'язково — цей PIN потрібен щоб пізніше відкрити Налаштування. Пропустити не можна.',
 
             // Step 8 - Home devices
             homeDevicesTitle: 'Реєстрація пристроїв',

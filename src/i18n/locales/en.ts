@@ -462,6 +462,7 @@ const en = {
             userName: 'Name',
             userPin: 'PIN code (4-8 digits)',
             userPinPlaceholder: '••••',
+            userPinRequired: 'Required — you will need this PIN to unlock Settings later. Cannot be skipped.',
 
             // Step 8 - Home devices
             homeDevicesTitle: 'Register devices',

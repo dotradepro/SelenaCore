@@ -1074,12 +1074,15 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     if step_name not in WIZARD_STEPS:
         raise HTTPException(status_code=400, detail=f"Unknown wizard step: {step_name}")
 
-    # Mark step as done
+    # --- Validate + persist step data to core.yaml first; only mark the
+    # step as done if _apply_wizard_step did not raise. This is critical
+    # for admin_user — without a valid PIN we must NOT advance the wizard,
+    # otherwise the user is locked out of settings forever.
+    extra = await _apply_wizard_step(step_name, body.data)
+
+    # Mark step as done only after successful application
     _wizard_state["steps"][step_name] = body.data
     logger.info("Wizard step completed: %s", step_name)
-
-    # --- Persist step data to core.yaml ---
-    extra = await _apply_wizard_step(step_name, body.data)
 
     # Determine next step
     step_names = list(WIZARD_STEPS.keys())
@@ -1172,31 +1175,57 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
             update_nested("voice.tts.primary.voice", data["voice"])  # canonical
             os.environ["PIPER_VOICE"] = data["voice"]
 
-        elif step == "admin_user" and data.get("username"):
+        elif step == "admin_user":
+            # admin_user is REQUIRED — without a valid PIN the user cannot
+            # later unlock the settings page (KioskElevationGate). This step
+            # MUST NOT silently succeed without creating the owner account.
+            username = (data.get("username") or "").strip()
+            pin = (data.get("pin") or "").strip()
+            if not username:
+                raise HTTPException(status_code=422, detail="Username is required")
+            if not pin or len(pin) < 4 or not pin.isdigit():
+                raise HTTPException(
+                    status_code=422,
+                    detail="A numeric PIN of at least 4 digits is required — "
+                           "you will need it to unlock settings later",
+                )
+
+            from core.module_loader.sandbox import get_sandbox
+            um = get_sandbox().get_in_process_module("user-manager")
+            if um is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="user-manager module is not loaded; cannot create owner account",
+                )
+
+            try:
+                existing = await um._users.get_by_username(username)
+                if existing:
+                    # Re-set the PIN so the user can recover if they re-ran the wizard
+                    if hasattr(um._users, "update_pin"):
+                        await um._users.update_pin(existing.user_id, pin)
+                    logger.info("Wizard: owner '%s' already existed — PIN refreshed", username)
+                else:
+                    await um._users.create(
+                        username=username,
+                        display_name=username,
+                        pin=pin,
+                        role="owner",
+                    )
+                    logger.info("Wizard: created owner account '%s' in DB", username)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.error("Wizard: failed to create owner in DB: %s", exc)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create owner account: {exc}",
+                )
+
             update_section("admin", {
-                "username": data["username"],
-                # PIN is not stored in plaintext in yaml; just mark admin created
+                "username": username,
                 "created": True,
             })
-            # Create admin/owner account in the DB
-            if data.get("pin"):
-                try:
-                    from core.module_loader.sandbox import get_sandbox
-                    um = get_sandbox().get_in_process_module("user-manager")
-                    if um:
-                        existing = await um._users.get_by_username(data["username"])
-                        if not existing:
-                            await um._users.create(
-                                username=data["username"],
-                                display_name=data["username"],
-                                pin=data["pin"],
-                                role="owner",
-                            )
-                            logger.info("Wizard: created owner account '%s' in DB", data["username"])
-                        else:
-                            logger.info("Wizard: owner '%s' already exists in DB", data["username"])
-                except Exception as exc:
-                    logger.warning("Wizard: failed to create owner in DB: %s", exc)
 
         elif step == "wifi" and data.get("ssid"):
             update_config("system", "wifi_ssid", data["ssid"])
@@ -1251,6 +1280,10 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                 sources = [s.strip() for s in sources.split(",") if s.strip()]
             update_section("wizard_import", {"sources": sources})
 
+    except HTTPException:
+        # Validation failures (e.g. admin_user without PIN) MUST propagate
+        # so the frontend re-prompts and the user cannot lock themselves out.
+        raise
     except Exception as exc:
         logger.warning("Failed to apply wizard step '%s': %s", step, exc)
     return None

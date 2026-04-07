@@ -1237,6 +1237,9 @@ export default function Wizard() {
                               </button>
                             )}
                           </div>
+                          <p className="mt-1 text-[11px] text-amber-400/80">
+                            {t('wizard.userPinRequired')}
+                          </p>
                         </div>
                       </div>
                     </div>
