@@ -23,7 +23,12 @@
 #   --dry-run          Print the planned actions and exit without changes
 #   --no-build         (compatibility alias for --build-frontend off, ignored)
 #
-set -Eeuo pipefail
+# NOTE: deliberately NOT using `set -E`. With -E the ERR trap inherits into
+# every function, so commands handled with `|| true` or `if ! ...; then` still
+# fire the trap and produce a misleading "Installer aborted" line even though
+# the script keeps going. Plain `set -e` only aborts on truly unhandled errors,
+# which is what we want.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INSTALL_DIR="${SELENA_INSTALL_DIR:-/opt/selena-core}"
@@ -50,7 +55,16 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[x]${NC} $*" >&2; }
 title() { echo -e "${BOLD}${BLUE}== $* ==${NC}"; }
 
-trap 'err "Installer aborted on line $LINENO. Re-run: sudo ./install.sh   |   inspect: docker compose logs core"' ERR
+on_abort() {
+    local rc=$?
+    err "Installer aborted (exit $rc) at line ${BASH_LINENO[0]}."
+    err "  Re-run after fixing: sudo ./install.sh"
+    err "  Inspect logs:        docker compose logs core"
+}
+# Without `set -E` this trap only fires on truly unhandled errors that
+# trigger `set -e` to abort the script — no spurious "aborted" lines from
+# functions that handle their own errors via `|| true` / if-fi.
+trap on_abort ERR
 
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -68,33 +82,42 @@ run() {
     fi
 }
 
-# Filter known-noise warnings from apt without swallowing real errors.
+# Run apt-get update. Errors are not silently swallowed — if the index can't
+# be refreshed the user sees the actual apt message so they can fix the
+# offending repo. We continue regardless because subsequent installs may
+# still succeed against a partially-stale cache.
 apt_update() {
-    if $DRY_RUN; then echo "    [dry-run] apt-get update $APT_QUIET"; return; fi
-    apt-get update $APT_QUIET 2> >(grep -v 'is configured multiple times' >&2) || true
+    $DRY_RUN && { echo "    [dry-run] apt-get update $APT_QUIET"; return 0; }
+    if ! apt-get update $APT_QUIET; then
+        warn "apt-get update reported errors above (continuing — see ^^^)"
+    fi
+    return 0
 }
 
-# Install a list of packages, surfacing real errors. If the batch fails,
-# retry packages one-by-one so a single missing optional doesn't kill
-# everything (and prints which package was the offender).
+# Install a list of packages. If the batch fails the real apt error is
+# already on stderr; we then retry one package at a time so a single
+# missing optional doesn't kill everything and we can name the offender.
 install_apt() {
     [ $# -eq 0 ] && return 0
     if $DRY_RUN; then
         echo "    [dry-run] apt-get install -y $*"
-        return
-    fi
-    if DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$@" \
-            2> >(grep -v 'is configured multiple times' >&2); then
         return 0
     fi
-    warn "Batch install failed; retrying individually so we can isolate the bad package"
-    local pkg
+    if DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$@"; then
+        return 0
+    fi
+    warn "Batch install of [$*] failed — retrying packages individually"
+    local pkg ok=0 fail=0
     for pkg in "$@"; do
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$pkg" \
-                2> >(grep -v 'is configured multiple times' >&2); then
+        if DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET "$pkg"; then
+            ok=$((ok + 1))
+        else
             warn "  ✗ $pkg — skipped"
+            fail=$((fail + 1))
         fi
     done
+    log "  $ok package(s) installed, $fail skipped"
+    return 0
 }
 
 # ── Phase 1: Environment detection ─────────────────────────────────
