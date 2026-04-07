@@ -32,6 +32,29 @@ export interface Module {
   };
 }
 
+export interface CloudProviderStatus {
+  id: string;
+  name: string;
+  configured: boolean;
+  model: string;
+  active: boolean;
+}
+
+export interface LlmEngineStatus {
+  provider: string;
+  model: string;
+  twoStep: boolean;
+  cloudProviders: CloudProviderStatus[];
+  intentCache: { size: number; hot: number };
+}
+
+export interface NativeService {
+  name: string;
+  running: boolean;
+  url: string | null;
+  extra: Record<string, unknown>;
+}
+
 export interface SystemStats {
   cpuTemp: number;
   cpuLoad: [number, number, number];
@@ -46,6 +69,7 @@ export interface SystemStats {
   integrity: string;
   mode: string;
   version: string;
+  corePort: number;
   ollama: {
     installed: boolean;
     running: boolean;
@@ -54,6 +78,8 @@ export interface SystemStats {
     loadedModel?: string;
     models?: { name: string; size_mb: number }[];
   };
+  llmEngine: LlmEngineStatus;
+  nativeServices: NativeService[];
 }
 
 export interface Health {
@@ -410,6 +436,13 @@ export const useStore = create<AppState>((set, get) => ({
         const hw = data.hardware ?? {};
         const core = data.core ?? {};
         const ollama = data.ollama ?? {};
+        const llm = data.llm_engine ?? {};
+        const nativeRaw: Array<Record<string, unknown>> = Array.isArray(data.native_services)
+          ? data.native_services
+          : [];
+        const cloudRaw: Array<Record<string, unknown>> = Array.isArray(llm.cloud_providers)
+          ? llm.cloud_providers
+          : [];
         set({
           health: core ?? get().health,
           stats: {
@@ -426,6 +459,7 @@ export const useStore = create<AppState>((set, get) => ({
             integrity: core.integrity ?? 'ok',
             mode: core.mode ?? 'normal',
             version: core.version ?? '—',
+            corePort: core.core_port ?? 80,
             ollama: {
               installed: ollama.installed ?? false,
               running: ollama.running ?? false,
@@ -434,6 +468,28 @@ export const useStore = create<AppState>((set, get) => ({
               loadedModel: ollama.loaded_model,
               models: ollama.models,
             },
+            llmEngine: {
+              provider: (llm.provider as string) ?? 'ollama',
+              model: (llm.model as string) ?? '',
+              twoStep: Boolean(llm.two_step),
+              cloudProviders: cloudRaw.map((p) => ({
+                id: String(p.id ?? ''),
+                name: String(p.name ?? p.id ?? ''),
+                configured: Boolean(p.configured),
+                model: String(p.model ?? ''),
+                active: Boolean(p.active),
+              })),
+              intentCache: {
+                size: Number((llm.intent_cache as { size?: number } | undefined)?.size ?? 0),
+                hot: Number((llm.intent_cache as { hot?: number } | undefined)?.hot ?? 0),
+              },
+            },
+            nativeServices: nativeRaw.map((s) => ({
+              name: String(s.name ?? ''),
+              running: Boolean(s.running),
+              url: (s.url as string | null) ?? null,
+              extra: (s.extra as Record<string, unknown>) ?? {},
+            })),
           },
         });
       }

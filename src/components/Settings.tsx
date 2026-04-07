@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Volume2, Network, Users, Activity, Shield, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid, ShieldCheck } from 'lucide-react';
+import { Volume2, Network, Users, Activity, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -8,7 +8,6 @@ import UsersPanel from './UsersPanel';
 import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
-import IntegrityPage from './IntegrityPage';
 export default function Settings() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -21,8 +20,6 @@ export default function Settings() {
     { id: 'modules', label: t('settings.modules', 'Modules'), icon: LayoutGrid, path: '/settings/modules' },
     { id: 'system', label: t('settings.system'), icon: Activity, path: '/settings/system' },
     { id: 'system-info', label: t('settings.systemInfo', 'System Info'), icon: Cpu, path: '/settings/system-info' },
-    { id: 'integrity', label: t('settings.integrity', 'Integrity'), icon: ShieldCheck, path: '/settings/integrity' },
-    { id: 'security', label: t('settings.security'), icon: Shield, path: '/settings/security' },
     { id: 'system-modules', label: t('settings.systemModules'), icon: Cpu, path: '/settings/system-modules' },
   ];
 
@@ -69,8 +66,7 @@ export default function Settings() {
           <Route path="/modules/:name" element={<ModuleDetail />} />
           <Route path="/system" element={<SystemSettings />} />
           <Route path="/system-info" element={<SystemPage />} />
-          <Route path="/integrity" element={<IntegrityPage />} />
-          <Route path="/security" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
+          <Route path="/system-info/:tab" element={<SystemPage />} />
           <Route path="/system-modules" element={<SystemModulesSettings />} />
           <Route path="*" element={<div className="text-zinc-400">{t('common.inDevelopment')}</div>} />
         </Routes>
