@@ -1,34 +1,51 @@
 #!/usr/bin/env bash
-# SelenaCore Installer — auto-detect hardware, install components
+# SelenaCore — unified bootstrap installer.
+#
+# Single entry point for fresh devices. After this script finishes you
+# get a URL to a browser-based wizard that completes the installation
+# (model downloads, voices, LLM, admin user, platform registration).
+#
 # Usage:
-#   bash install.sh              # auto-detect
-#   bash install.sh --profile jetson
-#   bash install.sh --profile raspberry
-#   bash install.sh --profile linux_cuda
-#   bash install.sh --profile linux_cpu
-#   bash install.sh --update
+#   git clone https://github.com/dotradepro/SelenaCore.git
+#   cd SelenaCore
+#   sudo ./install.sh
+#
+# Optional flags:
+#   --no-build         Skip the frontend (Vite) build
+#   --no-docker        Don't start docker compose (assume host already manages it)
+#   --skip-deps        Skip apt-get package installation
+#   --profile NAME     Force a hardware profile (jetson|raspberry|linux_cuda|linux_cpu|minimal)
+#
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-INSTALL_DIR="/opt/selena-core"
-DATA_DIR="/var/lib/selena"
-LOG_DIR="/var/log/selena"
-WHISPER_DIR="/opt/whisper.cpp"
-WHISPER_PORT=9000
-PIPER_PORT=5100
+INSTALL_DIR="${SELENA_INSTALL_DIR:-/opt/selena-core}"
+DATA_DIR="${SELENA_DATA_DIR:-/var/lib/selena}"
+LOG_DIR="${SELENA_LOG_DIR:-/var/log/selena}"
+SECURE_DIR="${SELENA_SECURE_DIR:-/secure}"
+SELENA_USER="${SELENA_USER:-selena}"
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}[+]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[x]${NC} $*" >&2; }
+log()   { echo -e "${GREEN}[+]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
+err()   { echo -e "${RED}[x]${NC} $*" >&2; }
+title() { echo -e "${BOLD}${BLUE}== $* ==${NC}"; }
 
-# ── Hardware Detection ──────────────────────────────────────────────
+require_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        err "This installer must be run as root: sudo ./install.sh"
+        exit 1
+    fi
+}
+
+# ── Hardware Detection (kept for profile-aware messaging) ──────────
 
 detect_hardware() {
     HW_ARCH=$(uname -m)
@@ -38,8 +55,8 @@ detect_hardware() {
     HW_RASPBERRY=false
     HW_CUDA=false
     HW_MODEL=""
+    HW_PROFILE="linux_cpu"
 
-    # Check device tree
     if [ -f /proc/device-tree/model ]; then
         HW_MODEL=$(tr -d '\0' < /proc/device-tree/model)
         if echo "$HW_MODEL" | grep -qi "jetson"; then
@@ -49,413 +66,301 @@ detect_hardware() {
         fi
     fi
 
-    # Check CUDA
     if command -v nvidia-smi &>/dev/null || [ -d /usr/local/cuda ]; then
         HW_CUDA=true
     fi
 
-    echo ""
-    log "Hardware detected:"
-    echo "  Architecture: $HW_ARCH"
-    echo "  RAM:          ${HW_RAM_GB} GB"
-    echo "  Device:       ${HW_MODEL:-Unknown}"
-    echo "  CUDA:         $HW_CUDA"
-    echo "  Jetson:       $HW_JETSON"
-    echo "  Raspberry Pi: $HW_RASPBERRY"
-}
-
-# ── Profile Selection ───────────────────────────────────────────────
-
-select_profile() {
     if $HW_JETSON; then
-        PROFILE="jetson"
+        HW_PROFILE="jetson"
     elif $HW_RASPBERRY; then
-        PROFILE="raspberry"
+        HW_PROFILE="raspberry"
     elif $HW_CUDA; then
-        PROFILE="linux_cuda"
+        HW_PROFILE="linux_cuda"
+    fi
+
+    log "Hardware detected:"
+    echo "    Architecture: $HW_ARCH"
+    echo "    RAM:          ${HW_RAM_GB} GB"
+    echo "    Device:       ${HW_MODEL:-Unknown}"
+    echo "    CUDA:         $HW_CUDA"
+    echo "    Profile:      $HW_PROFILE"
+}
+
+# ── Host packages ──────────────────────────────────────────────────
+
+install_host_packages() {
+    title "Installing host packages"
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+
+    local packages=(
+        ca-certificates curl wget git jq unzip
+        python3 python3-venv python3-pip
+        ffmpeg libsndfile1
+        arp-scan arping
+        pulseaudio-utils alsa-utils
+        network-manager
+        sqlite3
+        build-essential
+    )
+
+    # Optional kiosk helpers
+    apt-get install -y -qq cage wtype >/dev/null 2>&1 || true
+
+    apt-get install -y -qq "${packages[@]}" >/dev/null
+    log "Base packages installed"
+
+    # Docker (official convenience script if not present)
+    if ! command -v docker &>/dev/null; then
+        log "Installing Docker engine via get.docker.com"
+        curl -fsSL https://get.docker.com | sh >/dev/null
     else
-        PROFILE="linux_cpu"
+        log "Docker already installed: $(docker --version)"
     fi
 
-    echo ""
-    log "Recommended profile: ${BLUE}${PROFILE}${NC}"
-    echo ""
-    echo "  1) ${PROFILE} (recommended)"
-    echo "  2) minimal (core only, no STT/TTS/LLM)"
-    echo "  3) Choose manually"
-    echo ""
-    read -rp "Select [1]: " choice
-    case "${choice:-1}" in
-        1) ;; # keep recommended
-        2) PROFILE="minimal" ;;
-        3)
-            echo ""
-            echo "  Available profiles: jetson, raspberry, linux_cuda, linux_cpu, minimal"
-            read -rp "  Profile: " PROFILE
-            ;;
-    esac
-    log "Using profile: ${BLUE}${PROFILE}${NC}"
-}
-
-# ── Component Installers ────────────────────────────────────────────
-
-install_system_deps() {
-    log "Installing system dependencies..."
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq \
-        python3 python3-pip python3-venv \
-        git curl wget cmake build-essential \
-        ffmpeg libsndfile1 \
-        arp-scan arping \
-        pulseaudio-utils \
-        sqlite3 \
-        2>/dev/null || true
-}
-
-install_whisper_cpp() {
-    local build_cuda="$1"  # "ON" or "OFF"
-    if [ -f "$WHISPER_DIR/build/bin/whisper-server" ]; then
-        log "whisper.cpp already built, skipping"
-        return
+    # docker compose plugin (newer Docker installs include it)
+    if ! docker compose version &>/dev/null; then
+        warn "docker compose plugin not found — installing"
+        apt-get install -y -qq docker-compose-plugin >/dev/null || \
+            warn "docker-compose-plugin install failed; install manually"
     fi
 
-    log "Building whisper.cpp (CUDA=$build_cuda)..."
-    sudo mkdir -p "$WHISPER_DIR"
-    sudo chown "$(whoami)" "$WHISPER_DIR"
-    git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$WHISPER_DIR" 2>/dev/null || true
-    cd "$WHISPER_DIR"
-    cmake -B build -DWHISPER_CUDA="$build_cuda" -DCMAKE_BUILD_TYPE=Release
-    cmake --build build -j"$(nproc)"
-
-    # Download model
-    if [ ! -f "$WHISPER_DIR/models/ggml-small.bin" ]; then
-        log "Downloading Whisper small model (~460 MB)..."
-        bash ./models/download-ggml-model.sh small
-    fi
-    cd "$SCRIPT_DIR"
-}
-
-install_faster_whisper() {
-    log "Installing faster-whisper..."
-    pip3 install --user faster-whisper 2>/dev/null || pip3 install faster-whisper
-}
-
-install_ollama() {
-    if command -v ollama &>/dev/null; then
-        log "Ollama already installed"
-    else
-        log "Installing Ollama..."
-        curl -fsSL https://ollama.com/install.sh | sh
-    fi
-
-    local model="${1:-qwen2.5:3b}"
-    log "Pulling model: $model..."
-    ollama pull "$model" 2>/dev/null || warn "Failed to pull $model (try manually: ollama pull $model)"
-}
-
-install_piper() {
-    if command -v piper &>/dev/null || [ -f /usr/local/bin/piper ]; then
-        log "Piper TTS already installed"
-    else
-        log "Installing Piper TTS..."
-        pip3 install --user piper-tts 2>/dev/null || pip3 install piper-tts || warn "Piper install failed"
-    fi
-
-    # Download EN fallback voice (~5MB) for multilingual TTS support
-    local piper_models="${PIPER_MODELS_DIR:-$DATA_DIR/models/piper}"
-    mkdir -p "$piper_models"
-    local fallback_voice="en_US-amy-low"
-    if [ ! -f "$piper_models/${fallback_voice}.onnx" ]; then
-        log "Downloading Piper fallback voice: $fallback_voice (~5MB)..."
-        local base_url="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/low"
-        curl -sL "$base_url/en_US-amy-low.onnx" -o "$piper_models/${fallback_voice}.onnx" || warn "Fallback voice download failed"
-        curl -sL "$base_url/en_US-amy-low.onnx.json" -o "$piper_models/${fallback_voice}.onnx.json" 2>/dev/null
-        log "Fallback voice downloaded: $fallback_voice"
+    # Node.js (only needed if we will run vite build)
+    if ! command -v node &>/dev/null; then
+        log "Installing Node.js LTS"
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1 || \
+            warn "NodeSource setup failed; will skip Vite build"
+        apt-get install -y -qq nodejs >/dev/null 2>&1 || true
     fi
 }
 
-install_selenacore() {
-    log "Installing SelenaCore..."
-    sudo mkdir -p "$INSTALL_DIR" "$DATA_DIR" "$LOG_DIR"
+# ── User and directories ───────────────────────────────────────────
 
-    # Copy files
-    if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
-        sudo cp -r "$SCRIPT_DIR"/{core,system_modules,config,agent,sdk} "$INSTALL_DIR/" 2>/dev/null || true
-        sudo cp "$SCRIPT_DIR"/requirements.txt "$INSTALL_DIR/" 2>/dev/null || true
+create_user_and_dirs() {
+    title "Creating selena user + directory layout"
+    if ! id "$SELENA_USER" &>/dev/null; then
+        useradd --system --create-home --shell /usr/sbin/nologin \
+            --home-dir "/var/lib/$SELENA_USER" "$SELENA_USER"
+        log "Created system user '$SELENA_USER'"
     fi
 
-    # Install Python dependencies
-    cd "$INSTALL_DIR"
-    pip3 install -r requirements.txt 2>/dev/null || warn "Some Python deps failed"
-    cd "$SCRIPT_DIR"
+    # Add the selena user to docker + audio so it can speak to host services
+    for grp in docker audio video render bluetooth; do
+        getent group "$grp" >/dev/null 2>&1 && usermod -aG "$grp" "$SELENA_USER" || true
+    done
+
+    install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" \
+        "$DATA_DIR" \
+        "$DATA_DIR/models" \
+        "$DATA_DIR/models/piper" \
+        "$DATA_DIR/models/vosk" \
+        "$DATA_DIR/models/whisper" \
+        "$DATA_DIR/speaker_embeddings" \
+        "$LOG_DIR"
+
+    install -d -m 0750 -o "$SELENA_USER" -g "$SELENA_USER" "$SECURE_DIR"
+
+    # Seed Piper voices from common host caches so the wizard picker shows
+    # them as already-installed (avoids re-downloading 60-80MB models).
+    seed_piper_voices_from_host
 }
 
-# ── Systemd Services ───────────────────────────────────────────────
-
-install_systemd_services() {
-    log "Installing systemd services..."
-
-    # whisper-server service
-    if [ -f "$WHISPER_DIR/build/bin/whisper-server" ]; then
-        # Write default env file for whisper-server
-        sudo mkdir -p "$DATA_DIR"
-        echo "WHISPER_MODEL=ggml-small" | sudo tee "$DATA_DIR/whisper-server.env" > /dev/null
-
-        sudo tee /etc/systemd/system/whisper-server.service > /dev/null <<EOF
-[Unit]
-Description=Whisper.cpp STT Server
-After=network.target
-
-[Service]
-Type=simple
-EnvironmentFile=-$DATA_DIR/whisper-server.env
-Environment=WHISPER_MODEL=ggml-small
-ExecStart=$WHISPER_DIR/build/bin/whisper-server \\
-    --model $WHISPER_DIR/models/\${WHISPER_MODEL}.bin \\
-    --host 0.0.0.0 --port $WHISPER_PORT --language auto
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-        sudo systemctl daemon-reload
-        sudo systemctl enable whisper-server
-        log "whisper-server.service installed"
+seed_piper_voices_from_host() {
+    local dest="$DATA_DIR/models/piper"
+    local copied=0
+    local origin_user="${SUDO_USER:-}"
+    local candidates=()
+    if [ -n "$origin_user" ] && [ -d "/home/$origin_user/.local/share/piper/models" ]; then
+        candidates+=("/home/$origin_user/.local/share/piper/models")
     fi
-}
+    [ -d "/root/.local/share/piper/models" ] && candidates+=("/root/.local/share/piper/models")
+    [ -d "/usr/local/share/piper" ] && candidates+=("/usr/local/share/piper")
 
-# ── Config Generation ───────────────────────────────────────────────
-
-generate_config() {
-    local profile="$1"
-    local config_file="$DATA_DIR/core.yaml"
-
-    if [ -f "$config_file" ]; then
-        warn "Config already exists: $config_file (skipping)"
-        return
-    fi
-
-    log "Generating core.yaml for profile: $profile"
-    local stt_provider="auto"
-    local llm_model="qwen2.5:3b"
-
-    case "$profile" in
-        jetson)
-            stt_provider="auto"  # will find whisper.cpp
-            llm_model="qwen2.5:3b"
-            ;;
-        raspberry)
-            stt_provider="faster_whisper"
-            if [ "$HW_RAM_GB" -lt 4 ]; then
-                llm_model="qwen2.5:1.5b"
-            else
-                llm_model="qwen2.5:3b"
+    for src in "${candidates[@]}"; do
+        for f in "$src"/*.onnx "$src"/*.onnx.json; do
+            [ -f "$f" ] || continue
+            local base
+            base=$(basename "$f")
+            if [ ! -f "$dest/$base" ]; then
+                cp "$f" "$dest/$base"
+                copied=$((copied + 1))
             fi
-            ;;
-        linux_cuda)
-            stt_provider="auto"
-            llm_model="qwen2.5:3b"
-            ;;
-        linux_cpu)
-            stt_provider="faster_whisper"
-            llm_model="qwen2.5:3b"
-            ;;
-    esac
-
-    sudo mkdir -p "$(dirname "$config_file")"
-    sudo tee "$config_file" > /dev/null <<EOF
-core:
-  host: "0.0.0.0"
-  port: 7070
-  data_dir: "$DATA_DIR"
-  log_level: "INFO"
-
-stt:
-  provider: "$stt_provider"
-  whisper_cpp:
-    host: "http://localhost:$WHISPER_PORT"
-  faster_whisper:
-    model: "small"
-    device: "auto"
-    compute_type: "auto"
-
-ai:
-  conversation:
-    provider: "local"
-    local:
-      host: "http://localhost:11434"
-      model: "$llm_model"
-      options:
-        temperature: 0.1
-        num_predict: 80
-
-voice:
-  tts_voice: "uk_UA-ukrainian_tts-medium"
-  tts_fallback_voice: "en_US-amy-low"
-  wake_word_model: "привіт селена"
-  stt_silence_timeout: 1.0
-
-system:
-  device_name: "SelenaCore"
-  language: "uk"
-  timezone: "Europe/Kyiv"
-EOF
-    log "Config written to $config_file"
-}
-
-# ── Profile Runners ─────────────────────────────────────────────────
-
-run_profile_jetson() {
-    install_system_deps
-    install_whisper_cpp "ON"
-    install_ollama "qwen2.5:3b"
-    install_piper
-
-    install_selenacore
-    install_systemd_services
-    generate_config "jetson"
-}
-
-run_profile_raspberry() {
-    install_system_deps
-    install_faster_whisper
-    local model="qwen2.5:3b"
-    if [ "$HW_RAM_GB" -lt 4 ]; then
-        model="qwen2.5:1.5b"
+        done
+    done
+    if [ "$copied" -gt 0 ]; then
+        chown -R "$SELENA_USER:$SELENA_USER" "$dest"
+        log "Seeded $copied Piper voice file(s) from host cache → $dest"
     fi
-    install_ollama "$model"
-    install_piper
-
-    install_selenacore
-    generate_config "raspberry"
 }
 
-run_profile_linux_cuda() {
-    install_system_deps
-    install_whisper_cpp "ON"
-    install_ollama "qwen2.5:3b"
-    install_piper
+# ── Repo materialization (/opt/selena-core) ────────────────────────
 
-    install_selenacore
-    install_systemd_services
-    generate_config "linux_cuda"
+install_repo() {
+    title "Materializing /opt/selena-core"
+    install -d -m 0755 "$INSTALL_DIR"
+    if [ "$SCRIPT_DIR" != "$INSTALL_DIR" ]; then
+        # Use rsync if available — faster + preserves perms; fall back to cp
+        if command -v rsync &>/dev/null; then
+            rsync -a --delete \
+                --exclude='.git' --exclude='node_modules' --exclude='.venv' \
+                "$SCRIPT_DIR/" "$INSTALL_DIR/"
+        else
+            cp -r "$SCRIPT_DIR"/. "$INSTALL_DIR/"
+        fi
+        log "Repo synced to $INSTALL_DIR"
+    else
+        log "Already running from $INSTALL_DIR"
+    fi
+    chown -R "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR"
 }
 
-run_profile_linux_cpu() {
-    install_system_deps
-    install_faster_whisper
-    install_ollama "qwen2.5:3b"
-    install_piper
+# ── Config bootstrap ───────────────────────────────────────────────
 
-    install_selenacore
-    generate_config "linux_cpu"
+bootstrap_config() {
+    title "Bootstrapping configuration"
+    install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" "$INSTALL_DIR/config"
+
+    if [ ! -f "$INSTALL_DIR/config/core.yaml" ] && [ -f "$INSTALL_DIR/config/core.yaml.example" ]; then
+        cp "$INSTALL_DIR/config/core.yaml.example" "$INSTALL_DIR/config/core.yaml"
+        chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/config/core.yaml"
+        log "Created config/core.yaml from example"
+    fi
+
+    if [ ! -f "$INSTALL_DIR/.env" ] && [ -f "$INSTALL_DIR/.env.example" ]; then
+        cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
+        chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/.env"
+        log "Created .env from example"
+    fi
+
+    # Force first-run flags
+    python3 - <<PYEOF
+import yaml, pathlib
+p = pathlib.Path("$INSTALL_DIR/config/core.yaml")
+cfg = yaml.safe_load(p.read_text()) or {}
+cfg.setdefault("wizard", {})["completed"] = False
+cfg.setdefault("system", {})["initialized"] = False
+p.write_text(yaml.dump(cfg, default_flow_style=False, allow_unicode=True))
+print("[+] wizard.completed=False persisted")
+PYEOF
 }
 
-run_profile_minimal() {
-    install_system_deps
-    install_selenacore
-    generate_config "minimal"
+# ── Frontend build ─────────────────────────────────────────────────
+
+build_frontend() {
+    title "Building frontend (vite)"
+    if ! command -v npm &>/dev/null; then
+        warn "npm not available — using pre-built static files (if any)"
+        return
+    fi
+    cd "$INSTALL_DIR"
+    if [ ! -d node_modules ]; then
+        npm install --silent || warn "npm install reported issues"
+    fi
+    npx vite build || warn "vite build failed; UI may be stale"
+    cd "$SCRIPT_DIR"
 }
 
-# ── Verification ────────────────────────────────────────────────────
+# ── Docker compose ─────────────────────────────────────────────────
 
-verify_installation() {
+start_docker_stack() {
+    title "Starting docker compose stack"
+    cd "$INSTALL_DIR"
+    docker compose up -d --build
+    cd "$SCRIPT_DIR"
+
+    log "Waiting for core to become healthy"
+    local tries=0
+    until curl -fsS "http://localhost/api/v1/health" >/dev/null 2>&1; do
+        tries=$((tries + 1))
+        if [ "$tries" -gt 60 ]; then
+            warn "Core did not become healthy in 60s — check 'docker compose logs core'"
+            return
+        fi
+        sleep 1
+    done
+    log "Core is healthy"
+}
+
+# ── Systemd unit staging (NOT enabled) ─────────────────────────────
+
+stage_systemd_units() {
+    title "Staging systemd units (not enabled)"
+    if [ ! -d /etc/systemd/system ]; then
+        warn "/etc/systemd/system not present — skipping"
+        return
+    fi
+    for unit in smarthome-core.service smarthome-agent.service scripts/piper-tts.service; do
+        if [ -f "$INSTALL_DIR/$unit" ]; then
+            cp "$INSTALL_DIR/$unit" "/etc/systemd/system/$(basename "$unit")"
+            log "Staged $(basename "$unit")"
+        fi
+    done
+    systemctl daemon-reload || true
+    log "Units staged. The wizard's 'install_native_services' step will enable them."
+}
+
+# ── Banner ─────────────────────────────────────────────────────────
+
+print_banner() {
+    local ip
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "<lan-ip>")
     echo ""
-    log "Verifying installation..."
-    local ok=true
-
-    # Check whisper-server
-    if [ -f "$WHISPER_DIR/build/bin/whisper-server" ]; then
-        echo -e "  whisper.cpp binary:  ${GREEN}OK${NC}"
-    else
-        echo -e "  whisper.cpp binary:  ${YELLOW}not installed${NC}"
-    fi
-
-    if [ -f "$WHISPER_DIR/models/ggml-small.bin" ]; then
-        echo -e "  Whisper model:       ${GREEN}OK${NC}"
-    else
-        echo -e "  Whisper model:       ${YELLOW}not found${NC}"
-    fi
-
-    # Check Ollama
-    if command -v ollama &>/dev/null; then
-        echo -e "  Ollama:              ${GREEN}OK${NC}"
-    else
-        echo -e "  Ollama:              ${YELLOW}not installed${NC}"
-    fi
-
-    # Check Python deps
-    if python3 -c "import fastapi" &>/dev/null; then
-        echo -e "  FastAPI:             ${GREEN}OK${NC}"
-    else
-        echo -e "  FastAPI:             ${RED}MISSING${NC}"
-        ok=false
-    fi
-
+    echo -e "${BOLD}${GREEN}"
+    echo "  ┌────────────────────────────────────────────────────────┐"
+    echo "  │                                                        │"
+    echo "  │    SelenaCore is up.  Open the browser wizard:         │"
+    echo "  │                                                        │"
+    printf "  │      http://%-44s│\n" "${ip}/"
+    echo "  │                                                        │"
+    echo "  │    The wizard will:                                    │"
+    echo "  │     • let you pick STT / TTS / LLM models              │"
+    echo "  │     • download them with progress                      │"
+    echo "  │     • create the admin user                            │"
+    echo "  │     • register the device with the platform            │"
+    echo "  │     • install the native systemd services              │"
+    echo "  │                                                        │"
+    echo "  └────────────────────────────────────────────────────────┘"
+    echo -e "${NC}"
+    echo "  Logs:"
+    echo "    docker compose logs -f core"
+    echo "    docker compose logs -f agent"
     echo ""
-    if $ok; then
-        log "Installation complete!"
-        echo ""
-        echo "  Next steps:"
-        echo "    1. Start whisper-server:  sudo systemctl start whisper-server"
-        echo "    2. Start SelenaCore:      docker compose up -d"
-        echo "    3. Open UI:              http://localhost:80"
-        echo ""
-    else
-        err "Some components are missing. Check the output above."
-    fi
 }
 
-# ── Main ────────────────────────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────────
 
 main() {
-    echo ""
-    echo "  SelenaCore Installer v2.0"
-    echo "  ========================"
-    echo ""
-
-    local profile=""
-    local update_only=false
+    local skip_build=false
+    local skip_docker=false
+    local skip_deps=false
+    local forced_profile=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --profile) profile="$2"; shift 2 ;;
-            --update)  update_only=true; shift ;;
-            --help|-h)
-                echo "Usage: bash install.sh [--profile NAME] [--update]"
-                echo "Profiles: jetson, raspberry, linux_cuda, linux_cpu, minimal"
+            --no-build)   skip_build=true; shift ;;
+            --no-docker)  skip_docker=true; shift ;;
+            --skip-deps)  skip_deps=true; shift ;;
+            --profile)    forced_profile="$2"; shift 2 ;;
+            -h|--help)
+                grep -E '^# ' "$0" | sed 's/^# //'
                 exit 0 ;;
             *) err "Unknown option: $1"; exit 1 ;;
         esac
     done
 
+    title "SelenaCore unified installer"
+    require_root
     detect_hardware
+    [ -n "$forced_profile" ] && HW_PROFILE="$forced_profile"
 
-    if $update_only; then
-        log "Updating SelenaCore..."
-        install_selenacore
-        verify_installation
-        exit 0
-    fi
-
-    if [ -z "$profile" ]; then
-        select_profile
-    else
-        PROFILE="$profile"
-        log "Using profile: $PROFILE"
-    fi
-
-    case "$PROFILE" in
-        jetson)     run_profile_jetson ;;
-        raspberry)  run_profile_raspberry ;;
-        linux_cuda) run_profile_linux_cuda ;;
-        linux_cpu)  run_profile_linux_cpu ;;
-        minimal)    run_profile_minimal ;;
-        *) err "Unknown profile: $PROFILE"; exit 1 ;;
-    esac
-
-    verify_installation
+    [ "$skip_deps" = true ] || install_host_packages
+    create_user_and_dirs
+    install_repo
+    bootstrap_config
+    [ "$skip_build" = true ] || build_frontend
+    [ "$skip_docker" = true ] || start_docker_stack
+    stage_systemd_units
+    print_banner
 }
 
 main "$@"

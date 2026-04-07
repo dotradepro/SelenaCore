@@ -27,7 +27,23 @@ from zoneinfo import available_timezones
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.config_writer import get_value, read_config, update_config, update_many
+from core.config_writer import get_nested, get_value, read_config, update_config, update_many
+
+
+def _piper_models_dir() -> Path:
+    return Path(
+        os.environ.get(
+            "PIPER_MODELS_DIR",
+            str(get_nested("voice.tts.models_dir", "/var/lib/selena/models/piper")),
+        )
+    )
+
+
+def _piper_gpu_url() -> str:
+    return os.environ.get(
+        "PIPER_GPU_URL",
+        str(get_nested("voice.tts.server_url", "http://localhost:5100")),
+    )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/setup", tags=["setup"])
@@ -514,7 +530,7 @@ async def audio_test_output(body: dict[str, str]) -> dict[str, Any]:
     try:
         # Synthesize via Piper HTTP server (GPU, on host)
         import httpx as _httpx
-        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+        gpu_url = _piper_gpu_url()
 
         voice = ""
         try:
@@ -925,7 +941,7 @@ async def stt_status() -> dict[str, Any]:
 @router.get("/tts/voices")
 async def tts_voices() -> dict[str, Any]:
     """List installed Piper TTS voices by scanning disk."""
-    models_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
+    models_dir = _piper_models_dir()
     active_voice = get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "ru_RU-irina-medium"))
 
     result = []
@@ -971,7 +987,7 @@ async def tts_preview(req: PreviewVoiceRequest) -> Any:
             # Check why synthesis failed
             if not shutil.which("piper"):
                 raise HTTPException(status_code=503, detail="Piper TTS binary not found — install Piper first")
-            voice_file = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")) / f"{req.voice}.onnx"
+            voice_file = _piper_models_dir() / f"{req.voice}.onnx"
             if not voice_file.exists():
                 raise HTTPException(status_code=503, detail=f"Voice model not found: {req.voice}")
             raise HTTPException(status_code=500, detail="TTS synthesis failed")
@@ -1233,8 +1249,17 @@ async def start_provision() -> dict[str, Any]:
         return {"status": "already_running", **_provision.to_dict()}
 
     config = read_config()
-    stt_model = config.get("voice", {}).get("stt_model", "small")
-    tts_voice = config.get("voice", {}).get("tts_voice", "uk_UA-ukrainian_tts-medium")
+    # Wizard writes vosk active model into stt.vosk.active_model; legacy: voice.stt_model
+    stt_model = (
+        config.get("stt", {}).get("vosk", {}).get("active_model")
+        or config.get("voice", {}).get("stt_model", "")
+        or ""
+    )
+    tts_voice = (
+        config.get("voice", {}).get("tts_voice")
+        or config.get("voice", {}).get("tts", {}).get("primary", {}).get("voice")
+        or "uk_UA-ukrainian_tts-medium"
+    )
     llm_model = config.get("llm", {}).get("default_model")
 
     _provision.reset()
@@ -1244,17 +1269,23 @@ async def start_provision() -> dict[str, Any]:
     tasks: list[dict[str, Any]] = []
     tasks.append({"id": "apply_config", "label": "apply_config", "status": "pending"})
 
-    # Vosk models are managed via /vosk/catalog API (download from alphacephei.com)
-    # No manual download step needed
+    # Check if STT model needs downloading (new wizard sets stt.vosk.active_model)
+    if stt_model and stt_model != "small":
+        vosk_dir = Path(get_nested("stt.vosk.models_dir", "/var/lib/selena/models/vosk"))
+        if not (vosk_dir / stt_model).is_dir():
+            tasks.append({"id": "download_stt", "label": "download_stt", "status": "pending", "model": stt_model})
 
     # Check if TTS voice needs downloading
-    piper_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
+    piper_dir = _piper_models_dir()
     if not (piper_dir / f"{tts_voice}.onnx").exists():
         tasks.append({"id": "download_tts", "label": "download_tts", "status": "pending", "voice": tts_voice})
 
     # Check if LLM model needs downloading
     if llm_model:
         tasks.append({"id": "download_llm", "label": "download_llm", "status": "pending", "model": llm_model})
+
+    # Install systemd units (host-side); skipped silently inside docker if no systemctl
+    tasks.append({"id": "install_native_services", "label": "install_native_services", "status": "pending"})
 
     tasks.append({"id": "finalize", "label": "finalize", "status": "pending"})
 
@@ -1289,6 +1320,8 @@ async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) 
                     await _provision_download_tts(tts_voice)
                 elif task["id"] == "download_llm":
                     await _provision_download_llm(llm_model or "")
+                elif task["id"] == "install_native_services":
+                    await _provision_install_native_services()
                 elif task["id"] == "finalize":
                     await _provision_finalize()
 
@@ -1337,8 +1370,13 @@ async def _provision_download_tts(voice_id: str) -> None:
         logger.warning("No download URL for TTS voice %s, skipping", voice_id)
         return
 
-    piper_dir = Path(os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper"))
+    piper_dir = _piper_models_dir()
     piper_dir.mkdir(parents=True, exist_ok=True)
+
+    # First try to copy from common user-local Piper cache
+    if _copy_local_piper_voice(voice_id, piper_dir):
+        logger.info("TTS voice %s copied from local cache to %s", voice_id, piper_dir)
+        return
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
         for url in urls:
@@ -1366,10 +1404,237 @@ async def _provision_download_llm(model_id: str) -> None:
         logger.warning("LLM model download failed (non-critical): %s", exc)
 
 
+async def _provision_download_stt(model_id: str) -> None:
+    """Download Vosk STT model into configured models_dir.
+
+    `model_id` is the alphacephei.com model identifier (e.g. vosk-model-small-en-us-0.15).
+    Falls back silently if the model is already on disk or no URL is known.
+    """
+    if not model_id or model_id == "small":
+        return
+    models_dir = Path(
+        get_nested("stt.vosk.models_dir", "/var/lib/selena/models/vosk")
+    )
+    models_dir.mkdir(parents=True, exist_ok=True)
+    if (models_dir / model_id).is_dir():
+        return
+    url = f"https://alphacephei.com/vosk/models/{model_id}.zip"
+    import httpx
+    import zipfile
+    import io
+    async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+        async with client.stream("GET", url, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            buf = io.BytesIO()
+            async for chunk in resp.aiter_bytes(chunk_size=131072):
+                buf.write(chunk)
+    buf.seek(0)
+    with zipfile.ZipFile(buf) as zf:
+        zf.extractall(models_dir)
+    logger.info("STT model %s installed to %s", model_id, models_dir)
+
+
+def _copy_local_piper_voice(voice_id: str, dest_dir: Path) -> bool:
+    """Copy voice files from common local Piper caches if available.
+
+    Searched paths (in order):
+        ~/.local/share/piper/models/
+        ~/.local/share/piper/
+        /usr/local/share/piper/
+    Returns True if both .onnx and .onnx.json were copied.
+    """
+    candidates = []
+    home = Path(os.path.expanduser("~"))
+    candidates.append(home / ".local/share/piper/models")
+    candidates.append(home / ".local/share/piper")
+    candidates.append(Path("/usr/local/share/piper"))
+    # Also search SUDO_USER's home if running under sudo
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        sudo_home = Path(f"/home/{sudo_user}")
+        candidates.insert(0, sudo_home / ".local/share/piper/models")
+        candidates.insert(1, sudo_home / ".local/share/piper")
+
+    for src_dir in candidates:
+        onnx = src_dir / f"{voice_id}.onnx"
+        if onnx.exists():
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(onnx, dest_dir / onnx.name)
+            json_file = src_dir / f"{voice_id}.onnx.json"
+            if json_file.exists():
+                shutil.copy2(json_file, dest_dir / json_file.name)
+            return True
+    return False
+
+
+async def _provision_install_native_services() -> None:
+    """Install systemd unit files from repo into /etc/systemd/system and enable them.
+
+    Silently no-ops if `systemctl` is unavailable (e.g. running inside a container
+    without privileged systemd access). The install.sh bootstrap will have already
+    set up the user/group and directories.
+    """
+    if not shutil.which("systemctl"):
+        logger.info("systemctl not available — skipping native service install")
+        return
+    repo_root = Path(__file__).resolve().parents[3]
+    helper = repo_root / "scripts" / "install-systemd.sh"
+    if not helper.exists():
+        logger.info("scripts/install-systemd.sh not found — skipping")
+        return
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash", str(helper),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            logger.warning(
+                "install-systemd.sh exited with %s: %s",
+                proc.returncode, stderr.decode(errors="ignore"),
+            )
+        else:
+            logger.info("Native systemd units installed")
+    except Exception as exc:
+        logger.warning("Native service install failed (non-critical): %s", exc)
+
+
 async def _provision_finalize() -> None:
     """Mark wizard as completed in config."""
     update_many([
         ("wizard", "completed", True),
         ("wizard", "provisioned", True),
+        ("system", "initialized", True),
     ])
     await asyncio.sleep(0.5)
+
+
+# ================================================================== #
+#  Provision SSE stream + model catalogs                              #
+# ================================================================== #
+
+@router.get("/provision/stream")
+async def provision_stream():
+    """Server-Sent Events stream of provisioning progress.
+
+    Sends a JSON snapshot every 500ms while running, then closes once
+    `done` or `failed` is true.
+    """
+    from fastapi.responses import StreamingResponse
+    import json as _json
+
+    async def _gen():
+        last = None
+        # If nothing started yet, emit the current snapshot once.
+        snap = _provision.to_dict()
+        yield f"data: {_json.dumps(snap)}\n\n"
+        while True:
+            await asyncio.sleep(0.5)
+            snap = _provision.to_dict()
+            payload = _json.dumps(snap)
+            if payload != last:
+                yield f"data: {payload}\n\n"
+                last = payload
+            if snap.get("done") or snap.get("failed"):
+                break
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@router.get("/provision/models")
+async def provision_models(type: str = "tts") -> dict[str, Any]:
+    """Catalog of models available for the wizard to choose from.
+
+    `type` is one of: tts, stt, llm.
+    For tts: scans local Piper caches AND returns curated download list.
+    For stt: returns curated Vosk model list.
+    For llm: returns curated Ollama model list.
+    """
+    type = (type or "tts").lower()
+
+    if type == "tts":
+        # 1. local already-installed (highest priority)
+        local: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        models_dir = _piper_models_dir()
+        if models_dir.is_dir():
+            for f in sorted(models_dir.iterdir()):
+                if f.suffix == ".onnx":
+                    vid = f.stem
+                    seen.add(vid)
+                    local.append({
+                        "id": vid, "name": vid, "installed": True,
+                        "size_mb": f.stat().st_size // (1024 * 1024),
+                        "language": vid.split("_")[0] if "_" in vid else "",
+                        "source": "installed",
+                    })
+        # 2. local Piper cache (~/.local/share/piper/models/)
+        for src in [Path.home() / ".local/share/piper/models",
+                    Path("/usr/local/share/piper")]:
+            if not src.is_dir():
+                continue
+            for f in sorted(src.iterdir()):
+                if f.suffix == ".onnx" and f.stem not in seen:
+                    vid = f.stem
+                    seen.add(vid)
+                    local.append({
+                        "id": vid, "name": vid, "installed": False,
+                        "size_mb": f.stat().st_size // (1024 * 1024),
+                        "language": vid.split("_")[0] if "_" in vid else "",
+                        "source": "local-cache",
+                        "source_path": str(f),
+                    })
+        # 3. curated download list (small)
+        curated = [
+            {"id": "uk_UA-ukrainian_tts-medium", "language": "uk", "size_mb": 77},
+            {"id": "uk_UA-lada-x_low", "language": "uk", "size_mb": 20},
+            {"id": "en_US-amy-low", "language": "en", "size_mb": 63},
+            {"id": "en_US-ryan-low", "language": "en", "size_mb": 63},
+            {"id": "ru_RU-irina-medium", "language": "ru", "size_mb": 63},
+        ]
+        for c in curated:
+            if c["id"] not in seen:
+                c.update({"installed": False, "name": c["id"], "source": "remote"})
+                local.append(c)
+                seen.add(c["id"])
+        return {"type": "tts", "models": local}
+
+    if type == "stt":
+        # Curated Vosk model list (alphacephei.com)
+        models = [
+            {"id": "vosk-model-small-en-us-0.15", "language": "en", "size_mb": 40},
+            {"id": "vosk-model-en-us-0.22", "language": "en", "size_mb": 1800},
+            {"id": "vosk-model-small-uk-v3-small", "language": "uk", "size_mb": 75},
+            {"id": "vosk-model-uk-v3", "language": "uk", "size_mb": 350},
+            {"id": "vosk-model-small-ru-0.22", "language": "ru", "size_mb": 45},
+            {"id": "vosk-model-ru-0.42", "language": "ru", "size_mb": 1800},
+        ]
+        installed_dir = Path(
+            get_nested("stt.vosk.models_dir", "/var/lib/selena/models/vosk")
+        )
+        installed_set = set()
+        if installed_dir.is_dir():
+            installed_set = {p.name for p in installed_dir.iterdir() if p.is_dir()}
+        for m in models:
+            m["installed"] = m["id"] in installed_set
+            m["name"] = m["id"]
+        return {"type": "stt", "models": models}
+
+    if type == "llm":
+        # Curated Ollama model list (small models suitable for edge devices)
+        models = [
+            {"id": "qwen2.5:0.5b", "size_mb": 400, "ram_gb": 1},
+            {"id": "qwen2.5:1.5b", "size_mb": 1100, "ram_gb": 2},
+            {"id": "qwen2.5:3b", "size_mb": 2000, "ram_gb": 4},
+            {"id": "phi3:mini", "size_mb": 2300, "ram_gb": 4},
+            {"id": "gemma2:2b", "size_mb": 1700, "ram_gb": 3},
+            {"id": "llama3.2:1b", "size_mb": 1300, "ram_gb": 2},
+            {"id": "llama3.2:3b", "size_mb": 2000, "ram_gb": 4},
+        ]
+        for m in models:
+            m["name"] = m["id"]
+            m["installed"] = False
+        return {"type": "llm", "models": models}
+
+    raise HTTPException(status_code=400, detail=f"Unknown type: {type}")

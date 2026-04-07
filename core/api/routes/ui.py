@@ -1163,10 +1163,13 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                 pass
 
         elif step == "stt_model" and data.get("model"):
-            update_config("stt", "vosk", {"active_model": data["model"]})
+            from core.config_writer import update_nested
+            update_nested("stt.vosk.active_model", data["model"])
 
         elif step == "tts_voice" and data.get("voice"):
-            update_config("voice", "tts_voice", data["voice"])
+            from core.config_writer import update_nested
+            update_config("voice", "tts_voice", data["voice"])  # legacy key
+            update_nested("voice.tts.primary.voice", data["voice"])  # canonical
             os.environ["PIPER_VOICE"] = data["voice"]
 
         elif step == "admin_user" and data.get("username"):
@@ -1238,6 +1241,15 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
 
         elif step == "platform" and data.get("device_hash"):
             update_config("platform", "device_hash", data["device_hash"])
+
+        elif step == "import":
+            # Persist the user's selected import sources (Home Assistant, Tuya, Hue,
+            # MQTT, etc.). Provisioning will create the corresponding bridge modules
+            # in a follow-up task. Empty selection is allowed (skip step).
+            sources = data.get("sources") or []
+            if isinstance(sources, str):
+                sources = [s.strip() for s in sources.split(",") if s.strip()]
+            update_section("wizard_import", {"sources": sources})
 
     except Exception as exc:
         logger.warning("Failed to apply wizard step '%s': %s", step, exc)
