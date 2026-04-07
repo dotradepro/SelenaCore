@@ -32,12 +32,20 @@ stt:
   vosk:
     models_dir: "/var/lib/selena/models/vosk"
     active_model: ""                   # auto-detected from models_dir if empty
+  whisper:
+    models_dir: "/var/lib/selena/models/whisper"
+    active_model: ""                   # e.g. ggml-base.bin
 
 voice:
   wake_word_sensitivity: 0.5
   stt_silence_timeout: 1.0            # seconds of silence before processing (0.5-5.0)
   rephrase_enabled: false              # LLM rephrase for module responses (adds latency)
+  speaker_id:
+    embeddings_dir: "/var/lib/selena/speaker_embeddings"
+    similarity_threshold: 0.75
   tts:
+    models_dir: "/var/lib/selena/models/piper"
+    server_url: "http://localhost:5100"
     primary:
       voice: "uk_UA-ukrainian_tts-medium"
       lang: "uk"
@@ -86,7 +94,7 @@ llm:
   llm_two_step: false              # two-step LLM: classify noun_class → extract intent (faster)
 
 platform:
-  api_url: "https://smarthome-lk.com/api/v1"
+  api_url: "https://selenehome.tech/api/v1"
   device_hash: ""
   heartbeat_interval_sec: 60
   mock: false

@@ -33,10 +33,34 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-MODELS_DIR = os.environ.get("PIPER_MODELS_DIR", "/var/lib/selena/models/piper")
-DEFAULT_VOICE = os.environ.get("PIPER_VOICE", "uk_UA-ukrainian_tts-medium")
-DEFAULT_FALLBACK = os.environ.get("PIPER_FALLBACK_VOICE", "en_US-amy-low")
-PIPER_GPU_URL = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+def _cfg_get(path: str, default: str) -> str:
+    """Lookup config-first with env-var override fallback."""
+    try:
+        from core.config_writer import get_nested
+        val = get_nested(path)
+        if val:
+            return str(val)
+    except Exception:
+        pass
+    return default
+
+
+MODELS_DIR = os.environ.get(
+    "PIPER_MODELS_DIR",
+    _cfg_get("voice.tts.models_dir", "/var/lib/selena/models/piper"),
+)
+DEFAULT_VOICE = os.environ.get(
+    "PIPER_VOICE",
+    _cfg_get("voice.tts.primary.voice", "uk_UA-ukrainian_tts-medium"),
+)
+DEFAULT_FALLBACK = os.environ.get(
+    "PIPER_FALLBACK_VOICE",
+    _cfg_get("voice.tts.fallback.voice", "en_US-amy-low"),
+)
+PIPER_GPU_URL = os.environ.get(
+    "PIPER_GPU_URL",
+    _cfg_get("voice.tts.server_url", "http://localhost:5100"),
+)
 
 
 def sanitize_for_tts(text: str) -> str:

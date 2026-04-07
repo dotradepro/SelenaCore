@@ -19,10 +19,29 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "phi3:mini")
-REQUEST_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "30"))
-RAM_THRESHOLD_GB = float(os.environ.get("OLLAMA_MIN_RAM_GB", "5.0"))
+def _cfg(path: str, default):
+    try:
+        from core.config_writer import get_nested
+        v = get_nested(path)
+        if v is not None:
+            return v
+    except Exception:
+        pass
+    return default
+
+
+OLLAMA_URL = os.environ.get(
+    "OLLAMA_URL", str(_cfg("llm.ollama_url", "http://localhost:11434"))
+)
+DEFAULT_MODEL = os.environ.get(
+    "OLLAMA_MODEL", str(_cfg("llm.default_model", "phi3:mini"))
+)
+REQUEST_TIMEOUT = float(
+    os.environ.get("OLLAMA_TIMEOUT", str(_cfg("llm.timeout_sec", 30)))
+)
+RAM_THRESHOLD_GB = float(
+    os.environ.get("OLLAMA_MIN_RAM_GB", str(_cfg("llm.min_ram_gb", 5.0)))
+)
 
 
 def _available_ram_gb() -> float:

@@ -16,8 +16,27 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-EMBEDDINGS_DIR = os.environ.get("SPEAKER_EMBEDDINGS_DIR", "/var/lib/selena/speaker_embeddings")
-SIMILARITY_THRESHOLD = float(os.environ.get("SPEAKER_THRESHOLD", "0.75"))
+def _cfg(path: str, default):
+    try:
+        from core.config_writer import get_nested
+        v = get_nested(path)
+        if v is not None:
+            return v
+    except Exception:
+        pass
+    return default
+
+
+EMBEDDINGS_DIR = os.environ.get(
+    "SPEAKER_EMBEDDINGS_DIR",
+    str(_cfg("voice.speaker_id.embeddings_dir", "/var/lib/selena/speaker_embeddings")),
+)
+SIMILARITY_THRESHOLD = float(
+    os.environ.get(
+        "SPEAKER_THRESHOLD",
+        str(_cfg("voice.speaker_id.similarity_threshold", 0.75)),
+    )
+)
 SAMPLE_RATE = 16000
 
 

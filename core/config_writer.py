@@ -96,3 +96,28 @@ def get_value(section: str, key: str, default: Any = None) -> Any:
     """Read a single value from config."""
     config = read_config()
     return config.get(section, {}).get(key, default)
+
+
+def get_nested(path: str, default: Any = None) -> Any:
+    """Read a value by dotted path, e.g. 'voice.tts.models_dir'."""
+    config = read_config()
+    node: Any = config
+    for part in path.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return default
+        node = node[part]
+    return node
+
+
+def update_nested(path: str, value: Any) -> dict[str, Any]:
+    """Update a value by dotted path, creating intermediate dicts as needed."""
+    config = read_config()
+    parts = path.split(".")
+    node: Any = config
+    for part in parts[:-1]:
+        if part not in node or not isinstance(node[part], dict):
+            node[part] = {}
+        node = node[part]
+    node[parts[-1]] = value
+    write_config(config)
+    return config
