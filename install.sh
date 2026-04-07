@@ -310,17 +310,21 @@ install_piper_runtime() {
     # The Piper Python package + a small runner that the wizard's
     # piper-tts.service expects. Install for the SUDO_USER (the operator),
     # not root, so the systemd unit's User=__USER__ template can find it.
+    #
+    # Sets the global PIPER_PYTHON to the absolute path of the interpreter
+    # that has piper installed. Leaves PIPER_PYTHON UNSET if the runtime
+    # could not be installed — the rest of the installer treats an unset
+    # PIPER_PYTHON as "no native Piper, skip the systemd unit".
+    PIPER_PYTHON=""
     local piper_user="${SUDO_USER:-root}"
     local piper_home
     piper_home="$(getent passwd "$piper_user" | cut -d: -f6 || true)"
     [ -z "$piper_home" ] && piper_home="/root"
 
-    PIPER_PYTHON="python3"
-
+    local py="python3"
     # piper-phonemize (transitive dep of piper-tts) does not publish wheels
     # for Python 3.8 — Ubuntu 20.04 / Debian 10 ship 3.8 by default. Detect
-    # this and install a newer Python from deadsnakes (Ubuntu) or
-    # backports (Debian) so we can pip-install piper-tts cleanly.
+    # this and install a newer Python from deadsnakes when possible.
     local sys_py_minor
     sys_py_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
     if [ "$sys_py_minor" -lt 9 ] 2>/dev/null; then
@@ -329,21 +333,23 @@ install_piper_runtime() {
             log "Native Piper TTS not installed on this OS. The wizard's TTS step will still work via the docker container build."
             return 0
         fi
-        PIPER_PYTHON="python3.10"
+        py="python3.10"
     fi
 
-    if su -s /bin/bash - "$piper_user" -c "$PIPER_PYTHON -c 'import piper, aiohttp' 2>/dev/null"; then
-        log "Piper TTS Python package already installed for $piper_user (via $PIPER_PYTHON)"
+    if su -s /bin/bash - "$piper_user" -c "$py -c 'import piper, aiohttp' 2>/dev/null"; then
+        log "Piper TTS Python package already installed for $piper_user (via $py)"
         install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
+        PIPER_PYTHON="$(command -v "$py" 2>/dev/null || echo "$py")"
         return 0
     fi
     if $DRY_RUN; then
-        echo "    [dry-run] su - $piper_user -c '$PIPER_PYTHON -m pip install --user piper-tts aiohttp'"
+        echo "    [dry-run] su - $piper_user -c '$py -m pip install --user piper-tts aiohttp'"
+        PIPER_PYTHON="$py"
         return 0
     fi
 
-    log "Installing Piper TTS Python package for user '$piper_user' via $PIPER_PYTHON (~80 MB onnxruntime)"
-    local pip_cmd="$PIPER_PYTHON -m pip install --user piper-tts aiohttp"
+    log "Installing Piper TTS Python package for user '$piper_user' via $py (~80 MB onnxruntime)"
+    local pip_cmd="$py -m pip install --user piper-tts aiohttp"
     # --break-system-packages tolerates PEP 668 on noble/bookworm where the
     # system python is externally-managed.
     if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd --break-system-packages 2>&1" >/tmp/_piper_pip.log; then
@@ -355,6 +361,7 @@ install_piper_runtime() {
         fi
     fi
     install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
+    PIPER_PYTHON="$(command -v "$py" 2>/dev/null || echo "$py")"
     log "Piper TTS Python package installed for $piper_user (via $PIPER_PYTHON)"
 }
 
@@ -803,12 +810,25 @@ stage_systemd_units() {
         warn "/etc/systemd/system not present — skipping"
         return
     fi
-    for unit in smarthome-core.service smarthome-agent.service scripts/piper-tts.service; do
+    # Only stage units that are READY-TO-USE as-is. piper-tts.service is
+    # NOT staged here — it contains __USER__/__HOME__/__SELENA_DIR__/__PYTHON__
+    # placeholders that scripts/install-systemd.sh substitutes when (and
+    # only when) the wizard's install_native_services step runs after Piper
+    # was successfully installed.
+    for unit in smarthome-core.service smarthome-agent.service; do
         if [ -f "$INSTALL_DIR/$unit" ]; then
             run cp "$INSTALL_DIR/$unit" "/etc/systemd/system/$(basename "$unit")"
             log "Staged $(basename "$unit")"
         fi
     done
+    # If a stale piper-tts.service from a previous bad run exists, remove it
+    # so systemd doesn't keep complaining about __PYTHON__ on every boot.
+    if [ -f /etc/systemd/system/piper-tts.service ]; then
+        if grep -q '__PYTHON__\|__USER__' /etc/systemd/system/piper-tts.service 2>/dev/null; then
+            run rm -f /etc/systemd/system/piper-tts.service
+            log "Removed stale templated piper-tts.service from /etc/systemd/system"
+        fi
+    fi
     run systemctl daemon-reload || true
     log "Units staged. The wizard's 'install_native_services' step will enable them."
 }
