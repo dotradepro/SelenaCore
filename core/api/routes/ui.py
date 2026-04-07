@@ -1206,13 +1206,17 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                         await um._users.update_pin(existing.user_id, pin)
                     logger.info("Wizard: owner '%s' already existed — PIN refreshed", username)
                 else:
+                    # UserManager.create() does NOT accept a `role` argument:
+                    # the very first user is automatically assigned `admin`,
+                    # subsequent users become `resident`. Since this runs as
+                    # part of the first-run wizard the created account will
+                    # be the admin owner.
                     await um._users.create(
                         username=username,
                         display_name=username,
                         pin=pin,
-                        role="owner",
                     )
-                    logger.info("Wizard: created owner account '%s' in DB", username)
+                    logger.info("Wizard: created admin account '%s' in DB", username)
             except HTTPException:
                 raise
             except Exception as exc:
@@ -1253,9 +1257,13 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                 from core.module_loader.sandbox import get_sandbox
                 um = get_sandbox().get_in_process_module("user-manager")
                 if um:
-                    # Find admin/owner user
+                    # Find the admin user (UserManager calls the first user
+                    # `admin`, not `owner` — see profiles.py:create()).
                     users = await um._users.list_all()
-                    owner = next((u for u in users if u.role == "owner" and u.active), None)
+                    owner = next((u for u in users if u.role == "admin" and u.active), None)
+                    if owner is None:
+                        # Last-ditch: any active user (older databases)
+                        owner = next((u for u in users if u.active), None)
                     if owner:
                         session_token = um._sessions.grant(
                             user_id=owner.user_id,
@@ -1263,7 +1271,7 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
                             display_name=owner.display_name or owner.username,
                             device_name="Wizard Browser",
                         )
-                        logger.info("Wizard: issued session token for browser (owner='%s')", owner.username)
+                        logger.info("Wizard: issued session token for browser (admin='%s')", owner.username)
                         return {"session_token": session_token}
             except Exception as exc:
                 logger.warning("Wizard: failed to issue session token: %s", exc)

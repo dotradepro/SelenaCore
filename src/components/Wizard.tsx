@@ -444,7 +444,7 @@ export default function Wizard() {
       if (sttFilter.q) params.set('q', sttFilter.q);
       params.set('page', String(sttFilter.page));
       params.set('per_page', String(sttFilter.per_page));
-      const res = await fetch('/api/ui/setup/vosk/catalog?' + params.toString());
+      const res = await fetch('/api/ui/vosk/catalog?' + params.toString());
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail || `HTTP ${res.status}`);
