@@ -255,8 +255,19 @@ install_host_packages() {
     fi
 
     if $HAS_DISPLAY && ! $HEADLESS; then
-        log "Display detected — installing kiosk helpers (cage, wtype, seatd)"
-        install_apt cage wtype seatd
+        # cage / wtype / seatd are only in jammy/noble/bookworm/trixie main
+        # repos. Older releases (focal, bullseye) don't ship them, so we skip
+        # quietly instead of producing three "Unable to locate package" errors.
+        local kiosk_supported=true
+        case "$OS_CODENAME" in
+            focal|bullseye|buster|xenial|stretch) kiosk_supported=false ;;
+        esac
+        if $kiosk_supported; then
+            log "Display detected — installing kiosk helpers (cage, wtype, seatd)"
+            install_apt cage wtype seatd
+        else
+            log "Display detected, but $OS_ID $OS_CODENAME does not ship cage/wtype/seatd in main repos — skipping kiosk helpers (selena-display.service won't be installed)"
+        fi
     else
         log "No display — skipping kiosk helpers"
     fi
@@ -304,25 +315,108 @@ install_piper_runtime() {
     piper_home="$(getent passwd "$piper_user" | cut -d: -f6 || true)"
     [ -z "$piper_home" ] && piper_home="/root"
 
-    if su - "$piper_user" -c "python3 -c 'import piper, aiohttp' 2>/dev/null"; then
-        log "Piper TTS Python package already installed for $piper_user"
+    PIPER_PYTHON="python3"
+
+    # piper-phonemize (transitive dep of piper-tts) does not publish wheels
+    # for Python 3.8 — Ubuntu 20.04 / Debian 10 ship 3.8 by default. Detect
+    # this and install a newer Python from deadsnakes (Ubuntu) or
+    # backports (Debian) so we can pip-install piper-tts cleanly.
+    local sys_py_minor
+    sys_py_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
+    if [ "$sys_py_minor" -lt 9 ] 2>/dev/null; then
+        log "System python3 is 3.$sys_py_minor (too old for piper-tts wheels) — trying python3.10"
+        if ! _install_python310; then
+            log "Native Piper TTS not installed on this OS. The wizard's TTS step will still work via the docker container build."
+            return 0
+        fi
+        PIPER_PYTHON="python3.10"
+    fi
+
+    if su -s /bin/bash - "$piper_user" -c "$PIPER_PYTHON -c 'import piper, aiohttp' 2>/dev/null"; then
+        log "Piper TTS Python package already installed for $piper_user (via $PIPER_PYTHON)"
+        install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
         return 0
     fi
     if $DRY_RUN; then
-        echo "    [dry-run] su - $piper_user -c 'pip3 install --user --break-system-packages piper-tts aiohttp'"
+        echo "    [dry-run] su - $piper_user -c '$PIPER_PYTHON -m pip install --user piper-tts aiohttp'"
         return 0
     fi
-    log "Installing Piper TTS Python package for user '$piper_user' (~80 MB onnxruntime)"
-    # --break-system-packages tolerates PEP 668 on noble/bookworm
-    if ! su - "$piper_user" -c "pip3 install --user --break-system-packages piper-tts aiohttp" 2>/dev/null; then
+
+    log "Installing Piper TTS Python package for user '$piper_user' via $PIPER_PYTHON (~80 MB onnxruntime)"
+    local pip_cmd="$PIPER_PYTHON -m pip install --user piper-tts aiohttp"
+    # --break-system-packages tolerates PEP 668 on noble/bookworm where the
+    # system python is externally-managed.
+    if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd --break-system-packages 2>&1" >/tmp/_piper_pip.log; then
         # Older pip without the flag
-        if ! su - "$piper_user" -c "pip3 install --user piper-tts aiohttp" 2>/dev/null; then
+        if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd 2>&1" >/tmp/_piper_pip.log; then
             warn "pip install piper-tts failed — TTS will be unavailable until installed manually"
+            tail -n 8 /tmp/_piper_pip.log >&2
             return 0
         fi
     fi
     install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
-    log "Piper TTS Python package installed for $piper_user"
+    log "Piper TTS Python package installed for $piper_user (via $PIPER_PYTHON)"
+}
+
+_install_python310() {
+    # Install python3.10 + venv + pip from the appropriate channel for the
+    # detected distro. Returns 0 on success, 1 on failure.
+    if command -v python3.10 >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Skip OS releases where deadsnakes no longer publishes packages.
+    # Ubuntu 20.04 (focal) reached EOL in April 2025; the deadsnakes PPA's
+    # main/binary-*/Packages file is empty there, so apt cannot find python3.10.
+    case "$OS_CODENAME" in
+        focal|bionic|xenial|buster|stretch)
+            log "$OS_ID $OS_CODENAME is EOL; deadsnakes no longer ships python3.10 there. Native Piper will be skipped (use container TTS or upgrade the OS)."
+            return 1
+            ;;
+    esac
+
+    case "$OS_ID" in
+        ubuntu|pop|linuxmint)
+            install_apt gnupg curl ca-certificates
+            install -d -m 0755 /etc/apt/keyrings
+            local key_url="https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776"
+            if ! curl -fsSL "$key_url" | gpg --dearmor --batch --yes -o /etc/apt/keyrings/deadsnakes.gpg 2>/dev/null; then
+                warn "Could not download deadsnakes GPG key"
+                return 1
+            fi
+            chmod 0644 /etc/apt/keyrings/deadsnakes.gpg
+            local repo_codename="$OS_CODENAME"
+            case "$repo_codename" in
+                jammy|noble|oracular|plucky) ;;
+                *) repo_codename="jammy" ;;  # safe fallback for unmapped Ubuntu derivatives
+            esac
+            echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $repo_codename main" \
+                > /etc/apt/sources.list.d/deadsnakes.list
+            apt_update
+            # Verify the PPA actually has python3.10 for this codename
+            if ! apt-cache madison python3.10 2>/dev/null | grep -q .; then
+                warn "deadsnakes PPA for $repo_codename does not publish python3.10 — skipping"
+                rm -f /etc/apt/sources.list.d/deadsnakes.list
+                return 1
+            fi
+            install_apt python3.10 python3.10-venv python3.10-distutils python3.10-dev
+            ;;
+        debian|raspbian|kali)
+            warn "On $OS_ID we cannot install a newer Python automatically; install python3.10 manually if you need native Piper"
+            return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    if ! command -v python3.10 >/dev/null 2>&1; then
+        return 1
+    fi
+    # Bootstrap pip for python3.10 if it's missing
+    if ! python3.10 -m pip --version >/dev/null 2>&1; then
+        curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.10 || return 1
+    fi
+    return 0
 }
 
 # ── Phase 3: Robust Docker installation ────────────────────────────
@@ -616,8 +710,13 @@ write_env_overrides() {
     _set_env_var "$env_file" VOSK_MODELS_DIR   "$vosk_dir"
     _set_env_var "$env_file" OLLAMA_MODELS_DIR "$ollama_dir"
     _set_env_var "$env_file" HOST_UID          "$origin_uid"
+    # Record which python interpreter has piper-tts installed (may be a
+    # newer one we pulled from deadsnakes when system python was 3.8).
+    if [ -n "${PIPER_PYTHON:-}" ]; then
+        _set_env_var "$env_file" PIPER_PYTHON "$PIPER_PYTHON"
+    fi
     chown "$SELENA_USER:$SELENA_USER" "$env_file" 2>/dev/null || true
-    log "Pinned docker-compose env: PIPER/VOSK/OLLAMA dirs + HOST_UID=$origin_uid"
+    log "Pinned docker-compose env: PIPER/VOSK/OLLAMA dirs + HOST_UID=$origin_uid${PIPER_PYTHON:+ + PIPER_PYTHON=$PIPER_PYTHON}"
 }
 
 _set_env_var() {

@@ -45,16 +45,38 @@ install_unit "$REPO_DIR/smarthome-core.service"
 install_unit "$REPO_DIR/smarthome-agent.service"
 
 # Piper GPU server (only if user picked GPU TTS in the wizard).
-# The service file uses __USER__ / __HOME__ / __SELENA_DIR__ placeholders
-# that must be substituted before install.
+# The service file uses __USER__ / __HOME__ / __SELENA_DIR__ / __PYTHON__
+# placeholders that must be substituted before install.
 if grep -qE 'cuda:\s*true' "$REPO_DIR/config/core.yaml" 2>/dev/null; then
     if [ -f "$REPO_DIR/scripts/piper-tts.service" ]; then
         PIPER_USER="${SELENA_PIPER_USER:-${SUDO_USER:-root}}"
         PIPER_HOME="$(getent passwd "$PIPER_USER" | cut -d: -f6)"
         [ -z "$PIPER_HOME" ] && PIPER_HOME="/root"
-        # Ensure user has piper-tts + aiohttp installed
-        if ! su - "$PIPER_USER" -c "python3 -c 'import piper, aiohttp'" >/dev/null 2>&1; then
-            su - "$PIPER_USER" -c "pip3 install --user piper-tts aiohttp" || \
+        # Detect which python interpreter has piper installed (install.sh
+        # may have used python3.10 from deadsnakes on Focal). Honour the
+        # PIPER_PYTHON env var written into .env by install.sh.
+        PIPER_PY="${PIPER_PYTHON:-}"
+        if [ -z "$PIPER_PY" ] && [ -f "$REPO_DIR/.env" ]; then
+            PIPER_PY="$(grep -E '^PIPER_PYTHON=' "$REPO_DIR/.env" | cut -d= -f2- | tr -d '"' | tr -d "'")"
+        fi
+        if [ -z "$PIPER_PY" ]; then
+            for cand in python3.11 python3.10 python3.12 python3; do
+                if su -s /bin/bash - "$PIPER_USER" -c "$cand -c 'import piper, aiohttp' 2>/dev/null"; then
+                    PIPER_PY="$cand"
+                    break
+                fi
+            done
+        fi
+        [ -z "$PIPER_PY" ] && PIPER_PY="/usr/bin/python3"
+        # Resolve to absolute path so systemd ExecStart= is happy.
+        if ! echo "$PIPER_PY" | grep -q '^/'; then
+            PIPER_PY_ABS="$(command -v "$PIPER_PY" 2>/dev/null || echo "$PIPER_PY")"
+            PIPER_PY="$PIPER_PY_ABS"
+        fi
+
+        # Ensure user has piper-tts + aiohttp installed under that interpreter
+        if ! su -s /bin/bash - "$PIPER_USER" -c "$PIPER_PY -c 'import piper, aiohttp'" >/dev/null 2>&1; then
+            su -s /bin/bash - "$PIPER_USER" -c "$PIPER_PY -m pip install --user piper-tts aiohttp" || \
                 echo "[!] failed to install piper-tts/aiohttp for $PIPER_USER (non-fatal)"
         fi
         install -d -o "$PIPER_USER" -g "$PIPER_USER" "$PIPER_HOME/.local/share/piper/models"
@@ -62,9 +84,10 @@ if grep -qE 'cuda:\s*true' "$REPO_DIR/config/core.yaml" 2>/dev/null; then
             -e "s|__USER__|$PIPER_USER|g" \
             -e "s|__HOME__|$PIPER_HOME|g" \
             -e "s|__SELENA_DIR__|$REPO_DIR|g" \
+            -e "s|__PYTHON__|$PIPER_PY|g" \
             "$REPO_DIR/scripts/piper-tts.service" \
             > "$SYSTEMD_DIR/piper-tts.service"
-        echo "[+] installed piper-tts.service (user=$PIPER_USER)"
+        echo "[+] installed piper-tts.service (user=$PIPER_USER, python=$PIPER_PY)"
     fi
 fi
 
