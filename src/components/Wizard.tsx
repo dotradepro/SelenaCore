@@ -414,12 +414,38 @@ export default function Wizard() {
 
   const fetchSttModels = async () => {
     try {
-      const res = await fetch('/api/ui/setup/stt/models');
+      // SelenaCore uses Vosk for STT (see core/stt/factory.py). The real
+      // catalog comes from /vosk/catalog (cached from alphacephei.com), not
+      // a non-existent /stt/models — that older URL would 404 and we'd fall
+      // through to a stale Whisper fallback.
+      const res = await fetch('/api/ui/setup/vosk/catalog?per_page=50');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setSttModels(data.models || []);
-      setSttRamInfo({ total: data.ram_total_mb || 0, available: data.ram_available_mb || 0 });
-      if (data.active) setFormData(prev => ({ ...prev, stt: data.active }));
-    } catch { /* use defaults */ }
+      const raw = Array.isArray(data.models) ? data.models : [];
+      // Map Vosk catalog rows to the SttModel shape this component expects.
+      const mapped: SttModel[] = raw.map((m: any) => {
+        const sizeBytes = typeof m.size === 'number' ? m.size : 0;
+        const sizeMb = sizeBytes ? Math.round(sizeBytes / (1024 * 1024)) : 0;
+        const isBig = (m.type || '').toLowerCase() === 'big' || sizeMb > 200;
+        return {
+          id: m.name,
+          name: m.name,
+          lang: (m.lang || 'auto').slice(0, 2),
+          ram_mb: 0,
+          size_mb: sizeMb,
+          quality: isBig ? 'high' : 'ok',
+          installed: !!m.installed,
+          active: !!m.active,
+          fits_ram: true,
+        };
+      });
+      setSttModels(mapped);
+      const activeModel = mapped.find(m => m.active);
+      if (activeModel) setFormData(prev => ({ ...prev, stt: activeModel.id }));
+      else if (mapped.length > 0) setFormData(prev => ({ ...prev, stt: mapped[0].id }));
+    } catch {
+      // Catalog unreachable — fall through to hardcoded Vosk defaults below
+    }
   };
 
   const fetchTtsVoices = async () => {
@@ -1085,10 +1111,10 @@ export default function Wizard() {
                       )}
                       <div className="space-y-2">
                         {(sttModels.length > 0 ? sttModels : [
-                          { id: 'tiny', name: 'Whisper Tiny', lang: 'auto', ram_mb: 150, size_mb: 75, quality: 'ok', installed: false, active: false, fits_ram: true },
-                          { id: 'base', name: 'Whisper Base', lang: 'auto', ram_mb: 250, size_mb: 150, quality: 'good', installed: false, active: false, fits_ram: true },
-                          { id: 'small', name: 'Whisper Small', lang: 'auto', ram_mb: 450, size_mb: 500, quality: 'high', installed: false, active: false, fits_ram: true },
-                          { id: 'medium', name: 'Whisper Medium', lang: 'auto', ram_mb: 1500, size_mb: 1500, quality: 'high', installed: false, active: false, fits_ram: true },
+                          { id: 'vosk-model-small-en-us-0.15', name: 'vosk-model-small-en-us-0.15', lang: 'en', ram_mb: 0, size_mb: 40,   quality: 'ok',   installed: false, active: false, fits_ram: true },
+                          { id: 'vosk-model-en-us-0.22',       name: 'vosk-model-en-us-0.22',       lang: 'en', ram_mb: 0, size_mb: 1800, quality: 'high', installed: false, active: false, fits_ram: true },
+                          { id: 'vosk-model-small-uk-v3-small',name: 'vosk-model-small-uk-v3-small',lang: 'uk', ram_mb: 0, size_mb: 75,   quality: 'ok',   installed: false, active: false, fits_ram: true },
+                          { id: 'vosk-model-uk-v3',            name: 'vosk-model-uk-v3',            lang: 'uk', ram_mb: 0, size_mb: 350,  quality: 'high', installed: false, active: false, fits_ram: true },
                         ]).map(m => (
                           <button
                             key={m.id}
