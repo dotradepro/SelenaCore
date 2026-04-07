@@ -315,6 +315,17 @@ export default function Wizard() {
       setWifiEnabled(data.wifi?.enabled ?? false);
       setWifiAdapterFound(data.wifi?.adapter_found ?? false);
 
+      // Surface an existing WiFi connection (host already joined a network
+      // outside the wizard). Without this the user is forced to "connect"
+      // to a network they are already on.
+      if (data.wifi?.connected) {
+        setWifiConnected(true);
+        if (data.wifi?.ssid) {
+          setWifiConnectedSsid(data.wifi.ssid);
+          setFormData(prev => ({ ...prev, wifi: data.wifi.ssid }));
+        }
+      }
+
       // Check AP status
       try {
         const apRes = await fetch('/api/ui/setup/ap/status');
@@ -328,12 +339,15 @@ export default function Wizard() {
         }
       } catch { /* ap status unavailable */ }
 
-      if (data.wifi?.enabled) {
+      // Don't bother scanning if we already have internet — the user is
+      // online and the WiFi step is effectively done.
+      if (data.wifi?.enabled && !data.internet) {
         fetchWifiNetworks();
       }
 
-      // Auto-start AP when no connectivity at all
-      if (!data.ethernet?.connected && !data.wifi?.connected && data.wifi?.adapter_found) {
+      // Auto-start AP only when there's no connectivity at all (no ethernet,
+      // no active WiFi connection, AND no internet through any other means).
+      if (!data.internet && !data.ethernet?.connected && !data.wifi?.connected && data.wifi?.adapter_found) {
         startAp();
       }
     } catch {
@@ -1344,7 +1358,7 @@ export default function Wizard() {
                         {t('common.skip')}
                       </button>
                     )}
-                    {step === 2 && !wifiEnabled && ethernetConnected && hasInternet && (
+                    {step === 2 && hasInternet && (
                       <button
                         onClick={skipStep}
                         disabled={submitting}
@@ -1357,7 +1371,7 @@ export default function Wizard() {
                       onClick={nextStep}
                       disabled={
                         submitting ||
-                        (step === 2 && !(wifiConnected && wifiConnectedSsid === formData.wifi) && !(!wifiEnabled && ethernetConnected && hasInternet)) ||
+                        (step === 2 && !hasInternet && !(wifiConnected && wifiConnectedSsid === formData.wifi)) ||
                         (step === 7 && (!formData.username || formData.pin.length < 4))
                       }
                       className="px-5 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] justify-center"
