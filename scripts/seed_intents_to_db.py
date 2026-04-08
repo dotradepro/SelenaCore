@@ -59,20 +59,21 @@ async def main() -> None:
     vocab_en_path = intents_dir / "vocab" / "en.yaml"
     vocab_uk_path = intents_dir / "vocab" / "uk.yaml"
 
-    if not defs_path.exists():
-        logger.error("definitions.yaml not found at %s", defs_path)
-        return
-
-    defs = _load_yaml(defs_path)
+    # config/intents/definitions.yaml was retired in v0.4 — the system is
+    # now 100% DB-driven and the FastMatcher rules below are the only seed
+    # source. The YAML path stays here only as an optional one-shot import
+    # for users upgrading from older snapshots that still have the file.
+    defs = _load_yaml(defs_path) if defs_path.exists() else {}
     vocab_en = _load_yaml(vocab_en_path) if vocab_en_path.exists() else {}
 
     async with session_factory() as session:
         async with session.begin():
             # 1. Seed intent_vocab (English only — all patterns are English)
-            vocab_count = await _seed_vocab(session, "en", vocab_en)
-            logger.info("Seeded %d vocab entries (English only)", vocab_count)
+            if vocab_en:
+                vocab_count = await _seed_vocab(session, "en", vocab_en)
+                logger.info("Seeded %d vocab entries (English only)", vocab_count)
 
-            # 2. Seed intent_definitions + intent_patterns
+            # 2. Seed intent_definitions + intent_patterns from YAML if present
             intents = defs.get("intents", {})
             intent_count = 0
             pattern_count = 0
@@ -82,9 +83,11 @@ async def main() -> None:
                 intent_count += 1
                 pattern_count += patterns
 
-            logger.info("Seeded %d intents with %d patterns", intent_count, pattern_count)
+            if intent_count:
+                logger.info("Seeded %d intents with %d patterns from YAML",
+                            intent_count, pattern_count)
 
-            # 3. Seed FastMatcher default rules
+            # 3. Seed FastMatcher default rules — primary source of truth.
             fm_count = await _seed_fast_matcher_rules(session)
             logger.info("Seeded %d FastMatcher rules as high-priority intents", fm_count)
 
@@ -359,6 +362,34 @@ async def _seed_fast_matcher_rules(session) -> int:
             "patterns": {
                 "en": [
                     r"(?:set|change)\s+(?:the\s+)?fan\s+(?:speed\s+)?(?:to\s+)?(?P<level>auto|low|medium|high|min|minimum|max|maximum)(?:\s+in\s+(?P<location>[\w\s]+?))?$",
+                ],
+            },
+        },
+        # ── Door-lock intents — owned by device-control (Matter / Z-Wave) ──
+        {
+            "intent": "device.lock",
+            "module": "device-control",
+            "noun_class": "DEVICE",
+            "verb": "lock",
+            "priority": 100,
+            "description": "Lock a door / smart lock",
+            "patterns": {
+                "en": [
+                    r"(?:lock|secure)\s+(?:the\s+)?(?P<location>[\w\s]+?)(?:\s+door)?$",
+                    r"(?:close|shut)\s+(?:the\s+)?(?P<location>[\w\s]+?)\s+lock$",
+                ],
+            },
+        },
+        {
+            "intent": "device.unlock",
+            "module": "device-control",
+            "noun_class": "DEVICE",
+            "verb": "unlock",
+            "priority": 100,
+            "description": "Unlock a door / smart lock",
+            "patterns": {
+                "en": [
+                    r"(?:unlock|open)\s+(?:the\s+)?(?P<location>[\w\s]+?)(?:\s+door)?$",
                 ],
             },
         },

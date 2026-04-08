@@ -139,6 +139,14 @@ class PatternGenerator:
                 f"{context}"
                 f"Reply ONLY with a JSON array of lowercase strings, no extra text."
             ),
+            "door_lock": (
+                f"Generate 4 short English voice commands to lock and unlock "
+                f"the smart lock named \"{name}\". Include 2 lock commands "
+                f"AND 2 unlock commands. Examples: \"lock front door\", "
+                f"\"unlock back door\", \"secure the garage\".\n"
+                f"{context}"
+                f"Reply ONLY with a JSON array of 4 lowercase strings, no extra text."
+            ),
         }
 
         prompt = prompts_by_type.get(entity_type)
@@ -314,10 +322,85 @@ class PatternGenerator:
             if loc_esc.isascii():
                 loc_part = f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?{loc_esc})?"
 
+        entity_type = (device.entity_type or "").lower()
+        count = 0
+
+        # ── Door locks (Matter / Z-Wave) ─────────────────────────────────
+        # Locks get device.lock / device.unlock instead of on/off — they
+        # don't have a meaningful "power" state.
+        if entity_type in ("lock", "door_lock"):
+            idef_lock = await self._ensure_definition(
+                session, "device.lock", "device-control", "DEVICE", "lock", 100,
+                "Lock a smart lock",
+            )
+            idef_unlock = await self._ensure_definition(
+                session, "device.unlock", "device-control", "DEVICE", "unlock", 100,
+                "Unlock a smart lock",
+            )
+
+            llm_phrases = await self._generate_patterns_via_llm(
+                "door_lock", raw_name,
+            )
+
+            lock_phrases: list[str] = []
+            unlock_phrases: list[str] = []
+            for phrase in llm_phrases:
+                if "unlock" in phrase or "open " in phrase:
+                    unlock_phrases.append(phrase)
+                elif "lock" in phrase or "secure " in phrase or "shut " in phrase:
+                    lock_phrases.append(phrase)
+
+            if not lock_phrases:
+                lock_phrases = [
+                    f"lock {raw_name}",
+                    f"lock the {raw_name}",
+                    f"secure {raw_name}",
+                ]
+            if not unlock_phrases:
+                unlock_phrases = [
+                    f"unlock {raw_name}",
+                    f"unlock the {raw_name}",
+                    f"open {raw_name}",
+                ]
+
+            for phrase in lock_phrases:
+                regex = phrase_to_regex(phrase)
+                if regex and validate_pattern(regex):
+                    session.add(IntentPattern(
+                        intent_id=idef_lock.id, lang="en", pattern=regex,
+                        source="auto_entity", entity_ref=ref,
+                    ))
+                    count += 1
+            for phrase in unlock_phrases:
+                regex = phrase_to_regex(phrase)
+                if regex and validate_pattern(regex):
+                    session.add(IntentPattern(
+                        intent_id=idef_unlock.id, lang="en", pattern=regex,
+                        source="auto_entity", entity_ref=ref,
+                    ))
+                    count += 1
+            return count
+
+        # ── Climate / thermostat — extra set_temperature pattern ─────────
+        if entity_type in ("thermostat", "air_conditioner"):
+            idef_temp = await self._ensure_definition(
+                session, "device.set_temperature", "device-control", "CLIMATE", "set", 100,
+                "Set the target temperature on a climate device",
+            )
+            pattern = (
+                f"set\\s+(?:the\\s+)?{name_esc}\\s+(?:to\\s+)?"
+                f"(?P<level>\\d{{1,2}})(?:\\s+degrees?)?"
+            )
+            session.add(IntentPattern(
+                intent_id=idef_temp.id, lang="en", pattern=pattern,
+                source="auto_entity", entity_ref=ref,
+            ))
+            count += 1
+            # Climate devices also fall through to on/off below.
+
+        # ── Default: device.on / device.off ──────────────────────────────
         verbs_on_en = await self._get_vocab_words(session, "en", "verb", "on")
         verbs_off_en = await self._get_vocab_words(session, "en", "verb", "off")
-
-        count = 0
 
         # device.on — English only
         idef_on = await self._ensure_definition(
