@@ -24,32 +24,32 @@ button,input,select{font-family:inherit;color:inherit}
 /* ── Compact dashboard tile (3 lines: time / date / status icons) ─ */
 .compact{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  width:100%;height:100%;padding:8px 10px;gap:2px;
+  width:100%;height:100%;padding:6px 6px;gap:1px;
   background:var(--card);border:1px solid var(--b);border-radius:10px;
   cursor:pointer;transition:border-color .15s,transform .08s;
   user-select:none;-webkit-tap-highlight-color:transparent;
-  text-align:center;
+  text-align:center;overflow:hidden;
 }
 .compact:hover{border-color:var(--pr)}
 .compact:active{transform:scale(.985)}
 .compact *{pointer-events:none}
 .compact .now{
-  font-size:30px;font-weight:700;color:var(--fg);
+  font-size:24px;font-weight:700;color:var(--fg);
   font-variant-numeric:tabular-nums;line-height:1.05;
 }
 .compact .date{
-  font-size:11px;color:var(--mut);
-  text-transform:uppercase;letter-spacing:.06em;
-  margin-top:1px;
+  font-size:10px;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.04em;
+  margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
 }
 .compact .icons{
-  display:flex;align-items:center;justify-content:center;gap:8px;
-  margin-top:4px;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  margin-top:3px;
 }
 .compact .icons:empty{display:none;margin-top:0}
 .compact .ico{
-  display:inline-flex;align-items:center;gap:3px;
-  font-size:13px;color:var(--mut);line-height:1;
+  display:inline-flex;align-items:center;gap:2px;
+  font-size:12px;color:var(--mut);line-height:1;
 }
 .compact .ico.alarm{color:var(--am)}
 .compact .ico.timer{color:var(--pr)}
