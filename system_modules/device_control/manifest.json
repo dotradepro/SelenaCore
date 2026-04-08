@@ -14,7 +14,6 @@
     ],
     "ui": {
         "icon": "icon.svg",
-        "widget": {"file": "widget.html", "size": "2x1"},
         "settings": "settings.html"
     },
     "author": "SmartHome LK",
