@@ -44,8 +44,9 @@ button,input,select{font-family:inherit;color:inherit}
 }
 .compact .icons{
   display:flex;align-items:center;justify-content:center;gap:8px;
-  margin-top:4px;min-height:16px;
+  margin-top:4px;
 }
+.compact .icons:empty{display:none;margin-top:0}
 .compact .ico{
   display:inline-flex;align-items:center;gap:3px;
   font-size:13px;color:var(--mut);line-height:1;
