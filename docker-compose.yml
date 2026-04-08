@@ -30,6 +30,11 @@ services:
       - ./modules:/opt/selena-core/modules
       - ./sdk:/opt/selena-core/sdk
       - ./scripts:/opt/selena-core/scripts:ro
+      # Read-only .git mount so core/version.py can compute the live version
+      # via `git rev-list --count HEAD` + `git rev-parse --short HEAD`. With
+      # this in place the API version stays in sync with the working tree
+      # automatically — no manual `docker cp .version` step is needed.
+      - ./.git:/opt/selena-core/.git:ro
       - ${VOSK_MODELS_DIR:-/var/lib/selena/models/vosk}:/var/lib/selena/models/vosk
       - /media:/media:ro
       - /mnt:/mnt:ro

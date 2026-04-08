@@ -90,6 +90,10 @@ def get_version() -> str:
     return base
 
 
-# Cached at import time
-VERSION: str = get_version()
+# Cached at import time. Use ``get_version()`` directly when you need a
+# live read (e.g. after a hot reload or in long-lived processes that
+# outlive a deploy). The HTTP /api/v1/health endpoint reads VERSION
+# directly so it always reflects the version at *core boot*, not the
+# version at the time of the request — that's intentional, the platform
+# uses it to detect that a restart actually happened.
 VERSION: str = get_version()

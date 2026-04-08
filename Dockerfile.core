@@ -25,7 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     arping \
     curl \
     zstd \
-    && rm -rf /var/lib/apt/lists/*
+    git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git config --system --add safe.directory /opt/selena-core
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
