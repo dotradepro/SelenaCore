@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clock</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: var(--tx);
+            background: var(--bg);
+        }
+
+        button {
+            font-family: inherit;
+            color: inherit;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        input,
+        select {
+            font-family: inherit;
+            color: var(--tx);
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 6px;
+            padding: 6px 8px;
+            font-size: 14px;
+        }
+
+        /* ── Compact widget mode ─────────────────────────────────────── */
+        .compact {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            width: 100%;
+            height: 100%;
+            padding: 10px 14px;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .compact .row1 {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .compact .now-time {
+            font-size: 26px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .compact .now-date {
+            font-size: 12px;
+            color: var(--tx3);
+        }
+
+        .compact .next {
+            font-size: 12px;
+            color: var(--tx2);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-height: 16px;
+        }
+
+        .compact .next .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--ac, #4ea1ff);
+        }
+
+        .compact .badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .compact .badge {
+            font-size: 11px;
+            padding: 2px 7px;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 999px;
+            color: var(--tx2);
+        }
+
+        .compact .badge.active {
+            background: var(--ac, #4ea1ff);
+            color: #fff;
+            border-color: transparent;
+        }
+
+        /* ── Modal mode ──────────────────────────────────────────────── */
+        .modal {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--b2);
+            background: var(--sf1, var(--bg));
+            flex-shrink: 0;
+        }
+
+        .tabs button {
+            flex: 1;
+            padding: 14px 8px;
+            font-size: 14px;
+            color: var(--tx2);
+            border-bottom: 2px solid transparent;
+            transition: color 0.15s, border-color 0.15s;
+        }
+
+        .tabs button.active {
+            color: var(--tx);
+            border-bottom-color: var(--ac, #4ea1ff);
+            font-weight: 600;
+        }
+
+        .tab-pane {
+            display: none;
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 18px 80px;
+        }
+
+        .tab-pane.active {
+            display: block;
+        }
+
+        .empty {
+            text-align: center;
+            color: var(--tx3);
+            font-size: 14px;
+            padding: 36px 12px;
+        }
+
+        /* List items shared */
+        .item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--b2);
+        }
+
+        .item:last-child {
+            border-bottom: none;
+        }
+
+        .item .main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .item .big {
+            font-size: 28px;
+            font-weight: 300;
+            line-height: 1.1;
+        }
+
+        .item .label {
+            font-size: 13px;
+            color: var(--tx2);
+            margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .item .repeat {
+            font-size: 11px;
+            color: var(--tx3);
+            margin-top: 4px;
+        }
+
+        .switch {
+            position: relative;
+            width: 42px;
+            height: 24px;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 999px;
+            flex-shrink: 0;
+            transition: background 0.2s;
+        }
+
+        .switch.on {
+            background: var(--ac, #4ea1ff);
+            border-color: transparent;
+        }
+
+        .switch::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .switch.on::after {
+            transform: translateX(18px);
+        }
+
+        .icon-btn {
+            width: 32px;
+            height: 32px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: var(--tx3);
+            font-size: 18px;
+        }
+
+        .icon-btn:hover {
+            background: var(--sf2);
+            color: var(--tx);
+        }
+
+        /* Floating action button */
+        .fab {
+            position: fixed;
+            right: 22px;
+            bottom: 22px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--ac, #4ea1ff);
+            color: #fff;
+            font-size: 28px;
+            line-height: 1;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 5;
+        }
+
+        .fab:hover {
+            filter: brightness(1.1);
+        }
+
+        /* Editor sheet */
+        .sheet-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 10;
+            align-items: flex-end;
+            justify-content: center;
+        }
+
+        .sheet-overlay.open {
+            display: flex;
+        }
+
+        .sheet {
+            width: 100%;
+            max-width: 460px;
+            background: var(--bg);
+            border-top-left-radius: 14px;
+            border-top-right-radius: 14px;
+            border: 1px solid var(--b2);
+            border-bottom: none;
+            padding: 20px 22px 28px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .sheet h3 {
+            font-size: 16px;
+            margin-bottom: 14px;
+        }
+
+        .sheet .field {
+            margin-bottom: 14px;
+        }
+
+        .sheet .field label {
+            display: block;
+            font-size: 12px;
+            color: var(--tx3);
+            margin-bottom: 6px;
+        }
+
+        .sheet .field input,
+        .sheet .field select {
+            width: 100%;
+        }
+
+        .sheet .row {
+            display: flex;
+            gap: 8px;
+        }
+
+        .sheet .row > * {
+            flex: 1;
+        }
+
+        .day-picker {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .day-picker button {
+            flex: 1;
+            min-width: 36px;
+            padding: 8px 0;
+            border: 1px solid var(--b2);
+            border-radius: 8px;
+            background: var(--sf2);
+            color: var(--tx2);
+            font-size: 12px;
+        }
+
+        .day-picker button.on {
+            background: var(--ac, #4ea1ff);
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .sheet .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 18px;
+        }
+
+        .sheet .actions button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .sheet .actions .cancel {
+            background: var(--sf2);
+            color: var(--tx);
+            border: 1px solid var(--b2);
+        }
+
+        .sheet .actions .save {
+            background: var(--ac, #4ea1ff);
+            color: #fff;
+        }
+
+        .sheet .actions .delete {
+            background: #d44;
+            color: #fff;
+        }
+
+        /* Timer/stopwatch big display */
+        .big-display {
+            text-align: center;
+            padding: 20px 0;
+            font-size: 56px;
+            font-weight: 200;
+            letter-spacing: 1px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .big-display.small {
+            font-size: 32px;
+            padding: 10px 0;
+        }
+
+        .big-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 18px;
+        }
+
+        .big-controls button {
+            padding: 10px 22px;
+            border-radius: 999px;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            color: var(--tx);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .big-controls button.primary {
+            background: var(--ac, #4ea1ff);
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .big-controls button.danger {
+            background: #d44;
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .preset-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        .preset-row button {
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            color: var(--tx2);
+            font-size: 13px;
+        }
+
+        .lap-list {
+            margin-top: 16px;
+            border-top: 1px solid var(--b2);
+        }
+
+        .lap-list .lap-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 4px;
+            border-bottom: 1px solid var(--b2);
+            font-variant-numeric: tabular-nums;
+            font-size: 14px;
+            color: var(--tx2);
+        }
+
+        /* World clock list */
+        .city-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 12px;
+            border-bottom: 1px solid var(--b2);
+        }
+
+        .city-row .left {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .city-row .name {
+            font-size: 15px;
+        }
+
+        .city-row .tz {
+            font-size: 11px;
+            color: var(--tx3);
+            margin-top: 2px;
+        }
+
+        .city-row .ct {
+            font-size: 22px;
+            font-weight: 300;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .city-row .day-off {
+            font-size: 11px;
+            color: var(--tx3);
+            margin-left: 6px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--sf1, #222);
+            color: var(--tx);
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--b2);
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Compact widget body -->
+    <div id="compactRoot" class="compact" style="display:none;" onclick="openModal()">
+        <div>
+            <div class="row1">
+                <div class="now-time" id="cNowTime">--:--</div>
+                <div class="now-date" id="cNowDate"></div>
+            </div>
+            <div class="next" id="cNext"><span data-i18n="no_alarms"></span></div>
+        </div>
+        <div class="badges" id="cBadges"></div>
+    </div>
+
+    <!-- Modal body (5-tab UI) -->
+    <div id="modalRoot" class="modal" style="display:none;">
+        <div class="tabs">
+            <button data-tab="alarms" class="active" data-i18n="tab_alarms"></button>
+            <button data-tab="timers" data-i18n="tab_timers"></button>
+            <button data-tab="reminders" data-i18n="tab_reminders"></button>
+            <button data-tab="world" data-i18n="tab_world"></button>
+            <button data-tab="stopwatch" data-i18n="tab_stopwatch"></button>
+        </div>
+
+        <div id="paneAlarms" class="tab-pane active">
+            <div id="alarmsList"></div>
+            <button class="fab" onclick="openAlarmEditor(null)">+</button>
+        </div>
+
+        <div id="paneTimers" class="tab-pane">
+            <div class="big-display" id="timerBig">00:00</div>
+            <div class="preset-row">
+                <button onclick="quickTimer(60)">1m</button>
+                <button onclick="quickTimer(300)">5m</button>
+                <button onclick="quickTimer(600)">10m</button>
+                <button onclick="quickTimer(1800)">30m</button>
+            </div>
+            <div id="timersList"></div>
+            <button class="fab" onclick="openTimerEditor()">+</button>
+        </div>
+
+        <div id="paneReminders" class="tab-pane">
+            <div id="remindersList"></div>
+            <button class="fab" onclick="openReminderEditor()">+</button>
+        </div>
+
+        <div id="paneWorld" class="tab-pane">
+            <div id="citiesList"></div>
+            <button class="fab" onclick="openCityEditor()">+</button>
+        </div>
+
+        <div id="paneStopwatch" class="tab-pane">
+            <div class="big-display" id="swDisplay">00:00.00</div>
+            <div class="big-controls">
+                <button id="swStartBtn" class="primary" onclick="swStart()" data-i18n="sw_start"></button>
+                <button id="swLapBtn" onclick="swLap()" data-i18n="sw_lap"></button>
+                <button id="swResetBtn" onclick="swReset()" data-i18n="sw_reset"></button>
+            </div>
+            <div id="lapList" class="lap-list"></div>
+        </div>
+    </div>
+
+    <!-- Editor sheet (alarms / timers / reminders / cities) -->
+    <div id="sheetOverlay" class="sheet-overlay" onclick="if(event.target===this)closeSheet()">
+        <div class="sheet" id="sheet"></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ── i18n ────────────────────────────────────────────────────────
+        var LANG = (function () {
+            try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; }
+        })();
+        var L = {
+            en: {
+                tab_alarms: 'Alarms', tab_timers: 'Timers', tab_reminders: 'Reminders',
+                tab_world: 'World Clock', tab_stopwatch: 'Stopwatch',
+                no_alarms: 'No alarms', no_timers: 'No active timers',
+                no_reminders: 'No reminders', no_cities: 'No cities added',
+                next_alarm: 'Next', timers_active: 'timers',
+                reminders_pending: 'reminders',
+                add_alarm: 'New alarm', edit_alarm: 'Edit alarm',
+                add_timer: 'New timer', add_reminder: 'New reminder',
+                add_city: 'Add city',
+                lbl_time: 'Time', lbl_label: 'Label', lbl_repeat: 'Repeat',
+                lbl_snooze: 'Snooze (min, 0=off)',
+                lbl_duration: 'Duration', lbl_minutes: 'Minutes', lbl_seconds: 'Seconds',
+                lbl_due: 'When',
+                lbl_city_name: 'City name', lbl_timezone: 'IANA timezone',
+                ph_label_alarm: 'e.g. Wake up',
+                ph_label_timer: 'e.g. Tea',
+                ph_label_reminder: 'e.g. Call mom',
+                ph_city_name: 'e.g. Tokyo',
+                ph_tz: 'e.g. Asia/Tokyo',
+                btn_save: 'Save', btn_cancel: 'Cancel', btn_delete: 'Delete',
+                day_mon: 'Mon', day_tue: 'Tue', day_wed: 'Wed', day_thu: 'Thu',
+                day_fri: 'Fri', day_sat: 'Sat', day_sun: 'Sun',
+                repeat_once: 'One time', repeat_weekdays: 'Weekdays',
+                repeat_weekends: 'Weekends', repeat_daily: 'Every day',
+                sw_start: 'Start', sw_pause: 'Pause', sw_lap: 'Lap', sw_reset: 'Reset',
+                ringing: 'Ringing', snooze: 'Snooze', dismiss: 'Dismiss',
+                saved: 'Saved', deleted: 'Deleted', error_save: 'Save failed',
+            },
+            uk: {
+                tab_alarms: 'Будильники', tab_timers: 'Таймери', tab_reminders: 'Нагадування',
+                tab_world: 'Світовий час', tab_stopwatch: 'Секундомір',
+                no_alarms: 'Немає будильників', no_timers: 'Немає активних таймерів',
+                no_reminders: 'Немає нагадувань', no_cities: 'Немає міст',
+                next_alarm: 'Наступний', timers_active: 'таймерів',
+                reminders_pending: 'нагадувань',
+                add_alarm: 'Новий будильник', edit_alarm: 'Редагувати будильник',
+                add_timer: 'Новий таймер', add_reminder: 'Нове нагадування',
+                add_city: 'Додати місто',
+                lbl_time: 'Час', lbl_label: 'Назва', lbl_repeat: 'Повтор',
+                lbl_snooze: 'Відкласти (хв, 0=вимкнено)',
+                lbl_duration: 'Тривалість', lbl_minutes: 'Хвилин', lbl_seconds: 'Секунд',
+                lbl_due: 'Коли',
+                lbl_city_name: 'Назва міста', lbl_timezone: 'IANA часовий пояс',
+                ph_label_alarm: 'напр. Прокинутися',
+                ph_label_timer: 'напр. Чай',
+                ph_label_reminder: 'напр. Подзвонити мамі',
+                ph_city_name: 'напр. Токіо',
+                ph_tz: 'напр. Asia/Tokyo',
+                btn_save: 'Зберегти', btn_cancel: 'Скасувати', btn_delete: 'Видалити',
+                day_mon: 'Пн', day_tue: 'Вт', day_wed: 'Ср', day_thu: 'Чт',
+                day_fri: 'Пт', day_sat: 'Сб', day_sun: 'Нд',
+                repeat_once: 'Один раз', repeat_weekdays: 'Будні',
+                repeat_weekends: 'Вихідні', repeat_daily: 'Щодня',
+                sw_start: 'Старт', sw_pause: 'Пауза', sw_lap: 'Коло', sw_reset: 'Скинути',
+                ringing: 'Дзвонить', snooze: 'Відкласти', dismiss: 'Вимкнути',
+                saved: 'Збережено', deleted: 'Видалено', error_save: 'Помилка збереження',
+            }
+        };
+        function t(k) { return (L[LANG] || L.en)[k] || k; }
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+        window.addEventListener('message', function (e) {
+            if (!e.data) return;
+            if (e.data.type === 'lang_changed') {
+                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+                applyLang();
+                refreshAll();
+            }
+        });
+
+        // ── Mode detection ──────────────────────────────────────────────
+        var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
+        var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+
+        // ── HTTP helpers ────────────────────────────────────────────────
+        function apiGet(p) {
+            return fetch(BASE + p).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        }
+        function apiPost(p, body) {
+            return fetch(BASE + p, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: body ? JSON.stringify(body) : null
+            }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        }
+        function apiPatch(p, body) {
+            return fetch(BASE + p, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+        }
+        function apiDel(p) {
+            return fetch(BASE + p, { method: 'DELETE' }).then(function (r) { return r.ok; }).catch(function () { return false; });
+        }
+        function showToast(msg) {
+            var el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.add('show');
+            setTimeout(function () { el.classList.remove('show'); }, 1800);
+        }
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+        // ── Compact widget ──────────────────────────────────────────────
+        function openModal() {
+            try {
+                window.parent.postMessage({ type: 'openWidgetModal', module: 'clock' }, '*');
+            } catch (ex) { }
+        }
+
+        function tickCompactClock() {
+            var d = new Date();
+            var el = document.getElementById('cNowTime');
+            if (el) el.textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+            var dl = document.getElementById('cNowDate');
+            if (dl) {
+                dl.textContent = d.toLocaleDateString(LANG === 'uk' ? 'uk-UA' : 'en-US',
+                    { weekday: 'short', day: 'numeric', month: 'short' });
+            }
+        }
+
+        function refreshCompact() {
+            apiGet('/state').then(function (s) {
+                if (!s) return;
+                var nextEl = document.getElementById('cNext');
+                if (s.next_alarm) {
+                    var a = s.next_alarm;
+                    var lbl = a.label || '';
+                    nextEl.innerHTML = '<span class="dot"></span>' + escapeHtml(pad2(a.hour) + ':' + pad2(a.minute) + (lbl ? ' · ' + lbl : ''));
+                } else {
+                    nextEl.innerHTML = '<span>' + escapeHtml(t('no_alarms')) + '</span>';
+                }
+                var bEl = document.getElementById('cBadges');
+                bEl.innerHTML = '';
+                var tCount = (s.active_timers || []).length;
+                var rCount = s.pending_reminders_count || 0;
+                if (tCount > 0) bEl.innerHTML += '<span class="badge active">⏱ ' + tCount + '</span>';
+                if (rCount > 0) bEl.innerHTML += '<span class="badge">📌 ' + rCount + '</span>';
+            });
+        }
+
+        // ── Modal: tabs ─────────────────────────────────────────────────
+        function selectTab(name) {
+            document.querySelectorAll('.tabs button').forEach(function (b) {
+                b.classList.toggle('active', b.getAttribute('data-tab') === name);
+            });
+            document.querySelectorAll('.tab-pane').forEach(function (p) {
+                p.classList.remove('active');
+            });
+            var pane = document.getElementById('pane' + name.charAt(0).toUpperCase() + name.slice(1));
+            if (pane) pane.classList.add('active');
+            // Refresh data for the active tab
+            if (name === 'alarms') loadAlarms();
+            else if (name === 'timers') loadTimers();
+            else if (name === 'reminders') loadReminders();
+            else if (name === 'world') loadCities();
+            else if (name === 'stopwatch') loadStopwatch();
+        }
+
+        // ── Alarms ──────────────────────────────────────────────────────
+        var _alarmsCache = [];
+        function loadAlarms() {
+            apiGet('/alarms').then(function (d) {
+                _alarmsCache = (d && d.alarms) || [];
+                renderAlarms();
+            });
+        }
+        function renderAlarms() {
+            var c = document.getElementById('alarmsList');
+            if (!_alarmsCache.length) { c.innerHTML = '<div class="empty">' + escapeHtml(t('no_alarms')) + '</div>'; return; }
+            c.innerHTML = _alarmsCache.map(function (a) {
+                return '<div class="item">' +
+                    '<div class="main" onclick="openAlarmEditor(\'' + a.id + '\')" style="cursor:pointer;">' +
+                    '<div class="big">' + pad2(a.hour) + ':' + pad2(a.minute) + '</div>' +
+                    (a.label ? '<div class="label">' + escapeHtml(a.label) + '</div>' : '') +
+                    '<div class="repeat">' + formatRepeat(a.repeat_days) + '</div>' +
+                    '</div>' +
+                    '<div class="switch ' + (a.enabled ? 'on' : '') + '" onclick="toggleAlarm(\'' + a.id + '\',' + (!a.enabled) + ')"></div>' +
+                    '</div>';
+            }).join('');
+        }
+        function formatRepeat(days) {
+            if (!days || !days.length) return t('repeat_once');
+            if (days.length === 7) return t('repeat_daily');
+            var weekdays = [0, 1, 2, 3, 4], weekends = [5, 6];
+            if (days.length === 5 && weekdays.every(function (d) { return days.indexOf(d) !== -1; })) return t('repeat_weekdays');
+            if (days.length === 2 && weekends.every(function (d) { return days.indexOf(d) !== -1; })) return t('repeat_weekends');
+            var names = ['day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat', 'day_sun'];
+            return days.slice().sort().map(function (d) { return t(names[d]); }).join(' ');
+        }
+        function toggleAlarm(id, enabled) {
+            apiPatch('/alarms/' + id, { enabled: enabled }).then(function (a) {
+                if (a) loadAlarms();
+            });
+        }
+
+        var _editorDays = [];
+        function openAlarmEditor(id) {
+            var existing = id ? _alarmsCache.find(function (a) { return a.id === id; }) : null;
+            _editorDays = existing ? existing.repeat_days.slice() : [];
+            var hour = existing ? existing.hour : 7;
+            var minute = existing ? existing.minute : 0;
+            var label = existing ? existing.label : '';
+            var snooze = existing ? existing.snooze_minutes : 9;
+            var dayBtns = ['day_mon', 'day_tue', 'day_wed', 'day_thu', 'day_fri', 'day_sat', 'day_sun']
+                .map(function (k, i) {
+                    var on = _editorDays.indexOf(i) !== -1 ? ' on' : '';
+                    return '<button type="button" class="' + on + '" data-day="' + i + '">' + t(k) + '</button>';
+                }).join('');
+            var deleteBtn = id ? '<button class="delete" onclick="deleteAlarm(\'' + id + '\')">' + t('btn_delete') + '</button>' : '';
+            var html = '<h3>' + (id ? t('edit_alarm') : t('add_alarm')) + '</h3>' +
+                '<div class="field"><label>' + t('lbl_time') + '</label>' +
+                '<div class="row">' +
+                '<input type="number" id="aHour" min="0" max="23" value="' + hour + '">' +
+                '<input type="number" id="aMin" min="0" max="59" value="' + minute + '">' +
+                '</div></div>' +
+                '<div class="field"><label>' + t('lbl_label') + '</label>' +
+                '<input type="text" id="aLabel" placeholder="' + t('ph_label_alarm') + '" value="' + escapeHtml(label) + '"></div>' +
+                '<div class="field"><label>' + t('lbl_repeat') + '</label>' +
+                '<div class="day-picker" id="aDays">' + dayBtns + '</div></div>' +
+                '<div class="field"><label>' + t('lbl_snooze') + '</label>' +
+                '<input type="number" id="aSnooze" min="0" max="60" value="' + snooze + '"></div>' +
+                '<div class="actions">' +
+                deleteBtn +
+                '<button class="cancel" onclick="closeSheet()">' + t('btn_cancel') + '</button>' +
+                '<button class="save" onclick="saveAlarm(' + (id ? "'" + id + "'" : 'null') + ')">' + t('btn_save') + '</button>' +
+                '</div>';
+            openSheet(html);
+            document.querySelectorAll('#aDays button').forEach(function (b) {
+                b.onclick = function () {
+                    var d = parseInt(b.getAttribute('data-day'), 10);
+                    var idx = _editorDays.indexOf(d);
+                    if (idx === -1) { _editorDays.push(d); b.classList.add('on'); }
+                    else { _editorDays.splice(idx, 1); b.classList.remove('on'); }
+                };
+            });
+        }
+        function saveAlarm(id) {
+            var hour = parseInt(document.getElementById('aHour').value, 10);
+            var minute = parseInt(document.getElementById('aMin').value, 10);
+            var label = document.getElementById('aLabel').value;
+            var snooze = parseInt(document.getElementById('aSnooze').value, 10) || 0;
+            var body = {
+                hour: hour, minute: minute, label: label,
+                repeat_days: _editorDays.slice(), snooze_minutes: snooze, enabled: true
+            };
+            var p = id
+                ? apiPatch('/alarms/' + id, body)
+                : apiPost('/alarms', body);
+            p.then(function (r) {
+                if (r) { showToast(t('saved')); closeSheet(); loadAlarms(); }
+                else { showToast(t('error_save')); }
+            });
+        }
+        function deleteAlarm(id) {
+            apiDel('/alarms/' + id).then(function (ok) {
+                if (ok) { showToast(t('deleted')); closeSheet(); loadAlarms(); }
+            });
+        }
+
+        // ── Timers ──────────────────────────────────────────────────────
+        var _timersCache = [];
+        var _timerTickHandle = null;
+        function loadTimers() {
+            apiGet('/timers').then(function (d) {
+                _timersCache = (d && d.timers) || [];
+                _timersCache.sort(function (a, b) { return (a.remaining_sec || 0) - (b.remaining_sec || 0); });
+                renderTimers();
+                if (_timerTickHandle) clearInterval(_timerTickHandle);
+                _timerTickHandle = setInterval(tickTimers, 1000);
+            });
+        }
+        function fmtDuration(sec) {
+            sec = Math.max(0, Math.floor(sec));
+            var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            return h ? (h + ':' + pad2(m) + ':' + pad2(s)) : (pad2(m) + ':' + pad2(s));
+        }
+        function renderTimers() {
+            var bigEl = document.getElementById('timerBig');
+            var running = _timersCache.filter(function (t) { return t.state === 'running'; });
+            bigEl.textContent = running.length ? fmtDuration(running[0].remaining_sec) : '00:00';
+            var c = document.getElementById('timersList');
+            if (!_timersCache.length) {
+                c.innerHTML = '<div class="empty">' + escapeHtml(t('no_timers')) + '</div>';
+                return;
+            }
+            c.innerHTML = _timersCache.map(function (tm) {
+                var left = fmtDuration(tm.remaining_sec);
+                var btn = '';
+                if (tm.state === 'running') btn = '<button class="icon-btn" onclick="pauseTimer(\'' + tm.id + '\')">⏸</button>';
+                else if (tm.state === 'paused') btn = '<button class="icon-btn" onclick="resumeTimer(\'' + tm.id + '\')">▶</button>';
+                return '<div class="item">' +
+                    '<div class="main">' +
+                    '<div class="big" data-tid="' + tm.id + '">' + left + '</div>' +
+                    (tm.label ? '<div class="label">' + escapeHtml(tm.label) + '</div>' : '') +
+                    '</div>' +
+                    btn +
+                    '<button class="icon-btn" onclick="deleteTimer(\'' + tm.id + '\')">✕</button>' +
+                    '</div>';
+            }).join('');
+        }
+        function tickTimers() {
+            // Decrement running timers locally so the display ticks every second
+            var changed = false;
+            _timersCache.forEach(function (tm) {
+                if (tm.state === 'running' && tm.remaining_sec > 0) {
+                    tm.remaining_sec -= 1;
+                    var el = document.querySelector('[data-tid="' + tm.id + '"]');
+                    if (el) el.textContent = fmtDuration(tm.remaining_sec);
+                    if (tm.remaining_sec === 0) changed = true;
+                }
+            });
+            var running = _timersCache.filter(function (t) { return t.state === 'running'; });
+            var bigEl = document.getElementById('timerBig');
+            if (bigEl) bigEl.textContent = running.length ? fmtDuration(running[0].remaining_sec) : '00:00';
+            if (changed) loadTimers();
+        }
+        function quickTimer(seconds) {
+            apiPost('/timers', { duration_sec: seconds, label: '' }).then(function (r) {
+                if (r) loadTimers();
+            });
+        }
+        function pauseTimer(id) { apiPost('/timers/' + id + '/pause').then(function () { loadTimers(); }); }
+        function resumeTimer(id) { apiPost('/timers/' + id + '/resume').then(function () { loadTimers(); }); }
+        function deleteTimer(id) { apiDel('/timers/' + id).then(function () { loadTimers(); }); }
+        function openTimerEditor() {
+            var html = '<h3>' + t('add_timer') + '</h3>' +
+                '<div class="field"><label>' + t('lbl_label') + '</label>' +
+                '<input type="text" id="tLabel" placeholder="' + t('ph_label_timer') + '"></div>' +
+                '<div class="field"><label>' + t('lbl_duration') + '</label>' +
+                '<div class="row">' +
+                '<input type="number" id="tMin" min="0" value="5" placeholder="' + t('lbl_minutes') + '">' +
+                '<input type="number" id="tSec" min="0" max="59" value="0" placeholder="' + t('lbl_seconds') + '">' +
+                '</div></div>' +
+                '<div class="actions">' +
+                '<button class="cancel" onclick="closeSheet()">' + t('btn_cancel') + '</button>' +
+                '<button class="save" onclick="saveTimer()">' + t('btn_save') + '</button>' +
+                '</div>';
+            openSheet(html);
+        }
+        function saveTimer() {
+            var m = parseInt(document.getElementById('tMin').value, 10) || 0;
+            var s = parseInt(document.getElementById('tSec').value, 10) || 0;
+            var label = document.getElementById('tLabel').value;
+            var total = m * 60 + s;
+            if (total <= 0) { showToast(t('error_save')); return; }
+            apiPost('/timers', { duration_sec: total, label: label }).then(function (r) {
+                if (r) { showToast(t('saved')); closeSheet(); loadTimers(); }
+                else { showToast(t('error_save')); }
+            });
+        }
+
+        // ── Reminders ───────────────────────────────────────────────────
+        var _remindersCache = [];
+        function loadReminders() {
+            apiGet('/reminders').then(function (d) {
+                _remindersCache = (d && d.reminders) || [];
+                _remindersCache.sort(function (a, b) {
+                    return (a.due_at || '').localeCompare(b.due_at || '');
+                });
+                renderReminders();
+            });
+        }
+        function renderReminders() {
+            var c = document.getElementById('remindersList');
+            var pending = _remindersCache.filter(function (r) { return !r.fired; });
+            if (!pending.length) { c.innerHTML = '<div class="empty">' + escapeHtml(t('no_reminders')) + '</div>'; return; }
+            c.innerHTML = pending.map(function (r) {
+                var d = new Date(r.due_at);
+                var dateStr = d.toLocaleString(LANG === 'uk' ? 'uk-UA' : 'en-US',
+                    { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                return '<div class="item">' +
+                    '<div class="main">' +
+                    '<div style="font-size:15px;">' + escapeHtml(r.label || '') + '</div>' +
+                    '<div class="label">' + escapeHtml(dateStr) + '</div>' +
+                    '</div>' +
+                    '<button class="icon-btn" onclick="deleteReminder(\'' + r.id + '\')">✕</button>' +
+                    '</div>';
+            }).join('');
+        }
+        function deleteReminder(id) {
+            apiDel('/reminders/' + id).then(function () { loadReminders(); });
+        }
+        function openReminderEditor() {
+            var now = new Date();
+            now.setMinutes(now.getMinutes() + 10 - (now.getMinutes() % 5));
+            var defaultLocal = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate()) +
+                'T' + pad2(now.getHours()) + ':' + pad2(now.getMinutes());
+            var html = '<h3>' + t('add_reminder') + '</h3>' +
+                '<div class="field"><label>' + t('lbl_label') + '</label>' +
+                '<input type="text" id="rLabel" placeholder="' + t('ph_label_reminder') + '"></div>' +
+                '<div class="field"><label>' + t('lbl_due') + '</label>' +
+                '<input type="datetime-local" id="rDue" value="' + defaultLocal + '"></div>' +
+                '<div class="actions">' +
+                '<button class="cancel" onclick="closeSheet()">' + t('btn_cancel') + '</button>' +
+                '<button class="save" onclick="saveReminder()">' + t('btn_save') + '</button>' +
+                '</div>';
+            openSheet(html);
+        }
+        function saveReminder() {
+            var label = document.getElementById('rLabel').value;
+            var dueLocal = document.getElementById('rDue').value;
+            if (!dueLocal) { showToast(t('error_save')); return; }
+            // Convert local datetime → ISO with offset → backend parses as tz-aware
+            var d = new Date(dueLocal);
+            apiPost('/reminders', { due_at: d.toISOString(), label: label }).then(function (r) {
+                if (r) { showToast(t('saved')); closeSheet(); loadReminders(); }
+                else { showToast(t('error_save')); }
+            });
+        }
+
+        // ── World clock ─────────────────────────────────────────────────
+        var _citiesCache = [];
+        var _worldTickHandle = null;
+        function loadCities() {
+            apiGet('/world-clock').then(function (d) {
+                _citiesCache = (d && d.cities) || [];
+                renderCities();
+                if (_worldTickHandle) clearInterval(_worldTickHandle);
+                _worldTickHandle = setInterval(updateCityTimes, 1000);
+                updateCityTimes();
+            });
+        }
+        function renderCities() {
+            var c = document.getElementById('citiesList');
+            if (!_citiesCache.length) { c.innerHTML = '<div class="empty">' + escapeHtml(t('no_cities')) + '</div>'; return; }
+            c.innerHTML = _citiesCache.map(function (city) {
+                return '<div class="city-row">' +
+                    '<div class="left">' +
+                    '<div class="name">' + escapeHtml(city.label) + '</div>' +
+                    '<div class="tz">' + escapeHtml(city.tz_name) + '</div>' +
+                    '</div>' +
+                    '<div class="ct" data-tz="' + escapeHtml(city.tz_name) + '">--:--</div>' +
+                    '<button class="icon-btn" onclick="deleteCity(\'' + city.id + '\')">✕</button>' +
+                    '</div>';
+            }).join('');
+        }
+        function updateCityTimes() {
+            var now = new Date();
+            document.querySelectorAll('.ct[data-tz]').forEach(function (el) {
+                var tz = el.getAttribute('data-tz');
+                try {
+                    var fmt = new Intl.DateTimeFormat(LANG === 'uk' ? 'uk-UA' : 'en-US', {
+                        timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false
+                    });
+                    el.textContent = fmt.format(now);
+                } catch (e) {
+                    el.textContent = '??:??';
+                }
+            });
+        }
+        function deleteCity(id) {
+            apiDel('/world-clock/' + id).then(function () { loadCities(); });
+        }
+        function openCityEditor() {
+            var html = '<h3>' + t('add_city') + '</h3>' +
+                '<div class="field"><label>' + t('lbl_city_name') + '</label>' +
+                '<input type="text" id="cName" placeholder="' + t('ph_city_name') + '"></div>' +
+                '<div class="field"><label>' + t('lbl_timezone') + '</label>' +
+                '<input type="text" id="cTz" placeholder="' + t('ph_tz') + '"></div>' +
+                '<div class="actions">' +
+                '<button class="cancel" onclick="closeSheet()">' + t('btn_cancel') + '</button>' +
+                '<button class="save" onclick="saveCity()">' + t('btn_save') + '</button>' +
+                '</div>';
+            openSheet(html);
+        }
+        function saveCity() {
+            var label = document.getElementById('cName').value.trim();
+            var tz = document.getElementById('cTz').value.trim();
+            if (!label || !tz) { showToast(t('error_save')); return; }
+            apiPost('/world-clock', { label: label, tz_name: tz }).then(function (r) {
+                if (r) { showToast(t('saved')); closeSheet(); loadCities(); }
+                else { showToast(t('error_save')); }
+            });
+        }
+
+        // ── Stopwatch ───────────────────────────────────────────────────
+        var _swState = null;
+        var _swTickHandle = null;
+        function loadStopwatch() {
+            apiGet('/stopwatch').then(function (d) {
+                _swState = d || { state: 'idle', elapsed_ms: 0, started_at: null, laps: [] };
+                renderStopwatch();
+                if (_swTickHandle) cancelAnimationFrame(_swTickHandle);
+                tickStopwatch();
+            });
+        }
+        function fmtSwTime(ms) {
+            ms = Math.max(0, ms);
+            var totalSec = Math.floor(ms / 1000);
+            var cs = Math.floor((ms % 1000) / 10);
+            var h = Math.floor(totalSec / 3600);
+            var m = Math.floor((totalSec % 3600) / 60);
+            var s = totalSec % 60;
+            return (h ? (h + ':' + pad2(m)) : pad2(m)) + ':' + pad2(s) + '.' + pad2(cs);
+        }
+        function currentSwMs() {
+            if (!_swState) return 0;
+            var ms = _swState.elapsed_ms || 0;
+            if (_swState.state === 'running' && _swState.started_at) {
+                ms += (Date.now() - new Date(_swState.started_at).getTime());
+            }
+            return ms;
+        }
+        function tickStopwatch() {
+            var el = document.getElementById('swDisplay');
+            if (el) el.textContent = fmtSwTime(currentSwMs());
+            if (_swState && _swState.state === 'running') {
+                _swTickHandle = requestAnimationFrame(tickStopwatch);
+            }
+        }
+        function renderStopwatch() {
+            var startBtn = document.getElementById('swStartBtn');
+            if (_swState && _swState.state === 'running') {
+                startBtn.textContent = t('sw_pause');
+                startBtn.onclick = swPause;
+            } else {
+                startBtn.textContent = t('sw_start');
+                startBtn.onclick = swStart;
+            }
+            var lapList = document.getElementById('lapList');
+            var laps = (_swState && _swState.laps) || [];
+            if (!laps.length) { lapList.innerHTML = ''; return; }
+            // Show as differences from previous lap
+            var rows = [];
+            for (var i = laps.length - 1; i >= 0; i--) {
+                var prev = i > 0 ? laps[i - 1] : 0;
+                var diff = laps[i] - prev;
+                rows.push('<div class="lap-row"><span>#' + (i + 1) + '</span><span>' + fmtSwTime(diff) + '</span><span>' + fmtSwTime(laps[i]) + '</span></div>');
+            }
+            lapList.innerHTML = rows.join('');
+        }
+        function swStart() { apiPost('/stopwatch/start').then(function (d) { _swState = d; renderStopwatch(); tickStopwatch(); }); }
+        function swPause() { apiPost('/stopwatch/pause').then(function (d) { _swState = d; renderStopwatch(); tickStopwatch(); }); }
+        function swLap() { apiPost('/stopwatch/lap').then(function (d) { _swState = d; renderStopwatch(); }); }
+        function swReset() { apiPost('/stopwatch/reset').then(function (d) { _swState = d; renderStopwatch(); tickStopwatch(); }); }
+
+        // ── Sheet helpers ───────────────────────────────────────────────
+        function openSheet(html) {
+            document.getElementById('sheet').innerHTML = html;
+            document.getElementById('sheetOverlay').classList.add('open');
+        }
+        function closeSheet() {
+            document.getElementById('sheetOverlay').classList.remove('open');
+        }
+
+        // ── Live updates via clock.changed event ────────────────────────
+        // (We just poll on tab switches and intervals — no WebSocket dep here)
+        function refreshAll() {
+            applyLang();
+            if (IS_MODAL) {
+                var active = document.querySelector('.tabs button.active');
+                var name = active ? active.getAttribute('data-tab') : 'alarms';
+                selectTab(name);
+            } else {
+                tickCompactClock();
+                refreshCompact();
+            }
+        }
+
+        // ── Init ────────────────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', function () {
+            applyLang();
+            if (IS_MODAL) {
+                document.getElementById('modalRoot').style.display = 'flex';
+                // Wire tab buttons
+                document.querySelectorAll('.tabs button').forEach(function (b) {
+                    b.onclick = function () { selectTab(b.getAttribute('data-tab')); };
+                });
+                selectTab('alarms');
+                // Periodic refresh of active tab data
+                setInterval(function () {
+                    var active = document.querySelector('.tabs button.active');
+                    if (!active) return;
+                    var n = active.getAttribute('data-tab');
+                    if (n === 'alarms') loadAlarms();
+                    else if (n === 'reminders') loadReminders();
+                    // timers/stopwatch tick locally; world updates locally
+                }, 15000);
+            } else {
+                document.getElementById('compactRoot').style.display = 'flex';
+                tickCompactClock();
+                refreshCompact();
+                setInterval(tickCompactClock, 1000);
+                setInterval(refreshCompact, 10000);
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,39 @@
+{
+    "name": "clock",
+    "version": "0.1.0",
+    "description": "Clock app: alarms, timers, reminders, world clock, stopwatch. Voice control.",
+    "type": "SYSTEM",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "group": "utilities",
+    "intents": [
+        "clock.set_alarm",
+        "clock.list_alarms",
+        "clock.cancel_alarm",
+        "clock.stop_alarm",
+        "clock.set_timer",
+        "clock.cancel_timer",
+        "clock.set_reminder"
+    ],
+    "entities": ["alarm", "timer", "reminder", "clock", "stopwatch"],
+    "permissions": [
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x1",
+            "max_size": "2x1"
+        },
+        "settings": "settings.html"
+    },
+    "resources": {
+        "memory_mb": 64,
+        "cpu": 0.1
+    },
+    "author": "SelenaCore Community",
+    "license": "MIT"
+}

@@ -88,6 +88,10 @@ async def main() -> None:
             fm_count = await _seed_fast_matcher_rules(session)
             logger.info("Seeded %d FastMatcher rules as high-priority intents", fm_count)
 
+            # 4. Seed clock module rules
+            clock_count = await _seed_clock_rules(session)
+            logger.info("Seeded %d clock module patterns", clock_count)
+
     await engine.dispose()
     logger.info("Seed complete!")
 
@@ -376,6 +380,161 @@ async def _seed_fast_matcher_rules(session) -> int:
             for lang, patterns in rule["patterns"].items():
                 for pattern in patterns:
                     # Check if pattern already exists
+                    check = await session.execute(
+                        select(IntentPattern).where(
+                            IntentPattern.intent_id == existing.id,
+                            IntentPattern.lang == lang,
+                            IntentPattern.pattern == pattern,
+                        )
+                    )
+                    if check.scalar_one_or_none() is None:
+                        session.add(IntentPattern(
+                            intent_id=existing.id,
+                            lang=lang,
+                            pattern=pattern,
+                            source="manual",
+                        ))
+                        count += 1
+        else:
+            idef = IntentDefinition(
+                intent=rule["intent"],
+                module=rule["module"],
+                noun_class=rule["noun_class"],
+                verb=rule["verb"],
+                priority=rule["priority"],
+                description=rule["description"],
+                source="system",
+            )
+            session.add(idef)
+            await session.flush()
+
+            for lang, patterns in rule["patterns"].items():
+                for pattern in patterns:
+                    session.add(IntentPattern(
+                        intent_id=idef.id,
+                        lang=lang,
+                        pattern=pattern,
+                        source="manual",
+                    ))
+                    count += 1
+
+    return count
+
+
+async def _seed_clock_rules(session) -> int:
+    """Seed clock module intents (alarms, timers, reminders)."""
+    from sqlalchemy import select
+    from core.registry.models import IntentDefinition, IntentPattern
+
+    rules = [
+        {
+            "intent": "clock.set_alarm",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "set",
+            "priority": 100,
+            "description": "Set an alarm for a specific time of day",
+            "patterns": {
+                "en": [
+                    r"set\s+(?:an?\s+)?alarm\s+(?:for|at)\s+(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)?",
+                    r"wake\s+me\s+up\s+at\s+(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)?",
+                ],
+            },
+        },
+        {
+            "intent": "clock.list_alarms",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "query",
+            "priority": 100,
+            "description": "List active alarms",
+            "patterns": {
+                "en": [
+                    r"(?:list|show|what)\s+(?:are\s+)?(?:my\s+)?alarms",
+                ],
+            },
+        },
+        {
+            "intent": "clock.cancel_alarm",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "off",
+            "priority": 100,
+            "description": "Cancel the next alarm",
+            "patterns": {
+                "en": [
+                    r"(?:cancel|delete|remove)\s+(?:the\s+|my\s+)?alarm",
+                ],
+            },
+        },
+        {
+            "intent": "clock.stop_alarm",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "off",
+            "priority": 100,
+            "description": "Stop / dismiss a currently ringing alarm",
+            "patterns": {
+                "en": [
+                    r"stop\s+(?:the\s+)?alarm",
+                    r"dismiss\s+(?:the\s+)?alarm",
+                    r"turn\s+off\s+(?:the\s+)?alarm",
+                ],
+            },
+        },
+        {
+            "intent": "clock.set_timer",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "set",
+            "priority": 100,
+            "description": "Start a countdown timer",
+            "patterns": {
+                "en": [
+                    r"(?:set\s+(?:a\s+)?timer|start\s+(?:a\s+)?timer|timer)\s+(?:for\s+)?(?P<value>\d+)\s+(?P<unit>seconds?|minutes?|hours?|sec|min|hr)",
+                ],
+            },
+        },
+        {
+            "intent": "clock.cancel_timer",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "off",
+            "priority": 100,
+            "description": "Cancel running timers",
+            "patterns": {
+                "en": [
+                    r"(?:cancel|stop|delete)\s+(?:the\s+|my\s+)?timer",
+                ],
+            },
+        },
+        {
+            "intent": "clock.set_reminder",
+            "module": "clock",
+            "noun_class": "CLOCK",
+            "verb": "set",
+            "priority": 100,
+            "description": "Create a reminder for some minutes/hours from now",
+            "patterns": {
+                "en": [
+                    r"remind\s+me\s+to\s+(?P<what>.+?)\s+in\s+(?P<value>\d+)\s+(?P<unit>minutes?|hours?|min|hr)",
+                ],
+            },
+        },
+    ]
+
+    count = 0
+    for rule in rules:
+        result = await session.execute(
+            select(IntentDefinition).where(IntentDefinition.intent == rule["intent"])
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            if existing.priority < rule["priority"]:
+                existing.priority = rule["priority"]
+            for lang, patterns in rule["patterns"].items():
+                for pattern in patterns:
                     check = await session.execute(
                         select(IntentPattern).where(
                             IntentPattern.intent_id == existing.id,

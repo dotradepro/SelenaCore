@@ -292,6 +292,93 @@ class DriverProvider(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ClockAlarm(Base):
+    """Alarm clock entry — recurring or one-shot."""
+    __tablename__ = "clock_alarms"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    label: Mapped[str] = mapped_column(String(255), default="")
+    hour: Mapped[int] = mapped_column(Integer, nullable=False)
+    minute: Mapped[int] = mapped_column(Integer, nullable=False)
+    repeat_days: Mapped[str] = mapped_column(Text, default="[]")  # JSON list[int] 0-6 (Mon-Sun)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    snooze_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    sound: Mapped[str] = mapped_column(String(100), default="default")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    def get_repeat_days(self) -> list[int]:
+        return json.loads(self.repeat_days)
+
+    def set_repeat_days(self, days: list[int]) -> None:
+        self.repeat_days = json.dumps(days)
+
+
+class ClockTimer(Base):
+    """Countdown timer entry."""
+    __tablename__ = "clock_timers"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    label: Mapped[str] = mapped_column(String(255), default="")
+    duration_sec: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_remaining_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    state: Mapped[str] = mapped_column(String(20), default="running")  # running|paused|finished
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ClockReminder(Base):
+    """One-shot reminder at an absolute datetime."""
+    __tablename__ = "clock_reminders"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    label: Mapped[str] = mapped_column(String(255), default="")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ClockWorldCity(Base):
+    """World clock city entry."""
+    __tablename__ = "clock_world_cities"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    tz_name: Mapped[str] = mapped_column(String(100), nullable=False)  # IANA tz, e.g. "Asia/Tokyo"
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ClockStopwatch(Base):
+    """Singleton stopwatch state (single row, id=1)."""
+    __tablename__ = "clock_stopwatch"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    state: Mapped[str] = mapped_column(String(20), default="idle")  # idle|running|paused
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elapsed_ms: Mapped[int] = mapped_column(Integer, default=0)
+    laps: Mapped[str] = mapped_column(Text, default="[]")  # JSON list[int] of lap milestones (ms)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    def get_laps(self) -> list[int]:
+        return json.loads(self.laps)
+
+    def set_laps(self, items: list[int]) -> None:
+        self.laps = json.dumps(items)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
