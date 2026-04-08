@@ -3,6 +3,8 @@
 > Local-only WiFi A/C control for Gree-protocol units (Pular GWH12AGB-I-R32, Gree, Cooper&Hunter, EWT, Ewpe Smart family) plus a high-level **Climate** UI module that renders and controls climate devices grouped by room.
 >
 > No cloud account, no Home Assistant dependency, no httpx between system modules — pure in-process Python and the EventBus.
+>
+> **➡ See also:** [provider-system-and-modules.md](provider-system-and-modules.md) — the post-Gree refactor that turned device-control into a runtime-pluggable provider system, added the `lights-switches` SYSTEM module, unified the energy-monitor settings into one filterable table, and reworked the climate widget for compact dashboard tiles. The Gree driver and Climate module described below are still the canonical implementation; this document describes their initial design.
 
 ## 1. Overview
 
