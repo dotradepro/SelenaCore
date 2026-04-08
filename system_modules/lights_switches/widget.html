@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="/api/shared/theme.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lights & Switches</title>
+<style>
+:root{
+  --bg:var(--sf2);
+  --card:var(--sf);
+  --fg:var(--tx);
+  --mut:var(--tx2);
+  --pr:var(--ac);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
+.wrap{padding:10px;display:flex;flex-direction:column;gap:10px;height:100vh;overflow-y:auto}
+.wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:auto;min-height:0}
+.room{display:flex;flex-direction:column;gap:6px}
+.room-title{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
+.list{display:flex;flex-direction:column;gap:4px}
+
+/* compact row (dashboard mode) */
+.row{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;background:var(--card);border:1px solid var(--b);border-radius:8px;
+  cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
+  user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.row:hover{border-color:var(--pr)}
+.row:active{transform:scale(.985)}
+.row.off{opacity:.55}
+.row > *{pointer-events:none}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--mut);flex-shrink:0}
+.dot.on{background:var(--am);box-shadow:0 0 8px rgba(245,158,11,.55)}
+.dot.on.light{background:var(--am)}
+.dot.on.switch,.dot.on.outlet{background:var(--gr);box-shadow:0 0 8px rgba(34,197,94,.55)}
+.row-icon{font-size:14px;flex-shrink:0;width:18px;text-align:center}
+.row-name{flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-bright{font-size:11px;color:var(--mut);min-width:38px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.row-watts{font-size:10px;color:var(--mut);min-width:42px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.chev{color:var(--mut);font-size:14px;flex-shrink:0}
+
+.empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
+
+/* full-control card (modal mode) */
+.fullcard{
+  background:var(--card);border:1px solid var(--b);border-radius:14px;
+  padding:18px 20px;display:flex;flex-direction:column;gap:14px;
+}
+.fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.fc-title{font-size:17px;font-weight:600}
+.fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
+.power-toggle{
+  background:transparent;border:1px solid var(--b);border-radius:50%;
+  width:46px;height:46px;cursor:pointer;color:var(--mut);font-size:20px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.power-toggle.on{background:var(--gr);color:#fff;border-color:var(--gr);box-shadow:0 0 14px rgba(34,197,94,.35)}
+.power-toggle.on.light{background:var(--am);border-color:var(--am);box-shadow:0 0 14px rgba(245,158,11,.4)}
+
+.slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px}
+.slider-label{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.slider-label b{color:var(--fg);font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;-webkit-appearance:none;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--b);border-radius:3px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--pr);margin-top:-6px;cursor:pointer}
+input[type=range]::-moz-range-track{height:6px;background:var(--b);border-radius:3px}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--pr);border:none;cursor:pointer}
+
+.color-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:10px}
+.color-row label{flex:1;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.color-row input[type=color]{width:50px;height:36px;border:none;background:transparent;cursor:pointer}
+
+.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
+.fc-meta b{color:var(--fg);font-weight:600}
+
+.toast{
+  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+  background:var(--card);border:1px solid var(--b);padding:8px 14px;border-radius:8px;
+  z-index:1000;font-size:12px;max-width:90%;
+}
+.toast.error{border-color:var(--rd);color:var(--rd)}
+
+.fs-close{
+  position:fixed;top:14px;right:18px;
+  background:var(--card);border:1px solid var(--b);border-radius:50%;
+  width:36px;height:36px;cursor:pointer;color:var(--fg);font-size:18px;
+  display:flex;align-items:center;justify-content:center;z-index:1001;
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+  <div class="empty" data-i18n="loading">Loading…</div>
+</div>
+<button class="fs-close" id="fsClose" style="display:none">×</button>
+
+<script>
+// ── i18n ─────────────────────────────────────────────────────────────────
+var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var ROOM_KEYS = {
+  en: { living_room:'Living room', livingroom:'Living room', lounge:'Lounge', bedroom:'Bedroom', kitchen:'Kitchen', office:'Office', hallway:'Hallway', bathroom:'Bathroom', garage:'Garage', nursery:'Nursery', dining:'Dining room', balcony:'Balcony' },
+  uk: { living_room:'Вітальня', livingroom:'Вітальня', lounge:'Вітальня', bedroom:'Спальня', kitchen:'Кухня', office:'Кабінет', hallway:'Коридор', bathroom:'Ванна', garage:'Гараж', nursery:'Дитяча', dining:'Їдальня', balcony:'Балкон' }
+};
+function roomLabel(key) {
+  if (!key || key === 'unassigned') return t('unassigned');
+  var norm = String(key).toLowerCase().trim().replace(/\s+/g, '_');
+  return (ROOM_KEYS[LANG] && ROOM_KEYS[LANG][norm]) || ROOM_KEYS.en[norm] || key;
+}
+var L = {
+  en: {
+    title:'Lights & Switches',
+    loading:'Loading…',
+    empty:'No lights, switches or outlets yet. Add devices via Device Control → Tuya Cloud Wizard.',
+    unassigned:'Unassigned',
+    power:'Power', brightness:'Brightness', colour_temp:'Colour temperature', rgb_color:'Colour',
+    cmd_failed:'Command failed',
+    on:'on', off:'off',
+    type_light:'Light', type_switch:'Switch', type_outlet:'Outlet',
+    estimated:'estimated', power_w:'Power',
+  },
+  uk: {
+    title:'Світло та вимикачі',
+    loading:'Завантаження…',
+    empty:'Немає ламп, вимикачів чи розеток. Додайте через Керування пристроями → Tuya Cloud майстер.',
+    unassigned:'Без кімнати',
+    power:'Живлення', brightness:'Яскравість', colour_temp:'Колірна температура', rgb_color:'Колір',
+    cmd_failed:'Команда не виконана',
+    on:'увімк', off:'вимк',
+    type_light:'Лампа', type_switch:'Вимикач', type_outlet:'Розетка',
+    estimated:'оцінка', power_w:'Спожив.',
+  }
+};
+function t(k){return (L[LANG]||L.en)[k]||k;}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+}
+window.addEventListener('message',function(e){
+  if(!e.data) return;
+  if(e.data.type==='lang_changed'){
+    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
+    applyLang(); load();
+  }
+  if(e.data.type==='refresh') load();
+});
+
+// ── helpers ──────────────────────────────────────────────────────────────
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
+var inFrame = window.self !== window.top;
+function $(id){return document.getElementById(id);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function api(path,opts){
+  opts=opts||{};
+  return fetch(BASE+path,{
+    method:opts.method||'GET',
+    headers:opts.body?{'Content-Type':'application/json'}:{},
+    body:opts.body?JSON.stringify(opts.body):null,
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
+    return r.json();
+  });
+}
+function toast(msg,err){
+  var d=document.createElement('div');
+  d.className='toast'+(err?' error':'');
+  d.textContent=msg;
+  document.body.appendChild(d);
+  setTimeout(function(){d.remove();},2200);
+}
+
+var ICONS = { light: '💡', switch: '⏻', outlet: '🔌' };
+var DEVICES = {};
+
+// ── compact row ─────────────────────────────────────────────────────────
+function renderRow(d){
+  var s = d.state || {};
+  var on = s.on === true;
+  var et = (d.entity_type||'switch').toLowerCase();
+  var icon = ICONS[et] || '⏻';
+  var bright = (et==='light' && on && s.brightness != null) ? Math.round(s.brightness)+'%' : '';
+  var watts = (s.estimated_watts != null) ? Math.round(s.estimated_watts)+' W' : '';
+  return '<div class="row '+(on?'':'off')+'" data-id="'+esc(d.device_id)+'">'+
+    '<span class="dot '+(on?'on '+et:'')+'"></span>'+
+    '<span class="row-icon">'+icon+'</span>'+
+    '<span class="row-name">'+esc(d.name)+'</span>'+
+    '<span class="row-bright">'+esc(bright)+'</span>'+
+    '<span class="row-watts">'+esc(watts)+'</span>'+
+    '<span class="chev">›</span>'+
+  '</div>';
+}
+
+function bindCompactRows(){
+  var openModal = function(){
+    if(!inFrame) return;
+    try{
+      window.parent.postMessage({type:'openWidgetModal', module:'lights-switches', width:480, height:560}, '*');
+    }catch(_){}
+  };
+  document.querySelectorAll('.row').forEach(function(r){
+    var fired = false;
+    var trigger = function(e){
+      if(fired) return;
+      fired = true;
+      setTimeout(function(){ fired = false; }, 350);
+      if(e && e.preventDefault) e.preventDefault();
+      openModal();
+    };
+    r.addEventListener('pointerdown', trigger);
+    r.addEventListener('click', trigger);
+  });
+}
+
+// ── full-control card (modal mode) ──────────────────────────────────────
+function renderFullCard(d){
+  var s = d.state || {};
+  var caps = d.capabilities || [];
+  var on = s.on === true;
+  var et = (d.entity_type||'switch').toLowerCase();
+  var bright = (s.brightness != null) ? Math.round(s.brightness) : 50;
+  var ctemp = (s.colour_temp != null) ? Math.round(s.colour_temp) : 50;
+  var rgbHex = s.rgb_color || '#ffffff';
+  var watts = s.estimated_watts;
+
+  var hasBrightness = caps.indexOf('brightness') !== -1;
+  var hasColourTemp = caps.indexOf('colour_temp') !== -1;
+  var hasRgb = caps.indexOf('rgb_color') !== -1;
+
+  var brightSection = hasBrightness ? (
+    '<div class="slider-row">'+
+      '<div class="slider-label"><span>'+esc(t('brightness'))+'</span><b>'+bright+'%</b></div>'+
+      '<input type="range" min="0" max="100" value="'+bright+'" class="slider-bright" data-id="'+esc(d.device_id)+'">'+
+    '</div>'
+  ) : '';
+  var ctempSection = hasColourTemp ? (
+    '<div class="slider-row">'+
+      '<div class="slider-label"><span>'+esc(t('colour_temp'))+'</span><b>'+ctemp+'%</b></div>'+
+      '<input type="range" min="0" max="100" value="'+ctemp+'" class="slider-ctemp" data-id="'+esc(d.device_id)+'">'+
+    '</div>'
+  ) : '';
+  var rgbSection = hasRgb ? (
+    '<div class="color-row">'+
+      '<label>'+esc(t('rgb_color'))+'</label>'+
+      '<input type="color" value="'+esc(rgbHex)+'" class="picker-rgb" data-id="'+esc(d.device_id)+'">'+
+    '</div>'
+  ) : '';
+  var wattsLine = (watts != null)
+    ? '<div class="fc-meta"><span>'+esc(t('power_w'))+': <b>'+Math.round(watts)+' W</b> '+esc(t('estimated'))+'</span></div>'
+    : '';
+
+  return '<div class="fullcard">'+
+    '<div class="fc-head">'+
+      '<div>'+
+        '<div class="fc-title">'+esc(ICONS[et]||'⏻')+' '+esc(d.name)+'</div>'+
+        '<div class="fc-subtitle">'+esc(roomLabel(d.location))+' · '+esc(t('type_'+et)||et)+'</div>'+
+      '</div>'+
+      '<button class="power-toggle '+(on?'on '+et:'')+'" data-id="'+esc(d.device_id)+'" data-power="'+(on?'off':'on')+'">⏻</button>'+
+    '</div>'+
+    brightSection+ctempSection+rgbSection+wattsLine+
+  '</div>';
+}
+
+function bindFullCards(){
+  document.querySelectorAll('.power-toggle').forEach(function(b){
+    b.onclick = function(){
+      var id = b.getAttribute('data-id');
+      var next = b.getAttribute('data-power') === 'on';
+      sendCmd(id, {on: next});
+    };
+  });
+  // Debounce sliders so we don't fire 100 commands per drag.
+  function debounceCmd(el, key){
+    var timer;
+    el.addEventListener('input', function(){
+      var lbl = el.parentNode.querySelector('.slider-label b');
+      if(lbl) lbl.textContent = el.value + '%';
+      clearTimeout(timer);
+      timer = setTimeout(function(){
+        var state = {};
+        state[key] = parseInt(el.value, 10);
+        sendCmd(el.getAttribute('data-id'), state);
+      }, 250);
+    });
+  }
+  document.querySelectorAll('.slider-bright').forEach(function(el){ debounceCmd(el, 'brightness'); });
+  document.querySelectorAll('.slider-ctemp').forEach(function(el){ debounceCmd(el, 'colour_temp'); });
+  document.querySelectorAll('.picker-rgb').forEach(function(el){
+    el.addEventListener('change', function(){
+      sendCmd(el.getAttribute('data-id'), {rgb_color: el.value});
+    });
+  });
+}
+
+// ── load + render ───────────────────────────────────────────────────────
+function load(){
+  api('/rooms').then(function(res){
+    var rooms = res.rooms || {};
+    var keys = Object.keys(rooms);
+    DEVICES = {};
+    keys.forEach(function(k){(rooms[k]||[]).forEach(function(d){DEVICES[d.device_id]=d;});});
+
+    if(keys.length===0){
+      $('root').innerHTML = '<div class="empty">'+esc(t('empty'))+'</div>';
+      return;
+    }
+    keys.sort();
+    var html = '';
+    keys.forEach(function(roomKey){
+      var devs = rooms[roomKey] || [];
+      var label = roomLabel(roomKey);
+      html += '<div class="room"><div class="room-title">'+esc(label)+'</div>';
+      if(IS_MODAL){
+        devs.forEach(function(d){ html += renderFullCard(d); });
+      } else {
+        html += '<div class="list">';
+        devs.forEach(function(d){ html += renderRow(d); });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    $('root').innerHTML = html;
+    if(IS_MODAL) bindFullCards(); else bindCompactRows();
+    reportModalSize();
+  }).catch(function(e){
+    $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    reportModalSize();
+  });
+}
+
+function sendCmd(id, state){
+  api('/device/'+encodeURIComponent(id)+'/command', {method:'POST', body:{state:state}})
+    .then(function(){ load(); })
+    .catch(function(e){ toast(t('cmd_failed')+': '+e.message, true); });
+}
+
+function reportModalSize(){
+  if(!IS_MODAL || !inFrame) return;
+  requestAnimationFrame(function(){
+    var root = $('root');
+    if(!root) return;
+    var w = Math.min(560, Math.max(360, root.scrollWidth + 48));
+    var h = Math.min(820, root.scrollHeight + 48);
+    try{ window.parent.postMessage({type:'modal_resize', width:w, height:h}, '*'); }catch(_){}
+  });
+}
+
+// ── modal mode setup ────────────────────────────────────────────────────
+if(IS_MODAL){
+  document.body.classList.add('modal-mode');
+  $('root').classList.add('modal');
+  if(inFrame){
+    var btn = $('fsClose');
+    btn.style.display = 'flex';
+    btn.onclick = function(){
+      try{ window.parent.postMessage({type:'closeWidgetModal', module:'lights-switches'}, '*'); }catch(_){}
+    };
+    window.addEventListener('keydown', function(e){
+      if(e.key === 'Escape'){
+        try{ window.parent.postMessage({type:'closeWidgetModal', module:'lights-switches'}, '*'); }catch(_){}
+      }
+    });
+  }
+}
+
+// ── boot ─────────────────────────────────────────────────────────────────
+applyLang();
+load();
+setInterval(load, IS_MODAL ? 5000 : 10000);
+window.addEventListener('focus', load);
+</script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+</body>
+</html>

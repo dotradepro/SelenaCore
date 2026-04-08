@@ -1,0 +1,33 @@
+{
+    "name": "lights-switches",
+    "version": "0.1.0",
+    "description": "Lights, switches and outlets control panel — grouped by room. Forwards commands to device-control via in-process call.",
+    "type": "SYSTEM",
+    "ui_profile": "FULL",
+    "api_version": "1.0",
+    "runtime_mode": "always_on",
+    "group": "comfort",
+    "entities": ["light", "switch", "outlet"],
+    "permissions": [
+        "device.read",
+        "device.write",
+        "events.subscribe",
+        "events.publish"
+    ],
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "file": "widget.html",
+            "size": "2x2"
+        },
+        "settings": "settings.html"
+    },
+    "oauth": null,
+    "resources": {
+        "memory_mb": 64,
+        "cpu": 0.05
+    },
+    "author": "SmartHome LK",
+    "license": "MIT",
+    "homepage": "https://github.com/dotradepro/SelenaCore"
+}
