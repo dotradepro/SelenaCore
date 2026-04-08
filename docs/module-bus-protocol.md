@@ -86,8 +86,7 @@ Sent immediately after the WebSocket connection is accepted. Declares the module
     "intents": [
       {
         "patterns": {
-          "en": ["weather", "forecast"],
-          "uk": ["погода", "прогноз"]
+          "en": ["weather", "forecast"]
         },
         "priority": 50,
         "description": "Weather queries"
@@ -104,7 +103,7 @@ Sent immediately after the WebSocket connection is accepted. Declares the module
 | `module` | string | Unique module identifier, must match the registered manifest name. |
 | `version` | string | Semver version of the module. |
 | `capabilities.intents` | array | List of intent declarations this module can handle. |
-| `capabilities.intents[].patterns` | object | Map of language code to list of trigger keywords/phrases. |
+| `capabilities.intents[].patterns` | object | Map of language code to trigger phrases. **Only the `en` key is honoured** — non-English speech falls through to the LLM tier, which understands any language and returns an English intent name. Other language keys are ignored at index time. |
 | `capabilities.intents[].priority` | integer | Routing priority. Lower values are matched first. |
 | `capabilities.intents[].description` | string | Human-readable description of the intent group. |
 | `capabilities.subscriptions` | array | Event types the module wants to receive. Supports wildcards (e.g. `device.*`). |

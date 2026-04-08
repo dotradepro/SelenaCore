@@ -49,12 +49,32 @@ class CompiledIntent:
 # Keep SystemIntentEntry for backward compatibility with IntentRouter
 @dataclass
 class SystemIntentEntry:
-    """In-process intent registration for SYSTEM modules."""
+    """In-process intent registration for SYSTEM modules.
+
+    .. note::
+        Patterns are **English-only** by design. The ``patterns`` dict only
+        the ``"en"`` key is honoured by the IntentCompiler / IntentRouter.
+        Non-English speech is expected to fall through to the LLM tier
+        (Tier 3), which classifies any language and returns an English
+        intent name. Other language keys may exist for legacy reasons but
+        are silently ignored at match time.
+    """
     module: str
     intent: str
-    patterns: dict[str, list[str]]  # {"uk": [...], "en": [...]}
+    patterns: dict[str, list[str]]  # only patterns["en"] is consulted
     description: str = ""
     priority: int = 0
+
+    def en_patterns(self) -> list[str]:
+        """Return the English pattern list, warning if other langs are present."""
+        extra = [k for k in self.patterns.keys() if k != "en"]
+        if extra:
+            logger.warning(
+                "SystemIntentEntry %s/%s has non-en pattern keys %s — ignored "
+                "(English-only matching, see LLM fallback)",
+                self.module, self.intent, extra,
+            )
+        return self.patterns.get("en", [])
 
 
 class IntentCompiler:
@@ -203,8 +223,16 @@ class IntentCompiler:
             all_patterns = list(result.scalars().all())
 
         # Group patterns by intent_id: {id: {lang: [(pattern_str, entity_ref), ...]}}
+        # English-only by design — non-en rows are skipped at load time so the
+        # in-memory cache stays uniform with the runtime contract.
         patterns_by_id: dict[int, dict[str, list[tuple[str, str | None]]]] = {}
         for p in all_patterns:
+            if p.lang != "en":
+                logger.debug(
+                    "IntentCompiler: skipping non-en pattern (intent_id=%s lang=%s)",
+                    p.intent_id, p.lang,
+                )
+                continue
             patterns_by_id.setdefault(p.intent_id, {}).setdefault(p.lang, []).append(
                 (p.pattern, p.entity_ref)
             )

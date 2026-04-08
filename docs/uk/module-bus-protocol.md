@@ -86,8 +86,7 @@ Module                                          Core
     "intents": [
       {
         "patterns": {
-          "en": ["weather", "forecast"],
-          "uk": ["погода", "прогноз"]
+          "en": ["weather", "forecast"]
         },
         "priority": 50,
         "description": "Weather queries"
@@ -104,7 +103,7 @@ Module                                          Core
 | `module` | string | Унікальний ідентифікатор модуля, повинен збігатися з назвою в зареєстрованому маніфесті. |
 | `version` | string | Версія модуля у форматі semver. |
 | `capabilities.intents` | array | Список оголошень інтентів, які модуль може обробляти. |
-| `capabilities.intents[].patterns` | object | Відображення коду мови на список ключових слів/фраз-тригерів. |
+| `capabilities.intents[].patterns` | object | Відображення коду мови на фрази-тригери. **Враховується лише ключ `en`** — мовлення іншими мовами проходить до LLM-рівня, який розпізнає будь-яку мову та повертає назву інтенту англійською. Інші мовні ключі ігноруються при індексуванні. |
 | `capabilities.intents[].priority` | integer | Пріоритет маршрутизації. Менші значення обробляються першими. |
 | `capabilities.intents[].description` | string | Зрозумілий людині опис групи інтентів. |
 | `capabilities.subscriptions` | array | Типи подій, які модуль хоче отримувати. Підтримуються шаблони з підстановкою (наприклад, `device.*`). |

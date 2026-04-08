@@ -101,7 +101,7 @@ class TestIntentIndex:
         bus._connections["weather"] = conn
         bus._rebuild_intent_index()
 
-        matches = bus._match_intents("what's the weather", "en")
+        matches = bus._match_intents("what's the weather")
         assert len(matches) >= 1
         assert matches[0].module == "weather"
 
@@ -125,10 +125,11 @@ class TestIntentIndex:
         bus._connections["weather"] = conn
         bus._rebuild_intent_index()
 
-        matches = bus._match_intents("play music", "en")
+        matches = bus._match_intents("play music")
         assert matches == []
 
-    def test_language_fallback_to_en(self):
+    def test_non_en_patterns_ignored_on_announce(self):
+        """Modules announcing non-en pattern keys: only the en list is indexed."""
         from core.module_bus import ModuleBus, BusConnection
         import time
 
@@ -138,7 +139,10 @@ class TestIntentIndex:
             ws=MagicMock(),
             capabilities={
                 "intents": [
-                    {"patterns": {"en": ["weather"]}, "priority": 50}
+                    {
+                        "patterns": {"en": ["weather"], "uk": ["погода"]},
+                        "priority": 50,
+                    }
                 ],
             },
             permissions=set(),
@@ -148,9 +152,10 @@ class TestIntentIndex:
         bus._connections["weather"] = conn
         bus._rebuild_intent_index()
 
-        # No "fr" patterns — should fallback to "en"
-        matches = bus._match_intents("weather", "fr")
-        assert len(matches) >= 1
+        # English text matches via the en pattern.
+        assert len(bus._match_intents("weather")) >= 1
+        # Ukrainian text does NOT match — falls through to LLM tier.
+        assert bus._match_intents("погода") == []
 
     def test_priority_sorting(self):
         from core.module_bus import ModuleBus, BusConnection
@@ -173,7 +178,7 @@ class TestIntentIndex:
             bus._connections[name] = conn
 
         bus._rebuild_intent_index()
-        matches = bus._match_intents("test", "en")
+        matches = bus._match_intents("test")
         assert len(matches) == 2
         assert matches[0].module == "high-prio"
         assert matches[1].module == "low-prio"

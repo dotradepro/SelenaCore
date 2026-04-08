@@ -87,9 +87,13 @@ class DropOldestQueue:
 
 @dataclass
 class IntentEntry:
-    """Compiled intent pattern in the sorted index."""
+    """Compiled intent pattern in the sorted index.
+
+    English-only by design — non-en patterns announced by modules are
+    silently filtered at index-build time. Non-English speech reaches
+    the LLM tier instead.
+    """
     module: str
-    lang: str
     pattern: re.Pattern[str]
     priority: int
     raw_pattern: str
@@ -589,7 +593,7 @@ class ModuleBus:
             {"handled": False, "reason": "circuit_open"|"timeout", "module": "name"}
             None — no matching module found
         """
-        matches = self._match_intents(text, lang)
+        matches = self._match_intents(text)
         if not matches:
             return None
 
@@ -650,46 +654,57 @@ class ModuleBus:
 
         return None  # all attempts exhausted
 
-    def _match_intents(self, text: str, lang: str) -> list[IntentEntry]:
-        """Find matching intent entries for text in given language."""
+    def _match_intents(self, text: str) -> list[IntentEntry]:
+        """Find matching intent entries for text.
+
+        English-only sweep — non-English speech reaches the LLM tier instead.
+        """
         text_lower = text.lower().strip()
         matches = []
         for entry in self._intent_index:
-            if entry.lang != lang:
-                continue
             if entry.pattern.search(text_lower):
                 matches.append(entry)
-        # Fallback: try English if no matches in requested language
-        if not matches and lang != "en":
-            for entry in self._intent_index:
-                if entry.lang != "en":
-                    continue
-                if entry.pattern.search(text_lower):
-                    matches.append(entry)
         return matches
 
     def _rebuild_intent_index(self) -> None:
-        """Rebuild sorted intent index from all connections. Must hold _conn_lock."""
+        """Rebuild sorted intent index from all connections. Must hold _conn_lock.
+
+        Reads only ``patterns["en"]`` from each module's announcement.
+        Backward-compat: a flat list of strings is treated as English.
+        Non-English keys are warned about (once per rebuild) and ignored.
+        """
         entries: list[IntentEntry] = []
         for module, conn in self._connections.items():
             for intent_def in conn.capabilities.get("intents", []):
                 priority = intent_def.get("priority", 50)
-                for lang, patterns in intent_def.get("patterns", {}).items():
-                    for p in patterns:
-                        try:
-                            compiled = re.compile(p, re.IGNORECASE)
-                        except re.error:
-                            logger.warning(
-                                "Bus: invalid regex '%s' from module '%s'", p, module,
-                            )
-                            continue
-                        entries.append(IntentEntry(
-                            module=module,
-                            lang=lang,
-                            pattern=compiled,
-                            priority=priority,
-                            raw_pattern=p,
-                        ))
+                raw_patterns = intent_def.get("patterns", {})
+                if isinstance(raw_patterns, list):
+                    en_patterns = raw_patterns  # legacy flat list
+                elif isinstance(raw_patterns, dict):
+                    extra_keys = [k for k in raw_patterns if k != "en"]
+                    if extra_keys:
+                        logger.warning(
+                            "Bus: module '%s' announced non-en pattern keys %s — "
+                            "ignored (English-only routing, see LLM fallback)",
+                            module, extra_keys,
+                        )
+                    en_patterns = raw_patterns.get("en", [])
+                else:
+                    en_patterns = []
+                for p in en_patterns:
+                    try:
+                        compiled = re.compile(p, re.IGNORECASE)
+                    except re.error:
+                        logger.warning(
+                            "Bus: invalid regex '%s' from module '%s'", p, module,
+                        )
+                        continue
+                    entries.append(IntentEntry(
+                        module=module,
+                        pattern=compiled,
+                        priority=priority,
+                        raw_pattern=p,
+                    ))
         # Sort: priority ASC → pattern length DESC → module name ASC
         entries.sort(key=lambda e: (e.priority, -len(e.raw_pattern), e.module))
         self._intent_index = entries
@@ -697,18 +712,28 @@ class ModuleBus:
     def _detect_intent_conflicts(
         self, new_module: str, new_intents: list[dict[str, Any]],
     ) -> list[str]:
-        """Detect potential pattern overlaps with existing modules."""
+        """Detect potential pattern overlaps with existing modules.
+
+        English-only — only ``patterns["en"]`` (or a flat legacy list) is
+        compared. Mirrors the matching contract.
+        """
         warnings: list[str] = []
         for intent_def in new_intents:
-            for lang, patterns in intent_def.get("patterns", {}).items():
-                for pattern in patterns:
-                    for existing in self._intent_index:
-                        if existing.module == new_module or existing.lang != lang:
-                            continue
-                        if pattern in existing.raw_pattern or existing.raw_pattern in pattern:
-                            warnings.append(
-                                f"intent_conflict:{pattern}:{existing.module}"
-                            )
+            raw_patterns = intent_def.get("patterns", {})
+            if isinstance(raw_patterns, list):
+                en_patterns = raw_patterns
+            elif isinstance(raw_patterns, dict):
+                en_patterns = raw_patterns.get("en", [])
+            else:
+                en_patterns = []
+            for pattern in en_patterns:
+                for existing in self._intent_index:
+                    if existing.module == new_module:
+                        continue
+                    if pattern in existing.raw_pattern or existing.raw_pattern in pattern:
+                        warnings.append(
+                            f"intent_conflict:{pattern}:{existing.module}"
+                        )
         return warnings
 
     # ── Circuit breaker ──────────────────────────────────────────────────

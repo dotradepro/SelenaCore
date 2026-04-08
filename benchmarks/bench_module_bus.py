@@ -189,17 +189,17 @@ class TestIntentMatching:
         bus = self._make_bus_with_intents(5, 10)
         count = 1_000
         queries = [
-            ("module2_pattern5 do something", "en"),
-            ("unknown query here", "en"),
-            ("модуль3_патерн7 зроби", "uk"),
-            ("no match at all", "en"),
+            "module2_pattern5 do something",
+            "unknown query here",
+            "no match at all either",
+            "no match at all",
         ]
 
         start = time.perf_counter()
         total_matches = 0
         for i in range(count):
-            text, lang = queries[i % len(queries)]
-            matches = bus._match_intents(text, lang)
+            text = queries[i % len(queries)]
+            matches = bus._match_intents(text)
             total_matches += len(matches)
         elapsed = time.perf_counter() - start
         rate = count / elapsed
@@ -213,7 +213,7 @@ class TestIntentMatching:
 
         start = time.perf_counter()
         for i in range(count):
-            bus._match_intents(f"module10_pattern5 action {i}", "en")
+            bus._match_intents(f"module10_pattern5 action {i}")
         elapsed = time.perf_counter() - start
         rate = count / elapsed
         idx_size = len(bus._intent_index)
