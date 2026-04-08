@@ -3242,24 +3242,24 @@
 
         if (e.event === 'stt') {
             var stateIcon = e.state === 'idle' ? '💤' : '👂';
-            var mode = e.state === 'idle' ? 'Ожидание' : 'Слушает';
-            return time + stateIcon + ' <span style="color:var(--tx3)">' + mode + '</span> → распознано: <span style="color:var(--ac)">"' + (e.text||'') + '"</span>';
+            var mode = e.state === 'idle' ? 'Idle' : 'Listening';
+            return time + stateIcon + ' <span style="color:var(--tx3)">' + mode + '</span> → recognised: <span style="color:var(--ac)">"' + (e.text||'') + '"</span>';
         }
         if (e.event === 'wake') {
-            return time + '🔔 <span style="color:var(--gr);font-weight:600">Активация!</span> Услышано: <span style="color:var(--gr)">"' + (e.phrase||'') + '"</span> → переход в режим слушания';
+            return time + '🔔 <span style="color:var(--gr);font-weight:600">Wake!</span> Heard: <span style="color:var(--gr)">"' + (e.phrase||'') + '"</span> → switching to listening';
         }
         if (e.event === 'command') {
-            return time + '🎤 <span style="color:var(--ac);font-weight:600">Команда:</span> <span style="color:var(--tx);font-weight:600">"' + (e.text||'') + '"</span> → отправлена в IntentRouter';
+            return time + '🎤 <span style="color:var(--ac);font-weight:600">Command:</span> <span style="color:var(--tx);font-weight:600">"' + (e.text||'') + '"</span> → sent to IntentRouter';
         }
         if (e.event === 'intent') {
             var src = e.source || '?';
-            var srcMap = {system_module:'модуль',fast_matcher:'быстрый',cache:'кеш',llm:'LLM',cloud:'облако',fallback:'не понял'};
+            var srcMap = {system_module:'module',fast_matcher:'fast',cache:'cache',llm:'LLM',cloud:'cloud',fallback:'unknown'};
             var srcLabel = srcMap[src] || src;
             var srcColor = src === 'system_module' ? 'var(--gr)' : src === 'fast_matcher' ? 'var(--gr)' : src === 'cache' ? 'var(--am)' : src === 'fallback' ? 'var(--rd)' : 'var(--pr)';
             var line = time + '🧠 <span style="color:' + srcColor + ';font-weight:600">' + (e.intent||'?') + '</span>';
             line += ' <span style="color:var(--tx3)">(' + srcLabel + ', ' + (e.latency_ms||0) + 'ms)</span>';
             if (e.response) {
-                line += '\n   💬 <span style="color:var(--tx)">Ответ: "' + e.response + '"</span>';
+                line += '\n   💬 <span style="color:var(--tx)">Reply: "' + e.response + '"</span>';
             }
             return line;
         }

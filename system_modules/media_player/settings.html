@@ -833,18 +833,18 @@
 
         // ── VOICE COMMANDS TABLE ──────────────────────────────────────────────────────
         var VOICE_CMDS = [
-            ['включи / запусти / поставь', 'media.play_radio / media.play_genre'],
-            ['следующий трек / дальше', 'media.next'],
-            ['предыдущий трек / назад', 'media.previous'],
-            ['стоп / выключи музыку', 'media.stop'],
-            ['пауза', 'media.pause'],
-            ['продолжай / продолжить', 'media.resume'],
-            ['тише / потише', 'media.volume_down'],
-            ['громче / добавь звук', 'media.volume_up'],
-            ['громкость N', 'media.volume_set'],
-            ['что сейчас играет', 'media.whats_playing'],
-            ['shuffle / перемешай', 'media.shuffle_toggle'],
-            ['включи радио [название]', 'media.play_radio_name'],
+            ['play / put on / start', 'media.play_radio / media.play_genre'],
+            ['next track / skip', 'media.next'],
+            ['previous track / back', 'media.previous'],
+            ['stop / stop music', 'media.stop'],
+            ['pause', 'media.pause'],
+            ['resume / continue', 'media.resume'],
+            ['quieter / lower volume', 'media.volume_down'],
+            ['louder / turn it up', 'media.volume_up'],
+            ['volume N', 'media.volume_set'],
+            ['what is playing', 'media.whats_playing'],
+            ['shuffle', 'media.shuffle_toggle'],
+            ['play radio [name]', 'media.play_radio_name'],
         ];
 
         function renderVoiceTable() {
@@ -1469,18 +1469,18 @@
             var out = document.getElementById('testVoiceResult');
             out.textContent = t('testing');
             var intents = [
-                [/включи|запусти|поставь/i, /радио/, 'media.play_radio'],
-                [/включи|запусти|поставь/i, /рок|джаз|классик|ambient|lofi|поп|новости/i, 'media.play_genre'],
-                [/следующий|дальше|пропусти/i, null, 'media.next'],
-                [/предыдущий|назад/i, null, 'media.previous'],
-                [/стоп|выключи музыку/i, null, 'media.stop'],
-                [/пауза/i, null, 'media.pause'],
-                [/продолжай|продолжи/i, null, 'media.resume'],
-                [/тише|потише/i, null, 'media.volume_down'],
-                [/громче/i, null, 'media.volume_up'],
-                [/громкость\s+\d+/i, null, 'media.volume_set'],
-                [/что.*играет|что за/i, null, 'media.whats_playing'],
-                [/shuffle|перемешай/i, null, 'media.shuffle_toggle'],
+                [/\b(?:play|put on|turn on|start)\b/i, /radio/i, 'media.play_radio'],
+                [/\b(?:play|put on|turn on|start)\b/i, /rock|jazz|classic|ambient|lofi|pop|news/i, 'media.play_genre'],
+                [/\b(?:next|skip)\b/i, null, 'media.next'],
+                [/\b(?:previous|back)\b/i, null, 'media.previous'],
+                [/\bstop\b/i, null, 'media.stop'],
+                [/\bpause\b/i, null, 'media.pause'],
+                [/\b(?:resume|continue)\b/i, null, 'media.resume'],
+                [/\b(?:quieter|lower|softer)\b/i, null, 'media.volume_down'],
+                [/\b(?:louder|turn it up)\b/i, null, 'media.volume_up'],
+                [/\bvolume\s+\d+/i, null, 'media.volume_set'],
+                [/what.*playing/i, null, 'media.whats_playing'],
+                [/\bshuffle\b/i, null, 'media.shuffle_toggle'],
             ];
             var matched = null;
             for (var i = 0; i < intents.length; i++) {

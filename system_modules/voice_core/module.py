@@ -1101,21 +1101,21 @@ class VoiceCoreModule(SystemModule):
 
                 self._log_live("action", {
                     "intent": result.intent,
-                    "msg": "Передано модулю — ожидание выполнения...",
+                    "msg": "Dispatched to module — awaiting completion...",
                 })
                 self._system_speak_done.clear()
                 try:
                     await asyncio.wait_for(self._system_speak_done.wait(), timeout=15.0)
                     self._log_live("done", {
                         "intent": result.intent,
-                        "msg": "Модуль выполнил и озвучил",
+                        "msg": "Module finished and spoke response",
                         "duration_ms": int((time.monotonic() - start_ts) * 1000),
                     })
                 except asyncio.TimeoutError:
                     logger.warning("Voice pipeline: system module TTS timeout (15s)")
                     self._log_live("timeout", {
                         "intent": result.intent,
-                        "msg": "Таймаут ожидания ответа от модуля (15с)",
+                        "msg": "Timeout waiting for module response (15s)",
                     })
             elif result.response:
                 # Speak response directly — no rephrase needed.

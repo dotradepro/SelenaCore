@@ -29,7 +29,7 @@ function QrSvg({ matrix, size }: { matrix: boolean[][]; size: number }) {
             viewBox={`0 0 ${total} ${total}`}
             className="rounded-xl"
             style={{ background: '#ffffff' }}
-            aria-label="QR-код для настройки"
+            aria-label="Setup QR code"
         >
             {matrix.map((row, y) =>
                 row.map((cell, x) =>

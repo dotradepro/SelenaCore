@@ -22,8 +22,8 @@ ALLOWED_PERMISSIONS = {
     "events.subscribe",
     "events.publish",
     "events.subscribe_all",
-    "secrets.oauth",  # только для INTEGRATION
-    "secrets.proxy",  # только для INTEGRATION
+    "secrets.oauth",  # INTEGRATION modules only
+    "secrets.proxy",  # INTEGRATION modules only
     "devices.read",
     "devices.control",
     "secrets.read",
