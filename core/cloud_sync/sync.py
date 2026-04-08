@@ -88,8 +88,9 @@ def _collect_system_state() -> dict[str, Any]:
         hw = {}
 
     settings = get_settings()
+    from core.version import VERSION
     return {
-        "version": "0.3.0-beta",
+        "version": VERSION,
         "platform": _platform.machine(),
         "hostname": _platform.node(),
         "hardware": hw,

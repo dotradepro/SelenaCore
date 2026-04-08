@@ -577,11 +577,12 @@ async def ui_system() -> dict[str, Any]:
     )
 
     settings = get_settings()
+    from core.version import VERSION
 
     return {
         "core": {
             "status": "ok",
-            "version": "0.3.0-beta",
+            "version": VERSION,
             "mode": mode,
             "uptime": int(time.time() - core_start_time),
             "integrity": "ok",
