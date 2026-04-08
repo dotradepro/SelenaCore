@@ -21,30 +21,41 @@ button,input,select{font-family:inherit;color:inherit}
 .wrap{padding:8px;display:flex;flex-direction:column;gap:6px;height:100vh;overflow-y:auto;min-width:0}
 .wrap.modal{padding:18px 18px 80px;max-width:560px;margin:0 auto;gap:14px;height:auto;min-height:0}
 
-/* ── Compact dashboard tile ─────────────────────────────────────── */
+/* ── Compact dashboard tile (3 lines: time / date / status icons) ─ */
 .compact{
-  display:flex;flex-direction:column;justify-content:space-between;
-  width:100%;height:100%;padding:10px 12px;gap:6px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:100%;height:100%;padding:8px 10px;gap:2px;
   background:var(--card);border:1px solid var(--b);border-radius:10px;
   cursor:pointer;transition:border-color .15s,transform .08s;
   user-select:none;-webkit-tap-highlight-color:transparent;
+  text-align:center;
 }
 .compact:hover{border-color:var(--pr)}
 .compact:active{transform:scale(.985)}
 .compact *{pointer-events:none}
-.compact .top{display:flex;align-items:baseline;gap:8px;min-width:0}
-.compact .now{font-size:26px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1}
-.compact .date{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.compact .next{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mut);min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.compact .next .dot{width:6px;height:6px;border-radius:50%;background:var(--pr);flex-shrink:0;box-shadow:0 0 6px rgba(90,150,255,.55)}
-.compact .badges{display:flex;gap:6px;flex-wrap:wrap}
-.compact .badge{
-  display:inline-flex;align-items:center;gap:4px;
-  font-size:11px;padding:2px 9px;border-radius:20px;
-  background:var(--bg);border:1px solid var(--b);color:var(--mut);
+.compact .now{
+  font-size:30px;font-weight:700;color:var(--fg);
+  font-variant-numeric:tabular-nums;line-height:1.05;
 }
-.compact .badge.timer{background:rgba(90,150,255,.18);border-color:transparent;color:var(--pr)}
-.compact .badge.alarm{background:rgba(245,169,58,.18);border-color:transparent;color:var(--am)}
+.compact .date{
+  font-size:11px;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.06em;
+  margin-top:1px;
+}
+.compact .icons{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  margin-top:4px;min-height:16px;
+}
+.compact .ico{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:13px;color:var(--mut);line-height:1;
+}
+.compact .ico.alarm{color:var(--am)}
+.compact .ico.timer{color:var(--pr)}
+.compact .ico.reminder{color:var(--gr)}
+.compact .ico.ringing{color:var(--rd);animation:pulse 1s infinite}
+.compact .ico .count{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* ── Modal: tabs ────────────────────────────────────────────────── */
 .tabs{
@@ -233,17 +244,12 @@ button,input,select{font-family:inherit;color:inherit}
 </head>
 <body>
 
-<!-- Compact widget body -->
+<!-- Compact widget body: line 1 time / line 2 date / line 3 status icons -->
 <div class="wrap" id="compactWrap" style="display:none;padding:0">
   <div class="compact" id="compactRoot">
-    <div>
-      <div class="top">
-        <div class="now" id="cNowTime">--:--</div>
-        <div class="date" id="cNowDate"></div>
-      </div>
-      <div class="next" id="cNext"><span data-i18n="no_alarms"></span></div>
-    </div>
-    <div class="badges" id="cBadges"></div>
+    <div class="now" id="cNowTime">--:--</div>
+    <div class="date" id="cNowDate"></div>
+    <div class="icons" id="cIcons"></div>
   </div>
 </div>
 
@@ -416,26 +422,30 @@ function tickCompactClock(){
   var t1 = $('cNowTime'); if(t1) t1.textContent = pad2(d.getHours())+':'+pad2(d.getMinutes());
   var d1 = $('cNowDate');
   if(d1) d1.textContent = d.toLocaleDateString(LANG==='uk'?'uk-UA':'en-US',
-    {weekday:'short',day:'numeric',month:'short'});
+    {day:'numeric',month:'long'});
 }
 
 function refreshCompact(){
   apiGet('/state').then(function(s){
     if(!s) return;
-    var nextEl = $('cNext');
-    if(s.next_alarm){
-      var a = s.next_alarm;
-      var lbl = a.label || '';
-      nextEl.innerHTML = '<span class="dot"></span><span>'+esc(pad2(a.hour)+':'+pad2(a.minute)+(lbl?' · '+lbl:''))+'</span>';
-    } else {
-      nextEl.innerHTML = '<span>'+esc(t('no_alarms'))+'</span>';
+    var icons = [];
+    var ringingCount = (s.ringing_alarms||[]).length;
+    var hasAlarm = !!s.next_alarm;
+    var timerCount = (s.active_timers||[]).length;
+    var reminderCount = s.pending_reminders_count || 0;
+
+    if(ringingCount > 0){
+      icons.push('<span class="ico ringing" title="ringing">🔔</span>');
+    } else if(hasAlarm){
+      icons.push('<span class="ico alarm" title="alarm">⏰</span>');
     }
-    var bEl = $('cBadges');
-    bEl.innerHTML = '';
-    var tCount = (s.active_timers||[]).length;
-    var rCount = s.pending_reminders_count || 0;
-    if(tCount > 0) bEl.innerHTML += '<span class="badge timer">⏱ '+tCount+'</span>';
-    if(rCount > 0) bEl.innerHTML += '<span class="badge alarm">📌 '+rCount+'</span>';
+    if(timerCount > 0){
+      icons.push('<span class="ico timer" title="timers">⏱<span class="count">'+timerCount+'</span></span>');
+    }
+    if(reminderCount > 0){
+      icons.push('<span class="ico reminder" title="reminders">📌<span class="count">'+reminderCount+'</span></span>');
+    }
+    $('cIcons').innerHTML = icons.join('');
   });
 }
 
