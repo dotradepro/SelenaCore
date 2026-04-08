@@ -7,7 +7,6 @@
     <title>Energy Monitor</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
         * {
             box-sizing: border-box;
             margin: 0;
@@ -25,134 +24,165 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg);
             color: var(--tx);
-            padding: 16px;
+            padding: 10px 12px;
             display: flex;
             flex-direction: column;
+            justify-content: space-between;
         }
 
-        .widget {
-            width: 100%;
-            flex: 1;
+        .top {
             display: flex;
-            flex-direction: column;
-            min-height: 0;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--tx2);
+            line-height: 1;
         }
 
-        .total-card {
-            background: rgba(255, 200, 0, 0.1);
-            border: 1px solid rgba(255, 200, 0, 0.3);
-            border-radius: 16px;
-            padding: 20px;
+        .top .icon {
+            font-size: 0.95rem;
+            color: var(--am);
+        }
+
+        .top .active {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .top .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--gn, #22c55e);
+            display: inline-block;
+        }
+
+        .top .dot.idle {
+            background: var(--tx3, #6b7280);
+        }
+
+        .center {
             text-align: center;
-            margin-bottom: 14px;
+            line-height: 1;
         }
 
-        .total-w {
-            font-size: 3rem;
+        .watts {
+            font-size: 1.65rem;
             font-weight: 700;
             color: var(--am);
+            white-space: nowrap;
         }
 
-        .total-label {
-            color: var(--tx2);
-            font-size: 0.9rem;
-        }
-
-        .kwh-badge {
-            display: inline-block;
-            margin-top: 8px;
-            background: rgba(255, 200, 0, 0.2);
-            border-radius: 20px;
-            padding: 4px 14px;
+        .watts .unit {
             font-size: 0.85rem;
-            color: var(--am);
-        }
-
-        .devices-list {
-            flex: 1;
-            min-height: 0;
-            overflow-y: auto;
-        }
-
-        .device-row {
-            background: var(--b);
-            border-radius: 10px;
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .device-name {
-            font-size: 0.9rem;
+            font-weight: 500;
             color: var(--tx2);
+            margin-left: 2px;
         }
 
-        .device-watts {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--am);
-        }
-
-        .loading {
-            text-align: center;
+        .label {
+            margin-top: 3px;
+            font-size: 0.65rem;
             color: var(--tx3);
-            padding: 40px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .bottom {
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--tx2);
+            line-height: 1;
+        }
+
+        .bottom .kwh {
+            font-weight: 600;
+            color: var(--tx);
+        }
+
+        .err {
+            text-align: center;
+            color: var(--rd, #ef4444);
+            font-size: 0.75rem;
+            padding: 8px;
         }
     </style>
 </head>
 
 <body>
-    <div class="widget">
-        <div id="content" class="loading">⚡ Loading…</div>
+    <div class="top">
+        <span class="icon">⚡</span>
+        <span class="active">
+            <span class="dot" id="dot"></span>
+            <span id="active">—</span>
+        </span>
     </div>
+    <div class="center">
+        <div class="watts"><span id="watts">—</span><span class="unit">W</span></div>
+        <div class="label" data-i18n="now"></div>
+    </div>
+    <div class="bottom">
+        <span data-i18n="today"></span> <span class="kwh" id="kwh">—</span> kWh
+    </div>
+
     <script>
         var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { loading: '⚡ Loading…', total_power: 'Total current power', today_prefix: 'Today: ', no_devices: 'No devices' },
-            uk: { loading: '⚡ Завантаження…', total_power: 'Поточне споживання', today_prefix: 'Сьогодні: ', no_devices: 'Немає пристроїв' }
+            en: { now: 'now', today: 'today', err: 'error' },
+            uk: { now: 'зараз', today: 'сьогодні', err: 'помилка' }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } load(); } });
+        function applyLang() {
+            document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+        }
+        window.addEventListener('message', function (e) {
+            if (e.data && e.data.type === 'lang_changed') {
+                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
+                applyLang();
+                refresh();
+            }
+        });
 
-        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+        var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
-        async function load() {
+        function fmtWatts(w) {
+            if (w == null || isNaN(w)) return '—';
+            if (w >= 1000) return (w / 1000).toFixed(1) + 'k';
+            if (w >= 100) return Math.round(w).toString();
+            return w.toFixed(1);
+        }
+
+        function fmtKwh(k) {
+            if (k == null || isNaN(k)) return '—';
+            if (k >= 10) return k.toFixed(1);
+            if (k >= 1) return k.toFixed(2);
+            return k.toFixed(3);
+        }
+
+        async function refresh() {
             try {
-                const [cur, today] = await Promise.all([
-                    fetch(`${base}/energy/current`).then(r => r.json()),
-                    fetch(`${base}/energy/today`).then(r => r.json()),
-                ]);
-
-                const power = cur.power || {};
-                const deviceRows = Object.entries(power)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([id, w]) => `
-        <div class="device-row">
-          <div class="device-name">${id}</div>
-          <div>
-            <span class="device-watts">${w.toFixed(0)} W</span>
-            <div style="font-size:0.75rem;color:var(--tx2);">${((today.devices || {})[id] || 0).toFixed(3)} kWh</div>
-          </div>
-        </div>
-      `).join('');
-
-                document.getElementById('content').innerHTML = `
-      <div class="total-card">
-        <div class="total-w">${(cur.total_w || 0).toFixed(0)} W</div>
-        <div class="total-label">${t('total_power')}</div>
-        <span class="kwh-badge">${t('today_prefix')}${(today.total_kwh || 0).toFixed(3)} kWh</span>
-      </div>
-      <div class="devices-list">${deviceRows || '<div style="text-align:center;color:var(--tx3);padding:20px;">' + t('no_devices') + '</div>'}</div>
-    `;
+                var r = await fetch(BASE + '/energy/status');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                var d = await r.json();
+                var total = d.devices || 0;
+                var active = d.active_devices || 0;
+                document.getElementById('watts').textContent = fmtWatts(d.total_power_w);
+                document.getElementById('kwh').textContent = fmtKwh(d.total_today_kwh);
+                document.getElementById('active').textContent = active + '/' + total;
+                document.getElementById('dot').className = 'dot' + (active > 0 ? '' : ' idle');
             } catch (e) {
-                document.getElementById('content').innerHTML = `<div class="loading" style="color:var(--rd);">⚠️ ${e.message}</div>`;
+                document.getElementById('watts').textContent = '—';
+                document.getElementById('kwh').textContent = '—';
+                document.getElementById('active').textContent = '—';
             }
         }
 
-        load();
-        setInterval(load, 10000);
+        applyLang();
+        refresh();
+        setInterval(refresh, 5000);
     </script>
     <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>

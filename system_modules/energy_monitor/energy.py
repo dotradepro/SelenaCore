@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import sqlite3
+import time
 import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timezone, date, timedelta
@@ -59,8 +60,13 @@ class EnergyMonitor:
 
         # In-memory state
         self._current: dict[str, float] = {}           # device_id → latest watts
+        self._last_ts: dict[str, float] = {}           # device_id → monotonic ts of last reading
         self._history: dict[str, deque] = defaultdict(lambda: deque(maxlen=self._anomaly_window))
         self._last_report_date: date | None = None
+        # A device is considered "active" if we received a reading from it
+        # within this many seconds. Tuya plugs poll every ~30s; 5 minutes
+        # gives plenty of slack for transient network hiccups.
+        self._active_window_sec: float = 300.0
 
         self._task: asyncio.Task | None = None
         self._db: sqlite3.Connection | None = None
@@ -115,6 +121,7 @@ class EnergyMonitor:
 
         prev = self._current.get(device_id)
         self._current[device_id] = watts
+        self._last_ts[device_id] = time.monotonic()
         self._history[device_id].append(watts)
 
         await self._check_anomaly(device_id, watts)
@@ -182,9 +189,18 @@ class EnergyMonitor:
         ).fetchall()
         return [r[0] for r in rows]
 
+    def get_active_devices(self) -> int:
+        """Count devices that produced a reading within the active window."""
+        now = time.monotonic()
+        return sum(
+            1 for ts in self._last_ts.values()
+            if now - ts < self._active_window_sec
+        )
+
     def get_status(self) -> dict[str, Any]:
         return {
             "devices": len(self._current),
+            "active_devices": self.get_active_devices(),
             "total_power_w": round(self.get_total_power(), 2),
             "total_today_kwh": round(self.get_total_today_kwh(), 4),
             "last_report_date": self._last_report_date.isoformat() if self._last_report_date else None,

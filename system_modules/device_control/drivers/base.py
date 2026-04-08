@@ -68,3 +68,17 @@ class DeviceDriver(ABC):
         Should run forever; ``DriverError`` ends the stream and triggers
         reconnect in the watcher loop.
         """
+
+    def consume_metering(self) -> dict[str, float] | None:
+        """Pop the latest power-metering snapshot, if any.
+
+        Drivers for metered devices (smart plugs, energy clamps) override
+        this to expose ``{"watts": float, "volts": float?, "amps": float?}``
+        captured from the most recent push frame. Called by the watcher
+        right after each ``stream_events()`` yield; the watcher publishes
+        ``device.power_reading`` on the EventBus when this returns data.
+
+        Default: no metering. One-shot — implementations should clear the
+        cached snapshot on read so each frame produces at most one event.
+        """
+        return None

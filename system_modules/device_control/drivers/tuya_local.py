@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, AsyncGenerator
 
 from .base import DeviceDriver, DriverError
@@ -35,6 +36,16 @@ logger = logging.getLogger(__name__)
 # Default DPS mapping for the most common Tuya switch / dimmer profile.
 # User can override per-device via meta.tuya.dps_map.
 _DEFAULT_DPS_MAP: dict[str, str] = {"on": "1"}
+
+# Standard Tuya plug metering DPS — universal across category "cz" (sockets):
+#   DPS 18 = current  in mA
+#   DPS 19 = power    in deciwatts (W * 10)
+#   DPS 20 = voltage  in decivolts (V * 10)
+# These are not used by switch / dimmer / light profiles, so it is safe to
+# parse them unconditionally and expose via consume_metering().
+_METERING_DPS_CURRENT = "18"
+_METERING_DPS_POWER = "19"
+_METERING_DPS_VOLTAGE = "20"
 
 
 class TuyaLocalDriver(DeviceDriver):
@@ -51,6 +62,10 @@ class TuyaLocalDriver(DeviceDriver):
         self._reverse_map: dict[str, str] = {v: k for k, v in self._dps_map.items()}
         self._dev: Any = None  # tinytuya.OutletDevice
         self._lock = asyncio.Lock()
+        # Latest power-metering snapshot parsed from a status frame.
+        # Drained one-shot by consume_metering() after the watcher publishes
+        # device.power_reading on the bus.
+        self._last_metering: dict[str, float] | None = None
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -86,7 +101,14 @@ class TuyaLocalDriver(DeviceDriver):
         return d
 
     def _dps_to_logical(self, dps: dict[str, Any] | None) -> dict[str, Any]:
-        """Translate raw DPS dict from tinytuya into logical state."""
+        """Translate raw DPS dict from tinytuya into logical state.
+
+        Side effect: updates ``self._last_metering`` whenever a status
+        frame contains energy-meter DPS (18 / 19 / 20). Metering is NOT
+        merged into the logical state — it is exposed via
+        ``consume_metering()`` so the watcher can publish it as a
+        separate ``device.power_reading`` bus event.
+        """
         if not dps:
             return {}
         out: dict[str, Any] = {}
@@ -95,7 +117,43 @@ class TuyaLocalDriver(DeviceDriver):
             logical = self._reverse_map.get(key)
             if logical:
                 out[logical] = raw_val
+        metering = self._extract_metering(dps)
+        if metering is not None:
+            self._last_metering = metering
         return out
+
+    @staticmethod
+    def _extract_metering(dps: dict[str, Any]) -> dict[str, float] | None:
+        """Parse Tuya plug metering DPS into watts / volts / amps.
+
+        Returns ``None`` if the frame contains none of DPS 18/19/20 (i.e.
+        the device is not a metered plug, or this frame is just an on/off
+        update). Returns a dict with whichever metering keys were present
+        in the frame.
+        """
+        if not (
+            _METERING_DPS_CURRENT in dps
+            or _METERING_DPS_POWER in dps
+            or _METERING_DPS_VOLTAGE in dps
+        ):
+            return None
+        out: dict[str, float] = {}
+        try:
+            if _METERING_DPS_POWER in dps:
+                out["watts"] = float(dps[_METERING_DPS_POWER]) / 10.0
+            if _METERING_DPS_VOLTAGE in dps:
+                out["volts"] = float(dps[_METERING_DPS_VOLTAGE]) / 10.0
+            if _METERING_DPS_CURRENT in dps:
+                out["amps"] = float(dps[_METERING_DPS_CURRENT]) / 1000.0
+        except (TypeError, ValueError):
+            return None
+        return out or None
+
+    def consume_metering(self) -> dict[str, float] | None:
+        """One-shot read of the latest metering snapshot. See base class."""
+        m = self._last_metering
+        self._last_metering = None
+        return m
 
     def _logical_to_dps(self, state: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -169,11 +227,48 @@ class TuyaLocalDriver(DeviceDriver):
     async def stream_events(self) -> AsyncGenerator[dict[str, Any], None]:
         if self._dev is None:
             await self.connect()
+        # tinytuya error codes that mean "the connection is dead, reconnect":
+        #   901 ERR_CONNECT, 905 ERR_OFFLINE, 914 ERR_KEY_OR_VER
+        # Everything else (notably 904 ERR_PAYLOAD "Unexpected Payload from
+        # Device" — emitted on benign frames from device22 / mixed protocol
+        # versions) is non-fatal: tinytuya updates its internal state and
+        # the next receive() returns clean data. Reconnecting on those just
+        # produces an endless loop of "offline → reconnect → same error".
+        _FATAL_ERRS = {"901", "905", "914", 901, 905, 914}
+        # Active poll fallback: many Tuya plugs don't push status frames on
+        # their own (only respond to status() requests). After this many
+        # seconds without good data, fall back to an active status() poll
+        # so metering data still flows. Kept short (5s) so power changes
+        # — including load drops to 0 W when the user unplugs a lamp —
+        # surface quickly. tinytuya status() is one cheap LAN round-trip.
+        _POLL_INTERVAL_SEC = 5.0
+        consecutive_errors = 0
+        last_good_ts = time.monotonic()
         # tinytuya.receive() is a blocking sync call. Run each call in a
         # thread so the event loop stays responsive. The lock is acquired
         # PER ITERATION so set_state()/get_state() can interleave between
         # receives instead of waiting for the watcher to finish.
         while True:
+            # Active poll fallback: if we haven't seen any good DPS frame
+            # for a while, the device probably doesn't push status on its
+            # own. Ask explicitly so metering data keeps flowing — runs
+            # whether the previous tick was a heartbeat, an error, or a
+            # real frame.
+            if time.monotonic() - last_good_ts >= _POLL_INTERVAL_SEC:
+                async with self._lock:
+                    try:
+                        status = await asyncio.to_thread(self._dev.status)
+                    except Exception as exc:
+                        raise DriverError(
+                            f"Tuya status poll failed: {exc}"
+                        ) from exc
+                last_good_ts = time.monotonic()
+                if isinstance(status, dict) and "Error" not in status and "err" not in status:
+                    poll_dps = status.get("dps") or status.get("data", {}).get("dps")
+                    if poll_dps:
+                        poll_logical = self._dps_to_logical(poll_dps)
+                        if poll_logical:
+                            yield poll_logical
             async with self._lock:
                 try:
                     payload = await asyncio.to_thread(self._dev.receive)
@@ -182,13 +277,42 @@ class TuyaLocalDriver(DeviceDriver):
             if payload is None:
                 # tinytuya returns None on heartbeat / nothing — keep waiting.
                 # Brief yield so the lock can be picked up by set_state.
+                consecutive_errors = 0
                 await asyncio.sleep(0)
                 continue
             if not isinstance(payload, dict):
+                consecutive_errors = 0
                 continue
             if "Error" in payload or "err" in payload:
-                raise DriverError(f"Tuya stream error: {payload}")
+                err_code = payload.get("Err") or payload.get("err")
+                if err_code in _FATAL_ERRS:
+                    raise DriverError(f"Tuya stream error: {payload}")
+                consecutive_errors += 1
+                if consecutive_errors >= 30:
+                    # Backstop: 30 errors in a row with no good frames
+                    # means something is genuinely wrong. Force reconnect.
+                    raise DriverError(
+                        f"Tuya stream stuck after {consecutive_errors} "
+                        f"consecutive errors: {payload}"
+                    )
+                # Log first occurrence at info, the rest at debug to avoid
+                # flooding the log with the same transient hiccup.
+                if consecutive_errors == 1:
+                    logger.info(
+                        "tuya_local %s: transient receive error (will keep "
+                        "listening): %s", self.device_id, payload,
+                    )
+                else:
+                    logger.debug(
+                        "tuya_local %s: transient receive error #%d: %s",
+                        self.device_id, consecutive_errors, payload,
+                    )
+                await asyncio.sleep(0)
+                continue
+            consecutive_errors = 0
             dps = payload.get("dps") or payload.get("data", {}).get("dps")
             logical = self._dps_to_logical(dps) if dps else {}
+            if logical or dps:
+                last_good_ts = time.monotonic()
             if logical:
                 yield logical

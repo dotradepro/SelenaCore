@@ -328,11 +328,6 @@
                 </select>
                 <div class="hint" data-i18n="hint_device_id"></div>
             </div>
-            <div class="form-row">
-                <label data-i18n="lbl_state_key"></label>
-                <input type="text" id="src-state-key" value="power" data-i18n-placeholder="ph_state_key">
-                <div class="hint" data-i18n="hint_state_key"></div>
-            </div>
         </div>
 
         <!-- MQTT Topic fields -->
@@ -516,7 +511,7 @@
         /* ── Load registry devices for dropdown ─────────────────── */
         async function loadRegistryDevices() {
             try {
-                var r = await fetch('/api/v1/devices');
+                var r = await fetch('/api/ui/devices');
                 if (!r.ok) return;
                 var d = await r.json();
                 var devices = d.devices || d || [];
@@ -587,7 +582,6 @@
 
             if (type === 'device_registry') {
                 config.device_id = document.getElementById('src-device-id').value;
-                config.state_key = document.getElementById('src-state-key').value.trim() || 'power';
                 if (!config.device_id) { showSrcMsg(t('err_name_required'), true); return; }
             } else if (type === 'mqtt_topic') {
                 config.mqtt_topic = document.getElementById('src-mqtt-topic').value.trim();

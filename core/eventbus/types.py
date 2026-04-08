@@ -26,6 +26,13 @@ DEVICE_REMOVED = "device.removed"
 DEVICE_OFFLINE = "device.offline"
 DEVICE_ONLINE = "device.online"
 DEVICE_DISCOVERED = "device.discovered"
+DEVICE_POWER_READING = "device.power_reading"
+# payload: {"device_id": str, "watts": float,
+#           "volts": float | None, "amps": float | None,
+#           "ts": float, "source": str}
+# Published by any module that owns a metered device (e.g. device-control
+# for Tuya plugs). Energy Monitor subscribes to this — never reaches into
+# device.state_changed for power data.
 
 # Module events
 MODULE_INSTALLED = "module.installed"

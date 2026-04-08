@@ -43,7 +43,14 @@ class EnergyMonitorModule(SystemModule):
         self._voice: EnergyVoiceHandler | None = None
 
     async def start(self) -> None:
-        db_path = os.getenv("ENERGY_DB_PATH", ":memory:")
+        # Persist sources + readings across restarts. Falls back to in-memory
+        # only if the data dir is missing (e.g. unit tests).
+        default_db = "/var/lib/selena/energy.db"
+        try:
+            Path(default_db).parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            default_db = ":memory:"
+        db_path = os.getenv("ENERGY_DB_PATH", default_db)
         self._monitor = EnergyMonitor(
             publish_event_cb=self.publish,
             db_path=db_path,
@@ -51,8 +58,11 @@ class EnergyMonitorModule(SystemModule):
         await self._monitor.start()
         self._voice = EnergyVoiceHandler(self)
 
-        # Subscribe to device state changes for device_registry sources
-        self.subscribe(["device.state_changed"], self._on_device_state_changed)
+        # Subscribe to dedicated power-meter events for device_registry sources.
+        # Energy Monitor never reaches into device.state_changed for power
+        # data — any module that owns a metered device publishes
+        # device.power_reading on the bus and we consume it here.
+        self.subscribe(["device.power_reading"], self._on_device_power_reading)
         # Subscribe to MQTT data events from protocol_bridge
         self.subscribe(["mqtt.message"], self._on_mqtt_message)
         # Subscribe to voice intents
@@ -71,42 +81,27 @@ class EnergyMonitorModule(SystemModule):
             if ctx:
                 await self.speak_action(intent, ctx)
 
-    async def _on_device_state_changed(self, event: Any) -> None:
-        """Handle device.state_changed events — extract watts from configured sources."""
+    async def _on_device_power_reading(self, event: Any) -> None:
+        """Handle device.power_reading bus events — record watts for any
+        device_registry source bound to that device."""
         if self._monitor is None:
             return
         payload = event.payload if hasattr(event, "payload") else event
         device_id = payload.get("device_id", "")
-        new_state = payload.get("new_state") or payload.get("state") or {}
+        watts = payload.get("watts")
+        if not device_id or watts is None:
+            return
 
         source_map = self._monitor.get_source_device_ids()
         if device_id not in source_map:
             return
-
         source_id = source_map[device_id]
-        # Find the state_key for this source
-        sources = self._monitor.get_sources()
-        state_key = "power"
-        for src in sources:
-            if src["id"] == source_id:
-                state_key = src["config"].get("state_key", "power")
-                break
 
-        watts = new_state.get(state_key)
-        if watts is None:
-            # Try common alternative keys
-            for alt_key in ("watts", "power", "watt", "energy_power", "current_power"):
-                if alt_key in new_state:
-                    watts = new_state[alt_key]
-                    break
-
-        if watts is not None:
-            try:
-                watts = float(watts)
-                await self._monitor.record_reading(device_id, watts)
-                self._monitor._update_source_ts(source_id)
-            except (ValueError, TypeError):
-                logger.debug("Non-numeric watts value for %s: %s", device_id, watts)
+        try:
+            await self._monitor.record_reading(device_id, float(watts))
+            self._monitor._update_source_ts(source_id)
+        except (ValueError, TypeError):
+            logger.debug("Non-numeric watts for %s: %s", device_id, watts)
 
     async def _on_mqtt_message(self, event: Any) -> None:
         """Handle mqtt.message events — match topic to configured MQTT sources."""
