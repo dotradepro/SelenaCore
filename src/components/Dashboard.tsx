@@ -343,13 +343,24 @@ export default function Dashboard() {
   const [editMode, setEditMode] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
   const [modalMod, setModalMod] = useState<string | null>(null);
+  // Optional content-driven modal size, set by widgets that send a
+  // `modal_resize` postMessage right after their first render.
+  const [modalSize, setModalSize] = useState<{ width?: number; height?: number }>({});
 
   // ── Widget fullscreen modal (openWidgetModal / closeWidgetModal) ─────────
   useEffect(() => {
     function handleWidgetModal(e: MessageEvent) {
       if (!e.data) return;
-      if (e.data.type === 'openWidgetModal' && typeof e.data.module === 'string')
+      if (e.data.type === 'openWidgetModal' && typeof e.data.module === 'string') {
+        // Widget can pass an initial size hint to avoid the "open big →
+        // resize small" flash. modal_resize messages from inside the
+        // iframe still override this later if the content needs more
+        // space than the hint allowed.
+        const w0 = typeof e.data.width === 'number' ? e.data.width : undefined;
+        const h0 = typeof e.data.height === 'number' ? e.data.height : undefined;
+        setModalSize(w0 || h0 ? { width: w0, height: h0 } : {});
         setModalMod(e.data.module);
+      }
       if (e.data.type === 'closeWidgetModal') {
         // Notify the widget iframe to refresh its state immediately
         const mod = e.data.module || modalMod;
@@ -361,6 +372,12 @@ export default function Dashboard() {
           });
         }
         setModalMod(null);
+        setModalSize({});
+      }
+      if (e.data.type === 'modal_resize') {
+        const w = typeof e.data.width === 'number' ? e.data.width : undefined;
+        const h = typeof e.data.height === 'number' ? e.data.height : undefined;
+        if (w || h) setModalSize({ width: w, height: h });
       }
     }
     window.addEventListener('message', handleWidgetModal);
@@ -792,36 +809,66 @@ export default function Dashboard() {
 
       {/* ── Widget fullscreen modal ── */}
       {modalMod && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }}>
-          {/* Backdrop */}
-          <div
-            onClick={() => setModalMod(null)}
-            style={{
-              position: 'absolute', inset: 0,
-              background: 'rgba(0,0,0,.72)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-            }}
-          />
-          {/* Panel */}
-          <div style={{
-            position: 'absolute',
-            top: '4%', left: '5%', right: '5%', bottom: '4%',
-            background: 'var(--sf)',
-            borderRadius: 20,
-            overflow: 'hidden',
-            boxShadow: '0 40px 120px rgba(0,0,0,.65)',
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
-            <iframe
-              src={`/api/ui/modules/${modalMod}/widget?modal=1`}
-              scrolling="no"
-              title="Widget source picker"
-              style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}
-            />
-          </div>
-        </div>,
+        (() => {
+          // If the widget reported a desired size via modal_resize, honour
+          // it (clamped to viewport). Otherwise fall back to the legacy
+          // "almost fullscreen" panel for widgets that don't opt in.
+          const hasSize = !!(modalSize.width || modalSize.height);
+          const panelStyle: React.CSSProperties = hasSize
+            ? {
+              position: 'absolute',
+              top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: modalSize.width
+                ? `min(${modalSize.width}px, 92vw)`
+                : 'auto',
+              height: modalSize.height
+                ? `min(${modalSize.height}px, 92vh)`
+                : 'auto',
+              maxWidth: '92vw',
+              maxHeight: '92vh',
+              background: 'var(--sf)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              boxShadow: '0 40px 120px rgba(0,0,0,.65)',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'width .18s ease-out, height .18s ease-out',
+            }
+            : {
+              position: 'absolute',
+              top: '4%', left: '5%', right: '5%', bottom: '4%',
+              background: 'var(--sf)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              boxShadow: '0 40px 120px rgba(0,0,0,.65)',
+              display: 'flex',
+              flexDirection: 'column',
+            };
+          return (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }}>
+              {/* Backdrop */}
+              <div
+                onClick={() => { setModalMod(null); setModalSize({}); }}
+                style={{
+                  position: 'absolute', inset: 0,
+                  background: 'rgba(0,0,0,.72)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                }}
+              />
+              {/* Panel */}
+              <div style={panelStyle}>
+                <iframe
+                  src={`/api/ui/modules/${modalMod}/widget?modal=1`}
+                  scrolling="no"
+                  title="Widget source picker"
+                  style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}
+                />
+              </div>
+            </div>
+          );
+        })(),
         document.body
       )}
 
