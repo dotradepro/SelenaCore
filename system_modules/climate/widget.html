@@ -114,8 +114,30 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 <script>
 // ── i18n ─────────────────────────────────────────────────────────────────
 var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var ROOM_KEYS = {
+  en: {
+    living_room:'Living room', livingroom:'Living room', lounge:'Lounge',
+    bedroom:'Bedroom', kitchen:'Kitchen', office:'Office',
+    hallway:'Hallway', bathroom:'Bathroom', garage:'Garage',
+    nursery:'Nursery', dining:'Dining room', balcony:'Balcony',
+  },
+  uk: {
+    living_room:'Вітальня', livingroom:'Вітальня', lounge:'Вітальня',
+    bedroom:'Спальня', kitchen:'Кухня', office:'Кабінет',
+    hallway:'Коридор', bathroom:'Ванна', garage:'Гараж',
+    nursery:'Дитяча', dining:'Їдальня', balcony:'Балкон',
+  }
+};
+function roomLabel(key) {
+  if (!key || key === 'unassigned') return t('unassigned');
+  var norm = String(key).toLowerCase().trim().replace(/\s+/g, '_');
+  return (ROOM_KEYS[LANG] && ROOM_KEYS[LANG][norm])
+      || ROOM_KEYS.en[norm]
+      || key;
+}
 var L = {
   en: {
+    title:'Climate',
     loading:'Loading…',
     empty:'No climate devices yet. Add an air conditioner via Device Control → Gree / Pular tab.',
     unassigned:'Unassigned',
@@ -129,6 +151,7 @@ var L = {
     estimated:'estimated', power_w:'Power',
   },
   uk: {
+    title:'Клімат',
     loading:'Завантаження…',
     empty:'Немає кліматичних пристроїв. Додайте кондиціонер через Керування пристроями → вкладку Gree / Pular.',
     unassigned:'Без кімнати',
@@ -287,7 +310,7 @@ function renderFullCard(d){
     '<div class="fc-head">'+
       '<div>'+
         '<div class="fc-title">'+esc(d.name)+'</div>'+
-        '<div class="fc-subtitle">'+esc(d.location || t('unassigned'))+' · '+esc(d.protocol)+'</div>'+
+        '<div class="fc-subtitle">'+esc(roomLabel(d.location))+' · '+esc(d.protocol)+'</div>'+
       '</div>'+
       '<button class="power-toggle '+(on?'on':'')+'" data-id="'+esc(d.device_id)+'" data-power="'+(on?'off':'on')+'">⏻</button>'+
     '</div>'+
@@ -375,7 +398,7 @@ function load(){
     var html = '';
     keys.forEach(function(roomKey){
       var devs = rooms[roomKey] || [];
-      var label = roomKey === 'unassigned' ? t('unassigned') : roomKey;
+      var label = roomLabel(roomKey);
       html += '<div class="room"><div class="room-title">'+esc(label)+'</div>';
       if(IS_MODAL){
         // fullscreen modal: each device gets a full-control card

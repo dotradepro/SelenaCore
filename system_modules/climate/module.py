@@ -52,6 +52,9 @@ class ClimateModule(SystemModule):
     async def start(self) -> None:
         self.subscribe(["device.state_changed"], self._on_state_event)
         self.subscribe(["device.power_reading"], self._on_power_event)
+        # Invalidate cache on device add/remove so the widget refreshes
+        # immediately instead of waiting for the next 10s poll.
+        self.subscribe(["device.registered", "device.removed"], self._on_device_lifecycle)
         logger.info("ClimateModule started")
 
     async def stop(self) -> None:
@@ -110,6 +113,24 @@ class ClimateModule(SystemModule):
             self._latest[device_id] = cached
         except Exception as exc:
             logger.exception("climate: state-event handler crashed: %s", exc)
+
+    async def _on_device_lifecycle(self, event: Any) -> None:
+        """Drop cached state for removed devices; touch cache for new ones.
+
+        We don't pre-fetch new device state here — the next ``GET /rooms``
+        call hits the DB anyway. We just clear stale cache entries on
+        ``device.removed`` so the widget stops showing them.
+        """
+        try:
+            payload = event.payload or {}
+            entity_type = (payload.get("entity_type") or "").lower()
+            if entity_type and entity_type not in CLIMATE_ENTITY_TYPES:
+                return
+            device_id = payload.get("device_id")
+            if event.type == "device.removed" and device_id:
+                self._latest.pop(device_id, None)
+        except Exception as exc:
+            logger.exception("climate: lifecycle handler crashed: %s", exc)
 
     async def _on_power_event(self, event: Any) -> None:
         try:
