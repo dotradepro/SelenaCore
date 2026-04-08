@@ -261,6 +261,37 @@ class SystemPrompt(Base):
     )
 
 
+class DriverProvider(Base):
+    """Per-installation driver-provider state.
+
+    A *provider* is a smart-device protocol library (e.g. ``tinytuya``,
+    ``greeclimate``, ``phue``). Each customer enables only the providers
+    they actually use, persisted in this table so that container restarts
+    and power loss don't lose the configuration. ``ProviderLoader`` reads
+    this table on startup and dynamically populates the device-control
+    DRIVERS dict — no eager imports.
+
+    Lifecycle:
+      * builtin providers (tinytuya, greeclimate) are auto-seeded with
+        ``auto_detected=True, enabled=True`` on first startup if their
+        Python package is importable.
+      * user-installed providers are added via the Providers tab UI,
+        which runs ``pip install`` then INSERTs the row only on success.
+      * if a provider's package becomes un-importable later (broken
+        site-packages), the loader writes the ImportError to
+        ``last_error`` and skips it without crashing device-control.
+    """
+    __tablename__ = "driver_providers"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)  # catalog id, e.g. "gree"
+    package: Mapped[str | None] = mapped_column(String(255), nullable=True)  # pip package name
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)   # version spec
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    auto_detected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

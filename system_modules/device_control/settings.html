@@ -63,6 +63,18 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
 .help code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:10px}
 .dps-row{display:grid;grid-template-columns:1fr 1fr 30px;gap:6px;margin-bottom:4px;align-items:center}
 .dps-row button{padding:4px 8px;background:var(--bg);color:var(--mut);border:1px solid var(--b);border-radius:4px;cursor:pointer}
+.prov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.prov-card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.prov-card.installed{border-color:var(--gr)}
+.prov-card.error{border-color:var(--rd)}
+.prov-head{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.prov-icon{font-size:22px;line-height:1}
+.prov-title{flex:1;font-size:13px;font-weight:600}
+.prov-desc{font-size:11px;color:var(--mut);line-height:1.45;min-height:32px}
+.prov-meta{font-size:10px;color:var(--mut);font-family:'DM Mono',monospace;display:flex;gap:6px;flex-wrap:wrap}
+.prov-meta b{color:var(--fg)}
+.prov-actions{display:flex;gap:6px;margin-top:4px}
+.prov-error{font-size:10px;color:var(--rd);background:rgba(239,68,68,.08);padding:4px 6px;border-radius:4px;font-family:'DM Mono',monospace;word-break:break-word}
 </style>
 </head>
 <body>
@@ -71,6 +83,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
 
   <div class="tabs">
     <button class="tab active" data-tab="devices" data-i18n="tab_devices">Devices</button>
+    <button class="tab" data-tab="providers" data-i18n="tab_providers">Providers</button>
     <button class="tab" data-tab="wizard" data-i18n="tab_wizard">Tuya Cloud Wizard</button>
     <button class="tab" data-tab="gree" data-i18n="tab_gree">Gree / Pular</button>
   </div>
@@ -93,6 +106,24 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
         </tr></thead>
         <tbody id="devicesBody"><tr><td colspan="6" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- TAB: Providers ---------------------------------------------------- -->
+  <div id="tab-providers" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="providers_help">
+        Each provider is a smart-device protocol library (Tuya, Gree, Philips Hue, ESPHome, …).
+        Built-in providers ship with the container; opt-in extras are installed on demand
+        without restarting. State is persisted in the registry DB so power loss never wipes
+        your configuration.
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="provRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <div id="provGrid" class="prov-grid">
+        <div class="muted" data-i18n="loading">Loading…</div>
+      </div>
     </div>
   </div>
 
@@ -207,7 +238,23 @@ var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}cat
 var L = {
   en: {
     title:'Device Control',
-    tab_devices:'Devices', tab_wizard:'Tuya Cloud Wizard', tab_gree:'Gree / Pular',
+    tab_devices:'Devices', tab_providers:'Providers', tab_wizard:'Tuya Cloud Wizard', tab_gree:'Gree / Pular',
+    providers_help:'Each provider is a smart-device protocol library (Tuya, Gree, Philips Hue, ESPHome, …). Built-in providers ship with the container; opt-in extras are installed on demand without restarting. State is persisted in the registry DB so power loss never wipes your configuration.',
+    prov_installed:'Installed',
+    prov_not_installed:'Not installed',
+    prov_builtin:'Built-in',
+    prov_install:'Install',
+    prov_disable:'Disable',
+    prov_uninstall:'Uninstall',
+    prov_installing:'Installing…',
+    prov_install_ok:'Provider installed',
+    prov_install_fail:'Install failed',
+    prov_disabled:'Disabled',
+    prov_confirm_disable:'Disable this provider? Existing devices using it will go offline until you re-enable.',
+    prov_needs_cloud:'cloud',
+    prov_external:'external service',
+    prov_loaded:'loaded',
+    prov_error:'error',
     dev_count_label:'Registered devices', refresh:'Refresh',
     col_name:'Name', col_type:'Type', col_location:'Location', col_protocol:'Protocol', col_state:'State', col_actions:'Actions',
     loading:'Loading…', no_devices:'No devices yet — add them via the Tuya Cloud Wizard tab.',
@@ -258,7 +305,23 @@ var L = {
   },
   uk: {
     title:'Керування пристроями',
-    tab_devices:'Пристрої', tab_wizard:'Tuya Cloud майстер', tab_gree:'Gree / Pular',
+    tab_devices:'Пристрої', tab_providers:'Provider\'и', tab_wizard:'Tuya Cloud майстер', tab_gree:'Gree / Pular',
+    providers_help:'Кожен provider — це бібліотека протоколу розумних пристроїв (Tuya, Gree, Philips Hue, ESPHome…). Вбудовані provider\'и встановлені одразу; додаткові — на вимогу, без перезапуску контейнера. Стан зберігається у БД реєстру, тому втрата живлення нічого не стирає.',
+    prov_installed:'Встановлено',
+    prov_not_installed:'Не встановлено',
+    prov_builtin:'Вбудований',
+    prov_install:'Встановити',
+    prov_disable:'Вимкнути',
+    prov_uninstall:'Видалити',
+    prov_installing:'Встановлюю…',
+    prov_install_ok:'Provider встановлено',
+    prov_install_fail:'Помилка встановлення',
+    prov_disabled:'Вимкнено',
+    prov_confirm_disable:'Вимкнути цей provider? Існуючі пристрої перейдуть в offline до повторного увімкнення.',
+    prov_needs_cloud:'хмара',
+    prov_external:'зовнішній сервіс',
+    prov_loaded:'завантажено',
+    prov_error:'помилка',
     dev_count_label:'Зареєстровані пристрої', refresh:'Оновити',
     col_name:'Назва', col_type:'Тип', col_location:'Розташування', col_protocol:'Протокол', col_state:'Стан', col_actions:'Дії',
     loading:'Завантаження…', no_devices:'Немає пристроїв — додайте через Tuya Cloud майстер.',
@@ -356,6 +419,7 @@ document.querySelectorAll('.tab').forEach(function(b){
     if(b.getAttribute('data-tab')==='wizard') loadWizardStatus();
     if(b.getAttribute('data-tab')==='devices') loadDevices();
     if(b.getAttribute('data-tab')==='gree') $('greeResults').innerHTML='';
+    if(b.getAttribute('data-tab')==='providers') loadProviders();
   };
 });
 
@@ -639,6 +703,98 @@ function _renderGreeList(devs){
     });
   };
 }
+
+// ── Providers tab ────────────────────────────────────────────────────────
+function loadProviders(){
+  $('provGrid').innerHTML = '<div class="muted">'+esc(t('loading'))+'</div>';
+  api('/providers').then(function(res){
+    _renderProviders(res.providers||[]);
+  }).catch(function(e){
+    $('provGrid').innerHTML = '<div class="muted">'+esc(e.message)+'</div>';
+  });
+}
+
+function _renderProviders(list){
+  if(list.length===0){
+    $('provGrid').innerHTML = '<div class="muted">—</div>';
+    return;
+  }
+  // sort: built-ins first, then by name
+  list.sort(function(a,b){
+    if(a.builtin !== b.builtin) return a.builtin ? -1 : 1;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+  $('provGrid').innerHTML = list.map(function(p){
+    var cls = 'prov-card';
+    if(p.installed && p.loaded) cls += ' installed';
+    if(p.last_error) cls += ' error';
+    var statusBadge = p.installed
+      ? '<span class="badge badge-on">'+esc(t('prov_installed'))+'</span>'
+      : '<span class="badge badge-mut">'+esc(t('prov_not_installed'))+'</span>';
+    var loadedBadge = (p.installed && p.loaded)
+      ? '<span class="badge badge-pr">'+esc(t('prov_loaded'))+'</span>'
+      : '';
+    var builtinBadge = p.builtin
+      ? '<span class="badge badge-mut">'+esc(t('prov_builtin'))+'</span>'
+      : '';
+    var cloudBadge = p.needs_cloud
+      ? '<span class="badge badge-mut">'+esc(t('prov_needs_cloud'))+'</span>'
+      : '';
+    var extBadge = p.needs_external_service
+      ? '<span class="badge badge-mut">'+esc(t('prov_external'))+'</span>'
+      : '';
+    var meta = '';
+    if(p.package){
+      meta = '<div class="prov-meta"><b>'+esc(p.package)+'</b>'+(p.version?' '+esc(p.version):'')+'</div>';
+    }
+    var error = p.last_error
+      ? '<div class="prov-error">'+esc(p.last_error)+'</div>'
+      : '';
+    var actions;
+    if(p.installed){
+      // built-ins can only be disabled (no pip-uninstall)
+      actions = '<button class="btn btn-ghost" onclick="provDisable(\''+esc(p.id)+'\')">'+esc(t('prov_disable'))+'</button>';
+    } else {
+      actions = '<button class="btn btn-green" onclick="provInstall(\''+esc(p.id)+'\')">'+esc(t('prov_install'))+'</button>';
+    }
+    return '<div class="'+cls+'">'+
+      '<div class="prov-head">'+
+        '<span class="prov-icon">'+esc(p.icon||'📦')+'</span>'+
+        '<div class="prov-title">'+esc(p.name)+'</div>'+
+        statusBadge+
+      '</div>'+
+      '<div class="prov-desc">'+esc(p.description||'')+'</div>'+
+      meta+
+      '<div class="prov-meta">'+builtinBadge+' '+loadedBadge+' '+cloudBadge+' '+extBadge+'</div>'+
+      error+
+      '<div class="prov-actions">'+actions+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+window.provInstall = function(id){
+  var card = document.querySelector('.prov-card button[onclick*="\''+id+'\'"]');
+  if(card){ card.disabled = true; card.textContent = t('prov_installing'); }
+  api('/providers/'+id+'/install', {method:'POST'}).then(function(){
+    toast(t('prov_install_ok'));
+    loadProviders();
+  }).catch(function(e){
+    toast(t('prov_install_fail')+': '+e.message, true);
+    loadProviders();
+  });
+};
+
+window.provDisable = function(id){
+  if(!confirm(t('prov_confirm_disable'))) return;
+  api('/providers/'+id+'/uninstall', {method:'POST', body:{remove_package:false}}).then(function(){
+    toast(t('prov_disabled'));
+    loadProviders();
+  }).catch(function(e){
+    toast(e.message, true);
+  });
+};
+
+$('provRefreshBtn').onclick = loadProviders;
 
 // ── boot ─────────────────────────────────────────────────────────────────
 applyLang();

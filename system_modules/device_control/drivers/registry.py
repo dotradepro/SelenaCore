@@ -1,81 +1,63 @@
 """
-system_modules/device_control/drivers/registry.py — Driver lookup.
+system_modules/device_control/drivers/registry.py — runtime driver registry.
 
-Maps ``Device.protocol`` (string) to a concrete driver class. To add a new
-driver: drop a file in this folder and register it here.
+The DRIVERS dict is no longer populated by eager imports. It is
+populated at startup by ``providers.loader.ProviderLoader.load_enabled()``
+which walks the ``driver_providers`` SQLite table and imports each
+enabled provider's driver class via ``importlib``.
+
+To add a new driver, register it in
+``system_modules/device_control/providers/catalog.py`` instead of editing
+this file.
 """
 from __future__ import annotations
 
 from typing import Any
 
+from ..providers.catalog import PROVIDERS, get_provider
 from .base import DeviceDriver, DriverError
-from .gree import GreeDriver
-from .mqtt_bridge import MqttBridgeDriver
-from .tuya_cloud import TuyaCloudDriver
-from .tuya_local import TuyaLocalDriver
 
-DRIVERS: dict[str, type[DeviceDriver]] = {
-    "tuya_local": TuyaLocalDriver,
-    "tuya_cloud": TuyaCloudDriver,
-    "mqtt": MqttBridgeDriver,
-    "gree": GreeDriver,
-}
+#: Runtime driver class map. Populated by ProviderLoader.load_enabled()
+#: at module startup, mutated in place by install/uninstall — never
+#: rebuilt or replaced, so callers can hold a reference safely.
+DRIVERS: dict[str, type[DeviceDriver]] = {}
 
 
 def get_driver(device_id: str, protocol: str, meta: dict[str, Any]) -> DeviceDriver:
     """Instantiate the right driver for ``device.protocol``.
 
-    Raises DriverError if the protocol is unknown so the watcher loop can
-    log and skip that device without crashing the module.
+    Raises ``DriverError`` if the protocol is unknown OR if the provider
+    package is not installed (loader skipped it on startup). The watcher
+    catches DriverError and marks the device offline with backoff.
     """
     cls = DRIVERS.get(protocol)
     if cls is None:
+        if protocol in PROVIDERS:
+            raise DriverError(
+                f"Provider {protocol!r} is not installed — open device-control "
+                "settings → Providers tab to install it."
+            )
         raise DriverError(f"Unknown driver protocol: {protocol!r}")
     return cls(device_id, meta)
 
 
 def list_driver_types() -> list[dict[str, Any]]:
-    """Return metadata for the UI dropdown in settings.html → Add device."""
-    return [
-        {
-            "id": "tuya_local",
-            "name": "Tuya (local LAN)",
-            "needs_cloud": False,
-            "fields": [
-                "tuya.device_id",
-                "tuya.local_key",
-                "tuya.ip",
-                "tuya.version",
-                "tuya.dps_map",
-            ],
-        },
-        {
-            "id": "tuya_cloud",
-            "name": "Tuya (cloud)",
-            "needs_cloud": True,
-            "fields": [
-                "tuya.cloud_device_id",
-                "tuya.code_map",
-            ],
-        },
-        {
-            "id": "mqtt",
-            "name": "MQTT / Zigbee (via protocol-bridge)",
-            "needs_cloud": False,
-            "stub": True,
-            "fields": [
-                "mqtt.command_topic",
-                "mqtt.state_topic",
-            ],
-        },
-        {
-            "id": "gree",
-            "name": "Gree / Pular WiFi A/C",
-            "needs_cloud": False,
-            "fields": [
-                "gree.ip",
-                "gree.mac",
-                "gree.name",
-            ],
-        },
-    ]
+    """Return metadata for the UI dropdown in settings.html → Add device.
+
+    Filtered to currently-loaded drivers so the user only sees protocols
+    they can actually use right now. Provider state for the Providers
+    tab comes from ``ProviderLoader.list_state()`` separately.
+    """
+    out: list[dict[str, Any]] = []
+    for pid in DRIVERS:
+        spec = get_provider(pid)
+        if spec is None:
+            continue
+        out.append({
+            "id": pid,
+            "name": spec.get("name", pid),
+            "needs_cloud": spec.get("needs_cloud", False),
+            "fields": [],  # legacy field — front-end no longer uses it for known protocols
+            "entity_types": spec.get("entity_types", []),
+        })
+    return out

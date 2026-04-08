@@ -101,6 +101,10 @@ class GreeImportBody(BaseModel):
     devices: list[GreeImportEntry]
 
 
+class ProviderUninstallBody(BaseModel):
+    remove_package: bool = False
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -155,6 +159,38 @@ async def _scan_tuya_lan() -> dict[str, dict[str, Any]]:
         return out
 
     return await asyncio.to_thread(_do_scan)
+
+
+def _classify_tuya_entity_type(cloud_device: dict[str, Any]) -> tuple[str, list[str]]:
+    """Best-effort entity_type + capabilities for a Tuya cloud device.
+
+    Tuya's ``category`` and ``product_name`` fields are reasonably
+    reliable hints. Falls back to ``switch`` for anything we can't
+    classify, which the user can correct via PATCH /devices/{id}.
+    """
+    category = (cloud_device.get("category") or "").lower()
+    product = (cloud_device.get("product_name") or "").lower()
+    name = (cloud_device.get("name") or "").lower()
+    text = f"{product} {name}"
+
+    # Lighting (Tuya category "dj" = lighting devices)
+    if category == "dj" or any(k in text for k in ("light", "lamp", "bulb", "led", "лампа", "світло", "освітлення")):
+        caps = ["on", "off"]
+        # If status payload exposes brightness/colour codes, advertise them
+        status = cloud_device.get("status") or {}
+        if any(k in status for k in ("bright_value", "bright_value_v2", "bright_value_1")):
+            caps.append("brightness")
+        if any(k in status for k in ("temp_value", "temp_value_v2", "colour_data")):
+            caps.append("colour_temp")
+        return "light", caps
+    # Outlets / sockets (Tuya category "cz")
+    if category == "cz" or any(k in text for k in ("socket", "outlet", "plug", "розетка")):
+        return "outlet", ["on", "off"]
+    # Fans
+    if category == "fs" or "fan" in text or "вентилятор" in text:
+        return "fan", ["on", "off"]
+    # Default
+    return "switch", ["on", "off"]
 
 
 async def _scan_gree_lan(timeout: int = 10) -> list[dict[str, Any]]:
@@ -262,7 +298,16 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         except Exception as exc:
             logger.warning("device-control: pattern regen failed: %s", exc)
         await svc.add_device_watcher(device_id)
-        await svc.publish("device.registered", {"device_id": device_id, "name": body.name})
+        # Enriched payload — subscribers (climate, lights-switches,
+        # energy-monitor) use entity_type to decide if they own this device.
+        await svc.publish("device.registered", {
+            "device_id": device_id,
+            "name": body.name,
+            "entity_type": payload.get("entity_type"),
+            "location": payload.get("location"),
+            "protocol": payload.get("protocol"),
+            "capabilities": payload.get("capabilities", []),
+        })
         return payload
 
     @router.patch("/devices/{device_id}")
@@ -361,18 +406,29 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.delete("/devices/{device_id}")
     async def delete_device(device_id: str) -> dict[str, Any]:
         from core.registry.models import Device
+        # Capture entity_type BEFORE the row vanishes so the bus event
+        # can carry it to subscribers (energy-monitor needs it to drop
+        # the matching source).
+        captured_entity: str | None = None
+        captured_name: str | None = None
         async with svc._db_session() as session:
             async with session.begin():
                 d = await session.get(Device, device_id)
                 if d is None or d.module_id != svc.name:
                     raise HTTPException(404, "Device not found")
+                captured_entity = d.entity_type
+                captured_name = d.name
                 await session.execute(delete(Device).where(Device.device_id == device_id))
         await svc.remove_device_watcher(device_id)
         try:
             await on_entity_changed("device", device_id, "deleted")
         except Exception as exc:
             logger.warning("device-control: pattern delete failed: %s", exc)
-        await svc.publish("device.removed", {"device_id": device_id})
+        await svc.publish("device.removed", {
+            "device_id": device_id,
+            "name": captured_name,
+            "entity_type": captured_entity,
+        })
         return {"status": "ok", "device_id": device_id}
 
     @router.post("/devices/{device_id}/test")
@@ -400,6 +456,38 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.get("/drivers")
     async def list_drivers() -> dict[str, Any]:
         return {"drivers": list_driver_types()}
+
+    # ── Provider lifecycle (install/uninstall driver libraries at runtime) ──
+
+    @router.get("/providers")
+    async def list_providers() -> dict[str, Any]:
+        loader = svc.provider_loader
+        if loader is None:
+            return {"providers": []}
+        return {"providers": await loader.list_state()}
+
+    @router.post("/providers/{provider_id}/install")
+    async def install_provider(provider_id: str) -> dict[str, Any]:
+        loader = svc.provider_loader
+        if loader is None:
+            raise HTTPException(503, "Provider loader not initialised")
+        ok, msg = await loader.install(provider_id)
+        if not ok:
+            raise HTTPException(502, msg)
+        return {"status": "ok", "provider": provider_id, "message": msg, "restart_needed": False}
+
+    @router.post("/providers/{provider_id}/uninstall")
+    async def uninstall_provider(
+        provider_id: str, body: ProviderUninstallBody | None = None,
+    ) -> dict[str, Any]:
+        loader = svc.provider_loader
+        if loader is None:
+            raise HTTPException(503, "Provider loader not initialised")
+        remove_package = bool(body and body.remove_package)
+        ok, msg = await loader.uninstall(provider_id, remove_package=remove_package)
+        if not ok:
+            raise HTTPException(502, msg)
+        return {"status": "ok", "provider": provider_id, "message": msg}
 
     # ── Gree / Pular discovery + import ─────────────────────────────────
 
@@ -471,7 +559,12 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 logger.warning("device-control: gree import pattern regen failed: %s", exc)
             await svc.add_device_watcher(device_id)
             await svc.publish("device.registered", {
-                "device_id": device_id, "name": display,
+                "device_id": device_id,
+                "name": display,
+                "entity_type": "air_conditioner",
+                "location": location,
+                "protocol": "gree",
+                "capabilities": list(AC_CAPABILITIES),
             })
             created.append({
                 "device_id": device_id,
@@ -720,17 +813,21 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             # Drop None so we don't store 'null' in JSON.
             if meta["name_en"] is None:
                 meta.pop("name_en", None)
+            # Classify entity_type from Tuya category + product name so the
+            # device automatically lands in the right consumer module
+            # (lights-switches for light/switch/outlet, climate for AC).
+            entity_type, capabilities = _classify_tuya_entity_type(cd)
             async with svc._db_session() as session:
                 async with session.begin():
                     device = Device(
                         name=cd.get("name") or cd["id"],
                         type="actuator",
                         protocol=protocol,
-                        entity_type="switch",
+                        entity_type=entity_type,
                         module_id=svc.name,
                         enabled=enabled,
                     )
-                    device.set_capabilities(["on", "off"])
+                    device.set_capabilities(capabilities)
                     device.set_meta(meta)
                     session.add(device)
                     await session.flush()
@@ -741,10 +838,19 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 pass
             # add_device_watcher itself skips disabled devices.
             await svc.add_device_watcher(device_id)
+            await svc.publish("device.registered", {
+                "device_id": device_id,
+                "name": cd.get("name") or cd["id"],
+                "entity_type": entity_type,
+                "location": None,
+                "protocol": protocol,
+                "capabilities": capabilities,
+            })
             created.append({
                 "device_id": device_id,
                 "name": cd.get("name", cid),
                 "protocol": protocol,
+                "entity_type": entity_type,
                 "enabled": enabled,
             })
 
