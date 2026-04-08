@@ -32,16 +32,13 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .row:hover{border-color:var(--pr)}
 .row:active{transform:scale(.985)}
 .row.off{opacity:.55}
-.row > *{pointer-events:none}
+/* ALL descendants pass clicks through (not just direct children). */
+.row *{pointer-events:none}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--mut);flex-shrink:0}
 .dot.on{background:var(--am);box-shadow:0 0 8px rgba(245,158,11,.55)}
 .dot.on.light{background:var(--am)}
 .dot.on.switch,.dot.on.outlet{background:var(--gr);box-shadow:0 0 8px rgba(34,197,94,.55)}
-.row-icon{font-size:14px;flex-shrink:0;width:18px;text-align:center}
 .row-name{flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row-bright{font-size:11px;color:var(--mut);min-width:38px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
-.row-watts{font-size:10px;color:var(--mut);min-width:42px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
-.chev{color:var(--mut);font-size:14px;flex-shrink:0}
 
 .empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
 
@@ -53,13 +50,32 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
 .fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-.power-toggle{
-  background:transparent;border:1px solid var(--b);border-radius:50%;
-  width:46px;height:46px;cursor:pointer;color:var(--mut);font-size:20px;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+/* Swift-style sliding toggle */
+.toggle{
+  position:relative;display:inline-block;width:52px;height:30px;
+  flex-shrink:0;cursor:pointer;
 }
-.power-toggle.on{background:var(--gr);color:#fff;border-color:var(--gr);box-shadow:0 0 14px rgba(34,197,94,.35)}
-.power-toggle.on.light{background:var(--am);border-color:var(--am);box-shadow:0 0 14px rgba(245,158,11,.4)}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{
+  position:absolute;inset:0;background:var(--b);border-radius:30px;
+  transition:background .22s ease;
+  border:1px solid var(--b);
+}
+.toggle .slider::before{
+  content:"";position:absolute;top:2px;left:2px;
+  width:24px;height:24px;border-radius:50%;
+  background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
+  transition:transform .22s ease;
+}
+.toggle input:checked + .slider{
+  background:var(--gr);border-color:var(--gr);
+}
+.toggle.light input:checked + .slider{
+  background:var(--am);border-color:var(--am);
+}
+.toggle input:checked + .slider::before{
+  transform:translateX(22px);
+}
 
 .slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px}
 .slider-label{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
@@ -179,19 +195,14 @@ var DEVICES = {};
 
 // ── compact row ─────────────────────────────────────────────────────────
 function renderRow(d){
+  // Minimal layout — JUST status dot + name. Brightness, watts and
+  // controls live in the modal. Voice / click are the entry points.
   var s = d.state || {};
   var on = s.on === true;
   var et = (d.entity_type||'switch').toLowerCase();
-  var icon = ICONS[et] || '⏻';
-  var bright = (et==='light' && on && s.brightness != null) ? Math.round(s.brightness)+'%' : '';
-  var watts = (s.estimated_watts != null) ? Math.round(s.estimated_watts)+' W' : '';
   return '<div class="row '+(on?'':'off')+'" data-id="'+esc(d.device_id)+'">'+
     '<span class="dot '+(on?'on '+et:'')+'"></span>'+
-    '<span class="row-icon">'+icon+'</span>'+
     '<span class="row-name">'+esc(d.name)+'</span>'+
-    '<span class="row-bright">'+esc(bright)+'</span>'+
-    '<span class="row-watts">'+esc(watts)+'</span>'+
-    '<span class="chev">›</span>'+
   '</div>';
 }
 
@@ -256,22 +267,27 @@ function renderFullCard(d){
   return '<div class="fullcard">'+
     '<div class="fc-head">'+
       '<div>'+
-        '<div class="fc-title">'+esc(ICONS[et]||'⏻')+' '+esc(d.name)+'</div>'+
+        '<div class="fc-title">'+esc(d.name)+'</div>'+
         '<div class="fc-subtitle">'+esc(roomLabel(d.location))+' · '+esc(t('type_'+et)||et)+'</div>'+
       '</div>'+
-      '<button class="power-toggle '+(on?'on '+et:'')+'" data-id="'+esc(d.device_id)+'" data-power="'+(on?'off':'on')+'">⏻</button>'+
+      '<label class="toggle '+et+'" data-id="'+esc(d.device_id)+'">'+
+        '<input type="checkbox" class="power-input"'+(on?' checked':'')+'>'+
+        '<span class="slider"></span>'+
+      '</label>'+
     '</div>'+
     brightSection+ctempSection+rgbSection+wattsLine+
   '</div>';
 }
 
 function bindFullCards(){
-  document.querySelectorAll('.power-toggle').forEach(function(b){
-    b.onclick = function(){
-      var id = b.getAttribute('data-id');
-      var next = b.getAttribute('data-power') === 'on';
-      sendCmd(id, {on: next});
-    };
+  // Swift-style toggle: react on inner checkbox change
+  document.querySelectorAll('label.toggle').forEach(function(lbl){
+    var input = lbl.querySelector('input.power-input');
+    var id = lbl.getAttribute('data-id');
+    if(!input) return;
+    input.addEventListener('change', function(){
+      sendCmd(id, {on: input.checked});
+    });
   });
   // Debounce sliders so we don't fire 100 commands per drag.
   function debounceCmd(el, key){
@@ -294,6 +310,9 @@ function bindFullCards(){
       sendCmd(el.getAttribute('data-id'), {rgb_color: el.value});
     });
   });
+  // Grab focus immediately so the very first interaction registers
+  // without an extra "click to focus iframe" round-trip.
+  try { window.focus(); } catch(_) {}
 }
 
 // ── load + render ───────────────────────────────────────────────────────

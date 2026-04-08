@@ -33,17 +33,15 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .row:hover{border-color:var(--pr)}
 .row:active{transform:scale(.985)}
 .row.off{opacity:.55}
-/* All children pass clicks through to .row so any pixel of the row is
-   clickable, not just the marker. */
-.row > *{pointer-events:none}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
+/* ALL descendants (not just direct children) pass clicks through to
+   .row so any pixel of the row is clickable. The previous .row > *
+   selector left grandchildren clickable, which broke clicks on text
+   wrapped in inner spans. */
+.row *{pointer-events:none}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut);flex-shrink:0}
 .dot.on{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.5)}
 .row-name{flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row-temp{font-size:13px;font-weight:600;color:var(--pr);font-variant-numeric:tabular-nums;flex-shrink:0}
-.row-temp .now{color:var(--mut);font-weight:400;font-size:11px}
-.row-mode{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;min-width:32px;text-align:right}
-.row-watts{font-size:10px;color:var(--mut);min-width:42px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
-.chev{color:var(--mut);font-size:14px;flex-shrink:0}
+.row-target{font-size:14px;font-weight:700;color:var(--pr);font-variant-numeric:tabular-nums;flex-shrink:0}
 
 .empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
 
@@ -55,12 +53,30 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
 .fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-.power-toggle{
-  background:transparent;border:1px solid var(--b);border-radius:50%;
-  width:46px;height:46px;cursor:pointer;color:var(--mut);font-size:20px;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+/* Swift-style sliding toggle (replaces the old ⏻ button — emoji
+   doesn't render reliably across systems). */
+.toggle{
+  position:relative;display:inline-block;width:52px;height:30px;
+  flex-shrink:0;cursor:pointer;
 }
-.power-toggle.on{background:var(--gr);color:#fff;border-color:var(--gr);box-shadow:0 0 14px rgba(34,197,94,.35)}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{
+  position:absolute;inset:0;background:var(--b);border-radius:30px;
+  transition:background .22s ease;
+  border:1px solid var(--b);
+}
+.toggle .slider::before{
+  content:"";position:absolute;top:2px;left:2px;
+  width:24px;height:24px;border-radius:50%;
+  background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
+  transition:transform .22s ease;
+}
+.toggle input:checked + .slider{
+  background:var(--gr);border-color:var(--gr);
+}
+.toggle input:checked + .slider::before{
+  transform:translateX(22px);
+}
 
 .fc-temp-row{
   display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
@@ -219,23 +235,16 @@ var DEVICES = {};
 
 // ── compact row (dashboard) ─────────────────────────────────────────────
 function renderRow(d){
+  // Compact dashboard row — JUST status dot, name, target temp.
+  // Everything else (current temp, mode, fan, swing, watts) lives in
+  // the modal. Keeping this minimal lets long device names breathe.
   var s = d.state || {};
   var on = s.on === true;
-  var cur = (s.current_temp != null) ? s.current_temp+'°' : '—';
-  var tgt = (s.target_temp != null)  ? s.target_temp+'°'  : '';
-  var mode = (s.mode||'').toLowerCase();
-  var modeShort = mode ? t('mode_'+mode) : '';
-  var watts = (s.estimated_watts != null) ? Math.round(s.estimated_watts)+' W' : '';
-  var tempBlock = on
-    ? '<span class="now">'+esc(cur)+' →</span> '+esc(tgt)
-    : '<span class="now">'+esc(t('off'))+'</span>';
+  var tgt = (s.target_temp != null) ? s.target_temp+'°' : '—';
   return '<div class="row '+(on?'':'off')+'" data-id="'+esc(d.device_id)+'">'+
     '<span class="dot '+(on?'on':'')+'"></span>'+
     '<span class="row-name">'+esc(d.name)+'</span>'+
-    '<span class="row-temp">'+tempBlock+'</span>'+
-    '<span class="row-mode">'+esc(on?modeShort:'')+'</span>'+
-    '<span class="row-watts">'+esc(watts)+'</span>'+
-    '<span class="chev">›</span>'+
+    '<span class="row-target">'+esc(tgt)+'</span>'+
   '</div>';
 }
 
@@ -312,7 +321,10 @@ function renderFullCard(d){
         '<div class="fc-title">'+esc(d.name)+'</div>'+
         '<div class="fc-subtitle">'+esc(roomLabel(d.location))+' · '+esc(d.protocol)+'</div>'+
       '</div>'+
-      '<button class="power-toggle '+(on?'on':'')+'" data-id="'+esc(d.device_id)+'" data-power="'+(on?'off':'on')+'">⏻</button>'+
+      '<label class="toggle" data-id="'+esc(d.device_id)+'">'+
+        '<input type="checkbox" class="power-input"'+(on?' checked':'')+'>'+
+        '<span class="slider"></span>'+
+      '</label>'+
     '</div>'+
     '<div class="fc-temp-row">'+
       '<div>'+
@@ -341,45 +353,66 @@ function renderFullCard(d){
   '</div>';
 }
 
+// Helper: register a control with a pointerdown trigger so it fires
+// on the very first interaction even when the iframe doesn't yet have
+// focus (avoids the "have to click twice inside the modal" issue).
+function tap(el, fn){
+  var fired = false;
+  var handler = function(e){
+    if(fired) return;
+    fired = true;
+    setTimeout(function(){ fired = false; }, 250);
+    if(e && e.preventDefault) e.preventDefault();
+    fn(e);
+  };
+  el.addEventListener('pointerdown', handler);
+  el.addEventListener('click', handler);
+}
+
 function bindFullCards(){
-  document.querySelectorAll('.power-toggle').forEach(function(b){
-    b.onclick = function(){
-      var id = b.getAttribute('data-id');
-      var next = b.getAttribute('data-power') === 'on';
-      sendCmd(id, {on: next});
-    };
+  // Swift-style toggle: react on the inner checkbox `change` event.
+  document.querySelectorAll('label.toggle').forEach(function(lbl){
+    var input = lbl.querySelector('input.power-input');
+    var id = lbl.getAttribute('data-id');
+    if(!input) return;
+    input.addEventListener('change', function(){
+      sendCmd(id, {on: input.checked});
+    });
   });
   document.querySelectorAll('.temp-down').forEach(function(b){
-    b.onclick = function(){
+    tap(b, function(){
       var id = b.getAttribute('data-id');
       var cur = parseInt(b.getAttribute('data-cur'),10) || 22;
       sendCmd(id, {target_temp: Math.max(16, cur-1)});
-    };
+    });
   });
   document.querySelectorAll('.temp-up').forEach(function(b){
-    b.onclick = function(){
+    tap(b, function(){
       var id = b.getAttribute('data-id');
       var cur = parseInt(b.getAttribute('data-cur'),10) || 22;
       sendCmd(id, {target_temp: Math.min(30, cur+1)});
-    };
+    });
   });
   document.querySelectorAll('.chip.mode').forEach(function(c){
-    c.onclick = function(){
+    tap(c, function(){
       sendCmd(c.getAttribute('data-id'), {mode: c.getAttribute('data-mode')});
-    };
+    });
   });
   document.querySelectorAll('.chip.fan').forEach(function(c){
-    c.onclick = function(){
+    tap(c, function(){
       sendCmd(c.getAttribute('data-id'), {fan_speed: c.getAttribute('data-fan')});
-    };
+    });
   });
   document.querySelectorAll('.chip.swing').forEach(function(c){
-    c.onclick = function(){
+    tap(c, function(){
       var k = c.getAttribute('data-skey');
       var sw = SWINGS.filter(function(x){return x.key===k;})[0];
       if(sw) sendCmd(c.getAttribute('data-id'), {swing_v: sw.v, swing_h: sw.h});
-    };
+    });
   });
+  // Grab focus immediately so the very first chip click registers
+  // without an extra "click to focus iframe" round-trip.
+  try { window.focus(); } catch(_) {}
 }
 
 // ── load + render ───────────────────────────────────────────────────────
