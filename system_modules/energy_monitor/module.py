@@ -63,6 +63,10 @@ class EnergyMonitorModule(SystemModule):
         # data — any module that owns a metered device publishes
         # device.power_reading on the bus and we consume it here.
         self.subscribe(["device.power_reading"], self._on_device_power_reading)
+        # Auto-create / auto-remove device_registry sources when devices
+        # appear in / disappear from the registry. The user does not need
+        # to manually wire each new device into Energy Monitor.
+        self.subscribe(["device.registered", "device.removed"], self._on_device_lifecycle)
         # Subscribe to MQTT data events from protocol_bridge
         self.subscribe(["mqtt.message"], self._on_mqtt_message)
         # Subscribe to voice intents
@@ -80,6 +84,117 @@ class EnergyMonitorModule(SystemModule):
             ctx = await self._voice.handle(intent, payload.get("params", {}))
             if ctx:
                 await self.speak_action(intent, ctx)
+
+    async def _join_devices(self) -> list[dict[str, Any]]:
+        """Build a unified [device + power + kwh + source] view.
+
+        Reads the Device table from the registry, looks up current power
+        and today's kWh from EnergyMonitor, and the source row that
+        backs each device (if any). Returns one dict per device,
+        suitable for direct table render in the unified settings page.
+        """
+        import json as _json
+        from sqlalchemy import select
+        from core.registry.models import Device
+
+        if self._monitor is None:
+            return []
+
+        # Index sources by device_id for O(1) lookup
+        sources_by_device: dict[str, dict[str, Any]] = {}
+        for src in self._monitor.get_sources():
+            cfg = src.get("config") or {}
+            did = cfg.get("device_id")
+            if did:
+                sources_by_device[did] = src
+
+        current_power = self._monitor.get_current_power()  # dict[device_id → watts]
+
+        async with self._db_session() as session:
+            res = await session.execute(
+                select(Device).order_by(Device.location, Device.name)
+            )
+            devices = list(res.scalars())
+
+        out: list[dict[str, Any]] = []
+        for d in devices:
+            db_state = _json.loads(d.state) if d.state else {}
+            src = sources_by_device.get(d.device_id)
+            watts = current_power.get(d.device_id)
+            try:
+                kwh_today = self._monitor.get_daily_kwh(d.device_id)
+            except Exception:
+                kwh_today = 0.0
+            out.append({
+                "device_id": d.device_id,
+                "name": d.name,
+                "location": d.location or "",
+                "entity_type": d.entity_type or "",
+                "protocol": d.protocol,
+                "enabled": bool(d.enabled),
+                "state": db_state,
+                "watts": watts,
+                "kwh_today": round(kwh_today, 3),
+                "source": {
+                    "id": src["id"],
+                    "enabled": src.get("enabled", True),
+                    "last_reading_ts": src.get("last_reading_ts"),
+                } if src else None,
+            })
+        return out
+
+    async def _on_device_lifecycle(self, event: Any) -> None:
+        """Auto-create / auto-remove device_registry sources.
+
+        On ``device.registered``: register a new device_registry source
+        unless one already exists for this device_id.
+        On ``device.removed``: find the matching source and delete it.
+        """
+        if self._monitor is None:
+            return
+        payload = event.payload if hasattr(event, "payload") else event
+        device_id = payload.get("device_id", "")
+        if not device_id:
+            return
+
+        if event.type == "device.registered":
+            # Skip if a source for this device already exists.
+            existing = self._monitor.get_source_device_ids()
+            if device_id in existing:
+                return
+            name = payload.get("name") or device_id
+            try:
+                self._monitor.add_source(
+                    name=name,
+                    type="device_registry",
+                    config={"device_id": device_id},
+                )
+                logger.info(
+                    "energy-monitor: auto-created source for new device %s (%s)",
+                    name, device_id,
+                )
+            except ValueError as exc:
+                logger.warning(
+                    "energy-monitor: failed to auto-create source for %s: %s",
+                    device_id, exc,
+                )
+
+        elif event.type == "device.removed":
+            sources = self._monitor.get_sources()
+            for s in sources:
+                cfg = s.get("config") or {}
+                if cfg.get("device_id") == device_id:
+                    try:
+                        self._monitor.delete_source(s["id"])
+                        logger.info(
+                            "energy-monitor: auto-removed source %s for deleted device %s",
+                            s["id"], device_id,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "energy-monitor: failed to remove source %s: %s",
+                            s["id"], exc,
+                        )
 
     async def _on_device_power_reading(self, event: Any) -> None:
         """Handle device.power_reading bus events — record watts for any
@@ -184,6 +299,19 @@ class EnergyMonitorModule(SystemModule):
             if svc._monitor is None:
                 raise HTTPException(503, "Not ready")
             return JSONResponse(svc._monitor.get_device_history(device_id, limit))
+
+        @router.get("/energy/devices/full")
+        async def get_devices_full() -> JSONResponse:
+            """Unified device list with name + room + type + state + power + kWh.
+
+            Joins the Device registry (owned by device-control) with the
+            energy-monitor's per-device current power and today's kWh
+            counters. One row per device, ready for the unified settings
+            table and the dashboard widget modal.
+            """
+            if svc._monitor is None:
+                raise HTTPException(503, "Not ready")
+            return JSONResponse({"devices": await svc._join_devices()})
 
         @router.get("/energy/status")
         async def get_status() -> JSONResponse:

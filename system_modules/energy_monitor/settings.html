@@ -266,6 +266,44 @@
             color: var(--tx3);
             margin-top: 2px;
         }
+
+        .filter-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .filter-row input,
+        .filter-row select {
+            flex: 1;
+            min-width: 130px;
+            padding: 6px 9px;
+            background: var(--sf3);
+            border: 1px solid var(--b);
+            border-radius: 6px;
+            color: var(--tx);
+            font-size: 0.8rem;
+            font-family: inherit;
+        }
+        table.unified th {
+            cursor: pointer;
+            user-select: none;
+        }
+        table.unified th:hover {
+            color: var(--ac);
+        }
+        table.unified th.sort-asc::after { content: ' ▲'; opacity: .7; }
+        table.unified th.sort-desc::after { content: ' ▼'; opacity: .7; }
+        .pill {
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .pill.on { background: rgba(34,197,94,.18); color: var(--gn,#22c55e); }
+        .pill.off { background: rgba(239,68,68,.18); color: var(--rd); }
+        .pill.unknown { background: rgba(154,161,177,.15); color: var(--tx3); }
     </style>
 </head>
 
@@ -298,68 +336,49 @@
         </div>
     </div>
 
-    <!-- Data Sources -->
+    <!-- Unified device table with filters and sorting -->
     <div class="section">
-        <h2 data-i18n="h_sources"></h2>
-        <div id="sources-list">
-            <p style="color: var(--tx3); font-size: 0.85rem" data-i18n="loading"></p>
-        </div>
-
-        <h2 style="margin-top: 16px" data-i18n="h_add_source"></h2>
-        <div class="form-row">
-            <label data-i18n="lbl_source_name"></label>
-            <input type="text" id="src-name" data-i18n-placeholder="ph_source_name">
-        </div>
-        <div class="form-row">
-            <label data-i18n="lbl_source_type"></label>
-            <select id="src-type" onchange="onSourceTypeChange()">
-                <option value="device_registry" data-i18n="type_device">Device from Registry</option>
-                <option value="mqtt_topic" data-i18n="type_mqtt">MQTT Topic</option>
-                <option value="manual" data-i18n="type_manual">Manual Input</option>
+        <h2 data-i18n="h_devices_unified"></h2>
+        <p style="color: var(--tx3); font-size: 0.78rem; margin: 0 0 10px 0" data-i18n="hint_auto_sources"></p>
+        <div class="filter-row">
+            <input type="text" id="filter-search" data-i18n-placeholder="ph_filter_search">
+            <select id="filter-type">
+                <option value="" data-i18n="filter_type_all">All types</option>
+                <option value="light" data-i18n="filter_type_light">Lights</option>
+                <option value="switch" data-i18n="filter_type_switch">Switches</option>
+                <option value="outlet" data-i18n="filter_type_outlet">Outlets</option>
+                <option value="air_conditioner" data-i18n="filter_type_ac">A/C</option>
+                <option value="thermostat" data-i18n="filter_type_thermostat">Thermostats</option>
+                <option value="sensor" data-i18n="filter_type_sensor">Sensors</option>
             </select>
+            <select id="filter-room">
+                <option value="" data-i18n="filter_room_all">All rooms</option>
+            </select>
+            <select id="filter-status">
+                <option value="" data-i18n="filter_status_all">All status</option>
+                <option value="on" data-i18n="filter_status_on">On</option>
+                <option value="off" data-i18n="filter_status_off">Off</option>
+            </select>
+            <button class="btn btn-sec btn-sm" onclick="loadFull()" data-i18n="refresh"></button>
         </div>
-
-        <!-- Device Registry fields -->
-        <div id="src-fields-device_registry" class="dyn-fields visible">
-            <div class="form-row">
-                <label data-i18n="lbl_device_id"></label>
-                <select id="src-device-id">
-                    <option value="" data-i18n="loading">Loading…</option>
-                </select>
-                <div class="hint" data-i18n="hint_device_id"></div>
-            </div>
-        </div>
-
-        <!-- MQTT Topic fields -->
-        <div id="src-fields-mqtt_topic" class="dyn-fields">
-            <div class="form-row">
-                <label data-i18n="lbl_mqtt_topic"></label>
-                <input type="text" id="src-mqtt-topic" data-i18n-placeholder="ph_mqtt_topic">
-                <div class="hint" data-i18n="hint_mqtt_topic"></div>
-            </div>
-            <div class="form-row">
-                <label data-i18n="lbl_mqtt_key"></label>
-                <input type="text" id="src-mqtt-key" value="power" data-i18n-placeholder="ph_mqtt_key">
-                <div class="hint" data-i18n="hint_mqtt_key"></div>
-            </div>
-        </div>
-
-        <!-- Manual fields -->
-        <div id="src-fields-manual" class="dyn-fields">
-            <div class="form-row">
-                <label data-i18n="lbl_manual_device_id"></label>
-                <input type="text" id="src-manual-id" data-i18n-placeholder="ph_manual_device_id">
-                <div class="hint" data-i18n="hint_manual"></div>
-            </div>
-        </div>
-
-        <div class="btn-row">
-            <button class="btn" onclick="addSource()" data-i18n="btn_add_source"></button>
-        </div>
-        <div class="msg" id="src-msg"></div>
+        <table class="unified">
+            <thead>
+                <tr>
+                    <th data-sort="name" data-i18n="col_name"></th>
+                    <th data-sort="location" data-i18n="col_room"></th>
+                    <th data-sort="entity_type" data-i18n="col_type"></th>
+                    <th data-sort="state" data-i18n="col_state"></th>
+                    <th data-sort="watts" data-i18n="col_power"></th>
+                    <th data-sort="kwh_today" data-i18n="col_kwh"></th>
+                </tr>
+            </thead>
+            <tbody id="full-body">
+                <tr><td colspan="6" style="text-align:center;color:var(--tx3)" data-i18n="loading"></td></tr>
+            </tbody>
+        </table>
     </div>
 
-    <!-- Thresholds -->
+    <!-- Compact thresholds -->
     <div class="section">
         <h2 data-i18n="h_thresholds"></h2>
         <div class="form-row">
@@ -376,25 +395,6 @@
         </div>
         <button class="btn" onclick="saveThresholds()" data-i18n="save"></button>
         <div class="msg" id="thr-msg"></div>
-    </div>
-
-    <!-- Device table -->
-    <div class="section">
-        <h2 data-i18n="h_devices"></h2>
-        <table>
-            <thead>
-                <tr>
-                    <th data-i18n="device_id"></th>
-                    <th data-i18n="current_w"></th>
-                    <th data-i18n="today_kwh"></th>
-                </tr>
-            </thead>
-            <tbody id="devices-body">
-                <tr>
-                    <td colspan="3" style="text-align:center;color:var(--tx3)" data-i18n="loading"></td>
-                </tr>
-            </tbody>
-        </table>
     </div>
 
     <script>
@@ -437,7 +437,14 @@
                 confirm_delete_source: 'Remove this data source?',
                 err_name_required: 'Please enter a source name',
                 saving: 'Saving…', deleted: 'Deleted', error: 'Error', loading_btn: 'Loading…',
-                toggled_on: 'Source enabled', toggled_off: 'Source disabled', adding: 'Adding…'
+                toggled_on: 'Source enabled', toggled_off: 'Source disabled', adding: 'Adding…',
+                h_devices_unified: 'Devices',
+                hint_auto_sources: 'Devices and their power sources are managed automatically — every device added via Device Control appears here on its own.',
+                col_name: 'Name', col_room: 'Room', col_type: 'Type', col_state: 'State', col_power: 'Power (W)', col_kwh: 'Today (kWh)',
+                ph_filter_search: 'Search by name…',
+                filter_type_all: 'All types', filter_type_light: '\uD83D\uDCA1 Lights', filter_type_switch: '\u23FB Switches', filter_type_outlet: '\uD83D\uDD0C Outlets', filter_type_ac: '\u2744 A/C', filter_type_thermostat: '\uD83C\uDF21 Thermostats', filter_type_sensor: '\uD83D\uDCD0 Sensors',
+                filter_room_all: 'All rooms',
+                filter_status_all: 'All status', filter_status_on: 'On', filter_status_off: 'Off',
             },
             uk: {
                 title: '\u26A1 Моніторинг енергії',
@@ -476,7 +483,14 @@
                 confirm_delete_source: 'Видалити це джерело даних?',
                 err_name_required: 'Введіть назву джерела',
                 saving: 'Збереження…', deleted: 'Видалено', error: 'Помилка', loading_btn: 'Завантаження…',
-                toggled_on: 'Джерело увімкнено', toggled_off: 'Джерело вимкнено', adding: 'Додавання…'
+                toggled_on: 'Джерело увімкнено', toggled_off: 'Джерело вимкнено', adding: 'Додавання…',
+                h_devices_unified: 'Пристрої',
+                hint_auto_sources: 'Пристрої та їхні джерела енергії керуються автоматично — кожен пристрій, доданий через Керування пристроями, з\'являється тут самостійно.',
+                col_name: 'Назва', col_room: 'Кімната', col_type: 'Тип', col_state: 'Стан', col_power: 'Потужність (W)', col_kwh: 'Сьогодні (кВт·год)',
+                ph_filter_search: 'Пошук за назвою…',
+                filter_type_all: 'Усі типи', filter_type_light: '\uD83D\uDCA1 Лампи', filter_type_switch: '\u23FB Вимикачі', filter_type_outlet: '\uD83D\uDD0C Розетки', filter_type_ac: '\u2744 Кондиціонери', filter_type_thermostat: '\uD83C\uDF21 Термостати', filter_type_sensor: '\uD83D\uDCD0 Сенсори',
+                filter_room_all: 'Усі кімнати',
+                filter_status_all: 'Будь-який стан', filter_status_on: 'Увімкнено', filter_status_off: 'Вимкнено',
             }
         };
         function t(k) { return (L[LANG] || L.en)[k] || k; }
@@ -710,13 +724,124 @@
             setTimeout(function () { msg.textContent = ''; }, 3000);
         }
 
+        /* ── Unified device table ─────────────────────────────────── */
+        var FULL_ROWS = [];
+        var SORT_KEY = 'location';
+        var SORT_DIR = 1;
+
+        async function loadFull() {
+            try {
+                var r = await fetch(base + '/energy/devices/full');
+                if (!r.ok) return;
+                var d = await r.json();
+                FULL_ROWS = d.devices || [];
+                _populateRoomFilter();
+                _renderFull();
+            } catch (e) { /* silent */ }
+        }
+
+        function _populateRoomFilter() {
+            var sel = document.getElementById('filter-room');
+            if (!sel) return;
+            var current = sel.value;
+            var rooms = {};
+            FULL_ROWS.forEach(function (r) { if (r.location) rooms[r.location] = true; });
+            sel.innerHTML = '<option value="">' + t('filter_room_all') + '</option>' +
+                Object.keys(rooms).sort().map(function (r) { return '<option value="' + r + '">' + r + '</option>'; }).join('');
+            sel.value = current;
+        }
+
+        function _renderFull() {
+            var search = (document.getElementById('filter-search').value || '').toLowerCase();
+            var typeF = document.getElementById('filter-type').value;
+            var roomF = document.getElementById('filter-room').value;
+            var statusF = document.getElementById('filter-status').value;
+
+            var filtered = FULL_ROWS.filter(function (r) {
+                if (search && r.name.toLowerCase().indexOf(search) === -1) return false;
+                if (typeF && r.entity_type !== typeF) return false;
+                if (roomF && r.location !== roomF) return false;
+                if (statusF) {
+                    var on = (r.state || {}).on === true;
+                    if (statusF === 'on' && !on) return false;
+                    if (statusF === 'off' && on) return false;
+                }
+                return true;
+            });
+
+            filtered.sort(function (a, b) {
+                var av = a[SORT_KEY], bv = b[SORT_KEY];
+                if (SORT_KEY === 'state') { av = (a.state || {}).on ? 1 : 0; bv = (b.state || {}).on ? 1 : 0; }
+                if (av == null) av = '';
+                if (bv == null) bv = '';
+                if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * SORT_DIR;
+                return String(av).localeCompare(String(bv)) * SORT_DIR;
+            });
+
+            var tb = document.getElementById('full-body');
+            if (filtered.length === 0) {
+                tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--tx3)">—</td></tr>';
+                return;
+            }
+            tb.innerHTML = filtered.map(function (r) {
+                var s = r.state || {};
+                var onPill = s.on === true
+                    ? '<span class="pill on">' + t('filter_status_on') + '</span>'
+                    : (s.on === false
+                        ? '<span class="pill off">' + t('filter_status_off') + '</span>'
+                        : '<span class="pill unknown">?</span>');
+                var watts = (r.watts != null) ? Math.round(r.watts).toString() : '—';
+                var kwh = (r.kwh_today != null) ? r.kwh_today.toFixed(3) : '—';
+                return '<tr>' +
+                    '<td>' + _escape(r.name) + '</td>' +
+                    '<td>' + _escape(r.location || '—') + '</td>' +
+                    '<td>' + _escape(r.entity_type || '—') + '</td>' +
+                    '<td>' + onPill + '</td>' +
+                    '<td>' + watts + '</td>' +
+                    '<td>' + kwh + '</td>' +
+                    '</tr>';
+            }).join('');
+
+            // Update sort indicators
+            document.querySelectorAll('table.unified th').forEach(function (th) {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.getAttribute('data-sort') === SORT_KEY) {
+                    th.classList.add(SORT_DIR > 0 ? 'sort-asc' : 'sort-desc');
+                }
+            });
+        }
+
+        function _escape(s) {
+            return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        // Wire up filters and sortable headers (deferred until DOM ready)
+        function _wireFilterUI() {
+            ['filter-search', 'filter-type', 'filter-room', 'filter-status'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.addEventListener('input', _renderFull);
+            });
+            document.querySelectorAll('table.unified th[data-sort]').forEach(function (th) {
+                th.addEventListener('click', function () {
+                    var key = th.getAttribute('data-sort');
+                    if (SORT_KEY === key) SORT_DIR = -SORT_DIR; else { SORT_KEY = key; SORT_DIR = 1; }
+                    _renderFull();
+                });
+            });
+        }
+
         applyLang();
         applyLangPlaceholders();
         load();
         loadSources();
         loadRegistryDevices();
+        _wireFilterUI();
+        loadFull();
         setInterval(load, 30000);
         setInterval(loadSources, 30000);
+        setInterval(loadFull, 15000);
     </script>
     <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
