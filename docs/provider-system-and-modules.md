@@ -118,7 +118,8 @@ with these fields:
 on first start): `tuya_local`, `tuya_cloud`, `gree`, `mqtt`.
 
 **Opt-in extras** (require explicit Install via the UI): `philips_hue`,
-`esphome`, `zigbee2mqtt`.
+`esphome`, `zigbee2mqtt`, `matter` (Matter / Thread — see
+[matter-thread.md](matter-thread.md) for the companion container setup).
 
 To add a new provider:
 1. Create the driver class in `system_modules/device_control/drivers/`.

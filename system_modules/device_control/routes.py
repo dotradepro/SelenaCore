@@ -39,6 +39,24 @@ from .drivers.tuya_cloud import TuyaCloudClient
 if TYPE_CHECKING:
     from .module import DeviceControlModule
 
+
+#: Strong references to fire-and-forget background tasks spawned by routes
+#: (currently only Matter pattern regeneration). Without this set the GC
+#: can collect a task whose only reference lives inside the event loop's
+#: weak set, killing it before it finishes — see PEP 654 / asyncio docs:
+#:     https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task
+#: The done-callback discards each task once it completes so the set never
+#: grows unboundedly.
+_BG_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _spawn_bg(coro: Any, *, name: str | None = None) -> asyncio.Task[Any]:
+    """Schedule ``coro`` and keep a strong reference until it finishes."""
+    task = asyncio.create_task(coro, name=name)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
+
 logger = logging.getLogger(__name__)
 
 
@@ -274,7 +292,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.post("/devices", status_code=201)
     async def add_device(body: AddDeviceBody) -> dict[str, Any]:
         from core.registry.models import Device
-        if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt", "gree"):
+        if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt", "gree", "matter"):
             raise HTTPException(422, f"Unsupported protocol: {body.protocol}")
         async with svc._db_session() as session:
             async with session.begin():
@@ -855,5 +873,109 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             })
 
         return {"status": "ok", "created": created, "skipped": skipped}
+
+    # ── Matter / Thread commissioning ───────────────────────────────────
+
+    @router.post("/matter/commission")
+    async def matter_commission(body: dict[str, Any]) -> dict[str, Any]:
+        """Pair a Matter device via QR / manual setup code.
+
+        Body: ``{"setup_code": "MT:...", "device_name": "Front Bulb",
+                  "entity_type": "light"}``.
+        Talks to the matter-server sidecar (``--profile matter``) over its
+        WebSocket. On success registers a new Device row with
+        ``protocol="matter"`` and triggers pattern regeneration so voice
+        commands work immediately.
+        """
+        from core.registry.models import Device
+        from system_modules.device_control.drivers.matter import _HOLDER
+
+        setup_code = (body.get("setup_code") or "").strip()
+        device_name = (body.get("device_name") or "").strip()
+        entity_type = (body.get("entity_type") or "light").strip()
+        if not setup_code or not device_name:
+            raise HTTPException(422, "setup_code and device_name are required")
+
+        try:
+            node_id = await asyncio.wait_for(
+                _HOLDER.commission_with_code(setup_code), timeout=60.0,
+            )
+        except DriverError as exc:
+            raise HTTPException(400, str(exc))
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "matter commission timed out after 60s")
+        except Exception as exc:
+            raise HTTPException(400, f"matter commission failed: {exc}")
+
+        async with svc._db_session() as session:
+            async with session.begin():
+                device = Device(
+                    name=device_name,
+                    type="actuator",
+                    protocol="matter",
+                    entity_type=entity_type,
+                    module_id=svc.name,
+                    enabled=True,
+                )
+                device.set_capabilities([])
+                device.set_meta({"matter": {"node_id": node_id, "endpoint": 1}})
+                session.add(device)
+                await session.flush()
+                device_id = device.device_id
+
+        # Pattern regeneration is fire-and-forget — it can take 10+ seconds
+        # if it falls back to the LLM, and we don't want the user staring at
+        # the "Pair device" spinner for the duration. Errors land in the log.
+        # _spawn_bg keeps a strong ref so the GC can't reap the task early.
+        async def _regen_in_background() -> None:
+            try:
+                await on_entity_changed("device", device_id, "created")
+            except Exception as exc:
+                logger.warning(
+                    "device-control: pattern regen failed for %s: %s",
+                    device_id, exc,
+                )
+        _spawn_bg(_regen_in_background(), name=f"matter_pattern_regen:{device_id}")
+
+        await svc.add_device_watcher(device_id)
+        await svc.publish("device.registered", {
+            "device_id": device_id,
+            "name": device_name,
+            "entity_type": entity_type,
+            "location": None,
+            "protocol": "matter",
+            "capabilities": [],
+        })
+        return {"device_id": device_id, "node_id": node_id}
+
+    @router.post("/matter/remove/{node_id}")
+    async def matter_remove(node_id: int) -> dict[str, Any]:
+        """Decommission a Matter node and delete the matching Device row."""
+        from core.registry.models import Device
+        from system_modules.device_control.drivers.matter import _HOLDER
+
+        try:
+            await _HOLDER.remove_node(int(node_id))
+        except DriverError as exc:
+            raise HTTPException(400, str(exc))
+        except Exception as exc:
+            raise HTTPException(502, f"matter remove failed: {exc}")
+
+        # Find any Device row bound to this node and remove it.
+        deleted: list[str] = []
+        async with svc._db_session() as session:
+            async with session.begin():
+                res = await session.execute(
+                    select(Device).where(Device.protocol == "matter")
+                )
+                for d in res.scalars():
+                    meta = json.loads(d.meta) if d.meta else {}
+                    if int(meta.get("matter", {}).get("node_id", -1)) == int(node_id):
+                        deleted.append(d.device_id)
+                        await session.delete(d)
+        for did in deleted:
+            await svc.remove_device_watcher(did)
+            await svc.publish("device.removed", {"device_id": did})
+        return {"removed_node_id": int(node_id), "deleted_devices": deleted}
 
     return router

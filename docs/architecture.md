@@ -615,8 +615,9 @@ In **Safe Mode**, only essential core functions remain active. All user modules 
 
 Host networking and privileged mode are required for:
 - Direct access to audio hardware (microphone, speakers) for voice processing.
-- Access to USB devices and GPIO pins for protocol bridges (Zigbee, Z-Wave dongles).
-- Multicast/broadcast for device discovery protocols.
+- Access to USB devices and GPIO pins for protocol bridges (Zigbee, Z-Wave, Thread dongles).
+- Multicast/broadcast for device discovery protocols (mDNS, SSDP, Matter, Thread).
+- Bluetooth Low Energy radio for Matter commissioning (see [matter-thread.md](matter-thread.md)).
 
 ### Volumes
 

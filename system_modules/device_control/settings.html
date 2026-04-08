@@ -86,6 +86,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
     <button class="tab" data-tab="providers" data-i18n="tab_providers">Providers</button>
     <button class="tab" data-tab="wizard" data-i18n="tab_wizard">Tuya Cloud Wizard</button>
     <button class="tab" data-tab="gree" data-i18n="tab_gree">Gree / Pular</button>
+    <button class="tab" data-tab="matter" data-i18n="tab_matter">Matter / Thread</button>
   </div>
 
   <!-- TAB: Devices ------------------------------------------------------- -->
@@ -213,6 +214,55 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
     </div>
   </div>
 
+  <!-- TAB: Matter / Thread commissioning -------------------------------- -->
+  <div id="tab-matter" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="matter_help">
+        Pair Matter / Thread devices via QR or manual setup code. Requires the
+        matter-server companion container — start it with
+        <code>docker compose --profile matter up -d</code>. WiFi-based Matter
+        devices work out of the box; native Thread devices additionally need
+        the OpenThread Border Router (<code>--profile thread</code>).
+      </div>
+      <div class="grid2 mb12">
+        <div>
+          <div class="label-sm" data-i18n="matter_lbl_setup_code">Setup code</div>
+          <input id="matterSetupCode" placeholder="MT:Y.K9042C00KA0648G00 or 1234-567-8910" autocomplete="off" style="font-family:'DM Mono',monospace">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="matter_lbl_device_name">Device name</div>
+          <input id="matterDeviceName" placeholder="Front bulb">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="matter_lbl_entity_type">Entity type</div>
+          <select id="matterEntityType">
+            <option value="light">light</option>
+            <option value="switch">switch</option>
+            <option value="outlet">outlet</option>
+            <option value="lock">lock</option>
+            <option value="thermostat">thermostat</option>
+            <option value="sensor">sensor</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="matterPairBtn" class="btn btn-green" data-i18n="matter_pair">Pair device</button>
+        <span id="matterPairSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <button id="matterRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <div id="matterPairResult" class="mb12"></div>
+      <div class="label-sm mb8" data-i18n="matter_paired_label">Paired Matter devices</div>
+      <table>
+        <thead><tr>
+          <th data-i18n="col_name">Name</th>
+          <th data-i18n="matter_col_node_id">Node ID</th>
+          <th data-i18n="col_actions">Actions</th>
+        </tr></thead>
+        <tbody id="matterDeviceBody"><tr><td colspan="3" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- TAB: Gree / Pular discovery --------------------------------------- -->
   <div id="tab-gree" class="tab-pane hidden">
     <div class="card">
@@ -238,7 +288,21 @@ var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}cat
 var L = {
   en: {
     title:'Device Control',
-    tab_devices:'Devices', tab_providers:'Providers', tab_wizard:'Tuya Cloud Wizard', tab_gree:'Gree / Pular',
+    tab_devices:'Devices', tab_providers:'Providers', tab_wizard:'Tuya Cloud Wizard', tab_gree:'Gree / Pular', tab_matter:'Matter / Thread',
+    matter_help:'Pair Matter / Thread devices via QR or manual setup code. Requires the matter-server companion container — start it with "docker compose --profile matter up -d". WiFi Matter devices work directly; native Thread devices additionally need the OpenThread Border Router (--profile thread).',
+    matter_lbl_setup_code:'Setup code',
+    matter_lbl_device_name:'Device name',
+    matter_lbl_entity_type:'Entity type',
+    matter_pair:'Pair device',
+    matter_pairing:'Pairing…',
+    matter_pair_ok:'Device paired',
+    matter_pair_fail:'Pairing failed',
+    matter_paired_label:'Paired Matter devices',
+    matter_col_node_id:'Node ID',
+    matter_no_devices:'No Matter devices yet — pair one above.',
+    matter_remove:'Remove',
+    matter_confirm_remove:'Remove this Matter device? It will be decommissioned and forgotten by the hub.',
+    matter_fill_required:'Setup code and device name are required.',
     providers_help:'Each provider is a smart-device protocol library (Tuya, Gree, Philips Hue, ESPHome, …). Built-in providers ship with the container; opt-in extras are installed on demand without restarting. State is persisted in the registry DB so power loss never wipes your configuration.',
     prov_installed:'Installed',
     prov_not_installed:'Not installed',
@@ -305,7 +369,21 @@ var L = {
   },
   uk: {
     title:'Керування пристроями',
-    tab_devices:'Пристрої', tab_providers:'Provider\'и', tab_wizard:'Tuya Cloud майстер', tab_gree:'Gree / Pular',
+    tab_devices:'Пристрої', tab_providers:'Provider\'и', tab_wizard:'Tuya Cloud майстер', tab_gree:'Gree / Pular', tab_matter:'Matter / Thread',
+    matter_help:'Парування пристроїв Matter / Thread за QR-кодом або кодом налаштування. Потрібен контейнер matter-server — запустіть його командою "docker compose --profile matter up -d". WiFi-пристрої Matter працюють одразу; для нативних Thread-пристроїв додатково потрібен OpenThread Border Router (--profile thread).',
+    matter_lbl_setup_code:'Код налаштування',
+    matter_lbl_device_name:'Назва пристрою',
+    matter_lbl_entity_type:'Тип сутності',
+    matter_pair:'Спарувати пристрій',
+    matter_pairing:'Парування…',
+    matter_pair_ok:'Пристрій спаровано',
+    matter_pair_fail:'Помилка парування',
+    matter_paired_label:'Спаровані Matter-пристрої',
+    matter_col_node_id:'Node ID',
+    matter_no_devices:'Поки немає Matter-пристроїв — спаруйте перший вище.',
+    matter_remove:'Видалити',
+    matter_confirm_remove:'Видалити цей Matter-пристрій? Він буде розпаровано та забуто хабом.',
+    matter_fill_required:'Код налаштування та назва пристрою обов\'язкові.',
     providers_help:'Кожен provider — це бібліотека протоколу розумних пристроїв (Tuya, Gree, Philips Hue, ESPHome…). Вбудовані provider\'и встановлені одразу; додаткові — на вимогу, без перезапуску контейнера. Стан зберігається у БД реєстру, тому втрата живлення нічого не стирає.',
     prov_installed:'Встановлено',
     prov_not_installed:'Не встановлено',
@@ -420,6 +498,7 @@ document.querySelectorAll('.tab').forEach(function(b){
     if(b.getAttribute('data-tab')==='devices') loadDevices();
     if(b.getAttribute('data-tab')==='gree') $('greeResults').innerHTML='';
     if(b.getAttribute('data-tab')==='providers') loadProviders();
+    if(b.getAttribute('data-tab')==='matter') loadMatterDevices();
   };
 });
 
@@ -795,6 +874,65 @@ window.provDisable = function(id){
 };
 
 $('provRefreshBtn').onclick = loadProviders;
+
+// ── Matter / Thread tab ──────────────────────────────────────────────────
+function loadMatterDevices(){
+  var tb = $('matterDeviceBody');
+  tb.innerHTML = '<tr><td colspan="3" class="muted">'+esc(t('loading'))+'</td></tr>';
+  api('/devices').then(function(res){
+    var rows = (res.devices||[]).filter(function(d){return d.protocol==='matter';});
+    if(rows.length===0){
+      tb.innerHTML = '<tr><td colspan="3" class="muted">'+esc(t('matter_no_devices'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(d){
+      var nodeId = (d.meta && d.meta.matter && d.meta.matter.node_id) || '?';
+      return '<tr>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td><code>'+esc(String(nodeId))+'</code></td>'+
+        '<td><button class="btn btn-ghost" onclick="matterRemove('+nodeId+')">'+esc(t('matter_remove'))+'</button></td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){
+    tb.innerHTML = '<tr><td colspan="3" class="muted">'+esc(e.message)+'</td></tr>';
+  });
+}
+
+$('matterPairBtn').onclick = function(){
+  var code = ($('matterSetupCode').value||'').trim();
+  var name = ($('matterDeviceName').value||'').trim();
+  var etype = $('matterEntityType').value;
+  if(!code || !name){toast(t('matter_fill_required'),true);return;}
+  var btn = this;
+  btn.disabled = true;
+  $('matterPairSpinner').classList.remove('hidden');
+  $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pairing'))+'</div>';
+  api('/matter/commission',{method:'POST',body:{
+    setup_code: code, device_name: name, entity_type: etype,
+  }}).then(function(r){
+    $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_ok'))+': node '+esc(String(r.node_id))+'</div>';
+    toast(t('matter_pair_ok'));
+    $('matterSetupCode').value = '';
+    $('matterDeviceName').value = '';
+    loadMatterDevices();
+  }).catch(function(e){
+    $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_fail'))+': '+esc(e.message)+'</div>';
+    toast(t('matter_pair_fail')+': '+e.message,true);
+  }).finally(function(){
+    btn.disabled = false;
+    $('matterPairSpinner').classList.add('hidden');
+  });
+};
+
+$('matterRefreshBtn').onclick = loadMatterDevices;
+
+window.matterRemove = function(nodeId){
+  if(!confirm(t('matter_confirm_remove'))) return;
+  api('/matter/remove/'+nodeId,{method:'POST'}).then(function(){
+    toast(t('deleted'));
+    loadMatterDevices();
+  }).catch(function(e){toast(e.message,true);});
+};
 
 // ── boot ─────────────────────────────────────────────────────────────────
 applyLang();

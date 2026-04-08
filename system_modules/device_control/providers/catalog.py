@@ -147,6 +147,25 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "icon": "🐝",
         "homepage": "https://www.zigbee2mqtt.io/",
     },
+    "matter": {
+        "id": "matter",
+        "name": "Matter / Thread",
+        "description": "Universal IoT protocol with WiFi and Thread transports. "
+                       "Requires the matter-server companion container "
+                       "(``docker compose --profile matter up -d``); use "
+                       "``--profile thread`` additionally for native Thread "
+                       "devices via an nRF52840 Border Router.",
+        "package": "python-matter-server[client]",
+        "version": ">=6.0",
+        "driver_module": "system_modules.device_control.drivers.matter",
+        "driver_class": "MatterDriver",
+        "entity_types": ["light", "switch", "outlet", "sensor", "lock", "thermostat"],
+        "needs_cloud": False,
+        "builtin": False,
+        "needs_external_service": True,
+        "icon": "◈",
+        "homepage": "https://github.com/home-assistant-libs/python-matter-server",
+    },
 }
 
 
