@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="/api/shared/theme.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Climate</title>
+<style>
+:root{
+  --bg:var(--sf2);
+  --card:var(--sf);
+  --fg:var(--tx);
+  --mut:var(--tx2);
+  --pr:var(--ac);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
+.wrap{padding:10px;display:flex;flex-direction:column;gap:10px;height:100vh;overflow-y:auto}
+.wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:auto;min-height:0}
+.room{display:flex;flex-direction:column;gap:6px}
+.room-title{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
+.wrap.modal .room-title{font-size:12px}
+.list{display:flex;flex-direction:column;gap:4px}
+
+/* compact row (dashboard mode) */
+.row{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;background:var(--card);border:1px solid var(--b);border-radius:8px;
+  cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
+  user-select:none;-webkit-user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.row:hover{border-color:var(--pr)}
+.row:active{transform:scale(.985)}
+.row.off{opacity:.55}
+/* All children pass clicks through to .row so any pixel of the row is
+   clickable, not just the marker. */
+.row > *{pointer-events:none}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
+.dot.on{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.5)}
+.row-name{flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-temp{font-size:13px;font-weight:600;color:var(--pr);font-variant-numeric:tabular-nums;flex-shrink:0}
+.row-temp .now{color:var(--mut);font-weight:400;font-size:11px}
+.row-mode{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;flex-shrink:0;min-width:32px;text-align:right}
+.row-watts{font-size:10px;color:var(--mut);min-width:42px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.chev{color:var(--mut);font-size:14px;flex-shrink:0}
+
+.empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
+
+/* modal-mode card (fullscreen view) */
+.fullcard{
+  background:var(--card);border:1px solid var(--b);border-radius:14px;
+  padding:18px 20px;display:flex;flex-direction:column;gap:14px;
+}
+.fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.fc-title{font-size:17px;font-weight:600}
+.fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
+.power-toggle{
+  background:transparent;border:1px solid var(--b);border-radius:50%;
+  width:46px;height:46px;cursor:pointer;color:var(--mut);font-size:20px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.power-toggle.on{background:var(--gr);color:#fff;border-color:var(--gr);box-shadow:0 0 14px rgba(34,197,94,.35)}
+
+.fc-temp-row{
+  display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
+  padding:14px 18px;background:var(--bg);border-radius:10px;
+}
+.fc-now-label{font-size:11px;color:var(--mut)}
+.fc-now-val{font-size:26px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
+.fc-target{display:flex;align-items:center;gap:10px}
+.temp-btn{
+  background:var(--card);border:1px solid var(--b);border-radius:8px;
+  width:38px;height:38px;cursor:pointer;color:var(--fg);font-size:18px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;
+}
+.temp-btn:hover{border-color:var(--pr)}
+.temp-target-val{font-size:30px;font-weight:700;min-width:60px;text-align:center;color:var(--pr);font-variant-numeric:tabular-nums}
+
+.fc-section{display:flex;flex-direction:column;gap:6px}
+.fc-section-label{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;padding:0 2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  flex:1;min-width:60px;padding:9px 12px;border:1px solid var(--b);border-radius:9px;
+  background:var(--bg);color:var(--mut);cursor:pointer;font-size:12px;font-weight:500;text-align:center;
+}
+.chip.active{background:var(--pr);color:#fff;border-color:var(--pr)}
+
+.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
+.fc-meta b{color:var(--fg);font-weight:600}
+
+.toast{
+  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
+  background:var(--card);border:1px solid var(--b);padding:8px 14px;border-radius:8px;
+  z-index:1000;font-size:12px;max-width:90%;
+}
+.toast.error{border-color:var(--rd);color:var(--rd)}
+
+/* fullscreen modal close button */
+.fs-close{
+  position:fixed;top:14px;right:18px;
+  background:var(--card);border:1px solid var(--b);border-radius:50%;
+  width:36px;height:36px;cursor:pointer;color:var(--fg);font-size:18px;
+  display:flex;align-items:center;justify-content:center;z-index:1001;
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="root">
+  <div class="empty" data-i18n="loading">Loading…</div>
+</div>
+<button class="fs-close" id="fsClose" style="display:none">×</button>
+
+<script>
+// ── i18n ─────────────────────────────────────────────────────────────────
+var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var L = {
+  en: {
+    loading:'Loading…',
+    empty:'No climate devices yet. Add an air conditioner via Device Control → Gree / Pular tab.',
+    unassigned:'Unassigned',
+    cur:'Current', target:'Target',
+    power:'Power', mode:'Mode', fan_speed:'Fan speed', swing:'Swing',
+    mode_auto:'Auto', mode_cool:'Cool', mode_dry:'Dry', mode_fan:'Fan', mode_heat:'Heat',
+    fan_auto:'Auto', fan_low:'Low', fan_medium:'Med', fan_high:'High',
+    swing_off:'Off', swing_v:'Vertical', swing_h:'Horizontal', swing_full:'Full',
+    on:'on', off:'off',
+    cmd_failed:'Command failed',
+    estimated:'estimated', power_w:'Power',
+  },
+  uk: {
+    loading:'Завантаження…',
+    empty:'Немає кліматичних пристроїв. Додайте кондиціонер через Керування пристроями → вкладку Gree / Pular.',
+    unassigned:'Без кімнати',
+    cur:'Зараз', target:'Ціль',
+    power:'Живлення', mode:'Режим', fan_speed:'Вентилятор', swing:'Жалюзі',
+    mode_auto:'Авто', mode_cool:'Холод', mode_dry:'Сушка', mode_fan:'Вент.', mode_heat:'Тепло',
+    fan_auto:'Авто', fan_low:'Низ', fan_medium:'Сер', fan_high:'Вис',
+    swing_off:'Вимк', swing_v:'Вертик.', swing_h:'Горизонт.', swing_full:'Повне',
+    on:'увімк', off:'вимк',
+    cmd_failed:'Команда не виконана',
+    estimated:'оцінка', power_w:'Спожив.',
+  }
+};
+function t(k){return (L[LANG]||L.en)[k]||k;}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+}
+window.addEventListener('message',function(e){
+  if(!e.data) return;
+  if(e.data.type==='lang_changed'){
+    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
+    applyLang(); load();
+  }
+  if(e.data.type==='refresh') load();
+});
+
+// ── helpers ──────────────────────────────────────────────────────────────
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
+var inFrame = window.self !== window.top;
+
+function $(id){return document.getElementById(id);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function api(path,opts){
+  opts=opts||{};
+  return fetch(BASE+path,{
+    method:opts.method||'GET',
+    headers:opts.body?{'Content-Type':'application/json'}:{},
+    body:opts.body?JSON.stringify(opts.body):null,
+  }).then(function(r){
+    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
+    return r.json();
+  });
+}
+function toast(msg,err){
+  var d=document.createElement('div');
+  d.className='toast'+(err?' error':'');
+  d.textContent=msg;
+  document.body.appendChild(d);
+  setTimeout(function(){d.remove();},2200);
+}
+
+var MODES = ['auto','cool','dry','fan','heat'];
+var FANS = ['auto','low','medium','high'];
+var SWINGS = [
+  {key:'off',  v:'off',  h:'off'},
+  {key:'v',    v:'full', h:'off'},
+  {key:'h',    v:'off',  h:'full'},
+  {key:'full', v:'full', h:'full'},
+];
+
+var DEVICES = {};
+
+// ── compact row (dashboard) ─────────────────────────────────────────────
+function renderRow(d){
+  var s = d.state || {};
+  var on = s.on === true;
+  var cur = (s.current_temp != null) ? s.current_temp+'°' : '—';
+  var tgt = (s.target_temp != null)  ? s.target_temp+'°'  : '';
+  var mode = (s.mode||'').toLowerCase();
+  var modeShort = mode ? t('mode_'+mode) : '';
+  var watts = (s.estimated_watts != null) ? Math.round(s.estimated_watts)+' W' : '';
+  var tempBlock = on
+    ? '<span class="now">'+esc(cur)+' →</span> '+esc(tgt)
+    : '<span class="now">'+esc(t('off'))+'</span>';
+  return '<div class="row '+(on?'':'off')+'" data-id="'+esc(d.device_id)+'">'+
+    '<span class="dot '+(on?'on':'')+'"></span>'+
+    '<span class="row-name">'+esc(d.name)+'</span>'+
+    '<span class="row-temp">'+tempBlock+'</span>'+
+    '<span class="row-mode">'+esc(on?modeShort:'')+'</span>'+
+    '<span class="row-watts">'+esc(watts)+'</span>'+
+    '<span class="chev">›</span>'+
+  '</div>';
+}
+
+function bindCompactRows(){
+  // We use pointerdown (with click as fallback) instead of plain click.
+  // Reason: when the dashboard widget iframe doesn't yet have focus,
+  // browsers swallow the first click as a focus-shift gesture, so the
+  // user has to click twice. pointerdown fires before focus management,
+  // so the modal opens on the very first interaction.
+  var openModal = function(){
+    if(!inFrame) return;
+    try{
+      // Pass an initial size hint so the SPA opens the modal already at
+      // the right dimensions instead of flashing through near-fullscreen
+      // and then resizing down. modal_resize from inside still refines
+      // it once we know the exact content height.
+      window.parent.postMessage({
+        type:'openWidgetModal',
+        module:'climate',
+        width: 480,
+        height: 560,
+      }, '*');
+    }catch(_){}
+  };
+  document.querySelectorAll('.row').forEach(function(r){
+    var fired = false;
+    var trigger = function(e){
+      if(fired) return;
+      fired = true;
+      // Reset on the next tick so subsequent rows still respond.
+      setTimeout(function(){ fired = false; }, 350);
+      if(e && e.preventDefault) e.preventDefault();
+      openModal();
+    };
+    r.addEventListener('pointerdown', trigger);
+    // Fallback for browsers without pointer events.
+    r.addEventListener('click', trigger);
+  });
+}
+
+// ── full-control card (modal mode) ──────────────────────────────────────
+function renderFullCard(d){
+  var s = d.state || {};
+  var on = s.on === true;
+  var mode = (s.mode||'auto').toLowerCase();
+  var target = (s.target_temp != null) ? s.target_temp : 22;
+  var current = (s.current_temp != null) ? s.current_temp+'°' : '—';
+  var fan = (s.fan_speed||'auto').toLowerCase();
+  if(fan === 'medium_low' || fan === 'medium_high') fan = 'medium';
+  var sv = (s.swing_v||'off').toLowerCase();
+  var sh = (s.swing_h||'off').toLowerCase();
+  var vOn = sv !== 'off' && sv !== '';
+  var hOn = sh !== 'off' && sh !== '';
+  var swingKey = (vOn && hOn) ? 'full' : (vOn ? 'v' : (hOn ? 'h' : 'off'));
+
+  var watts = s.estimated_watts;
+  var wattsLine = (watts != null)
+    ? '<span><b>'+Math.round(watts)+' W</b> '+esc(t('estimated'))+'</span>'
+    : '';
+
+  var modeChips = MODES.map(function(m){
+    return '<button class="chip mode '+(mode===m?'active':'')+'" data-id="'+esc(d.device_id)+'" data-mode="'+m+'">'+esc(t('mode_'+m))+'</button>';
+  }).join('');
+  var fanChips = FANS.map(function(f){
+    return '<button class="chip fan '+(fan===f?'active':'')+'" data-id="'+esc(d.device_id)+'" data-fan="'+f+'">'+esc(t('fan_'+f))+'</button>';
+  }).join('');
+  var swingChips = SWINGS.map(function(sw){
+    return '<button class="chip swing '+(swingKey===sw.key?'active':'')+'" data-id="'+esc(d.device_id)+'" data-skey="'+sw.key+'">'+esc(t('swing_'+sw.key))+'</button>';
+  }).join('');
+
+  return '<div class="fullcard" data-card="'+esc(d.device_id)+'">'+
+    '<div class="fc-head">'+
+      '<div>'+
+        '<div class="fc-title">'+esc(d.name)+'</div>'+
+        '<div class="fc-subtitle">'+esc(d.location || t('unassigned'))+' · '+esc(d.protocol)+'</div>'+
+      '</div>'+
+      '<button class="power-toggle '+(on?'on':'')+'" data-id="'+esc(d.device_id)+'" data-power="'+(on?'off':'on')+'">⏻</button>'+
+    '</div>'+
+    '<div class="fc-temp-row">'+
+      '<div>'+
+        '<div class="fc-now-label">'+esc(t('cur'))+'</div>'+
+        '<div class="fc-now-val">'+esc(current)+'</div>'+
+      '</div>'+
+      '<div class="fc-target">'+
+        '<button class="temp-btn temp-down" data-id="'+esc(d.device_id)+'" data-cur="'+esc(target)+'">−</button>'+
+        '<div class="temp-target-val">'+esc(target)+'°</div>'+
+        '<button class="temp-btn temp-up" data-id="'+esc(d.device_id)+'" data-cur="'+esc(target)+'">+</button>'+
+      '</div>'+
+    '</div>'+
+    '<div class="fc-section">'+
+      '<div class="fc-section-label">'+esc(t('mode'))+'</div>'+
+      '<div class="chips">'+modeChips+'</div>'+
+    '</div>'+
+    '<div class="fc-section">'+
+      '<div class="fc-section-label">'+esc(t('fan_speed'))+'</div>'+
+      '<div class="chips">'+fanChips+'</div>'+
+    '</div>'+
+    '<div class="fc-section">'+
+      '<div class="fc-section-label">'+esc(t('swing'))+'</div>'+
+      '<div class="chips">'+swingChips+'</div>'+
+    '</div>'+
+    (wattsLine ? '<div class="fc-meta">'+esc(t('power_w'))+': '+wattsLine+'</div>' : '')+
+  '</div>';
+}
+
+function bindFullCards(){
+  document.querySelectorAll('.power-toggle').forEach(function(b){
+    b.onclick = function(){
+      var id = b.getAttribute('data-id');
+      var next = b.getAttribute('data-power') === 'on';
+      sendCmd(id, {on: next});
+    };
+  });
+  document.querySelectorAll('.temp-down').forEach(function(b){
+    b.onclick = function(){
+      var id = b.getAttribute('data-id');
+      var cur = parseInt(b.getAttribute('data-cur'),10) || 22;
+      sendCmd(id, {target_temp: Math.max(16, cur-1)});
+    };
+  });
+  document.querySelectorAll('.temp-up').forEach(function(b){
+    b.onclick = function(){
+      var id = b.getAttribute('data-id');
+      var cur = parseInt(b.getAttribute('data-cur'),10) || 22;
+      sendCmd(id, {target_temp: Math.min(30, cur+1)});
+    };
+  });
+  document.querySelectorAll('.chip.mode').forEach(function(c){
+    c.onclick = function(){
+      sendCmd(c.getAttribute('data-id'), {mode: c.getAttribute('data-mode')});
+    };
+  });
+  document.querySelectorAll('.chip.fan').forEach(function(c){
+    c.onclick = function(){
+      sendCmd(c.getAttribute('data-id'), {fan_speed: c.getAttribute('data-fan')});
+    };
+  });
+  document.querySelectorAll('.chip.swing').forEach(function(c){
+    c.onclick = function(){
+      var k = c.getAttribute('data-skey');
+      var sw = SWINGS.filter(function(x){return x.key===k;})[0];
+      if(sw) sendCmd(c.getAttribute('data-id'), {swing_v: sw.v, swing_h: sw.h});
+    };
+  });
+}
+
+// ── load + render ───────────────────────────────────────────────────────
+function load(){
+  api('/rooms').then(function(res){
+    var rooms = res.rooms || {};
+    var keys = Object.keys(rooms);
+    DEVICES = {};
+    keys.forEach(function(k){(rooms[k]||[]).forEach(function(d){DEVICES[d.device_id]=d;});});
+
+    if(keys.length===0){
+      $('root').innerHTML = '<div class="empty">'+esc(t('empty'))+'</div>';
+      return;
+    }
+    keys.sort();
+    var html = '';
+    keys.forEach(function(roomKey){
+      var devs = rooms[roomKey] || [];
+      var label = roomKey === 'unassigned' ? t('unassigned') : roomKey;
+      html += '<div class="room"><div class="room-title">'+esc(label)+'</div>';
+      if(IS_MODAL){
+        // fullscreen modal: each device gets a full-control card
+        devs.forEach(function(d){ html += renderFullCard(d); });
+      } else {
+        // dashboard: compact rows
+        html += '<div class="list">';
+        devs.forEach(function(d){ html += renderRow(d); });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    $('root').innerHTML = html;
+    if(IS_MODAL) bindFullCards(); else bindCompactRows();
+    reportModalSize();
+  }).catch(function(e){
+    $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    reportModalSize();
+  });
+}
+
+function sendCmd(id, state){
+  api('/device/'+encodeURIComponent(id)+'/command', {method:'POST', body:{state:state}})
+    .then(function(){ load(); })
+    .catch(function(e){ toast(t('cmd_failed')+': '+e.message, true); });
+}
+
+// In modal mode, ask the parent SPA to size its panel to fit our content
+// instead of using the default near-fullscreen layout. We measure the
+// natural content height once it's rendered.
+function reportModalSize(){
+  if(!IS_MODAL || !inFrame) return;
+  // Use rAF so the browser has finished layout before we measure.
+  requestAnimationFrame(function(){
+    var root = $('root');
+    if(!root) return;
+    var w = Math.min(560, Math.max(360, root.scrollWidth + 48));
+    var h = Math.min(820, root.scrollHeight + 48);
+    try{
+      window.parent.postMessage({type:'modal_resize', width:w, height:h}, '*');
+    }catch(_){}
+  });
+}
+
+// ── modal mode setup ────────────────────────────────────────────────────
+if(IS_MODAL){
+  document.body.classList.add('modal-mode');
+  $('root').classList.add('modal');
+  if(inFrame){
+    var btn = $('fsClose');
+    btn.style.display = 'flex';
+    btn.onclick = function(){
+      try{ window.parent.postMessage({type:'closeWidgetModal', module:'climate'}, '*'); }catch(_){}
+    };
+    window.addEventListener('keydown', function(e){
+      if(e.key === 'Escape'){
+        try{ window.parent.postMessage({type:'closeWidgetModal', module:'climate'}, '*'); }catch(_){}
+      }
+    });
+  }
+}
+
+// ── boot ─────────────────────────────────────────────────────────────────
+applyLang();
+load();
+setInterval(load, IS_MODAL ? 5000 : 10000);
+window.addEventListener('focus', load);
+</script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<link rel="stylesheet" href="/api/shared/theme.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Climate</title>
+<style>
+:root{
+  --bg:var(--sf2);
+  --card:var(--sf);
+  --fg:var(--tx);
+  --mut:var(--tx2);
+  --pr:var(--ac);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
+.wrap{padding:14px;max-width:980px;margin:0 auto}
+h2{margin:0 0 12px;font-size:16px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px}
+.help{font-size:11px;color:var(--mut);line-height:1.55;margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--b);vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
+.badge-on{background:rgba(34,197,94,.18);color:var(--gr)}
+.badge-off{background:rgba(239,68,68,.18);color:var(--rd)}
+.badge-pr{background:rgba(168,85,247,.18);color:var(--pr)}
+.muted{color:var(--mut)}
+pre{background:var(--bg);padding:6px 8px;border-radius:5px;font-size:10px;font-family:'DM Mono',monospace;margin:0;white-space:pre-wrap;word-break:break-all;color:var(--mut)}
+.btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;font-family:inherit;background:var(--bg);color:var(--mut);border:1px solid var(--b)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2 data-i18n="title">Climate</h2>
+  <div class="card">
+    <div class="help" data-i18n="help">
+      Climate devices are added through Device Control → Gree / Pular tab.
+      This page lists every device with entity_type=air_conditioner or
+      thermostat plus its current state. Voice commands ("set temperature
+      to 22 in bedroom", "switch bedroom to cool mode") are owned by the
+      Device Control module — there is no separate climate intent layer.
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="muted" data-i18n="detected">Detected climate devices</div>
+      <button id="refreshBtn" class="btn" data-i18n="refresh">Refresh</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th data-i18n="col_room">Room</th>
+        <th data-i18n="col_name">Name</th>
+        <th data-i18n="col_type">Type</th>
+        <th data-i18n="col_protocol">Protocol</th>
+        <th data-i18n="col_status">Status</th>
+        <th data-i18n="col_state">State</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+var L = {
+  en: {
+    title:'Climate',
+    help:'Climate devices are added through Device Control → Gree / Pular tab. This page lists every device with entity_type=air_conditioner or thermostat plus its current state. Voice commands ("set temperature to 22 in bedroom", "switch bedroom to cool mode") are owned by the Device Control module — there is no separate climate intent layer.',
+    detected:'Detected climate devices', refresh:'Refresh',
+    col_room:'Room', col_name:'Name', col_type:'Type', col_protocol:'Protocol', col_status:'Status', col_state:'State',
+    loading:'Loading…',
+    empty:'No climate devices yet — add one via Device Control → Gree / Pular.',
+    on:'on', off:'off', unassigned:'unassigned',
+  },
+  uk: {
+    title:'Клімат',
+    help:'Кліматичні пристрої додаються через Керування пристроями → вкладку Gree / Pular. Ця сторінка показує всі пристрої з entity_type=air_conditioner або thermostat з поточним станом. Голосові команди ("встанови температуру 22 в спальні", "перемкни спальню в режим охолодження") належать модулю Керування пристроями — окремого шару кліматичних інтентів немає.',
+    detected:'Знайдені кліматичні пристрої', refresh:'Оновити',
+    col_room:'Кімната', col_name:'Назва', col_type:'Тип', col_protocol:'Протокол', col_status:'Стан', col_state:'Дані',
+    loading:'Завантаження…',
+    empty:'Немає пристроїв — додайте через Керування пристроями → Gree / Pular.',
+    on:'увімк', off:'вимк', unassigned:'без кімнати',
+  }
+};
+function t(k){return (L[LANG]||L.en)[k]||k;}
+function applyLang(){
+  document.querySelectorAll('[data-i18n]').forEach(function(el){
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+}
+window.addEventListener('message',function(e){
+  if(e.data && e.data.type==='lang_changed'){
+    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
+    applyLang(); load();
+  }
+});
+
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function api(p){return fetch(BASE+p).then(function(r){return r.json();});}
+
+function load(){
+  api('/devices').then(function(res){
+    var devs = res.devices || [];
+    var tb = document.getElementById('rows');
+    if(devs.length===0){
+      tb.innerHTML='<tr><td colspan="6" class="muted">'+esc(t('empty'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = devs.map(function(d){
+      var s = d.state || {};
+      var on = s.on === true;
+      var statusBadge = on
+        ? '<span class="badge badge-on">'+esc(t('on'))+'</span>'
+        : '<span class="badge badge-off">'+esc(t('off'))+'</span>';
+      return '<tr>'+
+        '<td>'+esc(d.location || t('unassigned'))+'</td>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td>'+esc(d.entity_type||'—')+'</td>'+
+        '<td><span class="badge badge-pr">'+esc(d.protocol)+'</span></td>'+
+        '<td>'+statusBadge+'</td>'+
+        '<td><pre>'+esc(JSON.stringify(s))+'</pre></td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){
+    document.getElementById('rows').innerHTML='<tr><td colspan="6" class="muted">'+esc(e.message||'error')+'</td></tr>';
+  });
+}
+document.getElementById('refreshBtn').onclick = load;
+
+applyLang();
+load();
+</script>
+<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
+</body>
+</html>
