@@ -150,6 +150,42 @@ async def handle_reboot(payload: dict) -> bool:
 
 @command_handler("UPDATE_CORE")
 async def handle_update_core(payload: dict) -> bool:
-    """Placeholder for core self-update — not yet implemented."""
-    logger.info("UPDATE_CORE: command received but self-update not yet implemented")
-    return False
+    """Trigger a core self-update via the update_manager system module.
+
+    Payload: { "url": "https://...", "sha256": "abc123...", "version": "0.4.1" }
+
+    The download / SHA256 verification / atomic swap all live in
+    ``system_modules.update_manager.updater.UpdateManager``. We just publish
+    an ``update.apply_core`` event and let the module pick it up — keeps the
+    cloud_sync layer free of update logic and means the same event can be
+    triggered from other sources (UI button, integrity agent recovery).
+    """
+    url = payload.get("url", "")
+    sha256 = payload.get("sha256") or payload.get("checksum_sha256") or ""
+    version = payload.get("version", "")
+
+    if not url:
+        logger.error("UPDATE_CORE: missing 'url' in payload")
+        return False
+    if not sha256:
+        logger.error("UPDATE_CORE: missing 'sha256' in payload — refusing unverified update")
+        return False
+
+    try:
+        from core.eventbus.bus import get_event_bus
+        bus = get_event_bus()
+        await bus.publish(
+            type="update.started",
+            source="core.cloud_sync",
+            payload={"url": url, "version": version},
+        )
+        await bus.publish(
+            type="update.apply_core",
+            source="core.cloud_sync",
+            payload={"url": url, "sha256": sha256, "version": version},
+        )
+        logger.info("UPDATE_CORE: dispatched update.apply_core (version=%s)", version)
+        return True
+    except Exception as e:
+        logger.error("UPDATE_CORE: dispatch failed: %s", e, exc_info=True)
+        return False

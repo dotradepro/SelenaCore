@@ -19,11 +19,17 @@ loop is never blocked.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncGenerator
+from typing import Any, Awaitable, Callable, AsyncGenerator
 
 
 class DriverError(Exception):
     """Raised on any driver fault — triggers reconnect with backoff."""
+
+
+#: Type alias for the EventBus publish callback injected by DeviceControlModule.
+#: Drivers that need to publish events (e.g. ``MqttBridgeDriver`` forwarding
+#: commands to ``protocol_bridge``) call ``await self.event_publisher(type, payload)``.
+EventPublisher = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 class DeviceDriver(ABC):
@@ -37,6 +43,10 @@ class DeviceDriver(ABC):
         blob from ``Device.meta`` — driver-specific (e.g. ``meta["tuya"]``)."""
         self.device_id = device_id
         self.meta = meta
+        #: Optional EventBus publisher injected by DeviceControlModule after
+        #: construction. ``None`` means the driver was instantiated outside
+        #: the module (e.g. unit tests) — drivers that need it MUST guard.
+        self.event_publisher: EventPublisher | None = None
 
     @abstractmethod
     async def connect(self) -> dict[str, Any]:

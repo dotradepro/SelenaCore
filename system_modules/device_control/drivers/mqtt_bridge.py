@@ -43,13 +43,25 @@ class MqttBridgeDriver(DeviceDriver):
         return None
 
     async def set_state(self, state: dict[str, Any]) -> None:
-        # Publishing a generic command event for protocol-bridge to forward.
-        # Full impl pending the first real MQTT device pairing.
-        logger.warning(
-            "MqttBridgeDriver.set_state stub — device=%s state=%s",
-            self.device_id, state,
+        # Publish a logical command on the EventBus. protocol_bridge subscribes
+        # to ``device.command`` and translates the payload into a JSON publish
+        # on ``command_topic``. The driver itself never opens an MQTT socket.
+        if self.event_publisher is None:
+            raise DriverError(
+                f"MqttBridgeDriver {self.device_id}: event_publisher not injected — "
+                "device-control module must set it before set_state()"
+            )
+        payload = {
+            "device_id": self.device_id,
+            "protocol": self.protocol,
+            "command_topic": self._topic_command,
+            "state": state,
+        }
+        await self.event_publisher("device.command", payload)
+        logger.debug(
+            "MqttBridgeDriver: published device.command device=%s topic=%s state=%s",
+            self.device_id, self._topic_command, state,
         )
-        raise DriverError("MQTT driver is a v1 stub; not yet wired to protocol-bridge")
 
     async def get_state(self) -> dict[str, Any]:
         return {}

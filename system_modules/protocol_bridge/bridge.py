@@ -465,6 +465,35 @@ class ProtocolBridge:
         except Exception as exc:
             logger.error(f"Failed to forward state to device {device_id}: {exc}")
 
+    async def handle_command(self, payload: dict) -> None:
+        """Forward a logical ``device.command`` payload to MQTT.
+
+        Published by drivers (e.g. ``MqttBridgeDriver``) that delegate the
+        actual transport to this module. The payload carries the resolved
+        ``command_topic`` so we don't need a Device Registry lookup.
+        """
+        if self._mqtt is None or not self._mqtt.connected:
+            logger.warning(
+                "protocol_bridge: device.command ignored, MQTT not connected "
+                "(device=%s topic=%s)",
+                payload.get("device_id"), payload.get("command_topic"),
+            )
+            return
+        topic = payload.get("command_topic")
+        state = payload.get("state")
+        if not topic or state is None:
+            logger.warning(
+                "protocol_bridge: device.command missing topic/state: %s", payload,
+            )
+            return
+        try:
+            await self._mqtt.publish(topic, json.dumps(state))
+        except Exception as exc:
+            logger.error(
+                "protocol_bridge: failed to publish device.command to %s: %s",
+                topic, exc,
+            )
+
     async def _get_device_by_mqtt_topic(self, topic: str) -> str | None:
         """Find device_id by MQTT state_topic or zigbee friendly_name topic."""
         try:

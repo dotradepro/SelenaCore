@@ -24,6 +24,20 @@ class UpdateManagerModule(SystemModule):
         self._manager: UpdateManager | None = None
         self._downloaded_path: Path | None = None
 
+    async def _on_apply_core(self, event) -> None:
+        """Handle ``update.apply_core`` published by core/cloud_sync/commands.py."""
+        if self._manager is None:
+            logger.warning("update.apply_core ignored — UpdateManager not running")
+            return
+        payload = event.payload or {}
+        url = payload.get("url", "")
+        sha256 = payload.get("sha256", "")
+        version = payload.get("version", "")
+        try:
+            await self._manager.apply_update_from_url(url, sha256, version)
+        except Exception as exc:
+            logger.error("update.apply_core failed: %s", exc, exc_info=True)
+
     async def start(self) -> None:
         self._manager = UpdateManager(
             publish_event_cb=self.publish,
@@ -34,6 +48,7 @@ class UpdateManagerModule(SystemModule):
             check_interval_sec=int(os.getenv("UPDATE_CHECK_INTERVAL", "3600")),
         )
         await self._manager.start()
+        self.subscribe(["update.apply_core"], self._on_apply_core)
         await self.publish("module.started", {"name": self.name})
 
     async def stop(self) -> None:

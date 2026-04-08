@@ -40,6 +40,9 @@ INTENT_OFF = "device.off"
 INTENT_SET_TEMPERATURE = "device.set_temperature"
 INTENT_SET_MODE = "device.set_mode"
 INTENT_SET_FAN_SPEED = "device.set_fan_speed"
+# Lock-specific intents (target Matter / Z-Wave door locks).
+INTENT_LOCK = "device.lock"
+INTENT_UNLOCK = "device.unlock"
 
 #: All voice intents owned by this module — used by _claim_intent_ownership.
 OWNED_INTENTS = [
@@ -48,6 +51,8 @@ OWNED_INTENTS = [
     INTENT_SET_TEMPERATURE,
     INTENT_SET_MODE,
     INTENT_SET_FAN_SPEED,
+    INTENT_LOCK,
+    INTENT_UNLOCK,
 ]
 
 #: Intent → entity_type filter. Voice resolution narrows to these devices so
@@ -56,6 +61,8 @@ INTENT_ENTITY_FILTER: dict[str, tuple[str, ...]] = {
     INTENT_SET_TEMPERATURE: ("air_conditioner", "thermostat"),
     INTENT_SET_MODE: ("air_conditioner", "thermostat"),
     INTENT_SET_FAN_SPEED: ("air_conditioner", "fan"),
+    INTENT_LOCK: ("lock", "door_lock"),
+    INTENT_UNLOCK: ("lock", "door_lock"),
 }
 
 
@@ -276,6 +283,8 @@ class DeviceControlModule(SystemModule):
             }
             if intent in (INTENT_ON, INTENT_OFF):
                 ack["state"] = "on" if intent == INTENT_ON else "off"
+            elif intent in (INTENT_LOCK, INTENT_UNLOCK):
+                ack["state"] = "locked" if intent == INTENT_LOCK else "unlocked"
             elif intent == INTENT_SET_TEMPERATURE:
                 ack["temperature"] = target_state.get("target_temp")
             elif intent == INTENT_SET_MODE:
@@ -301,6 +310,11 @@ class DeviceControlModule(SystemModule):
             return {"on": True}
         if intent == INTENT_OFF:
             return {"on": False}
+
+        if intent == INTENT_LOCK:
+            return {"locked": True}
+        if intent == INTENT_UNLOCK:
+            return {"locked": False}
 
         if intent == INTENT_SET_TEMPERATURE:
             raw = params.get("level") or params.get("temperature")
@@ -465,6 +479,9 @@ class DeviceControlModule(SystemModule):
             protocol = d.protocol
             meta = json.loads(d.meta) if d.meta else {}
         drv = get_driver(device_id, protocol, meta)
+        # Inject the EventBus publisher so drivers like MqttBridgeDriver can
+        # forward commands to protocol_bridge via ``device.command`` events.
+        drv.event_publisher = self.publish
         self._drivers[device_id] = drv
         return drv
 

@@ -35,6 +35,13 @@ tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persiste
 tuya-device-sharing-sdk>=0.2  # Tuya Smart Life / Tuya Smart OAuth via user-code (no developer account needed)
 greeclimate>=2.1             # Gree / Pular WiFi A/C local LAN protocol (UDP 7000, AES, async)
 
+# Optional: Zigbee scanner (system_modules/network_scanner/zigbee_scanner.py).
+# Only required if a USB Zigbee coordinator dongle is plugged in. Install
+# manually when needed:
+#   pip install 'zigpy>=0.60' 'zigpy-znp>=0.12'   # for TI CC2531/CC2652 dongles
+#   pip install 'zigpy>=0.60' 'bellows>=0.39'     # for Silicon Labs EZSP dongles
+# The scanner gracefully degrades to an empty result when these are absent.
+
 # Pinned transitive dependencies (security)
 h11>=0.16.0
 anyio>=4.4.0

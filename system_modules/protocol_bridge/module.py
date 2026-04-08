@@ -51,6 +51,10 @@ class ProtocolBridgeModule(SystemModule):
         if self._bridge:
             await self._bridge.on_state_changed(event.payload)
 
+    async def _on_device_command(self, event) -> None:
+        if self._bridge:
+            await self._bridge.handle_command(event.payload)
+
     async def start(self) -> None:
         self._bridge = ProtocolBridge(
             config=self._config,
@@ -61,6 +65,7 @@ class ProtocolBridgeModule(SystemModule):
         )
         await self._bridge.start()
         self.subscribe(["device.state_changed"], self._on_state_changed)
+        self.subscribe(["device.command"], self._on_device_command)
         await self.publish("module.started", {"name": self.name})
 
     async def stop(self) -> None:

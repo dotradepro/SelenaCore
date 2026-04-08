@@ -221,6 +221,48 @@ class UpdateManager:
         else:
             raise ValueError(f"Unsupported archive format: {path}")
 
+    # ── Direct apply (for cloud-triggered UPDATE_CORE) ───────────────────────
+
+    async def apply_update_from_url(
+        self, url: str, sha256: str, version: str = "",
+    ) -> None:
+        """Download → SHA256 verify → apply, in one shot.
+
+        Used by ``cloud_sync.commands.handle_update_core`` (via the
+        ``update.apply_core`` event) when the platform pushes a specific
+        package URL instead of relying on the periodic manifest poll.
+        Publishes ``update.failed`` on any error and re-raises so the
+        caller can log it.
+        """
+        if not url or not sha256:
+            raise ValueError("apply_update_from_url requires url and sha256")
+
+        # Stage manifest-shaped data so apply() picks up the version below.
+        self._latest = {
+            "version": version or "unknown",
+            "download_url": url,
+            "sha256": sha256,
+            "notes": "triggered by UPDATE_CORE cloud command",
+        }
+        try:
+            pkg_path = await self.download()  # verifies SHA256 internally
+            await self.apply(pkg_path)
+        except Exception as exc:
+            # download() / apply() already publish update.failed on the apply
+            # path; cover the download path explicitly so the cloud caller
+            # always sees a failure event.
+            if self.state != UpdateState.ERROR:
+                self.state = UpdateState.ERROR
+            try:
+                await self._publish("update.failed", {
+                    "error": str(exc),
+                    "stage": "apply_update_from_url",
+                    "url": url,
+                })
+            except Exception:
+                pass
+            raise
+
     # ── Rollback ──────────────────────────────────────────────────────────────
 
     async def rollback(self) -> None:
