@@ -327,7 +327,6 @@ Please **do not** open a public issue for security reports. Use [GitHub Security
 ## Sponsoring
 
 [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/dotradepro)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/dotradepro)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dotradepro)
 
 Sponsorship pays for new test hardware (Pi 5, Jetson, Zigbee dongles), development time, video tutorials, and the marketplace infrastructure.

@@ -327,7 +327,6 @@ python -m mypy core/ --ignore-missing
 ## Підтримка проєкту
 
 [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/dotradepro)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/dotradepro)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dotradepro)
 
 Спонсорство покриває нове залізо для тестів (Pi 5, Jetson, Zigbee-донгли), час на розробку, відео-туторіали та інфраструктуру маркетплейсу.
