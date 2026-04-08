@@ -72,6 +72,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
   <div class="tabs">
     <button class="tab active" data-tab="devices" data-i18n="tab_devices">Devices</button>
     <button class="tab" data-tab="wizard" data-i18n="tab_wizard">Tuya Cloud Wizard</button>
+    <button class="tab" data-tab="gree" data-i18n="tab_gree">Gree / Pular</button>
   </div>
 
   <!-- TAB: Devices ------------------------------------------------------- -->
@@ -120,6 +121,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
             <option value="outlet">outlet</option>
             <option value="fan">fan</option>
             <option value="thermostat">thermostat</option>
+            <option value="air_conditioner">air_conditioner</option>
             <option value="sensor">sensor</option>
           </select>
         </div>
@@ -179,6 +181,23 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       <div id="wizardResults" class="mt8"></div>
     </div>
   </div>
+
+  <!-- TAB: Gree / Pular discovery --------------------------------------- -->
+  <div id="tab-gree" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="gree_help">
+        Discover Gree-protocol air conditioners on your local network (Pular,
+        Gree, Cooper&amp;Hunter, EWT and other Gree OEMs). The unit must already
+        be on your Wi-Fi — pair it with the Gree+ / Ewpe Smart app first, then
+        click "Scan". No cloud account is used.
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="greeScanBtn" class="btn btn-green" data-i18n="gree_scan">Scan</button>
+        <span id="greeScanSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+      </div>
+      <div id="greeResults"></div>
+    </div>
+  </div>
   <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 </div>
 
@@ -188,7 +207,7 @@ var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}cat
 var L = {
   en: {
     title:'Device Control',
-    tab_devices:'Devices', tab_wizard:'Tuya Cloud Wizard',
+    tab_devices:'Devices', tab_wizard:'Tuya Cloud Wizard', tab_gree:'Gree / Pular',
     dev_count_label:'Registered devices', refresh:'Refresh',
     col_name:'Name', col_type:'Type', col_location:'Location', col_protocol:'Protocol', col_state:'State', col_actions:'Actions',
     loading:'Loading…', no_devices:'No devices yet — add them via the Tuya Cloud Wizard tab.',
@@ -222,10 +241,24 @@ var L = {
     wizard_import_all:'Import all', wizard_import:'Import',
     wizard_imported:'Imported',
     fill_required:'Fill required fields',
+    gree_help:'Discover Gree-protocol air conditioners on your local network (Pular, Gree, Cooper&Hunter, EWT and other Gree OEMs). The unit must already be on your Wi-Fi — pair it with the Gree+ / Ewpe Smart app first, then click "Scan". No cloud account is used.',
+    gree_scan:'Scan',
+    gree_scanning:'Scanning…',
+    gree_no_devices:'No Gree-compatible units found on the LAN. Make sure the AC is powered on, on the same Wi-Fi as this hub, and not in pairing mode.',
+    gree_found:'Found A/C units',
+    gree_col_select:'Import',
+    gree_col_name:'Name',
+    gree_col_ip:'IP',
+    gree_col_mac:'MAC',
+    gree_col_model:'Model',
+    gree_col_location:'Room (optional)',
+    gree_import_btn:'Import selected',
+    gree_imported:'Imported',
+    gree_no_selection:'Select at least one device.',
   },
   uk: {
     title:'Керування пристроями',
-    tab_devices:'Пристрої', tab_wizard:'Tuya Cloud майстер',
+    tab_devices:'Пристрої', tab_wizard:'Tuya Cloud майстер', tab_gree:'Gree / Pular',
     dev_count_label:'Зареєстровані пристрої', refresh:'Оновити',
     col_name:'Назва', col_type:'Тип', col_location:'Розташування', col_protocol:'Протокол', col_state:'Стан', col_actions:'Дії',
     loading:'Завантаження…', no_devices:'Немає пристроїв — додайте через Tuya Cloud майстер.',
@@ -259,6 +292,20 @@ var L = {
     wizard_import_all:'Імпортувати всі', wizard_import:'Імпорт',
     wizard_imported:'Імпортовано',
     fill_required:'Заповніть обов\'язкові поля',
+    gree_help:'Знайти кондиціонери з протоколом Gree у локальній мережі (Pular, Gree, Cooper&Hunter, EWT та інші OEM). Кондиціонер має вже бути у вашій Wi-Fi — спочатку прив\'яжіть його через Gree+ / Ewpe Smart, потім натисніть "Сканувати". Хмарний акаунт не потрібен.',
+    gree_scan:'Сканувати',
+    gree_scanning:'Сканування…',
+    gree_no_devices:'Не знайдено сумісних із Gree пристроїв у мережі. Переконайтеся, що кондиціонер увімкнено, він у тій самій Wi-Fi, що й хаб, і не у режимі сполучення.',
+    gree_found:'Знайдено кондиціонерів',
+    gree_col_select:'Імпорт',
+    gree_col_name:'Назва',
+    gree_col_ip:'IP',
+    gree_col_mac:'MAC',
+    gree_col_model:'Модель',
+    gree_col_location:'Кімната (необов\'язково)',
+    gree_import_btn:'Імпортувати вибрані',
+    gree_imported:'Імпортовано',
+    gree_no_selection:'Виберіть хоча б один пристрій.',
   }
 };
 function t(k){return (L[LANG]||L.en)[k]||k;}
@@ -308,6 +355,7 @@ document.querySelectorAll('.tab').forEach(function(b){
     show('tab-'+b.getAttribute('data-tab'));
     if(b.getAttribute('data-tab')==='wizard') loadWizardStatus();
     if(b.getAttribute('data-tab')==='devices') loadDevices();
+    if(b.getAttribute('data-tab')==='gree') $('greeResults').innerHTML='';
   };
 });
 
@@ -518,6 +566,76 @@ function _renderDeviceList(devs){
       document.querySelector('.tab[data-tab="devices"]').click();
     }).catch(function(e){toast(e.message,true);}).finally(function(){
       var b=$('importAllBtn'); if(b) b.disabled=false;
+    });
+  };
+}
+
+// ── Gree / Pular tab ─────────────────────────────────────────────────────
+$('greeScanBtn').onclick = function(){
+  var btn = this;
+  btn.disabled = true;
+  btn.textContent = t('gree_scanning');
+  $('greeScanSpinner').classList.remove('hidden');
+  $('greeResults').innerHTML = '';
+  api('/gree/discover',{method:'POST',body:{timeout:10}}).then(function(res){
+    _renderGreeList(res.devices||[]);
+  }).catch(function(e){
+    $('greeResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+  }).finally(function(){
+    btn.disabled=false;
+    btn.textContent = t('gree_scan');
+    $('greeScanSpinner').classList.add('hidden');
+  });
+};
+
+function _renderGreeList(devs){
+  if(devs.length===0){
+    $('greeResults').innerHTML='<div class="muted">'+esc(t('gree_no_devices'))+'</div>';
+    return;
+  }
+  var html='<div class="label-sm mb8">'+esc(t('gree_found'))+': '+devs.length+'</div>';
+  html += '<table><thead><tr>'+
+    '<th>'+esc(t('gree_col_select'))+'</th>'+
+    '<th>'+esc(t('gree_col_name'))+'</th>'+
+    '<th>'+esc(t('gree_col_ip'))+'</th>'+
+    '<th>'+esc(t('gree_col_mac'))+'</th>'+
+    '<th>'+esc(t('gree_col_model'))+'</th>'+
+    '<th>'+esc(t('gree_col_location'))+'</th>'+
+    '</tr></thead><tbody>';
+  devs.forEach(function(d, idx){
+    html += '<tr>'+
+      '<td><input type="checkbox" class="greesel" data-idx="'+idx+'" checked></td>'+
+      '<td><input class="greename" data-idx="'+idx+'" value="'+esc(d.name||'AC '+(d.mac||'').slice(-5))+'"></td>'+
+      '<td><span class="muted">'+esc(d.ip||'—')+'</span></td>'+
+      '<td><span class="muted">'+esc(d.mac||'—')+'</span></td>'+
+      '<td><span class="muted">'+esc(d.model||d.brand||'—')+'</span></td>'+
+      '<td><input class="greeloc" data-idx="'+idx+'" placeholder="bedroom"></td>'+
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div class="flex gap8 mt8"><button class="btn btn-green" id="greeImportBtn">'+esc(t('gree_import_btn'))+'</button></div>';
+  $('greeResults').innerHTML = html;
+  $('greeImportBtn').onclick = function(){
+    var picks = [];
+    document.querySelectorAll('.greesel').forEach(function(c){
+      if(!c.checked) return;
+      var idx = parseInt(c.getAttribute('data-idx'),10);
+      var d = devs[idx];
+      var nameInput = document.querySelector('.greename[data-idx="'+idx+'"]');
+      var locInput  = document.querySelector('.greeloc[data-idx="'+idx+'"]');
+      picks.push({
+        ip: d.ip, mac: d.mac,
+        name: (nameInput && nameInput.value || d.name || '').trim(),
+        location: (locInput && locInput.value || '').trim(),
+      });
+    });
+    if(picks.length===0){toast(t('gree_no_selection'),true);return;}
+    this.disabled=true;
+    api('/gree/import',{method:'POST',body:{devices:picks}}).then(function(r){
+      toast(t('gree_imported')+': '+(r.created||[]).length);
+      document.querySelector('.tab[data-tab="devices"]').click();
+    }).catch(function(e){toast(e.message,true);}).finally(function(){
+      var b=$('greeImportBtn'); if(b) b.disabled=false;
     });
   };
 }

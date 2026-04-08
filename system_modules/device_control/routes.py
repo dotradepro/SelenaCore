@@ -33,6 +33,7 @@ from sqlalchemy import delete, select
 from core.api.helpers import on_entity_changed, translate_to_en
 
 from .drivers import DriverError, list_driver_types
+from .drivers.gree import AC_CAPABILITIES
 from .drivers.tuya_cloud import TuyaCloudClient
 
 if TYPE_CHECKING:
@@ -83,6 +84,21 @@ class WizardPollBody(BaseModel):
 
 class WizardImportBody(BaseModel):
     selected_ids: list[str]
+
+
+class GreeDiscoverBody(BaseModel):
+    timeout: int = 10
+
+
+class GreeImportEntry(BaseModel):
+    ip: str
+    mac: str
+    name: str = ""
+    location: str = ""
+
+
+class GreeImportBody(BaseModel):
+    devices: list[GreeImportEntry]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -141,6 +157,45 @@ async def _scan_tuya_lan() -> dict[str, dict[str, Any]]:
     return await asyncio.to_thread(_do_scan)
 
 
+async def _scan_gree_lan(timeout: int = 10) -> list[dict[str, Any]]:
+    """Run greeclimate LAN broadcast discovery, return a list of dicts.
+
+    Each entry: ``{ip, mac, name, brand, model, version}``. Returns an empty
+    list on any failure (best-effort scan).
+    """
+    try:
+        from greeclimate.discovery import Discovery  # type: ignore
+    except ImportError:
+        logger.warning("greeclimate not installed — Gree discovery disabled")
+        return []
+
+    found: list[dict[str, Any]] = []
+    try:
+        discovery = Discovery(timeout=timeout)
+        # greeclimate.Discovery.scan() yields/returns DeviceInfo objects.
+        # API differs subtly across versions: 1.x exposes scan() as a coroutine
+        # returning a list, 2.x supports both. Try the coroutine path first.
+        try:
+            results = await discovery.scan(wait_for=timeout)
+        except TypeError:
+            results = await discovery.scan()
+        for di in results or []:
+            try:
+                found.append({
+                    "ip": getattr(di, "ip", "") or "",
+                    "mac": getattr(di, "mac", "") or "",
+                    "name": getattr(di, "name", "") or "",
+                    "brand": getattr(di, "brand", "") or "gree",
+                    "model": getattr(di, "model", "") or "",
+                    "version": getattr(di, "version", "") or "",
+                })
+            except Exception:  # pragma: no cover - defensive
+                continue
+    except Exception as exc:
+        logger.warning("Gree discovery failed: %s", exc)
+    return found
+
+
 async def _device_to_dict(d: Any) -> dict[str, Any]:
     return {
         "device_id": d.device_id,
@@ -183,7 +238,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.post("/devices", status_code=201)
     async def add_device(body: AddDeviceBody) -> dict[str, Any]:
         from core.registry.models import Device
-        if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt"):
+        if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt", "gree"):
             raise HTTPException(422, f"Unsupported protocol: {body.protocol}")
         async with svc._db_session() as session:
             async with session.begin():
@@ -345,6 +400,87 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.get("/drivers")
     async def list_drivers() -> dict[str, Any]:
         return {"drivers": list_driver_types()}
+
+    # ── Gree / Pular discovery + import ─────────────────────────────────
+
+    @router.post("/gree/discover")
+    async def gree_discover(body: GreeDiscoverBody | None = None) -> dict[str, Any]:
+        """LAN-broadcast scan for Gree-protocol A/C units (incl. Pular)."""
+        timeout = max(2, min(30, (body.timeout if body else 10)))
+        found = await _scan_gree_lan(timeout=timeout)
+        return {"status": "ok", "devices": found}
+
+    @router.post("/gree/import")
+    async def gree_import(body: GreeImportBody) -> dict[str, Any]:
+        """Bulk-create Device rows from a Gree discovery result.
+
+        Each entry must already have ip + mac. The Gree per-device key is
+        not known until the driver's first ``connect()`` — that runs inside
+        the watcher and is persisted on success.
+        """
+        from core.registry.models import Device
+
+        created: list[dict[str, Any]] = []
+        skipped: list[str] = []
+
+        for entry in body.devices:
+            ip = (entry.ip or "").strip()
+            mac = (entry.mac or "").strip()
+            if not ip or not mac:
+                skipped.append(mac or ip or "<empty>")
+                continue
+            display = (entry.name or "").strip() or f"AC {mac[-5:]}"
+            location = (entry.location or "").strip() or None
+            try:
+                name_en = await translate_to_en(display)
+            except Exception:
+                name_en = display
+            meta: dict[str, Any] = {
+                "gree": {
+                    "ip": ip,
+                    "mac": mac,
+                    "name": display,
+                    "port": 7000,
+                    "key": None,
+                    "brand": "gree",
+                },
+                "name_en": (name_en or "").strip().lower() or None,
+            }
+            if meta["name_en"] is None:
+                meta.pop("name_en", None)
+
+            async with svc._db_session() as session:
+                async with session.begin():
+                    device = Device(
+                        name=display,
+                        type="actuator",
+                        protocol="gree",
+                        entity_type="air_conditioner",
+                        location=location,
+                        module_id=svc.name,
+                        enabled=True,
+                    )
+                    device.set_capabilities(AC_CAPABILITIES)
+                    device.set_meta(meta)
+                    session.add(device)
+                    await session.flush()
+                    device_id = device.device_id
+            try:
+                await on_entity_changed("device", device_id, "created")
+            except Exception as exc:
+                logger.warning("device-control: gree import pattern regen failed: %s", exc)
+            await svc.add_device_watcher(device_id)
+            await svc.publish("device.registered", {
+                "device_id": device_id, "name": display,
+            })
+            created.append({
+                "device_id": device_id,
+                "name": display,
+                "ip": ip,
+                "mac": mac,
+            })
+
+        return {"status": "ok", "created": created, "skipped": skipped}
 
     # ── Tuya cloud wizard (user-code flow) ──────────────────────────────
 

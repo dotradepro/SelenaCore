@@ -32,6 +32,7 @@ vosk>=0.3.45
 # Smart device drivers (used by system_modules/device_control)
 tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persistent socket)
 tuya-device-sharing-sdk>=0.2  # Tuya Smart Life / Tuya Smart OAuth via user-code (no developer account needed)
+greeclimate>=2.1             # Gree / Pular WiFi A/C local LAN protocol (UDP 7000, AES, async)
 
 # Pinned transitive dependencies (security)
 h11>=0.16.0

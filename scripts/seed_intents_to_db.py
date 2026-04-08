@@ -316,6 +316,48 @@ async def _seed_fast_matcher_rules(session) -> int:
                 ],
             },
         },
+        # ── Climate (air-conditioner) intents — owned by device-control ──
+        {
+            "intent": "device.set_temperature",
+            "module": "device-control",
+            "noun_class": "CLIMATE",
+            "verb": "set",
+            "priority": 100,
+            "description": "Set the target temperature on a climate device",
+            "patterns": {
+                "en": [
+                    r"set\s+(?:the\s+)?temperature\s+(?:to|at)\s+(?P<level>\d{1,2})(?:\s+in\s+(?P<location>[\w\s]+?))?$",
+                    r"(?:make it|set it to)\s+(?P<level>\d{1,2})(?:\s+degrees?)?(?:\s+in\s+(?P<location>[\w\s]+?))?$",
+                ],
+            },
+        },
+        {
+            "intent": "device.set_mode",
+            "module": "device-control",
+            "noun_class": "CLIMATE",
+            "verb": "set",
+            "priority": 100,
+            "description": "Switch climate device mode (cool/heat/dry/fan/auto)",
+            "patterns": {
+                "en": [
+                    r"(?:switch|set|turn)\s+(?:the\s+)?(?:ac|air\s*conditioner|climate)\s+(?:to\s+)?(?P<mode>auto|cool|cooling|dry|fan|heat|heating)(?:\s+mode)?(?:\s+in\s+(?P<location>[\w\s]+?))?$",
+                    r"(?:switch|set)\s+(?P<location>[\w\s]+?)\s+to\s+(?P<mode>auto|cool|cooling|dry|fan|heat|heating)(?:\s+mode)?$",
+                ],
+            },
+        },
+        {
+            "intent": "device.set_fan_speed",
+            "module": "device-control",
+            "noun_class": "CLIMATE",
+            "verb": "set",
+            "priority": 100,
+            "description": "Set climate device fan speed",
+            "patterns": {
+                "en": [
+                    r"(?:set|change)\s+(?:the\s+)?fan\s+(?:speed\s+)?(?:to\s+)?(?P<level>auto|low|medium|high|min|minimum|max|maximum)(?:\s+in\s+(?P<location>[\w\s]+?))?$",
+                ],
+            },
+        },
     ]
 
     count = 0

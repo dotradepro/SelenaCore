@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,27 @@ MODULE_DIR = Path(__file__).parent
 # Voice intents this module owns. Strings match seed_intents_to_db.py.
 INTENT_ON = "device.on"
 INTENT_OFF = "device.off"
+# Climate-specific intents (target air_conditioner / thermostat devices).
+INTENT_SET_TEMPERATURE = "device.set_temperature"
+INTENT_SET_MODE = "device.set_mode"
+INTENT_SET_FAN_SPEED = "device.set_fan_speed"
+
+#: All voice intents owned by this module — used by _claim_intent_ownership.
+OWNED_INTENTS = [
+    INTENT_ON,
+    INTENT_OFF,
+    INTENT_SET_TEMPERATURE,
+    INTENT_SET_MODE,
+    INTENT_SET_FAN_SPEED,
+]
+
+#: Intent → entity_type filter. Voice resolution narrows to these devices so
+#: a "set temperature" command cannot accidentally hit a light.
+INTENT_ENTITY_FILTER: dict[str, tuple[str, ...]] = {
+    INTENT_SET_TEMPERATURE: ("air_conditioner", "thermostat"),
+    INTENT_SET_MODE: ("air_conditioner", "thermostat"),
+    INTENT_SET_FAN_SPEED: ("air_conditioner", "fan"),
+}
 
 
 class DeviceControlModule(SystemModule):
@@ -176,12 +198,22 @@ class DeviceControlModule(SystemModule):
         try:
             payload = event.payload or {}
             intent = payload.get("intent", "")
-            if intent not in (INTENT_ON, INTENT_OFF):
+            if intent not in OWNED_INTENTS:
                 return
             params = payload.get("params") or {}
-            target_state = {"on": intent == INTENT_ON}
 
-            device = await self._resolve_device(params)
+            # Build the target logical state for this intent. Climate intents
+            # need parameter parsing; on/off are trivial.
+            try:
+                target_state = self._intent_to_state(intent, params)
+            except ValueError as exc:
+                logger.info("device-control: bad params for %s: %s", intent, exc)
+                return
+            if target_state is None:
+                return
+
+            entity_filter = INTENT_ENTITY_FILTER.get(intent)
+            device = await self._resolve_device(params, entity_filter=entity_filter)
             if device is None:
                 logger.info(
                     "device-control: no device matches intent=%s params=%s",
@@ -219,19 +251,90 @@ class DeviceControlModule(SystemModule):
                 "source": self.name,
             })
 
-            await self.speak_action(intent, {
+            ack: dict[str, Any] = {
                 "result": "ok",
                 "device_name": device["name"],
                 "location": device.get("location"),
-                "state": "on" if intent == INTENT_ON else "off",
-            })
+            }
+            if intent in (INTENT_ON, INTENT_OFF):
+                ack["state"] = "on" if intent == INTENT_ON else "off"
+            elif intent == INTENT_SET_TEMPERATURE:
+                ack["temperature"] = target_state.get("target_temp")
+            elif intent == INTENT_SET_MODE:
+                ack["mode"] = target_state.get("mode")
+            elif intent == INTENT_SET_FAN_SPEED:
+                ack["fan_speed"] = target_state.get("fan_speed")
+            await self.speak_action(intent, ack)
         except Exception as exc:
             logger.exception("device-control: voice intent handler crashed: %s", exc)
 
+    # ── Intent → state translation ───────────────────────────────────────
+
+    @staticmethod
+    def _intent_to_state(intent: str, params: dict) -> dict[str, Any] | None:
+        """Convert ``(intent, params)`` from the voice layer into a logical
+        state dict ready for ``driver.set_state()``.
+
+        Returns ``None`` if the intent is not understood (caller bails out
+        silently). Raises ``ValueError`` if the intent IS understood but its
+        params are missing/invalid (caller logs and bails).
+        """
+        if intent == INTENT_ON:
+            return {"on": True}
+        if intent == INTENT_OFF:
+            return {"on": False}
+
+        if intent == INTENT_SET_TEMPERATURE:
+            raw = params.get("level") or params.get("temperature")
+            if raw is None:
+                raise ValueError("missing 'level' parameter")
+            try:
+                level = int(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"non-integer level: {raw!r}") from exc
+            return {"target_temp": level}
+
+        if intent == INTENT_SET_MODE:
+            raw = (params.get("mode") or "").strip().lower()
+            allowed = {"auto", "cool", "dry", "fan", "heat"}
+            if raw not in allowed:
+                raise ValueError(f"unknown mode: {raw!r}")
+            return {"mode": raw}
+
+        if intent == INTENT_SET_FAN_SPEED:
+            raw = (params.get("level") or params.get("speed") or "").strip().lower()
+            allowed = {
+                "auto", "low", "medium_low", "medium", "medium_high", "high",
+            }
+            # Normalise common spoken aliases.
+            aliases = {
+                "min": "low",
+                "minimum": "low",
+                "max": "high",
+                "maximum": "high",
+                "mid": "medium",
+                "middle": "medium",
+            }
+            raw = aliases.get(raw, raw)
+            if raw not in allowed:
+                raise ValueError(f"unknown fan speed: {raw!r}")
+            return {"fan_speed": raw}
+
+        return None
+
     # ── Device resolution ────────────────────────────────────────────────
 
-    async def _resolve_device(self, params: dict) -> dict | None:
+    async def _resolve_device(
+        self,
+        params: dict,
+        entity_filter: tuple[str, ...] | None = None,
+    ) -> dict | None:
         """Find ONE device matching params (entity, location, name).
+
+        ``entity_filter`` narrows the candidate set to devices whose
+        ``entity_type`` is in the given tuple — used by climate intents so
+        a "set temperature" command cannot accidentally match a light or
+        switch in the same room.
 
         Strategy (stops at the first tier that returns exactly one match):
           1. Strict: entity_type AND location both match.
@@ -268,6 +371,8 @@ class DeviceControlModule(SystemModule):
                 Device.module_id == self.name,
                 Device.enabled == True,  # noqa: E712
             )
+            if entity_filter:
+                base = base.where(Device.entity_type.in_(entity_filter))
 
             # Tier 1: both entity_type AND location.
             if entity and location:
@@ -354,8 +459,14 @@ class DeviceControlModule(SystemModule):
                 drv = await self._get_or_create_driver(device_id)
                 state = await drv.connect()
                 attempt = 0
+                # Some drivers (e.g. Gree) learn a per-device key during
+                # connect() and mutate self.meta in place. Persist that
+                # back to the DB so the next reconnect skips the binding
+                # handshake.
+                await self._persist_driver_meta(device_id, drv)
                 if state:
                     await self._apply_external_state(device_id, state)
+                await self._publish_metering(device_id, drv)
                 if was_online is not True:
                     await self._publish_online(device_id, True)
                     was_online = True
@@ -365,6 +476,7 @@ class DeviceControlModule(SystemModule):
                         break
                     if new_state:
                         await self._apply_external_state(device_id, new_state)
+                    await self._publish_metering(device_id, drv)
             except asyncio.CancelledError:
                 raise
             except DriverError as exc:
@@ -417,17 +529,72 @@ class DeviceControlModule(SystemModule):
             {"device_id": device_id},
         )
 
+    async def _persist_driver_meta(self, device_id: str, drv: Any) -> None:
+        """Write back any in-place mutations the driver made to its meta dict.
+
+        Drivers that learn credentials during ``connect()`` (e.g. Gree's
+        per-device AES key) update ``drv.meta`` directly. This helper
+        diff-checks against the persisted JSON and only writes when the
+        contents actually changed, so we don't pound the DB with no-op
+        UPDATEs on every reconnect.
+        """
+        new_meta = getattr(drv, "meta", None)
+        if not isinstance(new_meta, dict):
+            return
+        try:
+            new_json = json.dumps(new_meta, sort_keys=True)
+        except (TypeError, ValueError):
+            return
+        try:
+            from core.registry.models import Device
+            async with self._db_session() as session:
+                async with session.begin():
+                    d = await session.get(Device, device_id)
+                    if d is None:
+                        return
+                    current_json = json.dumps(
+                        json.loads(d.meta) if d.meta else {},
+                        sort_keys=True,
+                    )
+                    if current_json == new_json:
+                        return
+                    d.set_meta(new_meta)
+        except Exception as exc:
+            logger.warning(
+                "device-control: failed to persist meta for %s: %s",
+                device_id, exc,
+            )
+
+    async def _publish_metering(self, device_id: str, drv: Any) -> None:
+        """Drain any pending power-meter snapshot from the driver and emit
+        ``device.power_reading`` on the bus. No-op for drivers that don't
+        implement metering."""
+        try:
+            metering = drv.consume_metering()
+        except Exception:
+            return
+        if not metering or "watts" not in metering:
+            return
+        await self.publish("device.power_reading", {
+            "device_id": device_id,
+            "watts": metering["watts"],
+            "volts": metering.get("volts"),
+            "amps": metering.get("amps"),
+            "ts": time.time(),
+            "source": self.name,
+        })
+
     # ── Intent ownership claim ────────────────────────────────────────────
 
     async def _claim_intent_ownership(self) -> None:
-        """Set ``module='device-control'`` on the device.on / device.off rows."""
+        """Set ``module='device-control'`` on every intent we own."""
         if self._session_factory is None:
             return
         async with self._session_factory() as session:
             from core.registry.models import IntentDefinition
             await session.execute(
                 update(IntentDefinition)
-                .where(IntentDefinition.intent.in_([INTENT_ON, INTENT_OFF]))
+                .where(IntentDefinition.intent.in_(OWNED_INTENTS))
                 .values(module=self.name)
             )
             await session.commit()

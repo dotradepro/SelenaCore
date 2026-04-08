@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .base import DeviceDriver, DriverError
+from .gree import GreeDriver
 from .mqtt_bridge import MqttBridgeDriver
 from .tuya_cloud import TuyaCloudDriver
 from .tuya_local import TuyaLocalDriver
@@ -17,6 +18,7 @@ DRIVERS: dict[str, type[DeviceDriver]] = {
     "tuya_local": TuyaLocalDriver,
     "tuya_cloud": TuyaCloudDriver,
     "mqtt": MqttBridgeDriver,
+    "gree": GreeDriver,
 }
 
 
@@ -64,6 +66,16 @@ def list_driver_types() -> list[dict[str, Any]]:
             "fields": [
                 "mqtt.command_topic",
                 "mqtt.state_topic",
+            ],
+        },
+        {
+            "id": "gree",
+            "name": "Gree / Pular WiFi A/C",
+            "needs_cloud": False,
+            "fields": [
+                "gree.ip",
+                "gree.mac",
+                "gree.name",
             ],
         },
     ]
