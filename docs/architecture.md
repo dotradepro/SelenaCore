@@ -25,6 +25,10 @@
 
 SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run on low-power hardware such as Raspberry Pi. All automation logic, device management, and voice processing happen on the local machine. Cloud connectivity is optional and limited to heartbeat sync and remote command reception.
 
+The entire stack runs as **a single FastAPI process on port 80** that serves the REST API, the WebSocket endpoints, and the React SPA. HTTPS on port 443 is handled by a lightweight asyncio TLS proxy (~5 MB RAM). Total runtime footprint on a Raspberry Pi 4 is **~1.5 GB RAM** for the entire stack.
+
+There are **24 built-in SYSTEM modules**, including the recently added `climate`, `lights_switches`, and `update_manager`.
+
 **Core technology stack:**
 
 | Component       | Technology                          |
@@ -42,11 +46,10 @@ SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run
 
 ```
 +------------------------------------------------------------------+
-|                         SelenaCore Process                        |
-|   port 80 (FastAPI)                                            |
+|                  SelenaCore (single FastAPI :80)                  |
 |                                                                  |
 |  +------------------+   +------------------+   +--------------+  |
-|  | 21 SYSTEM        |   |    EventBus      |   |  Device      |  |
+|  | 24 SYSTEM        |   |    EventBus      |   |  Device      |  |
 |  | modules          |<->| (asyncio.Queue)  |<->|  Registry    |  |
 |  | (in-process)     |   |                  |   |  (SQLite)    |  |
 |  +------------------+   +--------+---------+   +--------------+  |
@@ -56,6 +59,8 @@ SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run
 |                         |   (WebSocket)    |                     |
 |                         +--------+---------+                     |
 |                                  |                               |
+|  SyncManager (UI WebSocket /api/ui/sync)                         |
+|  Static SPA + PWA served from same process                       |
 +----------------------------------+-------------------------------+
                                    |
                     +--------------+--------------+
@@ -66,10 +71,12 @@ SelenaCore is a **local-first smart home hub** built on FastAPI, designed to run
                | (user)  |  | (user)  |  | (user)      |
                +---------+  +---------+  +-------------+
 
+  HTTPS :443 ---> TLS proxy (asyncio, ~5 MB RAM) ---> :80
+
   Separate process:
   +----------------------------+
   | Integrity Agent            |
-  | SHA256 hash check / 30s   |
+  | SHA256 hash check / 30s    |
   | Safe mode enforcement      |
   +----------------------------+
 ```
@@ -100,12 +107,13 @@ The startup procedure is defined in the FastAPI lifespan handler in `core/main.p
    |  Heartbeat loop begins (optional)
    v
 7. Scan system_modules/ -> load in-process -> mount routers
-   |  21 built-in modules activated
+   |  24 built-in modules activated
    v
 8. Scan modules/ -> start user modules
    |  Docker containers launched, bus connections accepted
    v
-9. "SelenaCore ready on port 80"
+9. SPA static files mounted, SyncManager initialized,
+   single process ready on :80
 ```
 
 ---
@@ -118,7 +126,7 @@ SelenaCore supports two distinct module types that share the same EventBus but d
 
 | Property          | Value                                           |
 |-------------------|-------------------------------------------------|
-| Count             | 21 built-in                                     |
+| Count             | 24 built-in                                     |
 | Base class        | `SystemModule` (`core/module_loader/system_module.py`) |
 | Execution         | In-process via Python `importlib`               |
 | Isolation         | None (shared process)                           |
@@ -128,7 +136,7 @@ SelenaCore supports two distinct module types that share the same EventBus but d
 | API surface       | Optional FastAPI router at `/api/ui/modules/{name}/` |
 | Location          | `system_modules/` directory                     |
 
-**Built-in system modules:**
+**Built-in system modules (24):**
 
 ```
 voice_core           llm_engine           ui_core
@@ -138,7 +146,35 @@ media_player         presence_detection   hw_monitor
 backup_manager       remote_access        network_scanner
 device_control       energy_monitor       update_manager
 notify_push          secrets_vault        weather_service
+climate              lights_switches      clock
 ```
+
+| Module                | Purpose                                                              |
+|-----------------------|----------------------------------------------------------------------|
+| `voice_core`          | STT (Vosk / Whisper), TTS (Piper), wake-word, speaker ID             |
+| `llm_engine`          | Ollama local LLM, Fast Matcher, 6-tier intent router, cloud fallback |
+| `ui_core`             | React SPA + PWA, served from the unified Core process                |
+| `device_control`      | Pluggable provider system (Tuya / Gree / Hue / ESPHome / MQTT)       |
+| `climate`             | A/C and thermostat control panel grouped by room                     |
+| `lights_switches`     | Lights, switches, outlets — on/off, brightness, RGB                  |
+| `energy_monitor`      | Per-device power and kWh tracking with auto-routing                  |
+| `automation_engine`   | YAML rule engine: triggers → actions                                 |
+| `update_manager`      | OTA updates from GitHub Releases with SHA256 verification            |
+| `scheduler`           | Cron / interval / sunrise / sunset triggers                          |
+| `user_manager`        | Profiles, PIN, Face ID, audit log                                    |
+| `secrets_vault`       | AES-256-GCM token and credential storage                             |
+| `hw_monitor`          | CPU temperature, RAM, disk, uptime polling                           |
+| `media_player`        | Internet radio, USB, SMB, Internet Archive                           |
+| `protocol_bridge`     | MQTT / Zigbee / Z-Wave / HTTP gateway                                |
+| `weather_service`     | Open-Meteo current and forecast (no API key)                         |
+| `presence_detection`  | ARP / Bluetooth / Wi-Fi MAC presence tracking                        |
+| `device_watchdog`     | Device availability monitoring (ICMP, MQTT/Zigbee heartbeat)         |
+| `notification_router` | Routes notifications to TTS / Telegram / Web Push / webhooks         |
+| `notify_push`         | Web Push (VAPID)                                                     |
+| `network_scanner`     | ARP / mDNS / SSDP / Zigbee discovery                                 |
+| `clock`               | Alarms, timers, reminders, world clock, stopwatch                    |
+| `backup_manager`      | Local USB / SD and E2E cloud backup                                  |
+| `remote_access`       | Tailscale-based remote access                                        |
 
 ### User Modules (Docker containers)
 
@@ -463,6 +499,8 @@ Requests pass through middleware in the following order:
 | `/ui`           | UI panel serving                      |
 | `/setup`        | First-run setup wizard                |
 | `/voice_engines`| Voice engine configuration            |
+| `/sync`         | UI state sync (WebSocket, versioned)  |
+| `/stream`       | Legacy SSE stream (backward compat)   |
 
 ### Swagger Documentation
 
@@ -612,6 +650,7 @@ In **Safe Mode**, only essential core functions remain active. All user modules 
 | Network mode    | host                                               |
 | Privileges      | privileged (hardware access)                       |
 | System packages | ffmpeg, portaudio, VLC, ALSA libs, PulseAudio      |
+| Runtime RAM     | ~1.5 GB total (down from ~3 GB pre-rework)         |
 
 Host networking and privileged mode are required for:
 - Direct access to audio hardware (microphone, speakers) for voice processing.

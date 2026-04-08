@@ -1,38 +1,80 @@
 <div align="center">
 
+<!-- TODO: add logo to docs/assets/logo.png -->
+
 # SelenaCore
 
-**Open-source local smart home core for Raspberry Pi**
+**Local-first smart home hub. No cloud required. No subscription. Just your hardware.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-teal.svg)](https://fastapi.tiangolo.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3b82f6.svg)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-06b6d4.svg)](https://fastapi.tiangolo.com)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2563eb.svg)](https://docker.com)
+[![GitHub Stars](https://img.shields.io/github/stars/dotradepro/SelenaCore?style=flat&color=f59e0b)](https://github.com/dotradepro/SelenaCore/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/dotradepro/SelenaCore?color=ef4444)](https://github.com/dotradepro/SelenaCore/issues)
 
-[Українська версія](docs/uk/README.md)
+[🇺🇦 Українська](docs/uk/README.md) · [📖 Docs](https://docs.selenehome.tech) · [🐛 Report Bug](https://github.com/dotradepro/SelenaCore/issues) · [💡 Discuss](https://github.com/dotradepro/SelenaCore/discussions)
 
 </div>
 
 ---
 
-## What is SelenaCore
+## Why SelenaCore?
 
-SelenaCore is an open-source (MIT) smart home hub that runs on Raspberry Pi 4/5 or any Linux SBC. Works **fully offline** — voice assistant, automations, device management — no subscription, no cloud required.
+- **100% offline** — voice assistant, automations, device control all run on your hardware. The internet is optional.
+- **No subscription** — set it up once, free forever. No accounts, no usage tiers.
+- **Your data stays home** — nothing leaves the LAN unless you explicitly enable cloud sync.
+- **Runs on a Raspberry Pi 4** — no server, no rack, no fans.
 
-Three principles:
+---
 
-- **Core is immutable** — SHA256 protection of all core files, Integrity Agent checks every 30 sec
-- **Modules are isolated** — all user modules communicate exclusively through the WebSocket Module Bus
-- **Agent watches** — IntegrityAgent: stop modules → notify → rollback → SAFE MODE
+## Features
+
+### 🎙️ Offline Voice Assistant
+
+Full offline STT (Vosk / Whisper) and TTS (Piper) pipeline. Local LLM inference via Ollama for natural language understanding. Cloud LLMs (OpenAI, Anthropic, Groq) are an optional fallback. Models are picked and downloaded from the in-browser setup wizard.
+
+### 🧩 Modular Architecture
+
+24 built-in system modules (voice, device management, climate, lights, energy, automations, media and more) run in-process with zero overhead. User modules run in isolated Docker containers and only communicate through the WebSocket Module Bus. Modules cannot import each other.
+
+### 🔌 Runtime Provider System
+
+`device-control` is a pluggable provider system. Built-in providers: Tuya LAN, Tuya Cloud, Gree / Pular Wi-Fi A/C, MQTT. Optional providers (Philips Hue Bridge, ESPHome and others) install in one click from the UI — no rebuild, no container restart.
+
+### 🏠 Auto-routing & Smart Import
+
+When you import a device — manually, from Tuya, or via Gree scan — it is automatically routed to the right module (`climate` / `lights-switches`) by `entity_type` and registered as a source in `energy-monitor`. No manual wiring.
+
+### 🛡️ Integrity Agent
+
+A separate process verifies SHA256 hashes of every core file every 30 seconds. On change: stop all modules → notify → roll back → enter SAFE MODE. The core cannot be silently modified.
+
+### 📱 Setup in 10 Minutes
+
+One `install.sh` script, then a 9-step browser wizard: Wi-Fi, STT/TTS models, LLM, admin user. No SSH, no editing config files. Works from a phone.
+
+### ⚡ Energy Monitoring
+
+Auto-tracking of power consumption for every registered device. One filterable, sortable table with search, room and type filters. Click the dashboard widget to open the full-screen detail table.
+
+### 🔄 OTA Updates
+
+The built-in `update-manager` checks GitHub Releases daily at 03:00, downloads with SHA256 verification, snapshots a backup, and applies the update atomically through systemd. One click to update.
 
 ---
 
 ## Quick Start
 
-### Requirements
+### Hardware
 
-- Raspberry Pi 4/5 (4–8 GB RAM), NVIDIA Jetson Orin Nano (8 GB), or any Linux SBC (ARM64 / x86_64)
-- Ubuntu 22.04+ (or Raspberry Pi OS)
-- Docker + Docker Compose (installed automatically by `install.sh`)
+| Platform                    | RAM   | Notes                              |
+|-----------------------------|-------|------------------------------------|
+| Raspberry Pi 4 / 5          | 4 GB+ | Recommended for most users         |
+| NVIDIA Jetson Orin Nano     | 8 GB  | GPU-accelerated STT / TTS          |
+| Any Linux SBC (ARM64/x86_64)| 2 GB+ | Core features, no local LLM        |
+
+OS: Ubuntu 22.04+ or Raspberry Pi OS Bookworm. Docker 24+ and Docker Compose v2 are installed automatically.
 
 ### One-shot install (recommended)
 
@@ -42,44 +84,9 @@ cd SelenaCore
 sudo ./install.sh
 ```
 
-`install.sh` does the bare minimum to get the system up and prints a URL like
-`http://<lan-ip>/`. Open that URL in any browser — the rest of the
-installation (model downloads, voice selection, LLM, admin user, platform
-registration, native systemd services) happens inside the **first-run wizard**
-with a live progress bar.
+`install.sh` installs Docker, creates the `selena` system user and directories, builds the containers, and prints a URL like `http://<lan-ip>/`. Everything else — model downloads, voice selection, LLM choice, admin user, native systemd services — happens in the **first-run wizard** in your browser, with a live progress bar.
 
-What `install.sh` actually does:
-
-| Step                          | Why                                                |
-| ----------------------------- | -------------------------------------------------- |
-| `apt-get install` base pkgs   | docker, ffmpeg, arp-scan, pulseaudio, nmcli, …     |
-| Create `selena` system user   | required by the systemd units                      |
-| Create `/var/lib/selena/...`  | data, logs, model directories, `/secure`           |
-| Seed local Piper voices       | copies voices from `~/.local/share/piper/models`   |
-| `cp config/core.yaml.example` | initializes `wizard.completed=false`               |
-| `npx vite build`              | builds the frontend bundle                         |
-| `docker compose up -d`        | starts `selena-core` and `selena-agent` containers |
-| Stage systemd units           | placed in `/etc/systemd/system` (not enabled yet)  |
-
-The wizard's **provisioning** stage then handles everything else: STT/TTS/LLM
-download, applying language and timezone, creating the admin (owner) account,
-issuing a session token, and finally enabling the systemd units via
-`scripts/install-systemd.sh`. After it finishes the page automatically navigates
-to the dashboard of a fully working device.
-
-> All model and voice paths used to be hardcoded. They now live in
-> `config/core.yaml` (`voice.tts.models_dir`, `stt.vosk.models_dir`,
-> `voice.speaker_id.embeddings_dir`, etc.) and are written by the wizard so
-> nothing needs manual editing.
-
-### Re-running the wizard
-
-```bash
-curl -X POST http://localhost/api/ui/wizard/reset
-# then reload the browser
-```
-
-### Launch (manual, no installer)
+### Manual setup
 
 ```bash
 git clone https://github.com/dotradepro/SelenaCore.git
@@ -89,272 +96,246 @@ cp config/core.yaml.example config/core.yaml
 docker compose up -d --build
 ```
 
-**Core API + UI (unified):** `http://localhost` or `http://smarthome.local`
-**HTTPS:** `https://localhost` (TLS proxy, self-signed certificate)
+### URLs
 
-### First Launch — Onboarding Wizard
-
-On first start (or without Wi-Fi) the core creates an access point:
-
-```
-SSID:     SmartHome-Setup
-Password: smarthome
-```
-
-Connect from your phone, open browser at `192.168.4.1`, follow the 9-step wizard.
+- `http://localhost` or `http://smarthome.local` — Web UI + API
+- `https://localhost` — HTTPS via self-signed TLS proxy (~5 MB overhead)
+- `http://localhost/docs` — Swagger UI (only when `DEBUG=true`)
 
 ---
 
 ## Architecture
 
-SelenaCore runs as a single FastAPI application on port 80 with two types of modules:
-
 ```
-┌───────────────────────────────────────────────────────┐
-│                  SelenaCore (FastAPI :80)            │
-│                                                       │
-│  ┌─────────────────────────────────────────────────┐  │
-│  │           Module Bus (WebSocket Hub)             │  │
-│  │         ws://core/api/v1/bus               │──┼──── User Modules
-│  └──────────────────────┬──────────────────────────┘  │     (Docker containers)
-│                         │                             │
-│  EventBus (asyncio.Queue, in-process pub/sub)         │
-│  ├── voice_core       ├── llm_engine                  │
-│  ├── ui_core          ├── automation_engine            │
-│  ├── user_manager     ├── scheduler                   │
-│  ├── device_watchdog  ├── protocol_bridge             │
-│  ├── hw_monitor       ├── media_player                │
-│  └── 12 more system modules                          │
-│                                                       │
-│  Device Registry (SQLite)  │  Cloud Sync (HMAC)       │
-│  Integrity Agent (SHA256)  │  i18n (uk, en)           │
-└───────────────────────────────────────────────────────┘
++--------------------------------------------------------------+
+|                  SelenaCore (FastAPI :80)                    |
+|                                                              |
+|  +--------------------------------------------------------+  |
+|  |          24 System Modules (in-process)                |  |
+|  |  voice_core · llm_engine · climate · lights_switches   |  |
+|  |  device_control (provider system) · energy_monitor     |  |
+|  |  automation_engine · update_manager · scheduler        |  |
+|  |  user_manager · secrets_vault · hw_monitor · ...       |  |
+|  +-----------------------+--------------------------------+  |
+|                          | EventBus (asyncio.Queue)          |
+|  +-----------------------+--------------------------------+  |
+|  |  Module Bus (WebSocket ws://host/api/v1/bus)           |  |---> User Modules
+|  +--------------------------------------------------------+  |     (Docker)
+|                                                              |
+|  Device Registry (SQLite) · Cloud Sync (HMAC-SHA256)         |
+|  Secrets Vault (AES-256-GCM) · SyncManager · i18n (en, uk)   |
++--------------------------------------------------------------+
+
+HTTPS :443 ---> TLS proxy (asyncio, ~5 MB RAM) ---> :80
+
++----------------------------------+
+|  Integrity Agent (separate proc) |
+|  SHA256 every 30s                |
+|  Rollback + SAFE MODE            |
++----------------------------------+
 ```
 
-**System modules** (21 built-in) run in-process via `importlib` — zero network overhead, direct EventBus and database access.
+Total runtime footprint: **~1.5 GB RAM** for the entire stack on a Pi 4. See [docs/architecture.md](docs/architecture.md) for the full design.
 
-**User modules** run in Docker containers and connect to core through the **WebSocket Module Bus** at `ws://core/api/v1/bus`. No individual ports per module — all communication goes through a single bus endpoint.
+---
 
-### Project Structure
+## Modules
 
-```
-selena-core/
-  core/
-    main.py                  # FastAPI + asyncio entry point
-    config.py                # Settings from .env + core.yaml
-    module_bus.py            # WebSocket Module Bus (CAN-bus inspired)
-    registry/                # Device Registry (SQLAlchemy + SQLite)
-    eventbus/                # Event Bus (asyncio.Queue)
-    module_loader/           # Plugin Manager + Docker sandbox
-    api/routes/              # REST API endpoints
-    cloud_sync/              # Platform sync (HMAC)
-    i18n.py                  # Internationalization
-  system_modules/            # 21 built-in in-process modules
-    voice_core/              # STT (Whisper), TTS (Piper), wake-word
-    llm_engine/              # Ollama, Fast Matcher, Intent Router
-    ui_core/                 # SPA static files + PWA (served by Core)
-    user_manager/            # Profiles, PIN, Face ID, audit log
-    secrets_vault/           # AES-256-GCM token storage
-    ...                      # 17 more modules
-  modules/                   # User-installed modules (Docker)
-    weather-module/          # Example: weather via Open-Meteo
-  agent/
-    integrity_agent.py       # SHA256 periodic check
-    responder.py             # Response chain + SAFE MODE
-  sdk/
-    base_module.py           # SmartHomeModule base class + decorators
-    cli.py                   # smarthome CLI tool
-  config/
-    core.yaml.example        # Configuration template
-    locales/                 # i18n translation files
-  tests/                     # pytest test suite
-  benchmarks/                # Performance benchmarks
-  docker-compose.yml
-```
+| Module              | Purpose                                                                            |
+|---------------------|------------------------------------------------------------------------------------|
+| `voice_core`        | STT (Vosk / Whisper), TTS (Piper), wake-word, speaker ID, privacy mode             |
+| `llm_engine`        | Ollama local LLM, Fast Matcher, 6-tier intent router, cloud LLM fallback           |
+| `ui_core`           | React SPA + PWA (served directly by Core)                                          |
+| `device_control`    | Device registry, pluggable provider system (Tuya / Gree / Hue / ESPHome / MQTT)    |
+| `climate`           | A/C and thermostat control, grouped by room                                        |
+| `lights_switches`   | Lights, switches, outlets — on/off, brightness, RGB                                |
+| `energy_monitor`    | Power tracking, kWh statistics, auto-routing source                                |
+| `automation_engine` | YAML rules: triggers (time / event / device / presence) → actions                  |
+| `update_manager`    | OTA updates from GitHub Releases with SHA256 verification                          |
+| `scheduler`         | Cron / interval / sunrise / sunset task scheduling                                 |
+| `user_manager`      | User profiles, PIN, Face ID, audit log                                             |
+| `secrets_vault`     | AES-256-GCM token and credential storage                                           |
+| `hw_monitor`        | CPU temp, RAM, disk, uptime — 30s polling                                          |
+| `media_player`      | Internet radio, USB, SMB, Internet Archive — voice control, cover art              |
+| `protocol_bridge`   | MQTT / Zigbee / Z-Wave / HTTP gateway to the device registry                       |
+| `weather_service`   | Local weather and forecast via Open-Meteo (no API key)                             |
+| `presence_detection`| Home / away detection via ARP, Bluetooth, Wi-Fi MAC                                |
+| `device_watchdog`   | Device availability monitoring                                                     |
+| `notification_router`| Routes notifications to TTS, Telegram, Web Push, HTTP webhooks                    |
+| `notify_push`       | Web Push (VAPID) implementation                                                    |
+| `network_scanner`   | ARP / mDNS / SSDP / Zigbee discovery                                               |
+| `clock`             | Alarms, timers, reminders, world clock, stopwatch                                  |
+| `backup_manager`    | Local USB / SD and E2E cloud backup                                                |
+| `remote_access`     | Tailscale-based remote access                                                      |
+
+Full reference: [docs/modules.md](docs/modules.md).
+
+---
+
+## Provider System
+
+`device-control` ships with a runtime-pluggable provider system. New device families can be added without rebuilding the container.
+
+| Provider      | Protocol            | Built-in | Notes                                  |
+|---------------|---------------------|----------|----------------------------------------|
+| `tuya_local`  | Tuya LAN (tinytuya) | ✅       | No developer account required          |
+| `tuya_cloud`  | Tuya Sharing SDK    | ✅       | No cloud account required              |
+| `gree`        | Gree UDP / AES      | ✅       | Pular, Cooper&Hunter, EWT A/C          |
+| `mqtt`        | MQTT bridge         | ✅       | Via `protocol_bridge`                  |
+| `philips_hue` | Hue Bridge LAN      | Install  | `phue` library                         |
+| `esphome`     | Native asyncio API  | Install  | Push-based                             |
+
+Install from the UI: **Settings → device-control → Providers → Install**. See [docs/providers.md](docs/providers.md).
 
 ---
 
 ## Core API
 
-Base URL: `http://localhost/api/v1`
-Auth: `Authorization: Bearer <module_token>`
+| Method | Path                  | Description                                  |
+|--------|-----------------------|----------------------------------------------|
+| GET    | `/api/v1/health`      | Core status (no auth)                        |
+| GET    | `/api/v1/system/info` | Hardware and version info                    |
+| GET    | `/api/v1/devices`     | List all devices                             |
+| POST   | `/api/v1/devices`     | Register a device                            |
+| PATCH  | `/api/v1/devices/{id}/state` | Update device state                   |
+| POST   | `/api/v1/events/publish` | Publish an event                          |
+| GET    | `/api/v1/modules`     | List modules                                 |
+| POST   | `/api/v1/modules/install` | Install a module (ZIP)                   |
+| WS     | `/api/v1/bus?token=TOKEN` | Module Bus (WebSocket)                   |
+| WS     | `/api/ui/sync?v=N`    | UI state sync (WebSocket, versioned)         |
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Core status (no auth) |
-| GET | `/system/info` | System information |
-| GET | `/devices` | Device list |
-| POST | `/devices` | Register device |
-| GET | `/devices/{id}` | Specific device |
-| PATCH | `/devices/{id}/state` | Update state |
-| DELETE | `/devices/{id}` | Delete device |
-| POST | `/events/publish` | Publish event |
-| GET | `/modules` | Module list |
-| POST | `/modules/install` | Install module (ZIP) |
-| POST | `/modules/{name}/start` | Start module |
-| POST | `/modules/{name}/stop` | Stop module |
-| GET | `/integrity/status` | Integrity Agent status |
-| WS | `/bus?token=TOKEN` | Module Bus (WebSocket) |
-
-Swagger UI: `http://localhost/docs` — only available when `DEBUG=true`.
-
-Full reference: [docs/api-reference.md](docs/api-reference.md)
+Auth: `Authorization: Bearer <module_token>`. Full reference: [docs/api-reference.md](docs/api-reference.md).
 
 ---
 
-## Voice Assistant
+## Building a Module
 
-Fully offline — STT and TTS work without internet.
-
+```bash
+smarthome new-module my-module
+cd my-module
+smarthome dev
+smarthome publish . --core http://smarthome.local
 ```
-Wake-word (openWakeWord)
-  → Audio recording
-  → Whisper STT            ~0.8-2 sec
-  → Speaker ID (resemblyzer)
-  → Intent Router (4-tier):
-      1. Fast Matcher (YAML)           ~0 ms
-      2. System Module Intents         ~μs
-      3. Module Bus Intents (WebSocket) ~ms
-      4. Ollama LLM fallback           ~3-8 sec
-  → Piper TTS              ~300 ms
-```
-
-Supported languages: `uk`, `en`.
-
-Full guide: [docs/voice-settings.md](docs/voice-settings.md)
-
----
-
-## Module Development
-
-Modules communicate with core via the **WebSocket Module Bus** — no separate HTTP servers, no individual ports.
 
 ```python
-import asyncio
 from sdk.base_module import SmartHomeModule, intent, on_event, scheduled
 
-class ClimateModule(SmartHomeModule):
-    name = "climate-module"
-    version = "1.0.0"
+class MyModule(SmartHomeModule):
+    name = "my-module"
 
-    async def on_start(self):
-        self._log.info("Climate module started")
-
-    @intent(r"temperature|how hot|як.*тепло")
-    async def handle_temp(self, text: str, context: dict) -> dict:
-        return {"tts_text": "Current temperature is 22 degrees"}
+    @intent(r"turn on (?P<what>.+)")
+    async def handle_turn_on(self, text: str, context: dict) -> dict:
+        return {"tts_text": f"Turning on {context['what']}"}
 
     @on_event("device.state_changed")
-    async def handle_state(self, data: dict):
-        if data.get("new_state", {}).get("temperature", 0) > 25:
-            await self.publish_event("climate.overheat", {
-                "device_id": data["device_id"]
-            })
+    async def on_device_change(self, event: dict) -> None:
+        ...
 
-    @scheduled("every:5m")
-    async def periodic_check(self):
-        devices = await self.api_request("GET", "/devices")
-        # ... process devices ...
-
-if __name__ == "__main__":
-    module = ClimateModule()
-    asyncio.run(module.start())
+    @scheduled(cron="0 7 * * *")
+    async def morning_routine(self) -> None:
+        ...
 ```
 
-Full guide: [docs/module-development.md](docs/module-development.md)
+Full guide: [docs/module-development.md](docs/module-development.md).
 
 ---
 
-## Environment Variables
+## Configuration
 
-Copy `.env.example` to `.env`:
+| Variable           | Default                              | Description                          |
+|--------------------|--------------------------------------|--------------------------------------|
+| `CORE_PORT`        | `80`                                 | Unified API + UI port                |
+| `CORE_DATA_DIR`    | `/var/lib/selena`                    | Database, models, backups            |
+| `CORE_SECURE_DIR`  | `/secure`                            | Encrypted tokens, TLS certs          |
+| `CORE_LOG_LEVEL`   | `INFO`                               | DEBUG / INFO / WARNING               |
+| `DEBUG`            | `false`                              | Enables Swagger UI at `/docs`        |
+| `PLATFORM_API_URL` | `https://selenehome.tech/api/v1`     | Cloud platform (optional)            |
+| `OLLAMA_URL`       | `http://localhost:11434`             | Local LLM inference endpoint         |
+| `UI_HTTPS`         | `true`                               | Enable TLS proxy on `:443`           |
+
+Full reference: [docs/configuration.md](docs/configuration.md).
+
+---
+
+## Project Structure
+
+```
+selena-core/
+├── core/
+│   ├── main.py              # FastAPI lifespan — single :80 process
+│   ├── config.py            # Pydantic settings
+│   ├── module_bus.py        # WebSocket Module Bus
+│   ├── api/
+│   │   ├── sync_manager.py  # UI state sync (versioned WebSocket)
+│   │   └── routes/          # REST + WebSocket + SPA serving
+│   ├── registry/            # Device Registry + DriverProvider ORM
+│   ├── eventbus/            # Async event bus
+│   ├── module_loader/       # Plugin manager + Docker sandbox
+│   └── cloud_sync/          # HMAC-signed cloud sync
+├── system_modules/          # 24 built-in modules
+│   ├── voice_core/
+│   ├── llm_engine/
+│   ├── device_control/      # providers/, drivers/ (gree, tuya_*, …)
+│   ├── climate/
+│   ├── lights_switches/
+│   ├── energy_monitor/
+│   ├── update_manager/
+│   └── …                    # 17 more
+├── agent/                   # Integrity Agent (separate process)
+├── sdk/                     # SmartHomeModule base class + CLI
+├── modules/                 # User-installed modules (Docker)
+├── config/                  # core.yaml.example, locales, intents
+├── scripts/                 # start.sh, install.sh, systemd units
+├── tests/                   # pytest suite (72+ tests)
+└── docker-compose.yml
+```
+
+---
+
+## Roadmap
+
+- [ ] Matter / Thread protocol support
+- [ ] Module marketplace UI
+- [ ] Mobile app (React Native)
+- [ ] Multi-hub mesh networking
+- [ ] Home Assistant full migration tool
+- [ ] Voice print (speaker ID) improvements
+
+---
+
+## Contributing
+
+Pull requests, issue reports, translations, hardware tests and module ideas are all welcome. Before opening a PR:
 
 ```bash
-CORE_PORT=80
-CORE_DATA_DIR=/var/lib/selena
-CORE_SECURE_DIR=/secure
-CORE_LOG_LEVEL=INFO
-UI_PORT=80
-PLATFORM_API_URL=https://selenehome.tech/api/v1
-PLATFORM_DEVICE_HASH=
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-DEBUG=false
-DEV_MODULE_TOKEN=test-module-token-xyz
+pytest tests/ -x -q
+python -m mypy core/ --ignore-missing
 ```
 
-Full reference: [docs/configuration.md](docs/configuration.md)
-
----
-
-## Tests
-
-```bash
-pip install -r requirements-dev.txt
-
-pytest tests/ -v
-pytest tests/ --cov=core --cov-report=term-missing
-```
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Architecture](docs/architecture.md) | System design, module types, EventBus, boot sequence |
-| [Module Bus Protocol](docs/module-bus-protocol.md) | WebSocket protocol reference |
-| [Module Development](docs/module-development.md) | Building user modules with the SDK |
-| [System Module Development](docs/system-module-development.md) | Building in-process system modules |
-| [API Reference](docs/api-reference.md) | REST API endpoints |
-| [Configuration](docs/configuration.md) | .env and core.yaml settings |
-| [Widget Development](docs/widget-development.md) | UI widgets for modules |
-| [Deployment](docs/deployment.md) | Installation and production setup |
-| [Voice Settings](docs/voice-settings.md) | Voice pipeline configuration |
-| [Kiosk Setup](docs/kiosk-setup.md) | Physical display configuration |
-| [User Manager & Auth](docs/user-manager-auth.md) | Authentication and security |
-| [Contributing](CONTRIBUTING.md) | Contribution guidelines |
-
----
-
-## Support the Project
-
-SmartHome LK is built by a solo developer. If you believe in what we're building — smart home infrastructure with autonomous AI development — consider sponsoring.
-
-**Your support funds:**
-- LLM API costs for the AI coding agents
-- Docker sandbox hosting for secure module testing
-- 6 months of production infrastructure
-- Full-time development focus
-
-| Platform | Link | Notes |
-|---|---|---|
-| Ko-fi | [ko-fi.com/dotradepro](https://ko-fi.com/dotradepro) | One-time / Goal tracker / All tiers |
-| GitHub Sponsors | [github.com/sponsors/dotradepro](https://github.com/sponsors/dotradepro) | Monthly or one-time |
-
-**Tiers:** Supporter $10 / Early Adopter $50 / Developer $100 (PRO 6mo) / Partner $500 (UNLIMITED forever) / Founding Sponsor $1000+
-
-See [SPONSORS.md](SPONSORS.md) for the full list of supporters and tier benefits.
-
-[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/dotradepro)
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
 ---
 
 ## Security
 
-- **Integrity Agent** — SHA256 check of core files every 30 sec
-- **AES-256-GCM** — all OAuth tokens encrypted in `/secure/tokens/`
-- **Module Bus ACL** — permission-based access control per module
-- **Biometrics** — stored locally only, cloud sync blocked
-- **Core API** — inaccessible outside localhost (iptables)
-- **Rate limiting** — 120 req/min; PIN: 5 attempts → 10 min lock
+Please **do not** open a public issue for security reports. Use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new) instead. See [SECURITY.md](SECURITY.md) for the full policy.
 
 ---
 
-## License
+<div align="center">
 
-MIT — see [LICENSE](LICENSE)
+## Sponsoring
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?style=for-the-badge&logo=github)](https://github.com/sponsors/dotradepro)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/dotradepro)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dotradepro)
+
+Sponsorship pays for new test hardware (Pi 5, Jetson, Zigbee dongles), development time, video tutorials, and the marketplace infrastructure.
 
 ---
 
-*SmartHome LK / SelenaCore v0.3.0-beta / 2026 / https://github.com/dotradepro/SelenaCore*
+Made with ❤️ for people who believe your home should work for you — not the other way around.
+
+[⭐ Star this repo](https://github.com/dotradepro/SelenaCore/stargazers) · [🐛 Report Issue](https://github.com/dotradepro/SelenaCore/issues) · [💬 Discuss](https://github.com/dotradepro/SelenaCore/discussions)
+
+</div>

@@ -4,6 +4,23 @@ Thank you for your interest in the project!
 
 [Українська версія](docs/uk/CONTRIBUTING.md)
 
+## Good First Issues
+
+New to SelenaCore? Start with issues labelled [`good first issue`](https://github.com/dotradepro/SelenaCore/labels/good%20first%20issue) — they're self-contained and have clear acceptance criteria.
+
+## Development Setup
+
+```bash
+git clone https://github.com/dotradepro/SelenaCore.git
+cd SelenaCore
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+cp config/core.yaml.example config/core.yaml
+docker compose up -d --build
+pytest tests/ -v
+```
+
 ## Workflow
 
 1. **Issues first** — all work starts with creating a GitHub Issue
@@ -61,6 +78,9 @@ Types: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`, `security`, `perf`
 ```bash
 pytest tests/ -v
 pytest tests/ --cov=core --cov-report=term-missing
+pytest tests/test_provider_system.py     # provider system
+pytest tests/test_gree_driver.py         # Gree A/C driver
+pytest tests/test_energy_monitor.py      # energy monitor
 ```
 
 Before each push:
@@ -83,6 +103,8 @@ If you find a vulnerability — **do not create a public Issue**. Use [GitHub Se
 - Publishing `core.*` events from a module
 - Biometrics in outgoing HTTP requests
 - Bare `raise Exception()` — use custom exceptions
+- Extending the Integrity Agent watch glob (`agent/manifest.py`) without explicit approval
+- Installing provider pip packages directly in `Dockerfile.core` — use the Provider system instead
 
 ## License
 
