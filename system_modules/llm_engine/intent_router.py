@@ -583,24 +583,57 @@ class IntentRouter:
                                     lines.append(f"  {m.name}: {desc}")
                             parts.append("\nConnected modules:\n" + "\n".join(lines))
 
-                        # Devices — always send the English voice-pattern name
-                        # (meta.name_en, set via "Назва англійською" in the UI)
-                        # so the LLM extracts English entity/location values
-                        # regardless of the TTS language.
+                        # Devices — group by room with entity_type so the LLM
+                        # can answer "temperature in <room>" by looking at
+                        # what physical devices live there. We always emit
+                        # English forms (meta.name_en / meta.location_en)
+                        # so the model produces English entity/location
+                        # values in its JSON output regardless of TTS lang.
                         devices = list((await session.execute(select(Device))).scalars().all())
                         if devices:
                             import json as _json
-                            names: list[str] = []
-                            for d in devices[:30]:
+                            # room_en → list of "<entity_type>: <name_en>"
+                            by_room: dict[str, list[str]] = {}
+                            unroomed: list[str] = []
+                            for d in devices:
                                 try:
                                     meta = _json.loads(d.meta) if d.meta else {}
                                 except Exception:
                                     meta = {}
-                                en = (meta.get("name_en") or "").strip()
-                                if en:
-                                    names.append(en)
-                            if names:
-                                parts.append(f"\nKnown devices: {', '.join(names)}")
+                                name_en = (meta.get("name_en") or "").strip()
+                                if not name_en:
+                                    continue
+                                room_en = (meta.get("location_en") or "").strip()
+                                etype = (d.entity_type or "device").strip()
+                                label = f"{etype}: {name_en}"
+                                if room_en:
+                                    by_room.setdefault(room_en, []).append(label)
+                                else:
+                                    unroomed.append(label)
+                            if by_room or unroomed:
+                                lines = ["\nDevices by room (use the room name to scope intents):"]
+                                for room in sorted(by_room.keys()):
+                                    lines.append(f"  {room}: {', '.join(by_room[room])}")
+                                if unroomed:
+                                    lines.append(f"  (no room): {', '.join(unroomed)}")
+                                parts.append("\n".join(lines))
+                            # Distinct list of known rooms — gives the LLM
+                            # the topology of the house so it can scope
+                            # intents to the correct physical place.
+                            rooms_list = sorted(by_room.keys())
+                            if rooms_list:
+                                parts.append(
+                                    "\nKnown indoor rooms in this house: "
+                                    + ", ".join(rooms_list)
+                                    + ". If the user names any of these "
+                                    "rooms, choose an intent that acts on "
+                                    "or reads from a device in that room "
+                                    "(see 'Devices by room' above). "
+                                    "Pick a non-room/global intent only "
+                                    "when the user does NOT name any "
+                                    "known room or explicitly says "
+                                    "'outside' / 'outdoor' / 'globally'."
+                                )
 
                         # Radio stations
                         stmt = select(RadioStation).where(RadioStation.enabled == True)
