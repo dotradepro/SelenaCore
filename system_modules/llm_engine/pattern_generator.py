@@ -51,17 +51,28 @@ class PatternGenerator:
 
     def __init__(self, session_factory) -> None:
         self._sf = session_factory
+        # In-memory lookup populated by rebuild_composite_device_patterns().
+        # Maps lowercased name_en → device_id, used by device-control to
+        # resolve composite-pattern matches in O(1) without re-querying
+        # the DB on every voice command.
+        self._device_name_index: dict[str, str] = {}
 
     async def generate_for_entity(
         self, entity_type: str, entity_id: int | str,
     ) -> int:
-        """Generate patterns for a specific entity. Returns count of patterns created."""
+        """Generate patterns for a specific entity. Returns count of patterns created.
+
+        For ``entity_type='device'`` we always rebuild the composite
+        on/off patterns from scratch — they cover the whole registry in
+        exactly TWO rows so per-id work is wasted. Radio stations and
+        scenes still go through the per-entity path.
+        """
+        if entity_type == "device":
+            return await self.rebuild_composite_device_patterns()
         async with self._sf() as session:
             async with session.begin():
                 if entity_type == "radio_station":
                     return await self._gen_radio_station(session, int(entity_id))
-                elif entity_type == "device":
-                    return await self._gen_device(session, str(entity_id))
                 elif entity_type == "scene":
                     return await self._gen_scene(session, int(entity_id))
         return 0
@@ -69,7 +80,14 @@ class PatternGenerator:
     async def delete_for_entity(
         self, entity_type: str, entity_id: int | str,
     ) -> int:
-        """Delete auto-generated patterns for an entity. Returns count deleted."""
+        """Delete auto-generated patterns for an entity. Returns count deleted.
+
+        For devices, the composite pattern path means a single removal
+        triggers a full rebuild so the alternation drops the gone device.
+        """
+        if entity_type == "device":
+            return await self.rebuild_composite_device_patterns()
+
         from core.registry.models import IntentPattern
 
         ref = f"{entity_type}:{entity_id}"
@@ -82,6 +100,185 @@ class PatternGenerator:
         if count:
             logger.info("Deleted %d auto-patterns for %s", count, ref)
         return count
+
+    # ── Composite device patterns ──────────────────────────────────────
+
+    async def rebuild_composite_device_patterns(self) -> int:
+        """Build ONE composite regex per device verb that covers every device.
+
+        Replaces the old N×2 row-per-device approach. After this runs the
+        ``intent_patterns`` table holds at most TWO ``auto_entity`` rows
+        with ``entity_ref='device:composite'`` for the whole registry —
+        one for ``device.on`` and one for ``device.off``. The matched
+        ``name`` named-group is later resolved to a concrete device_id
+        via :meth:`get_device_id_by_name`.
+
+        Climate / lock devices keep their per-device patterns until a
+        future iteration — they have additional named groups (level,
+        mode, fan_speed) that don't compress into a single composite
+        cleanly without combinatorial explosion.
+        """
+        from core.registry.models import Device, IntentPattern
+        import json as _json
+
+        async with self._sf() as session:
+            async with session.begin():
+                # Wipe ALL device on/off rows (composite + any leftover
+                # legacy per-device rows from before this refactor) so
+                # we never accumulate stale alternations.
+                await session.execute(
+                    delete(IntentPattern).where(
+                        IntentPattern.source == "auto_entity",
+                        IntentPattern.entity_ref.like("device:%"),
+                    )
+                )
+
+                devices = list((await session.execute(select(Device))).scalars())
+                names_all_esc: list[str] = []
+                names_climate_esc: list[str] = []
+                names_lock_esc: list[str] = []
+                locations_esc: set[str] = set()
+                index: dict[str, str] = {}
+
+                for d in devices:
+                    try:
+                        meta = _json.loads(d.meta) if d.meta else {}
+                    except Exception:
+                        meta = {}
+                    name_en = (meta.get("name_en") or "").strip().lower()
+                    if not name_en or not name_en.isascii():
+                        continue
+                    name_esc = re.escape(name_en)
+                    names_all_esc.append(name_esc)
+                    index[name_en] = d.device_id
+
+                    etype = (d.entity_type or "").lower()
+                    if etype in ("thermostat", "air_conditioner"):
+                        names_climate_esc.append(name_esc)
+                    if etype in ("lock", "door_lock"):
+                        names_lock_esc.append(name_esc)
+
+                    loc_en = (meta.get("location_en") or "").strip().lower()
+                    if not loc_en and d.location and d.location.isascii():
+                        loc_en = d.location.lower()
+                    if loc_en:
+                        locations_esc.add(re.escape(loc_en))
+
+                # Atomic update of the in-memory index — match() never
+                # walks this so a brief inconsistency window is fine.
+                self._device_name_index = index
+
+                if not names_all_esc:
+                    logger.info(
+                        "Composite device patterns: no devices with name_en — skipping",
+                    )
+                    return 0
+
+                def _alt(items: list[str]) -> str:
+                    """Sort longest-first so multi-word names win over their
+                    prefixes during regex matching ("air conditioner" vs "air")."""
+                    return "|".join(sorted(set(items), key=len, reverse=True))
+
+                name_alt = _alt(names_all_esc)
+                loc_part = ""
+                if locations_esc:
+                    loc_alt = _alt(list(locations_esc))
+                    loc_part = (
+                        f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?(?P<location>{loc_alt}))?"
+                    )
+
+                # ── device.on / device.off (every device) ──
+                idef_on = await self._ensure_definition(
+                    session, "device.on", "device-control", "DEVICE", "on", 100,
+                    "Turn a device on",
+                )
+                idef_off = await self._ensure_definition(
+                    session, "device.off", "device-control", "DEVICE", "off", 100,
+                    "Turn a device off",
+                )
+                session.add(IntentPattern(
+                    intent_id=idef_on.id, lang="en",
+                    pattern=(
+                        f"^(?:turn\\s+on|switch\\s+on|enable)"
+                        f"\\s+(?:the\\s+)?(?P<name>{name_alt}){loc_part}\\s*\\??$"
+                    ),
+                    source="auto_entity", entity_ref="device:composite",
+                ))
+                session.add(IntentPattern(
+                    intent_id=idef_off.id, lang="en",
+                    pattern=(
+                        f"^(?:turn\\s+off|switch\\s+off|disable)"
+                        f"\\s+(?:the\\s+)?(?P<name>{name_alt}){loc_part}\\s*\\??$"
+                    ),
+                    source="auto_entity", entity_ref="device:composite",
+                ))
+                count = 2
+
+                # ── device.set_temperature (climate devices only) ──
+                if names_climate_esc:
+                    climate_alt = _alt(names_climate_esc)
+                    idef_temp = await self._ensure_definition(
+                        session, "device.set_temperature", "device-control",
+                        "CLIMATE", "set", 100,
+                        "Set the target temperature on a climate device",
+                    )
+                    session.add(IntentPattern(
+                        intent_id=idef_temp.id, lang="en",
+                        pattern=(
+                            f"^set\\s+(?:the\\s+)?(?P<name>{climate_alt})"
+                            f"\\s+(?:to\\s+)?(?P<level>\\d{{1,2}})"
+                            f"(?:\\s+degrees?)?{loc_part}\\s*\\??$"
+                        ),
+                        source="auto_entity", entity_ref="device:composite",
+                    ))
+                    count += 1
+
+                # ── device.lock / device.unlock (locks only) ──
+                if names_lock_esc:
+                    lock_alt = _alt(names_lock_esc)
+                    idef_lock = await self._ensure_definition(
+                        session, "device.lock", "device-control",
+                        "DEVICE", "lock", 100, "Lock a smart lock",
+                    )
+                    idef_unlock = await self._ensure_definition(
+                        session, "device.unlock", "device-control",
+                        "DEVICE", "unlock", 100, "Unlock a smart lock",
+                    )
+                    session.add(IntentPattern(
+                        intent_id=idef_lock.id, lang="en",
+                        pattern=(
+                            f"^(?:lock|secure|shut)\\s+(?:the\\s+)?"
+                            f"(?P<name>{lock_alt})(?:\\s+door)?{loc_part}\\s*\\??$"
+                        ),
+                        source="auto_entity", entity_ref="device:composite",
+                    ))
+                    session.add(IntentPattern(
+                        intent_id=idef_unlock.id, lang="en",
+                        pattern=(
+                            f"^(?:unlock|open)\\s+(?:the\\s+)?"
+                            f"(?P<name>{lock_alt})(?:\\s+door)?{loc_part}\\s*\\??$"
+                        ),
+                        source="auto_entity", entity_ref="device:composite",
+                    ))
+                    count += 2
+
+        logger.info(
+            "Composite device patterns rebuilt: %d devices (%d climate, %d lock), "
+            "%d rooms, %d patterns",
+            len(index), len(names_climate_esc), len(names_lock_esc),
+            len(locations_esc), count,
+        )
+        return count
+
+    def get_device_id_by_name(self, name_en: str) -> str | None:
+        """O(1) lookup used by device-control to resolve composite matches.
+
+        Returns the device_id whose ``meta.name_en`` equals ``name_en``
+        (case-insensitive), or ``None`` if no such device exists.
+        """
+        if not name_en:
+            return None
+        return self._device_name_index.get(name_en.strip().lower())
 
     async def regenerate_all(self, entity_type: str | None = None) -> int:
         """Regenerate all auto-entity patterns. Returns total count."""
@@ -274,192 +471,17 @@ class PatternGenerator:
                     total += await self._gen_radio_station(session, sid)
         return total
 
-    # ── Devices ─────────────────────────────────────────────────────────
-
-    async def _gen_device(self, session: AsyncSession, device_id: str) -> int:
-        """Generate English patterns for one device."""
-        from core.registry.models import Device, IntentPattern, IntentDefinition
-
-        device = await session.get(Device, device_id)
-        if not device:
-            return 0
-
-        ref = f"device:{device_id}"
-        await session.execute(
-            delete(IntentPattern).where(IntentPattern.entity_ref == ref)
-        )
-
-        # Prefer an explicit English name from meta.name_en (set via the
-        # "Edit device" dialog in device-control settings). Falls back to
-        # the display name — which may be Cyrillic or product code and
-        # therefore useless for English voice commands.
-        import json as _json
-        meta_dict: dict = {}
-        try:
-            meta_dict = _json.loads(device.meta) if device.meta else {}
-        except Exception:
-            meta_dict = {}
-        name_en = (meta_dict.get("name_en") or "").strip().lower()
-        raw_name = name_en or device.name.lower()
-
-        # Skip pattern generation if the name is not ASCII (e.g. only a
-        # non-English display name is set). The ASCII guard in
-        # phrase_to_regex would reject it anyway, but short-circuiting
-        # here avoids creating empty intent_patterns rows.
-        if not raw_name.isascii():
-            logger.debug(
-                "Skipping device %s: no ASCII name — set meta.name_en "
-                "in the Edit dialog to enable voice patterns",
-                device.device_id,
-            )
-            return 0
-        name_esc = re.escape(raw_name)
-
-        # Location suffix — prefer the LLM-translated meta.location_en. The
-        # device.location column holds the user-language string ("Вітальня"),
-        # which would fail isascii() and produce no suffix at all. Falling
-        # back to device.location only when it happens to be ASCII covers
-        # legacy rows from before location_en existed.
-        location_en = (meta_dict.get("location_en") or "").strip().lower()
-        if not location_en and device.location and device.location.isascii():
-            location_en = device.location.lower()
-
-        loc_part = ""
-        # Dedupe: if the user named the device after the room (so the EN
-        # form of the name and the room collapsed to the same string),
-        # appending "in the X" produces "turn on living room in the living
-        # room" — drop the suffix in that case.
-        if location_en and location_en != raw_name:
-            loc_esc = re.escape(location_en)
-            if loc_esc.isascii():
-                loc_part = f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?{loc_esc})?"
-
-        entity_type = (device.entity_type or "").lower()
-        count = 0
-
-        # ── Door locks (Matter / Z-Wave) ─────────────────────────────────
-        # Locks get device.lock / device.unlock instead of on/off — they
-        # don't have a meaningful "power" state.
-        if entity_type in ("lock", "door_lock"):
-            idef_lock = await self._ensure_definition(
-                session, "device.lock", "device-control", "DEVICE", "lock", 100,
-                "Lock a smart lock",
-            )
-            idef_unlock = await self._ensure_definition(
-                session, "device.unlock", "device-control", "DEVICE", "unlock", 100,
-                "Unlock a smart lock",
-            )
-
-            llm_phrases = await self._generate_patterns_via_llm(
-                "door_lock", raw_name,
-            )
-
-            lock_phrases: list[str] = []
-            unlock_phrases: list[str] = []
-            for phrase in llm_phrases:
-                if "unlock" in phrase or "open " in phrase:
-                    unlock_phrases.append(phrase)
-                elif "lock" in phrase or "secure " in phrase or "shut " in phrase:
-                    lock_phrases.append(phrase)
-
-            if not lock_phrases:
-                lock_phrases = [
-                    f"lock {raw_name}",
-                    f"lock the {raw_name}",
-                    f"secure {raw_name}",
-                ]
-            if not unlock_phrases:
-                unlock_phrases = [
-                    f"unlock {raw_name}",
-                    f"unlock the {raw_name}",
-                    f"open {raw_name}",
-                ]
-
-            for phrase in lock_phrases:
-                regex = phrase_to_regex(phrase)
-                if regex and validate_pattern(regex):
-                    session.add(IntentPattern(
-                        intent_id=idef_lock.id, lang="en", pattern=regex,
-                        source="auto_entity", entity_ref=ref,
-                    ))
-                    count += 1
-            for phrase in unlock_phrases:
-                regex = phrase_to_regex(phrase)
-                if regex and validate_pattern(regex):
-                    session.add(IntentPattern(
-                        intent_id=idef_unlock.id, lang="en", pattern=regex,
-                        source="auto_entity", entity_ref=ref,
-                    ))
-                    count += 1
-            return count
-
-        # ── Climate / thermostat — extra set_temperature pattern ─────────
-        if entity_type in ("thermostat", "air_conditioner"):
-            idef_temp = await self._ensure_definition(
-                session, "device.set_temperature", "device-control", "CLIMATE", "set", 100,
-                "Set the target temperature on a climate device",
-            )
-            pattern = (
-                f"set\\s+(?:the\\s+)?{name_esc}\\s+(?:to\\s+)?"
-                f"(?P<level>\\d{{1,2}})(?:\\s+degrees?)?"
-            )
-            session.add(IntentPattern(
-                intent_id=idef_temp.id, lang="en", pattern=pattern,
-                source="auto_entity", entity_ref=ref,
-            ))
-            count += 1
-            # Climate devices also fall through to on/off below.
-
-        # ── Default: device.on / device.off ──────────────────────────────
-        verbs_on_en = await self._get_vocab_words(session, "en", "verb", "on")
-        verbs_off_en = await self._get_vocab_words(session, "en", "verb", "off")
-
-        # device.on — English only
-        idef_on = await self._ensure_definition(
-            session, "device.on", "", "DEVICE", "on", 100,
-            "Turn on a device",
-        )
-
-        verb_alt = "|".join(re.escape(v) for v in verbs_on_en) if verbs_on_en else "turn on|switch on"
-        pattern = f"(?:{verb_alt})\\s+(?:the\\s+)?{name_esc}{loc_part}"
-        session.add(IntentPattern(
-            intent_id=idef_on.id, lang="en", pattern=pattern,
-            source="auto_entity", entity_ref=ref,
-        ))
-        count += 1
-
-        # device.off — English only
-        idef_off = await self._ensure_definition(
-            session, "device.off", "", "DEVICE", "off", 100,
-            "Turn off a device",
-        )
-
-        verb_alt = "|".join(re.escape(v) for v in verbs_off_en) if verbs_off_en else "turn off|switch off"
-        pattern = f"(?:{verb_alt})\\s+(?:the\\s+)?{name_esc}{loc_part}"
-        session.add(IntentPattern(
-            intent_id=idef_off.id, lang="en", pattern=pattern,
-            source="auto_entity", entity_ref=ref,
-        ))
-        count += 1
-
-        return count
+    # ── Devices: see rebuild_composite_device_patterns() above ───────────
+    # The legacy per-device generator was removed in favour of composite
+    # patterns that scale O(1) in DB rows regardless of registry size.
 
     async def _regenerate_devices(self) -> int:
-        """Regenerate patterns for all devices with entity_type."""
-        from core.registry.models import Device
+        """Regenerate device patterns via the composite rebuild path.
 
-        total = 0
-        async with self._sf() as session:
-            result = await session.execute(
-                select(Device.device_id).where(Device.entity_type.isnot(None))
-            )
-            ids = [r[0] for r in result.all()]
-
-        for did in ids:
-            async with self._sf() as session:
-                async with session.begin():
-                    total += await self._gen_device(session, did)
-        return total
+        One call covers the entire registry — there is no per-id work
+        anymore. Returns the number of pattern rows inserted (0 or 2).
+        """
+        return await self.rebuild_composite_device_patterns()
 
     # ── Scenes ──────────────────────────────────────────────────────────
 

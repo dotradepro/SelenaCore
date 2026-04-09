@@ -231,6 +231,25 @@ class DeviceControlModule(SystemModule):
                 return
             params = payload.get("params") or {}
 
+            # Composite-pattern resolver: if FastMatcher hit one of the
+            # rebuild_composite_device_patterns() rows the regex captured a
+            # name + optional location. Translate the name into a real
+            # device_id via the in-memory index so _resolve_device picks
+            # the matching row directly instead of guessing from filters.
+            if (params.get("entity_ref") or "").strip() == "device:composite":
+                name_en = (params.get("name") or "").strip().lower()
+                if name_en:
+                    try:
+                        from system_modules.llm_engine.pattern_generator import (
+                            get_pattern_generator,
+                        )
+                        device_id = get_pattern_generator().get_device_id_by_name(name_en)
+                    except Exception as exc:
+                        logger.debug("composite resolve failed: %s", exc)
+                        device_id = None
+                    if device_id:
+                        params = {**params, "device_id": device_id}
+
             # Read-only query intents bypass the write pipeline below —
             # they don't translate to a driver state, just read the cached
             # value and speak it back.
@@ -437,6 +456,7 @@ class DeviceControlModule(SystemModule):
 
         entity = (params.get("entity") or "").lower().strip() or None
         location = (params.get("location") or "").lower().strip() or None
+        explicit_id = (params.get("device_id") or "").strip() or None
 
         def _row_to_dict(d) -> dict:
             return {
@@ -450,6 +470,24 @@ class DeviceControlModule(SystemModule):
             }
 
         async with self._db_session() as session:
+            # Fast path: composite resolver (or any caller) handed us a
+            # concrete device_id — load it directly and skip the search
+            # tiers. We still respect entity_filter as a sanity check so
+            # an AC-only intent can never act on a light row by mistake.
+            if explicit_id:
+                d = await session.get(Device, explicit_id)
+                if (
+                    d is not None
+                    and d.module_id == self.name
+                    and bool(d.enabled)
+                    and (
+                        not entity_filter
+                        or (d.entity_type or "").lower() in entity_filter
+                    )
+                ):
+                    return _row_to_dict(d)
+                return None
+
             base = select(Device).where(
                 Device.module_id == self.name,
                 Device.enabled == True,  # noqa: E712
