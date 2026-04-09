@@ -26,11 +26,41 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _pattern_specificity(pattern: str) -> int:
+    """Higher score = more specific = higher match priority within a tier.
+
+    Used as a tiebreaker so that within a single priority bucket, a
+    pattern with named groups + anchors always wins over a loose
+    parameterless one (e.g. ``set\\s+(?P<x>\\d+)$`` beats ``set\\s+\\d+``).
+
+    Heuristics (additive):
+      + raw length (longer literal = more specific)
+      + 50 per named group  ``(?P<name>...)``
+      + 30 for end anchor   ``$`` / ``\\Z``
+      + 30 for start anchor ``^`` / ``\\A``
+      + 20 per word boundary ``\\b``
+      + 10 per non-capturing group ``(?:...)``
+      - 5  per ``.*`` / ``.+`` (greedy wildcard reduces specificity)
+    """
+    score = len(pattern)
+    score += pattern.count("(?P<") * 50
+    if pattern.endswith("$") or pattern.endswith("\\Z"):
+        score += 30
+    if pattern.startswith("^") or pattern.startswith("\\A"):
+        score += 30
+    score += pattern.count("\\b") * 20
+    score += pattern.count("(?:") * 10
+    score -= pattern.count(".*") * 5
+    score -= pattern.count(".+") * 5
+    return score
+
+
 @dataclass
 class _PatternEntry:
     """Single compiled pattern with optional entity reference."""
     regex: re.Pattern
     entity_ref: str | None = None  # e.g. "radio_station:42"
+    specificity: int = 0           # higher = more specific (see _pattern_specificity)
 
 
 @dataclass
@@ -135,26 +165,33 @@ class IntentCompiler:
             self.load()
 
         text_lower = text.lower().strip()
-        compiled = self._compiled  # snapshot reference
+        # Walk the precomputed flat list so two patterns at the same
+        # priority are ordered by specificity (more anchors / named
+        # groups → matches first). See _async_load() for how flat_en is
+        # built. Falls back to legacy iteration if a stale instance from
+        # before the flatten refactor sneaks in.
+        flat = getattr(self, "_flat_en", None)
+        if flat is None:
+            flat = []
+            for ci in self._compiled:
+                for pe in ci.patterns.get("en", []):
+                    flat.append((ci.priority, pe.specificity, ci, pe))
 
-        # Match against English patterns (all patterns are lang="en")
-        for entry in compiled:
-            patterns = entry.patterns.get("en", [])
-            for pe in patterns:
-                m = pe.regex.search(text_lower)
-                if m:
-                    params = {k: v for k, v in m.groupdict().items() if v is not None}
-                    result: dict[str, Any] = {
-                        "intent": entry.intent,
-                        "module": entry.module,
-                        "noun_class": entry.noun_class,
-                        "verb": entry.verb,
-                        "params": params,
-                        "source": "system_module",
-                    }
-                    if pe.entity_ref:
-                        result["entity_ref"] = pe.entity_ref
-                    return result
+        for _prio, _spec, entry, pe in flat:
+            m = pe.regex.search(text_lower)
+            if m:
+                params = {k: v for k, v in m.groupdict().items() if v is not None}
+                result: dict[str, Any] = {
+                    "intent": entry.intent,
+                    "module": entry.module,
+                    "noun_class": entry.noun_class,
+                    "verb": entry.verb,
+                    "params": params,
+                    "source": "system_module",
+                }
+                if pe.entity_ref:
+                    result["entity_ref"] = pe.entity_ref
+                return result
 
         return None
 
@@ -250,6 +287,7 @@ class IntentCompiler:
                         compiled_list.append(_PatternEntry(
                             regex=re.compile(ps, re.IGNORECASE),
                             entity_ref=eref,
+                            specificity=_pattern_specificity(ps),
                         ))
                     except re.error as exc:
                         logger.warning(
@@ -259,24 +297,45 @@ class IntentCompiler:
                 if compiled_list:
                     compiled_patterns[lang] = compiled_list
 
-            if compiled_patterns:
-                new_compiled.append(CompiledIntent(
-                    intent=defn.intent,
-                    module=defn.module,
-                    noun_class=defn.noun_class,
-                    verb=defn.verb,
-                    priority=defn.priority,
-                    description=defn.description,
-                    patterns=compiled_patterns,
-                    params_schema=defn.get_params_schema(),
-                ))
+            # Include the intent in the in-memory catalogue even if it
+            # has zero compiled patterns. Pattern-less intents are
+            # invisible to the FastMatcher (no entry in flat_en) but
+            # MUST appear in get_all_intents() so the LLM tier sees
+            # them in its dynamic catalog and can classify natural
+            # language to them. This is the path for "hard intents
+            # declared by a module" that rely entirely on LLM-driven
+            # routing instead of regex shortcuts.
+            new_compiled.append(CompiledIntent(
+                intent=defn.intent,
+                module=defn.module,
+                noun_class=defn.noun_class,
+                verb=defn.verb,
+                priority=defn.priority,
+                description=defn.description,
+                patterns=compiled_patterns,
+                params_schema=defn.get_params_schema(),
+            ))
 
         # Sort by priority descending
         new_compiled.sort(key=lambda c: c.priority, reverse=True)
 
+        # Flatten ALL English patterns into a single list sorted by
+        # (priority DESC, specificity DESC). match() walks this list so
+        # that within a single priority bucket the more-specific pattern
+        # always wins, regardless of which intent owns it. This is the
+        # deterministic conflict-resolution rule for overlapping patterns
+        # like "(?:current\\s+)?temperature$" vs
+        # "(?:current\\s+)?temperature\\s+in\\s+(?P<location>...)$".
+        flat_en: list[tuple[int, int, CompiledIntent, _PatternEntry]] = []
+        for ci in new_compiled:
+            for pe in ci.patterns.get("en", []):
+                flat_en.append((ci.priority, pe.specificity, ci, pe))
+        flat_en.sort(key=lambda t: (-t[0], -t[1]))
+
         # Atomic swap
         with self._lock:
             self._compiled = new_compiled
+            self._flat_en = flat_en
             self._version += 1
             self._loaded = True
 
