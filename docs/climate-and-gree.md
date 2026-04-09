@@ -83,8 +83,8 @@ Key invariants:
 | [system_modules/device_control/drivers/registry.py](../system_modules/device_control/drivers/registry.py) | Register `"gree": GreeDriver`; entry in `list_driver_types()` |
 | [system_modules/device_control/routes.py](../system_modules/device_control/routes.py) | `POST /gree/discover`, `POST /gree/import`; allow `gree` in `add_device` |
 | [system_modules/device_control/settings.html](../system_modules/device_control/settings.html) | New "Gree / Pular" tab with Scan + Import flow; `air_conditioner` entity_type; full EN/UK i18n |
-| [system_modules/device_control/module.py](../system_modules/device_control/module.py) | New climate intents, `_intent_to_state()`, `_resolve_device(entity_filter=)`, `_persist_driver_meta()`, extended `_claim_intent_ownership()` |
-| [scripts/seed_intents_to_db.py](../scripts/seed_intents_to_db.py) | Three new climate intent rows owned by `device-control` |
+| [system_modules/device_control/module.py](../system_modules/device_control/module.py) | Climate intents declared in `_OWNED_INTENT_META`, `_intent_to_state()`, `_resolve_device(entity_filter=)` with composite tier-0 disambiguation, `_persist_driver_meta()`, `_claim_intent_ownership()` (inserts/claims rows on every start) |
+| [system_modules/llm_engine/pattern_generator.py](../system_modules/llm_engine/pattern_generator.py) | `rebuild_composite_device_patterns()` produces a composite `device.set_temperature` regex with `(?P<name>...)` alternation of all climate devices |
 
 ## 4. Gree driver
 
@@ -272,19 +272,24 @@ The module subscribes to `device.state_changed` and caches `payload["new_state"]
 
 Aliases handled by the parser: `min/minimum → low`, `max/maximum → high`, `mid/middle → medium`, `cooling → cool`, `heating → heat`.
 
-Patterns are seeded into the `intent_definitions` / `intent_patterns` tables by [scripts/seed_intents_to_db.py](../scripts/seed_intents_to_db.py) with `priority=100` (FastMatcher tier). Run after schema migrations:
-
-```bash
-docker exec selena-core python scripts/seed_intents_to_db.py
-```
+Patterns are no longer seeded by an external script. `device-control` declares these intents in `_OWNED_INTENT_META` and inserts/claims `intent_definitions` rows on every `start()` via `_claim_intent_ownership()`. The composite FastMatcher patterns (one regex per device verb, with `(?P<name>...)` alternation of every climate device's `meta.name_en`) are rebuilt by `PatternGenerator.rebuild_composite_device_patterns()` on every device CRUD. See [intent-routing.md §2](intent-routing.md#2-where-intents-come-from) for the full design.
 
 ### 7.2 Resolution
 
-`DeviceControlModule._resolve_device(params, entity_filter=...)` selects exactly one target device using the existing 4-tier strategy (entity+location → location → entity → single-device fallback). Climate intents pass `entity_filter=("air_conditioner","thermostat")` (or `("air_conditioner","fan")` for `device.set_fan_speed`) so the resolver narrows the candidate set before tier matching. This is what guarantees that "set temperature to 22" cannot accidentally route to a smart bulb or switch.
+`DeviceControlModule._resolve_device(params, entity_filter=...)` selects exactly one target device. The resolver uses several tiers in order:
+
+0. **Composite fast path** — if FastMatcher captured a unique `name_en` for an unambiguous device, the resolver loads it directly by `device_id`.
+1. **Tier 0 disambiguation** — if FastMatcher captured a `name_en` that is shared by 2+ devices (same name in different rooms), the resolver matches `meta.name_en AND location` simultaneously.
+2. **Strict (entity_type AND location)**
+3. **Location-only** (`location` matches `device.location`, `device.name`, `meta.name_en`, or `meta.location_en`)
+4. **Entity-only**
+5. **Single-device fallback** (when there's exactly one device under management)
+
+Climate intents pass `entity_filter=("air_conditioner","thermostat")` (or `("air_conditioner","fan")` for `device.set_fan_speed`) so the resolver narrows the candidate set before tier matching. This is what guarantees that "set temperature to 22" cannot accidentally route to a smart bulb or switch.
 
 ### 7.3 Intent ownership
 
-`DeviceControlModule._claim_intent_ownership()` updates every row in `intent_definitions` listed in `OWNED_INTENTS = ["device.on", "device.off", "device.set_temperature", "device.set_mode", "device.set_fan_speed"]`, setting `module="device-control"`. Idempotent — runs on every module start.
+`DeviceControlModule._claim_intent_ownership()` updates every row in `intent_definitions` listed in `OWNED_INTENTS` (`device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed`, `device.query_temperature`, `device.lock`, `device.unlock`), setting `module="device-control"`. It then inserts any missing rows using defaults from `_OWNED_INTENT_META`. Idempotent — runs on every module start, no external seed script needed.
 
 ## 8. Meta persistence (Gree key)
 
@@ -326,7 +331,7 @@ pytest tests/test_device_watchdog.py tests/test_energy_monitor.py -q
 ### 9.3 End-to-end on hardware
 
 1. `docker compose up -d --build` — rebuild because `requirements.txt` changed.
-2. `docker exec selena-core python scripts/seed_intents_to_db.py` — load new intent rows.
+2. **Intent rows are auto-claimed by the module on first start** — no seed script needed.
 3. **Discover**: Device Control → Gree / Pular → Scan → confirm Pular shows up → Import.
 4. **Watcher**: `docker compose logs -f core` → expect `device.online` then `device.state_changed` every ~5 s.
 5. **Direct control**: Device Control widget toggle on/off → physical AC reacts.

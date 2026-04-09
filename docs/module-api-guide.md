@@ -714,66 +714,36 @@ Each tier is tried in order. The first match wins.
 
 ### Adding Voice Commands (System Module)
 
-**Step 1** -- Add intent definition to `config/intents/definitions.yaml`:
-
-```yaml
-intents:
-  mymodule.check_status:
-    module: my-module
-    noun_class: DEVICE
-    verb: check
-    priority: 5
-    description: "Check module status"
-    templates:
-      - "{verb.check} {noun.status}"
-    params: {}
-    overrides:
-      uk:
-        - "перевір(?:и|ити)?\\s+статус"
-      en:
-        - "check\\s+status"
-```
-
-**Step 2** -- Add vocabulary to `config/intents/vocab/en.yaml` and `uk.yaml` if needed:
-
-```yaml
-# config/intents/vocab/en.yaml
-verbs:
-  check:
-    exact: ["check", "verify", "show"]
-nouns:
-  status: ["status", "state"]
-```
-
-**Step 3** -- Register intents in `start()`:
+System modules declare their owned intents in `OWNED_INTENTS` + `_OWNED_INTENT_META` and call `_claim_intent_ownership()` from `start()`. There is no `config/intents/` directory and no central seed script. The full walkthrough lives in [system-module-development.md §IntentRouter Integration](system-module-development.md#intentrouter-integration); the architecture deep dive is in [intent-routing.md](intent-routing.md).
 
 ```python
-async def start(self) -> None:
-    self.subscribe(["voice.intent"], self._on_intent)
-    from system_modules.llm_engine.intent_router import get_intent_router
-    from system_modules.llm_engine.intent_compiler import get_intent_compiler
-    router = get_intent_router()
-    entries = get_intent_compiler().get_intents_for_module("my-module")
-    for entry in entries:
-        router.register_system_intent(entry)
+INTENT_CHECK_STATUS = "mymodule.check_status"
+OWNED_INTENTS = [INTENT_CHECK_STATUS]
+
+
+class MyModule(SystemModule):
+    name = "my-module"
+
+    _OWNED_INTENT_META = {
+        INTENT_CHECK_STATUS: dict(
+            noun_class="DEVICE", verb="query", priority=100,
+            description="Report the current operational status of my-module.",
+        ),
+    }
+
+    async def start(self) -> None:
+        self.subscribe(["voice.intent"], self._on_voice_intent)
+        if self._session_factory is not None:
+            await self._claim_intent_ownership()  # see device_control/module.py for the canonical impl
+
+    async def _on_voice_intent(self, event) -> None:
+        payload = event.payload or {}
+        if payload.get("intent") != INTENT_CHECK_STATUS:
+            return
+        await self.speak_action(INTENT_CHECK_STATUS, {"result": "ok"})
 ```
 
-**Step 4** -- Handle the intent:
-
-```python
-async def _on_intent(self, event) -> None:
-    if event.payload.get("intent") == "mymodule.check_status":
-        await self.speak("All systems operational")
-```
-
-**Step 5** -- Clean up in `stop()`:
-
-```python
-async def stop(self) -> None:
-    from system_modules.llm_engine.intent_router import get_intent_router
-    get_intent_router().unregister_system_intents(self.name)
-    self._cleanup_subscriptions()
-```
+That's it. Zero FastMatcher patterns required — the LLM tier sees the intent in its dynamic catalog (built from `intent_definitions`) and routes natural-language utterances in any language to it. If you want a 0 ms English shortcut as well, add a row to `intent_patterns` with `source='manual'`, `lang='en'`, your intent_id and a regex.
 
 ### Adding Voice Commands (User Module)
 

@@ -83,8 +83,8 @@
 | [system_modules/device_control/drivers/registry.py](../../system_modules/device_control/drivers/registry.py) | Реєстрація `"gree": GreeDriver`; запис у `list_driver_types()` |
 | [system_modules/device_control/routes.py](../../system_modules/device_control/routes.py) | `POST /gree/discover`, `POST /gree/import`; дозвіл `gree` у `add_device` |
 | [system_modules/device_control/settings.html](../../system_modules/device_control/settings.html) | Нова вкладка «Gree / Pular» зі Scan + Import; `air_conditioner` як entity_type; повний EN/UK i18n |
-| [system_modules/device_control/module.py](../../system_modules/device_control/module.py) | Нові climate-інтенти, `_intent_to_state()`, `_resolve_device(entity_filter=)`, `_persist_driver_meta()`, розширений `_claim_intent_ownership()` |
-| [scripts/seed_intents_to_db.py](../../scripts/seed_intents_to_db.py) | Три нові climate-інтенти, власник — `device-control` |
+| [system_modules/device_control/module.py](../../system_modules/device_control/module.py) | Climate-інтенти декларовані у `_OWNED_INTENT_META`, `_intent_to_state()`, `_resolve_device(entity_filter=)` з composite tier-0 дисамбігуацією, `_persist_driver_meta()`, `_claim_intent_ownership()` (вставляє/claims рядки на кожному старті) |
+| [system_modules/llm_engine/pattern_generator.py](../../system_modules/llm_engine/pattern_generator.py) | `rebuild_composite_device_patterns()` створює composite `device.set_temperature` regex з `(?P<name>...)` alternation усіх кліматичних пристроїв |
 
 ## 4. Драйвер Gree
 
@@ -272,19 +272,24 @@ await self._dc.execute_command(device_id, state)
 
 Аліаси, які обробляє парсер: `min/minimum → low`, `max/maximum → high`, `mid/middle → medium`, `cooling → cool`, `heating → heat`.
 
-Патерни вносяться у таблиці `intent_definitions` / `intent_patterns` через [scripts/seed_intents_to_db.py](../../scripts/seed_intents_to_db.py) з `priority=100` (рівень FastMatcher). Запустіть після міграцій схеми:
-
-```bash
-docker exec selena-core python scripts/seed_intents_to_db.py
-```
+Патерни більше не сидяться зовнішнім скриптом. `device-control` декларує ці інтенти у `_OWNED_INTENT_META` і вставляє/claims рядки `intent_definitions` при кожному `start()` через `_claim_intent_ownership()`. Composite FastMatcher-патерни (один regex на дієслово пристрою з `(?P<name>...)` alternation усіх `meta.name_en` кліматичних пристроїв) перебудовуються `PatternGenerator.rebuild_composite_device_patterns()` при кожному device CRUD. Повний дизайн — у [intent-routing.md §2](intent-routing.md#2-звідки-беруться-інтенти).
 
 ### 7.2 Резолюція пристрою
 
-`DeviceControlModule._resolve_device(params, entity_filter=...)` обирає рівно один цільовий пристрій за існуючою 4-рівневою стратегією (entity+location → location → entity → fallback на одне-єдине). Climate-інтенти передають `entity_filter=("air_conditioner","thermostat")` (або `("air_conditioner","fan")` для `device.set_fan_speed`), щоб резолвер звузив набір кандидатів ще до tier-матчингу. Саме це гарантує, що «встанови температуру на 22» не може випадково потрапити на лампу або розетку.
+`DeviceControlModule._resolve_device(params, entity_filter=...)` обирає рівно один цільовий пристрій. Резолвер використовує кілька рівнів по порядку:
+
+0. **Composite fast path** — якщо FastMatcher захопив унікальний `name_en` для однозначного пристрою, резолвер завантажує його напряму за `device_id`.
+1. **Tier 0 дисамбігуація** — якщо FastMatcher захопив `name_en`, який ділять 2+ пристрої (одне ім'я в різних кімнатах), резолвер матчить `meta.name_en AND location` одночасно.
+2. **Strict (entity_type AND location)**
+3. **Тільки location** (`location` збігається з `device.location`, `device.name`, `meta.name_en`, або `meta.location_en`)
+4. **Тільки entity**
+5. **Single-device fallback** (коли під управлінням рівно один пристрій)
+
+Climate-інтенти передають `entity_filter=("air_conditioner","thermostat")` (або `("air_conditioner","fan")` для `device.set_fan_speed`), щоб резолвер звузив набір кандидатів ще до tier-матчингу. Саме це гарантує, що «встанови температуру на 22» не може випадково потрапити на лампу або розетку.
 
 ### 7.3 Власність інтентів
 
-`DeviceControlModule._claim_intent_ownership()` оновлює всі рядки в `intent_definitions`, що перелічені в `OWNED_INTENTS = ["device.on", "device.off", "device.set_temperature", "device.set_mode", "device.set_fan_speed"]`, виставляючи `module="device-control"`. Ідемпотентний — виконується при кожному старті модуля.
+`DeviceControlModule._claim_intent_ownership()` оновлює всі рядки в `intent_definitions`, що перелічені в `OWNED_INTENTS` (`device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed`, `device.query_temperature`, `device.lock`, `device.unlock`), виставляючи `module="device-control"`. Потім вставляє відсутні рядки, використовуючи defaults з `_OWNED_INTENT_META`. Ідемпотентний — виконується при кожному старті модуля, зовнішній seed-скрипт не потрібен.
 
 ## 8. Збереження meta (ключ Gree)
 
@@ -326,7 +331,7 @@ pytest tests/test_device_watchdog.py tests/test_energy_monitor.py -q
 ### 9.3 Перевірка на залізі (end-to-end)
 
 1. `docker compose up -d --build` — обов'язковий rebuild, бо змінився `requirements.txt`.
-2. `docker exec selena-core python scripts/seed_intents_to_db.py` — завантажити нові інтенти.
+2. **Рядки інтентів автоматично claim'ляться модулем при першому старті** — seed-скрипт не потрібен.
 3. **Виявлення**: Device Control → Gree / Pular → Сканувати → побачити Pular → Імпортувати.
 4. **Вотчер**: `docker compose logs -f core` → очікувати `device.online`, потім `device.state_changed` приблизно кожні 5 с.
 5. **Прямий контроль**: тоглнути on/off у віджеті Device Control → AC реагує.

@@ -144,7 +144,7 @@ Total runtime footprint: **~1.5 GB RAM** for the entire stack on a Pi 4. See [do
 | Module              | Purpose                                                                            |
 |---------------------|------------------------------------------------------------------------------------|
 | `voice_core`        | STT (Vosk / Whisper), TTS (Piper), wake-word, speaker ID, privacy mode             |
-| `llm_engine`        | Ollama local LLM, Fast Matcher, 6-tier intent router, cloud LLM fallback           |
+| `llm_engine`        | Ollama local LLM, FastMatcher (DB regex), 5-tier intent router with registry-aware prompt, cloud fallback |
 | `ui_core`           | React SPA + PWA (served directly by Core)                                          |
 | `device_control`    | Device registry, pluggable provider system (Tuya / Gree / Hue / ESPHome / MQTT)    |
 | `climate`           | A/C and thermostat control, grouped by room                                        |

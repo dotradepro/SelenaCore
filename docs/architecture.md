@@ -152,7 +152,7 @@ climate              lights_switches      clock
 | Module                | Purpose                                                              |
 |-----------------------|----------------------------------------------------------------------|
 | `voice_core`          | STT (Vosk / Whisper), TTS (Piper), wake-word, speaker ID             |
-| `llm_engine`          | Ollama local LLM, Fast Matcher, 6-tier intent router, cloud fallback |
+| `llm_engine`          | Ollama local LLM, FastMatcher, 5-tier intent router with registry-aware prompt, cloud fallback |
 | `ui_core`             | React SPA + PWA, served from the unified Core process                |
 | `device_control`      | Pluggable provider system (Tuya / Gree / Hue / ESPHome / MQTT)       |
 | `climate`             | A/C and thermostat control panel grouped by room                     |
@@ -349,68 +349,52 @@ The SPA (React) and all API endpoints are served from a **single process on port
 
 **Source:** `system_modules/llm_engine/intent_router.py`
 
-The intent router uses a 6-tier cascade. Each tier is tried in order; the first match wins. This design balances speed against understanding depth.
+The intent router uses a 5-tier cascade. Each tier is tried in order; the first match wins. The whole pipeline operates on **English internally** — non-English input is translated by Tier 3 (LLM) into an English `intent` + English `params`. There are no Ukrainian / Russian / German FastMatcher patterns by design.
 
 ```
-  User utterance
-       |
-       v
-  +----------+
-  | Tier 1   |  Fast Matcher (YAML keyword/regex rules)
-  | ~0 ms    |  Defined in YAML config files
-  +----------+
-       | miss
-       v
-  +----------+
-  | Tier 1.5 |  System Module Intents (in-process regex)
-  | ~μs      |  Registered by system modules at startup (28 intents)
-  +----------+
-       | miss
-       v
-  +----------+
-  | Tier 2   |  Module Bus Intents (user modules via WebSocket)
-  | ~ms      |  Registered via announce message with regex patterns
-  +----------+
-       | miss
-       v
-  +----------+
-  | Tier 3a  |  Cloud LLM Classification (Gemini / OpenAI / Anthropic)
-  | ~1-2 sec |  Structured JSON intent classification
-  +----------+
-       | miss
-       v
-  +----------+
-  | Tier 3b  |  Ollama LLM (local semantic understanding)
-  | 3-8 sec  |  Requires 5GB+ RAM, runs locally
-  +----------+
-       | miss
-       v
-  +----------+
-  | Fallback |  i18n "not understood" message
-  +----------+
-       |
-       v
-    Response (LLM rephrase for variety → TTS)
+  User utterance (any language)
+       │
+       ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │  Tier 1   FastMatcher (DB regex, English-only)      ~0 ms   │
+  │  Tier 2   Module Bus (user modules, WebSocket)      ~ms     │
+  │  Cache    IntentCache (SQLite, prev LLM hits)       ~10 ms  │
+  │  Tier 3   Local LLM (Ollama, single call)           300-800 │
+  │  Tier 4   Cloud LLM (OpenAI-compatible, optional)   1-3 sec │
+  │  Fallback "not understood" (i18n)                           │
+  └──────────────────────────────────────────────────────────────┘
+       │
+       ▼  EventBus: voice.intent { intent, params, source }
+  Module owning the intent executes
+       │
+       ▼
+  Response (LLM rephrase for variety) → TTS
 ```
 
 **Tier details:**
 
-| Tier | Source | Latency | Mechanism | RAM Cost |
-|------|--------|---------|-----------|----------|
-| 1 | Fast Matcher | ~0 ms | YAML keyword and regex rules | Negligible |
-| 1.5 | System Modules | ~μs | In-process regex + priority + named groups | Negligible |
-| 2 | Module Bus | ~ms | WebSocket round-trip with regex | Negligible |
-| 3a | Cloud LLM | ~1-2 sec | Structured intent classification via cloud API | None (cloud) |
-| 3b | Ollama LLM | 3-8 sec | Full semantic model inference | 5 GB+ |
-| — | Fallback | ~0 ms | i18n "not understood" | Negligible |
+| Tier | Source | Latency | Mechanism | Notes |
+|------|--------|---------|-----------|-------|
+| 1 | FastMatcher (`IntentCompiler`) | ~0 ms | DB regex with priority + specificity sorting + verb-bucket pre-filter | English-only |
+| 2 | Module Bus | ~ms | WebSocket round-trip to user-installed modules | Per-module circuit breaker |
+| Cache | `IntentCache` (SQLite) | ~10 ms | Lookup by `(text, lang)` key for previous LLM hits | All languages |
+| 3 | Local LLM (Ollama) | 300-800 ms | Single classification call with dynamic registry-aware prompt | Requires ~3-5 GB RAM |
+| 4 | Cloud LLM | 1-3 sec | OpenAI / Anthropic / Groq classification | Optional |
+| — | Fallback | ~0 ms | i18n "not understood" message | — |
 
-Intent routing supports **priority ordering** and **regex pattern matching** at all tiers. Modules register their intent patterns along with a numeric priority; higher-priority handlers are tried first within each tier.
+**Hard intents come from modules, not seed scripts.** Each system module declares its `OWNED_INTENTS` and `_OWNED_INTENT_META` and inserts/claims rows in `intent_definitions` on `start()` via `_claim_intent_ownership()`. There is no central seed file.
 
-**Cloud LLM Classification (Tier 3a):** When regex tiers miss, the router dynamically builds a catalog of all known intents and sends a classification prompt to the active cloud LLM provider. The LLM returns structured JSON (`{"intent": "...", "params": {...}}`). This enables natural language understanding on low-RAM devices like Raspberry Pi where local Ollama is disabled.
+**Composite device patterns scale O(1) in DB rows.** `PatternGenerator.rebuild_composite_device_patterns()` produces at most 5 rows for the entire device registry — one per verb (`device.on`, `device.off`, `device.set_temperature`, `device.lock`, `device.unlock`) — each with a `(?P<name>...)` alternation of all known device names. The captured name is resolved to a `device_id` via an in-memory index in O(1).
 
-**LLM Response Rephrase:** After a module executes a voice command and generates a response, voice-core sends the default text to the Cloud LLM for rephrasing (temperature=0.9). This produces variative, natural-sounding TTS responses instead of repetitive templates. A conversation session (last 20 messages, 5-min timeout) provides context for coherent dialogue.
+**Verb-bucket pre-filter** brings the typical FastMatcher scan length down from O(all-patterns) to ~3-15 candidates. The `_VERB_BUCKETS` map routes the input's first word (`turn`, `set`, `play`, `what`, `lock`, …) to a small set of candidate intents.
 
-**Voice-enabled modules:** media-player (14 intents), weather-service (3), presence-detection (3), automation-engine (4), energy-monitor (2), device-watchdog (2). See [Voice Pipeline Configuration](voice-settings.md) for the full command reference.
+**Dynamic LLM prompt with registry context.** The Tier 3 prompt is rebuilt on every device CRUD and contains: registered intents (with descriptions), connected modules with their intents, devices grouped by `meta.location_en`, and a list of known indoor rooms. Two constants cap the size: `_DEVICES_PER_ROOM_LIMIT=10` and `_ROOMS_LIMIT=30`. This is what lets the LLM disambiguate "what is the temperature in the living room" (→ `device.query_temperature`) from "what is the temperature outside" (→ `weather.temperature`) **without any hardcoded mapping**.
+
+**IntentCache promotion.** Hot phrases that hit the cache `>=5` times are promoted to FastMatcher patterns once per hour from the `core/main.py` lifespan. Promoted rows use `source='auto_learned'` namespaced separately from `auto_entity`. English-only by design.
+
+**LLM Response Rephrase:** After a module executes a voice command, voice-core sends the structured action context to the rephrase LLM (temperature=0.9). This produces natural-sounding TTS responses instead of templated strings. A conversation session (last 20 messages, 5-min timeout) provides context for coherent dialogue.
+
+For full implementation details — pattern specificity scoring, composite resolver, ambiguous-name disambiguation, prompt structure, scaling envelope — see [intent-routing.md](intent-routing.md).
 
 ---
 

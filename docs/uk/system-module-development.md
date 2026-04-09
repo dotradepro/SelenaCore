@@ -344,130 +344,151 @@ class MyModule(SystemModule):
 
 ## Інтеграція з IntentRouter
 
-Системні модулі можуть реєструвати інтенти для **Tier 1.5** (обробка інтентів в процесі). Це дозволяє маршрутизувати голосові команди безпосередньо до модуля через regex-шаблони — без виклику Cloud LLM чи Ollama. Cloud LLM (Tier 3a) також використовує зареєстровані інтенти для побудови каталогу класифікації, тому навіть вільні формулювання будуть маршрутизовані правильно.
+Системні модулі декларують свої **жорсткі інтенти** у власному класі — центрального seed-файлу або YAML-директорії `config/intents/` немає. Роутер читає `intent_definitions` з БД при старті; модулі вставляють/claims свої рядки на `start()` через `_claim_intent_ownership()`.
 
-Рекомендований паттерн використовує три файли: `intent_patterns.py`, `voice_handler.py` та зміни до `module.py`.
+Каскад роутера: **FastMatcher → Module Bus → IntentCache → Local LLM → Cloud LLM → Fallback**. Жорсткі інтенти декларовані модулями з'являються у **Tier 1** (FastMatcher, якщо ви надаєте regex-патерни) ТА у **Tier 3** (динамічний каталог LLM, автоматично — патерни не потрібні). Контекст — у [intent-routing.md](intent-routing.md).
 
-### Крок 1: Визначити шаблони інтентів
+### Крок 1: Декларуйте свої власні інтенти
+
+Усередині класу модуля:
 
 ```python
-# system_modules/my_module/intent_patterns.py
-from __future__ import annotations
-from system_modules.llm_engine.intent_router import SystemIntentEntry
+# system_modules/my_module/module.py
+INTENT_DO_SOMETHING = "mymodule.do_something"
+INTENT_STATUS       = "mymodule.status"
 
-MY_INTENTS: list[SystemIntentEntry] = [
-    SystemIntentEntry(
-        module="my-module",
-        intent="mymodule.do_something",
-        priority=5,
-        description="Виконати дію",
-        patterns={
-            "en": [r"do\s+(?P<what>.+)"],
-        },
-    ),
-    SystemIntentEntry(
-        module="my-module",
-        intent="mymodule.status",
-        priority=5,
-        description="Статус модуля",
-        patterns={
-            "en": [r"module\s+status"],
-        },
-    ),
+OWNED_INTENTS = [
+    INTENT_DO_SOMETHING,
+    INTENT_STATUS,
 ]
+
+
+class MyModule(SystemModule):
+    name = "my-module"
+
+    # Декларативні defaults, що використовуються коли OWNED_INTENT ще
+    # не має рядка у intent_definitions. Модуль є джерелом істини для
+    # того, що він вміє — центральний seed-скрипт не потрібен.
+    _OWNED_INTENT_META: dict[str, dict] = {
+        INTENT_DO_SOMETHING: dict(
+            noun_class="DEVICE", verb="set", priority=100,
+            description=(
+                "Perform some custom action. Use when the user asks the "
+                "module to 'do <something>' with a freetext argument."
+            ),
+        ),
+        INTENT_STATUS: dict(
+            noun_class="DEVICE", verb="query", priority=100,
+            description="Report the module's current operational status.",
+        ),
+    }
 ```
 
-> **Лише англійські патерни.** Маршрутизатор інтентів читає лише ключ
-> `"en"`. Команди іншими мовами проходять до LLM-рівня (Tier 3), який
-> розпізнає будь-яку мову та повертає назву інтенту англійською — патерни
-> для `uk` додавати не потрібно.
+> **Описи завжди англійською.** Вони потрапляють у LLM-промпт, який повністю англійський. Локалізація голосової відповіді обробляється rephrase LLM у VoiceCore.
 
-### Крок 2: Створити голосовий обробник
+### Крок 2: Claim ownership при старті
 
-```python
-# system_modules/my_module/voice_handler.py
-from __future__ import annotations
-import logging
-from typing import TYPE_CHECKING
+Скопіюйте канонічну реалізацію з [system_modules/device_control/module.py](../../system_modules/device_control/module.py) — `_claim_intent_ownership()`. Метод:
 
-if TYPE_CHECKING:
-    from .module import MyModule
-
-logger = logging.getLogger(__name__)
-
-class MyVoiceHandler:
-    def __init__(self, module: "MyModule") -> None:
-        self._module = module
-
-    async def handle(self, intent: str, params: dict) -> None:
-        m = self._module
-        match intent:
-            case "mymodule.do_something":
-                what = params.get("what", "")
-                # Виконати дію...
-                await m.speak(f"Зроблено: {what}")
-            case "mymodule.status":
-                await m.speak("Модуль працює нормально")
-```
-
-### Крок 3: Зареєструвати в module.py
+1. Оновлює `intent_definitions.module = <self.name>` для кожного імені у `OWNED_INTENTS` (claim'ить існуючі рядки)
+2. Вставляє відсутні рядки з метаданими з `_OWNED_INTENT_META`
 
 ```python
-# У методі start() вашого модуля:
 async def start(self) -> None:
-    # ... наявне налаштування ...
+    self.subscribe(["voice.intent"], self._on_voice_intent)
+    if self._session_factory is not None:
+        await self._claim_intent_ownership()
+    # ... решта вашого startup ...
 
-    self._voice = MyVoiceHandler(self)
-    self.subscribe(["voice.intent"], self._on_event)
+async def _claim_intent_ownership(self) -> None:
+    from core.registry.models import IntentDefinition
+    from sqlalchemy import select, update
 
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        from .intent_patterns import MY_INTENTS
-        for entry in MY_INTENTS:
-            get_intent_router().register_system_intent(entry)
-    except Exception as exc:
-        logger.warning("Не вдалося зареєструвати інтенти: %s", exc)
-
-async def stop(self) -> None:
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().unregister_system_intents(self.name)
-    except Exception:
-        pass
-    # ... наявне очищення ...
-
-async def _on_event(self, event) -> None:
-    if event.type == "voice.intent":
-        intent = event.payload.get("intent", "")
-        if intent.startswith("mymodule."):
-            await self._voice.handle(intent, event.payload.get("params", {}))
-
-async def speak(self, text: str) -> None:
-    """Надіслати текст до TTS через EventBus → voice-core."""
-    await self.publish("voice.speak", {"text": text})
+    async with self._session_factory() as session:
+        await session.execute(
+            update(IntentDefinition)
+            .where(IntentDefinition.intent.in_(OWNED_INTENTS))
+            .values(module=self.name)
+        )
+        existing = {
+            row[0] for row in (await session.execute(
+                select(IntentDefinition.intent).where(
+                    IntentDefinition.intent.in_(OWNED_INTENTS)
+                )
+            )).all()
+        }
+        for intent_name in OWNED_INTENTS:
+            if intent_name in existing:
+                continue
+            meta = self._OWNED_INTENT_META.get(intent_name)
+            if meta is None:
+                continue
+            session.add(IntentDefinition(
+                intent=intent_name,
+                module=self.name,
+                noun_class=meta["noun_class"],
+                verb=meta["verb"],
+                priority=meta["priority"],
+                description=meta["description"],
+                source="module",
+            ))
+        await session.commit()
 ```
+
+### Крок 3: Обробіть інтент
+
+```python
+async def _on_voice_intent(self, event) -> None:
+    payload = event.payload or {}
+    intent = payload.get("intent", "")
+    if intent not in OWNED_INTENTS:
+        return
+    params = payload.get("params") or {}
+
+    if intent == INTENT_STATUS:
+        await self.speak_action(intent, {
+            "result": "ok",
+            "uptime_sec": int(time.time() - self._started_at),
+            "items": len(self._items),
+        })
+        return
+
+    if intent == INTENT_DO_SOMETHING:
+        what = (params.get("what") or "").strip()
+        # ... виконати дію ...
+        await self.speak_action(intent, {
+            "result": "ok",
+            "what": what,
+        })
+```
+
+`speak_action(intent, context)` публікує `voice.speak` event з структурованим action context. VoiceCore rephrase LLM створює природньомовну відповідь мовою TTS користувача — вам не потрібно форматувати рядки самостійно або підтримувати локаль-файли.
+
+### Про FastMatcher-патерни (опційно)
+
+Цього вже достатньо — ваш модуль повністю доступний через LLM-tier (Tier 3) для будь-якої мови, бо `IntentCompiler.get_all_intents()` повертає рядки без патернів і LLM обирає їх з динамічного каталогу.
+
+Якщо ви також хочете **0 мс FastMatcher shortcut** для англійських команд, впишіть рядки в `intent_patterns` з `source='manual'`, `lang='en'` та вашим intent_id. Використовуйте named groups для параметрів (`(?P<level>\d+)`) — IntentCompiler сортує патерни за `(priority DESC, specificity DESC)`, тому параметризовані патерни автоматично виграють над голими при однаковому priority.
 
 ### Довідник пріоритетів
 
-Більші числа = перевіряються першими в межах Tier 1.5.
-
 | Пріоритет | Випадок використання |
 |-----------|----------------------|
-| 10 | Інтенти з параметрами (іменовані regex-групи) — повинні матчитися раніше за загальні |
-| 5 | Стандартні інтенти — прості команди без параметрів |
+| 100 | Жорсткі інтенти, що належать модулю (default) |
+| 10 | Альтернативи з нижчим пріоритетом |
+| 5 | Generic catch-all'и (наприклад `weather.temperature` для будь-якого температурного запиту) |
 
 ### Існуючі модулі з голосовим керуванням
 
-Ці модулі є еталонними реалізаціями:
-
-| Модуль | Інтенти | Файл |
-|--------|---------|------|
-| media-player | 14 | `system_modules/media_player/intent_patterns.py` |
-| automation-engine | 4 | `system_modules/automation_engine/intent_patterns.py` |
-| weather-service | 3 | `system_modules/weather_service/intent_patterns.py` |
-| presence-detection | 3 | `system_modules/presence_detection/intent_patterns.py` |
-| energy-monitor | 2 | `system_modules/energy_monitor/intent_patterns.py` |
-| device-watchdog | 2 | `system_modules/device_watchdog/intent_patterns.py` |
+| Модуль | Власні інтенти | Файл |
+|--------|----------------|------|
+| device-control | `device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed`, `device.query_temperature`, `device.lock`, `device.unlock` | [device_control/module.py](../../system_modules/device_control/module.py) |
+| media-player | 14 media-інтентів (play/pause/stop/volume/...) | system_modules/media_player/ |
+| weather-service | weather.current / weather.forecast / weather.temperature | system_modules/weather_service/ |
+| clock | clock.set_alarm / clock.set_timer / clock.set_reminder / ... | system_modules/clock/ |
+| automation-engine | automation.run / automation.list | system_modules/automation_engine/ |
+| presence-detection | presence.query / presence.who_home / presence.status | system_modules/presence_detection/ |
+| energy-monitor | energy.current / energy.today | system_modules/energy_monitor/ |
 
 ---
 

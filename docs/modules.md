@@ -51,7 +51,7 @@ Voice subsystem: STT (Vosk), TTS (Piper), wake-word detection, speaker ID (resem
 
 **Type:** SYSTEM
 
-Local LLM (Ollama) plus the 6-tier Intent Router. Hosts the Fast Matcher (YAML), the IntentCompiler, the IntentCache, and cloud LLM providers (OpenAI / Anthropic / Google / Groq).
+Local LLM (Ollama) plus the 5-tier Intent Router. Hosts the FastMatcher (`IntentCompiler` over DB-stored regex with verb-bucket pre-filter and specificity sorting), `PatternGenerator` (composite device patterns and per-entity radio/scene rows), `IntentCache` (SQLite hot-phrase cache with hourly promotion to FastMatcher), and cloud LLM providers (OpenAI / Anthropic / Google / Groq). The Tier 3 prompt is rebuilt dynamically from the registry on every device CRUD — see [intent-routing.md](intent-routing.md).
 
 - **Provides:** `IntentRouter` singleton consumed by every voice-aware module
 - **Auto-disables** local LLM when free RAM < 5 GB

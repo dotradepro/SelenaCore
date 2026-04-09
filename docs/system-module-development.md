@@ -344,129 +344,149 @@ Tips for REST APIs:
 
 ## IntentRouter Integration
 
-System modules can register intents for **Tier 1.5** (in-process intent handling). Intents are defined in YAML and compiled by **IntentCompiler** — no hand-written regex files needed.
+System modules declare their **hard intents** in their own class — there is no central seed file or `config/intents/` YAML directory. The router reads `intent_definitions` from the DB at startup; modules insert/claim their rows on `start()` via `_claim_intent_ownership()`.
 
-The intent router cascade: FastMatcher → IntentCompiler (regex) → SmartMatcher (TF-IDF) → Module Bus → LLM → Fallback.
+The router cascade: **FastMatcher → Module Bus → IntentCache → Local LLM → Cloud LLM → Fallback**. Hard intents declared by modules show up in **Tier 1** (FastMatcher, if you provide regex patterns) AND in **Tier 3** (the LLM's dynamic catalog, automatically — no patterns required). For background, see [intent-routing.md](intent-routing.md).
 
-### Step 1: Define intents in YAML
+### Step 1: Declare your owned intents
 
-Add your intents to `config/intents/definitions.yaml`:
-
-```yaml
-intents:
-  mymodule.do_something:
-    module: my-module
-    noun_class: DEVICE           # semantic category (MEDIA, DEVICE, WEATHER, ENERGY, PRESENCE, AUTOMATION, WATCHDOG)
-    verb: on                     # verb category (on, off, play, stop, pause, set, query, search, scan, list)
-    priority: 5
-    description: "Perform an action"
-    templates:                   # expanded using vocabulary YAML
-      - "{verb.on} {param.what}"
-    params:
-      what: {type: freetext}
-    overrides:                   # raw regex (when templates are insufficient)
-      uk:
-        - "зроби\\s+(?P<what>.+)"
-      en:
-        - "do\\s+(?P<what>.+)"
-
-  mymodule.status:
-    module: my-module
-    noun_class: DEVICE
-    verb: query
-    priority: 5
-    description: "Get module status"
-    overrides:
-      uk: ["статус\\s+модуля"]
-      en: ["module\\s+status"]
-```
-
-Add new vocabulary words to `config/intents/vocab/{en,uk}.yaml` if needed.
-
-### Step 2: Create voice handler
+Inside your module class:
 
 ```python
-# system_modules/my_module/voice_handler.py
-from __future__ import annotations
-import logging
-from typing import TYPE_CHECKING
+# system_modules/my_module/module.py
+INTENT_DO_SOMETHING = "mymodule.do_something"
+INTENT_STATUS       = "mymodule.status"
 
-if TYPE_CHECKING:
-    from .module import MyModule
+OWNED_INTENTS = [
+    INTENT_DO_SOMETHING,
+    INTENT_STATUS,
+]
 
-logger = logging.getLogger(__name__)
 
-class MyVoiceHandler:
-    def __init__(self, module: "MyModule") -> None:
-        self._module = module
+class MyModule(SystemModule):
+    name = "my-module"
 
-    async def handle(self, intent: str, params: dict) -> None:
-        m = self._module
-        match intent:
-            case "mymodule.do_something":
-                what = params.get("what", "")
-                await m.speak(f"Done: {what}")
-            case "mymodule.status":
-                await m.speak("Module is running fine")
+    # Declarative defaults used when an OWNED_INTENT has no row yet in
+    # intent_definitions. The module is the source of truth for what it
+    # can do — no central seed script needed.
+    _OWNED_INTENT_META: dict[str, dict] = {
+        INTENT_DO_SOMETHING: dict(
+            noun_class="DEVICE", verb="set", priority=100,
+            description=(
+                "Perform some custom action. Use when the user asks the "
+                "module to 'do <something>' with a freetext argument."
+            ),
+        ),
+        INTENT_STATUS: dict(
+            noun_class="DEVICE", verb="query", priority=100,
+            description="Report the module's current operational status.",
+        ),
+    }
 ```
 
-### Step 3: Register in module.py
+### Step 2: Claim ownership on start
+
+Copy the canonical implementation from [system_modules/device_control/module.py](../system_modules/device_control/module.py) — `_claim_intent_ownership()`. The method:
+
+1. Updates `intent_definitions.module = <self.name>` for every name in `OWNED_INTENTS` (claiming any rows that already exist)
+2. Inserts missing rows with metadata from `_OWNED_INTENT_META`
 
 ```python
 async def start(self) -> None:
-    # ... existing setup ...
+    self.subscribe(["voice.intent"], self._on_voice_intent)
+    if self._session_factory is not None:
+        await self._claim_intent_ownership()
+    # ... rest of your startup ...
 
-    self._voice = MyVoiceHandler(self)
-    self.subscribe(["voice.intent"], self._on_event)
+async def _claim_intent_ownership(self) -> None:
+    from core.registry.models import IntentDefinition
+    from sqlalchemy import select, update
 
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        from system_modules.llm_engine.intent_compiler import get_intent_compiler
-        entries = get_intent_compiler().get_intents_for_module("my-module")
-        for entry in entries:
-            get_intent_router().register_system_intent(entry)
-    except Exception as exc:
-        logger.warning("Failed to register intents: %s", exc)
-
-async def stop(self) -> None:
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
-        get_intent_router().unregister_system_intents(self.name)
-    except Exception:
-        pass
-
-async def _on_event(self, event) -> None:
-    if event.type == "voice.intent":
-        intent = event.payload.get("intent", "")
-        if intent.startswith("mymodule."):
-            await self._voice.handle(intent, event.payload.get("params", {}))
-
-async def speak(self, text: str) -> None:
-    """Send text to TTS via EventBus → voice-core."""
-    await self.publish("voice.speak", {"text": text})
+    async with self._session_factory() as session:
+        await session.execute(
+            update(IntentDefinition)
+            .where(IntentDefinition.intent.in_(OWNED_INTENTS))
+            .values(module=self.name)
+        )
+        existing = {
+            row[0] for row in (await session.execute(
+                select(IntentDefinition.intent).where(
+                    IntentDefinition.intent.in_(OWNED_INTENTS)
+                )
+            )).all()
+        }
+        for intent_name in OWNED_INTENTS:
+            if intent_name in existing:
+                continue
+            meta = self._OWNED_INTENT_META.get(intent_name)
+            if meta is None:
+                continue
+            session.add(IntentDefinition(
+                intent=intent_name,
+                module=self.name,
+                noun_class=meta["noun_class"],
+                verb=meta["verb"],
+                priority=meta["priority"],
+                description=meta["description"],
+                source="module",
+            ))
+        await session.commit()
 ```
+
+### Step 3: Handle the intent
+
+```python
+async def _on_voice_intent(self, event) -> None:
+    payload = event.payload or {}
+    intent = payload.get("intent", "")
+    if intent not in OWNED_INTENTS:
+        return
+    params = payload.get("params") or {}
+
+    if intent == INTENT_STATUS:
+        await self.speak_action(intent, {
+            "result": "ok",
+            "uptime_sec": int(time.time() - self._started_at),
+            "items": len(self._items),
+        })
+        return
+
+    if intent == INTENT_DO_SOMETHING:
+        what = (params.get("what") or "").strip()
+        # ... do the thing ...
+        await self.speak_action(intent, {
+            "result": "ok",
+            "what": what,
+        })
+```
+
+`speak_action(intent, context)` publishes a `voice.speak` event with the structured action context. VoiceCore's rephrase LLM produces a natural-language reply in the user's TTS language — you do not need to format strings yourself or maintain locale files.
+
+### About FastMatcher patterns (optional)
+
+The above is enough — your module is fully reachable via the LLM tier (Tier 3) for any language because `IntentCompiler.get_all_intents()` returns pattern-less rows and the LLM picks them from the dynamic catalog.
+
+If you also want a **0 ms FastMatcher shortcut** for English commands, write rows into `intent_patterns` with `source='manual'`, `lang='en'`, and your intent_id. Use named groups for parameters (`(?P<level>\d+)`) — IntentCompiler scores patterns by `(priority DESC, specificity DESC)`, so parameterised patterns automatically win over loose ones at equal priority.
 
 ### Priority guide
 
-Higher numbers = checked first within Tier 1.5.
-
 | Priority | Use Case |
 |----------|----------|
-| 10 | Intents with parameters (named regex groups) — must match before generic patterns |
-| 5 | Standard intents — simple commands without parameters |
+| 100 | Hard intents owned by a module (default) |
+| 10 | Lower-priority alternatives |
+| 5 | Generic catch-alls (e.g. `weather.temperature` for any temperature query) |
 
 ### Existing voice-enabled modules
 
-All intent definitions are in `config/intents/definitions.yaml`:
-
-| Module | Intents | noun_class |
-|--------|---------|------------|
-| media-player | 14 | MEDIA |
-| automation-engine | 4 | AUTOMATION |
-| weather-service | 3 | WEATHER |
-| presence-detection | 3 | PRESENCE |
-| energy-monitor | 2 | ENERGY |
-| device-watchdog | 2 | WATCHDOG |
+| Module | Owned intents | Source file |
+|--------|---------------|-------------|
+| device-control | `device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed`, `device.query_temperature`, `device.lock`, `device.unlock` | [device_control/module.py](../system_modules/device_control/module.py) |
+| media-player | 14 media intents (play/pause/stop/volume/...) | system_modules/media_player/ |
+| weather-service | weather.current / weather.forecast / weather.temperature | system_modules/weather_service/ |
+| clock | clock.set_alarm / clock.set_timer / clock.set_reminder / ... | system_modules/clock/ |
+| automation-engine | automation.run / automation.list | system_modules/automation_engine/ |
+| presence-detection | presence.query / presence.who_home / presence.status | system_modules/presence_detection/ |
+| energy-monitor | energy.current / energy.today | system_modules/energy_monitor/ |
 
 ---
 

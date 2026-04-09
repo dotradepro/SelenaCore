@@ -10,11 +10,17 @@ Microphone (arecord, ALSA)
      |
      v
   Intent Router
-     |-- Tier 0:   IntentCompiler (DB regex patterns)       ~0 ms
-     |-- Tier 1:   Module Bus (user modules, WebSocket)     ~ms
-     |-- Cache:    IntentCache (SQLite, previous LLM hits)  ~0 ms
-     |-- Tier 2:   Local LLM (Ollama, single call)          300-800 ms
-     |-- Tier 3:   Cloud LLM (OpenAI-compatible, optional)  1-3 sec
+     |-- Tier 1:   FastMatcher (IntentCompiler, DB regex)    ~0 ms
+     |             - composite device patterns (one regex per verb)
+     |             - verb-bucket pre-filter on first word
+     |             - priority + specificity sorting
+     |             - English-only patterns by design
+     |-- Tier 2:   Module Bus (user modules, WebSocket)      ~ms
+     |-- Cache:    IntentCache (SQLite, previous LLM hits)   ~10 ms
+     |             - hot phrases (>=5 hits) auto-promoted to Tier 1
+     |-- Tier 3:   Local LLM (Ollama, single call)           300-800 ms
+     |             - dynamic prompt with registry-aware device-by-room context
+     |-- Tier 4:   Cloud LLM (OpenAI-compatible, optional)   1-3 sec
      '-- Fallback: "not understood" (i18n)
      |
      v
@@ -172,24 +178,22 @@ All intent patterns are stored in the database (no YAML files):
 
 ### Auto-Generated Patterns
 
-When a user adds an entity through the UI (radio station, device, scene),
-`PatternGenerator` runs **once** at registration time and writes English-only
-regex rows with `source='auto_entity'` and an `entity_ref` linking the row to
-its entity. The LLM prompt used here is **hardcoded English** inside
-`pattern_generator.py` (`_PATTERN_SYSTEM_EN`) — it is NOT stored in the DB
-and NOT exposed in the admin Prompts UI, because pattern generation is an
-internal English-only operation that powers the 0-ms regex tier.
+`PatternGenerator` builds two kinds of `auto_entity` rows from live registry data:
 
-| Entity | Example | Generated Pattern (EN) |
-|--------|---------|----------------------|
+- **Composite device patterns** — exactly 5 rows for the entire device registry, one per verb (`device.on`, `device.off`, `device.set_temperature`, `device.lock`, `device.unlock`). Each row uses a `(?P<name>...)` alternation of every device's `meta.name_en`. The captured name is resolved to a concrete `device_id` in O(1) via an in-memory index. Rebuilt as a single SQL transaction on every device CRUD — no per-device row explosion.
+- **Per-entity patterns** — one row per radio station / scene, named after the entity. These don't compress as cleanly because the variable text is in the entity name itself.
+
+Pattern generation is internal-English-only — the prompt that produces device names lives in `_PATTERN_SYSTEM_EN` inside `pattern_generator.py` and is NOT user-editable.
+
+| Entity | Example | Generated row |
+|--------|---------|---------------|
+| Device "Kitchen lamp" (one of N devices) | `device.on` composite | `^(?:turn on\|switch on\|enable)\s+(?:the\s+)?(?P<name>kitchen lamp\|...)\s*\??$` |
 | Radio station "Hit FM" | `media.play_radio_name` | `(?:play\|put on)\s+(?:radio\s+)?hit fm` |
-| Device "Kitchen lamp" | `device.on` | `(?:turn on\|switch on)\s+(?:the\s+)?kitchen lamp` |
 | Scene "Movie Night" | `automation.run_scene` | `(?:activate\|run)\s+(?:scene\s+)?movie night` |
 
-The intent router never writes back into `intent_patterns` at voice request
-time. Tier-3 LLM only **classifies** the user query against the existing
-catalogue (`manual` + `system` + `auto_entity` rows) and returns a JSON object
-with `{intent, params, location, response}` — no `pattern` field.
+The intent router never writes back into `intent_patterns` at voice request time. Tier 3 LLM only **classifies** the user query against the dynamic catalogue and returns a JSON object with `{intent, params, location, response}` — no `pattern` field.
+
+Hot-cache promotion (separate, runs hourly) writes `source='auto_learned'` rows when a phrase has been seen >=5 times — see [intent-routing.md §4.1](intent-routing.md#41-hot-phrase-promotion).
 
 To force a full rebuild of `auto_entity` rows (e.g. after a schema change):
 
@@ -201,17 +205,18 @@ curl -s -X POST http://localhost/api/ui/setup/patterns/regenerate
 ### Hot-Reload
 
 When data changes (add/remove station, device, scene):
-1. PatternGenerator creates/deletes `auto_entity` patterns in DB
-2. IntentCompiler recompiles regex cache in memory
-3. LLM prompt cache invalidated
+1. PatternGenerator rebuilds composite device patterns / per-entity patterns
+2. IntentCompiler.full_reload() rebuilds the in-memory `_flat_en` and `_buckets_en` indexes
+3. IntentRouter.refresh_system_prompt() invalidates the dynamic LLM-prompt cache
 4. No restart needed
 
 ### Seed Script
 
-Initial patterns migrated from YAML to DB via:
+`scripts/seed_intents_to_db.py` is **legacy** — it still seeds a few weather / privacy rules, but **system-module intents are no longer seeded here**. Each module declares its own hard intents in `_OWNED_INTENT_META` and inserts/claims them on `start()` via `_claim_intent_ownership()`. See [intent-routing.md §2](intent-routing.md#2-where-intents-come-from) for the full design.
 
 ```bash
-docker exec selena-core python3 /opt/selena-core/scripts/seed_intents_to_db.py
+# Run only when bringing up a fresh DB or after a schema migration:
+docker exec selena-core python3 -m scripts.seed_intents_to_db
 ```
 
 ## Audio Settings
