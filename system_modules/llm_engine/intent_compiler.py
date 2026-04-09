@@ -26,6 +26,41 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# First-word → candidate intents. The match() pre-filter consults the
+# bucket for the first word of the input and tries those patterns first;
+# words missing from this map fall through to a full _flat_en scan, so
+# omissions only cost performance, never correctness.
+_VERB_BUCKETS: dict[str, tuple[str, ...]] = {
+    "turn":     ("device.on", "device.off"),
+    "switch":   ("device.on", "device.off", "device.set_mode"),
+    "enable":   ("device.on",),
+    "disable":  ("device.off",),
+    "set":      ("device.set_temperature", "device.set_fan_speed",
+                 "device.set_mode", "clock.set_alarm", "clock.set_timer",
+                 "clock.set_reminder", "media.volume_set"),
+    "make":     ("device.set_temperature",),
+    "play":     ("media.play_radio", "media.play_radio_name",
+                 "media.play_genre", "media.play_search"),
+    "pause":    ("media.pause",),
+    "stop":     ("media.stop", "clock.stop_alarm"),
+    "resume":   ("media.resume",),
+    "next":     ("media.next",),
+    "previous": ("media.previous",),
+    "what":     ("weather.current", "weather.temperature",
+                 "device.query_temperature", "media.whats_playing"),
+    "how":      ("weather.current", "weather.temperature",
+                 "device.query_temperature"),
+    "lock":     ("device.lock",),
+    "unlock":   ("device.unlock",),
+    "open":     ("device.unlock",),
+    "secure":   ("device.lock",),
+    "tell":     ("weather.current", "weather.temperature",
+                 "device.query_temperature"),
+    "read":     ("device.query_temperature",),
+    "get":      ("device.query_temperature", "weather.temperature"),
+}
+
+
 def _pattern_specificity(pattern: str) -> int:
     """Higher score = more specific = higher match priority within a tier.
 
@@ -165,11 +200,16 @@ class IntentCompiler:
             self.load()
 
         text_lower = text.lower().strip()
-        # Walk the precomputed flat list so two patterns at the same
-        # priority are ordered by specificity (more anchors / named
-        # groups → matches first). See _async_load() for how flat_en is
-        # built. Falls back to legacy iteration if a stale instance from
-        # before the flatten refactor sneaks in.
+        if not text_lower:
+            return None
+
+        # First-word verb bucket pre-filter. Brings the typical scan
+        # length from O(all-patterns) down to ~5 candidates for the
+        # common case (turn / set / play / what / how / ...).
+        first_word = text_lower.split(maxsplit=1)[0].rstrip("?,.!:;")
+        buckets = getattr(self, "_buckets_en", {}) or {}
+        candidates = buckets.get(first_word) or []
+
         flat = getattr(self, "_flat_en", None)
         if flat is None:
             flat = []
@@ -177,23 +217,39 @@ class IntentCompiler:
                 for pe in ci.patterns.get("en", []):
                     flat.append((ci.priority, pe.specificity, ci, pe))
 
-        for _prio, _spec, entry, pe in flat:
+        # Try the bucket first, then fall back to a full scan that
+        # skips entries we already attempted via the bucket.
+        seen_ids: set[int] = set()
+        for _prio, _spec, entry, pe in candidates:
+            seen_ids.add(id(pe))
             m = pe.regex.search(text_lower)
             if m:
-                params = {k: v for k, v in m.groupdict().items() if v is not None}
-                result: dict[str, Any] = {
-                    "intent": entry.intent,
-                    "module": entry.module,
-                    "noun_class": entry.noun_class,
-                    "verb": entry.verb,
-                    "params": params,
-                    "source": "system_module",
-                }
-                if pe.entity_ref:
-                    result["entity_ref"] = pe.entity_ref
-                return result
+                return self._build_match_result(entry, pe, m)
+
+        for _prio, _spec, entry, pe in flat:
+            if id(pe) in seen_ids:
+                continue
+            m = pe.regex.search(text_lower)
+            if m:
+                return self._build_match_result(entry, pe, m)
 
         return None
+
+    @staticmethod
+    def _build_match_result(entry, pe, m) -> dict[str, Any]:
+        """Construct the dict shape that match() returns from a regex hit."""
+        params = {k: v for k, v in m.groupdict().items() if v is not None}
+        result: dict[str, Any] = {
+            "intent": entry.intent,
+            "module": entry.module,
+            "noun_class": entry.noun_class,
+            "verb": entry.verb,
+            "params": params,
+            "source": "system_module",
+        }
+        if pe.entity_ref:
+            result["entity_ref"] = pe.entity_ref
+        return result
 
     def get_intents_for_module(self, module_name: str) -> list[SystemIntentEntry]:
         """Return SystemIntentEntry list for a specific module (backward compat)."""
@@ -332,10 +388,24 @@ class IntentCompiler:
                 flat_en.append((ci.priority, pe.specificity, ci, pe))
         flat_en.sort(key=lambda t: (-t[0], -t[1]))
 
+        # Per-verb bucket: maps a first-word → subset of flat_en that
+        # belongs to one of the candidate intents for that word. match()
+        # consults this map first to skip the full O(N) scan for the
+        # common case where the input begins with a known verb.
+        buckets_en: dict[str, list[tuple[int, int, CompiledIntent, _PatternEntry]]] = {}
+        intent_to_verbs: dict[str, list[str]] = {}
+        for verb, intents in _VERB_BUCKETS.items():
+            for intent_name in intents:
+                intent_to_verbs.setdefault(intent_name, []).append(verb)
+        for tup in flat_en:
+            for verb in intent_to_verbs.get(tup[2].intent, ()):
+                buckets_en.setdefault(verb, []).append(tup)
+
         # Atomic swap
         with self._lock:
             self._compiled = new_compiled
             self._flat_en = flat_en
+            self._buckets_en = buckets_en
             self._version += 1
             self._loaded = True
 
