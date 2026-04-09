@@ -243,12 +243,30 @@ class DeviceControlModule(SystemModule):
                         from system_modules.llm_engine.pattern_generator import (
                             get_pattern_generator,
                         )
-                        device_id = get_pattern_generator().get_device_id_by_name(name_en)
+                        gen = get_pattern_generator()
                     except Exception as exc:
                         logger.debug("composite resolve failed: %s", exc)
-                        device_id = None
-                    if device_id:
-                        params = {**params, "device_id": device_id}
+                        gen = None
+
+                    if gen is not None:
+                        device_id = gen.get_device_id_by_name(name_en)
+                        if device_id:
+                            # Unique name → fast path, jump straight to row.
+                            params = {**params, "device_id": device_id}
+                        elif gen.is_ambiguous_name(name_en):
+                            # Ambiguous: 2+ devices share this name. We need
+                            # _resolve_device's location-based disambiguation,
+                            # but its tier 1/2 search the user-language
+                            # device.location AND meta.name_en — so feed the
+                            # captured name through as a synthetic ``entity``
+                            # hint that the existing ilike filters will pick
+                            # up. The location group from the composite
+                            # regex is already in params["location"].
+                            logger.info(
+                                "composite: ambiguous name %r — disambiguating by location=%r",
+                                name_en, params.get("location"),
+                            )
+                            params = {**params, "name_en": name_en}
 
             # Read-only query intents bypass the write pipeline below —
             # they don't translate to a driver state, just read the cached
@@ -457,6 +475,10 @@ class DeviceControlModule(SystemModule):
         entity = (params.get("entity") or "").lower().strip() or None
         location = (params.get("location") or "").lower().strip() or None
         explicit_id = (params.get("device_id") or "").strip() or None
+        # Composite resolver hands us a name_en captured by the regex
+        # when the same name is shared by 2+ devices. We use it as a
+        # tier-0 disambiguation key against meta.name_en + location.
+        explicit_name_en = (params.get("name_en") or "").strip().lower() or None
 
         def _row_to_dict(d) -> dict:
             return {
@@ -494,6 +516,26 @@ class DeviceControlModule(SystemModule):
             )
             if entity_filter:
                 base = base.where(Device.entity_type.in_(entity_filter))
+
+            # Tier 0: composite resolver passed an English name + a
+            # location. Match meta.name_en exactly (substring) AND any
+            # location field. This is the disambiguation path for
+            # collisions like name_en="light" appearing in two rooms.
+            if explicit_name_en and location:
+                stmt = base.where(
+                    Device.meta.ilike(f'%"name_en": "{explicit_name_en}"%'),
+                    or_(
+                        Device.location.ilike(f"%{location}%"),
+                        Device.meta.ilike(f'%"location_en": "%{location}%'),
+                    ),
+                )
+                rows = list((await session.execute(stmt)).scalars())
+                if len(rows) == 1:
+                    return _row_to_dict(rows[0])
+                # If still ambiguous (or zero) the user gave us a room
+                # the device isn't in — bail out so the caller speaks
+                # "not found" instead of acting on the wrong device.
+                return None
 
             # Tier 1: both entity_type AND location.
             if entity and location:

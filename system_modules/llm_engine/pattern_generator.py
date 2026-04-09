@@ -51,11 +51,14 @@ class PatternGenerator:
 
     def __init__(self, session_factory) -> None:
         self._sf = session_factory
-        # In-memory lookup populated by rebuild_composite_device_patterns().
-        # Maps lowercased name_en → device_id, used by device-control to
-        # resolve composite-pattern matches in O(1) without re-querying
-        # the DB on every voice command.
+        # In-memory lookups populated by rebuild_composite_device_patterns().
+        # _device_name_index maps lowercased name_en → device_id and only
+        # contains UNIQUE names. _ambiguous_names holds names shared by
+        # 2+ devices — those need location-based disambiguation in
+        # _resolve_device, so the composite resolver must NOT inject
+        # device_id for them.
         self._device_name_index: dict[str, str] = {}
+        self._ambiguous_names: set[str] = set()
 
     async def generate_for_entity(
         self, entity_type: str, entity_id: int | str,
@@ -138,7 +141,13 @@ class PatternGenerator:
                 names_climate_esc: list[str] = []
                 names_lock_esc: list[str] = []
                 locations_esc: set[str] = set()
-                index: dict[str, str] = {}
+                # Track all device_ids per name so we can detect collisions.
+                # Two devices sharing the same meta.name_en (e.g. "light"
+                # in different rooms) cannot be resolved by name alone —
+                # we leave them out of the unique-name fast path and let
+                # _resolve_device disambiguate them by location instead.
+                from collections import defaultdict
+                name_to_ids: dict[str, list[str]] = defaultdict(list)
 
                 for d in devices:
                     try:
@@ -150,7 +159,7 @@ class PatternGenerator:
                         continue
                     name_esc = re.escape(name_en)
                     names_all_esc.append(name_esc)
-                    index[name_en] = d.device_id
+                    name_to_ids[name_en].append(d.device_id)
 
                     etype = (d.entity_type or "").lower()
                     if etype in ("thermostat", "air_conditioner"):
@@ -164,9 +173,26 @@ class PatternGenerator:
                     if loc_en:
                         locations_esc.add(re.escape(loc_en))
 
-                # Atomic update of the in-memory index — match() never
-                # walks this so a brief inconsistency window is fine.
-                self._device_name_index = index
+                # Atomic update of the in-memory indexes. Names that
+                # uniquely identify a device land in _device_name_index
+                # for the O(1) fast path; ambiguous names live in
+                # _ambiguous_names so device-control's composite
+                # resolver can defer to location-based disambiguation.
+                self._device_name_index = {
+                    name: ids[0]
+                    for name, ids in name_to_ids.items()
+                    if len(ids) == 1
+                }
+                self._ambiguous_names = {
+                    name for name, ids in name_to_ids.items() if len(ids) > 1
+                }
+                if self._ambiguous_names:
+                    logger.info(
+                        "Composite patterns: %d ambiguous device name(s) "
+                        "(shared by 2+ devices) — will resolve by location: %s",
+                        len(self._ambiguous_names),
+                        sorted(self._ambiguous_names),
+                    )
 
                 if not names_all_esc:
                     logger.info(
@@ -264,8 +290,10 @@ class PatternGenerator:
 
         logger.info(
             "Composite device patterns rebuilt: %d devices (%d climate, %d lock), "
-            "%d rooms, %d patterns",
-            len(index), len(names_climate_esc), len(names_lock_esc),
+            "%d unique names, %d ambiguous, %d rooms, %d patterns",
+            sum(len(v) for v in name_to_ids.values()),
+            len(names_climate_esc), len(names_lock_esc),
+            len(self._device_name_index), len(self._ambiguous_names),
             len(locations_esc), count,
         )
         return count
@@ -274,11 +302,20 @@ class PatternGenerator:
         """O(1) lookup used by device-control to resolve composite matches.
 
         Returns the device_id whose ``meta.name_en`` equals ``name_en``
-        (case-insensitive), or ``None`` if no such device exists.
+        (case-insensitive), or ``None`` if the name is unknown OR
+        ambiguous (shared by 2+ devices). Callers must treat ``None``
+        as "let the regular _resolve_device path handle it" — never as
+        "device not found".
         """
         if not name_en:
             return None
         return self._device_name_index.get(name_en.strip().lower())
+
+    def is_ambiguous_name(self, name_en: str) -> bool:
+        """True when ``name_en`` is shared by 2+ devices in the registry."""
+        if not name_en:
+            return False
+        return name_en.strip().lower() in self._ambiguous_names
 
     async def regenerate_all(self, entity_type: str | None = None) -> int:
         """Regenerate all auto-entity patterns. Returns total count."""
