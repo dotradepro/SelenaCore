@@ -152,6 +152,7 @@ class IntentCache:
         import re as _re
 
         promoted = 0
+        skipped_non_ascii = 0
         async with session_factory() as session:
             async with session.begin():
                 # Wipe previous auto_learned rows so we never accumulate
@@ -165,8 +166,20 @@ class IntentCache:
                 for row in rows:
                     intent_name = row["intent"]
                     text = (row["text"] or "").strip().lower()
-                    lang = row["lang"]
                     if not text or intent_name in ("unknown", "llm.response"):
+                        continue
+
+                    # IntentCompiler.match() only walks ``patterns["en"]``
+                    # by design — non-English regex are never tried, even
+                    # if we wrote them. Promoting a UK utterance with
+                    # ``lang="uk"`` would create a dead row. Skip
+                    # non-ASCII text entirely; UK queries keep paying the
+                    # LLM cost until a future change either (a) teaches
+                    # the LLM to also return an English canonicalization
+                    # we can cache, or (b) extends the FastMatcher to
+                    # walk other languages.
+                    if not text.isascii():
+                        skipped_non_ascii += 1
                         continue
 
                     idef = (await session.execute(
@@ -184,12 +197,19 @@ class IntentCache:
 
                     session.add(IntentPattern(
                         intent_id=idef.id,
-                        lang=lang,
+                        lang="en",
                         pattern=pattern,
                         source="auto_learned",
                         entity_ref="cache:promoted",
                     ))
                     promoted += 1
+
+        if skipped_non_ascii:
+            logger.info(
+                "IntentCache: skipped %d non-ASCII hot phrase(s) — only "
+                "English entries can be promoted to FastMatcher today",
+                skipped_non_ascii,
+            )
         return promoted
 
     async def clear(self) -> int:
