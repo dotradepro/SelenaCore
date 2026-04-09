@@ -315,10 +315,22 @@ class PatternGenerator:
             return 0
         name_esc = re.escape(raw_name)
 
-        # Location suffix
+        # Location suffix — prefer the LLM-translated meta.location_en. The
+        # device.location column holds the user-language string ("Вітальня"),
+        # which would fail isascii() and produce no suffix at all. Falling
+        # back to device.location only when it happens to be ASCII covers
+        # legacy rows from before location_en existed.
+        location_en = (meta_dict.get("location_en") or "").strip().lower()
+        if not location_en and device.location and device.location.isascii():
+            location_en = device.location.lower()
+
         loc_part = ""
-        if device.location:
-            loc_esc = re.escape(device.location.lower())
+        # Dedupe: if the user named the device after the room (so the EN
+        # form of the name and the room collapsed to the same string),
+        # appending "in the X" produces "turn on living room in the living
+        # room" — drop the suffix in that case.
+        if location_en and location_en != raw_name:
+            loc_esc = re.escape(location_en)
             if loc_esc.isascii():
                 loc_part = f"(?:\\s+(?:in|on)\\s+(?:the\\s+)?{loc_esc})?"
 

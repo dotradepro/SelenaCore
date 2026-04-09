@@ -359,40 +359,58 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             effective_location = current_location
 
         # Meta merge: caller either sent a full meta (overwrite) or None
-        # (keep existing).
+        # (keep existing). Strip any caller-provided name_en/location_en —
+        # those fields are SERVER-DERIVED ONLY (LLM auto-translation). The
+        # editor UI must not let the user type them by hand: with many
+        # devices in many rooms, manual EN entries lead to typos and
+        # collisions that silently break voice patterns.
         new_meta: dict = body.meta if body.meta is not None else dict(existing_meta)
+        new_meta.pop("name_en", None)
+        new_meta.pop("location_en", None)
 
-        # ── Auto-translate name_en ──────────────────────────────────────
-        # Only regenerate if:
-        #   (a) caller didn't provide one AND
-        #   (b) the display name actually changed since last time.
-        desired_name_en = (new_meta.get("name_en") or "").strip()
-        if not desired_name_en and effective_name:
-            # Don't re-translate on every save — only when name changed or
-            # no English form exists yet.
-            if not current_name_en or effective_name != current_name:
-                try:
-                    translated = await translate_to_en(effective_name)
-                except Exception:
-                    translated = effective_name
-                desired_name_en = (translated or "").strip().lower()
-            else:
+        # ── Auto-translate name → meta.name_en (server-only) ────────────
+        # Always derive from the effective display name. Reuse the cached
+        # translation when the name hasn't changed to avoid burning an LLM
+        # call on every save.
+        desired_name_en = ""
+        if effective_name:
+            current_name_en = (existing_meta.get("name_en") or "").strip()
+            if current_name_en and effective_name == current_name:
                 desired_name_en = current_name_en
+            else:
+                if effective_name.isascii():
+                    desired_name_en = effective_name.lower()
+                else:
+                    try:
+                        translated = await translate_to_en(effective_name)
+                    except Exception:
+                        translated = effective_name
+                    desired_name_en = (translated or "").strip().lower()
         if desired_name_en:
             new_meta["name_en"] = desired_name_en
-        else:
-            new_meta.pop("name_en", None)
 
-        # ── Auto-translate location ─────────────────────────────────────
-        # Same rules: only if location actually came in the patch and is
-        # non-ASCII.
+        # ── Auto-translate location → meta.location_en (server-only) ────
+        # Keep the user-language string in device.location (so the UI shows
+        # "Вітальня", not "living room"). The LLM-translated form lives in
+        # meta.location_en — that's what the voice pattern generator and
+        # _resolve_device match against. Same caching rule as name_en.
         final_location: str | None = effective_location or None
-        if location_changed and final_location and not final_location.isascii():
-            try:
-                loc_en = await translate_to_en(final_location)
-                final_location = (loc_en or final_location).strip().lower()
-            except Exception:
-                pass
+        desired_location_en = ""
+        if final_location:
+            current_location_en = (existing_meta.get("location_en") or "").strip()
+            if current_location_en and final_location == current_location:
+                desired_location_en = current_location_en
+            else:
+                if final_location.isascii():
+                    desired_location_en = final_location.lower()
+                else:
+                    try:
+                        translated_loc = await translate_to_en(final_location)
+                    except Exception:
+                        translated_loc = ""
+                    desired_location_en = (translated_loc or "").strip().lower()
+        if desired_location_en:
+            new_meta["location_en"] = desired_location_en
 
         async with svc._db_session() as session:
             async with session.begin():
@@ -541,6 +559,19 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 name_en = await translate_to_en(display)
             except Exception:
                 name_en = display
+            # Translate location → meta.location_en for voice patterns. The
+            # display field (device.location) keeps the user's original
+            # language so the UI shows what they typed.
+            loc_en: str | None = None
+            if location:
+                if location.isascii():
+                    loc_en = location.lower()
+                else:
+                    try:
+                        translated_loc = await translate_to_en(location)
+                    except Exception:
+                        translated_loc = ""
+                    loc_en = (translated_loc or "").strip().lower() or None
             meta: dict[str, Any] = {
                 "gree": {
                     "ip": ip,
@@ -551,9 +582,11 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "brand": "gree",
                 },
                 "name_en": (name_en or "").strip().lower() or None,
+                "location_en": loc_en,
             }
-            if meta["name_en"] is None:
-                meta.pop("name_en", None)
+            for k in ("name_en", "location_en"):
+                if meta.get(k) is None:
+                    meta.pop(k, None)
 
             async with svc._db_session() as session:
                 async with session.begin():
