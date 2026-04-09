@@ -215,12 +215,47 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # catch-all /{full_path:path} which returns index.html.
     _register_spa_fallback(app)
 
+    # Hot-cache promotion: every hour, walk IntentCache for phrases
+    # that have been seen >=5 times and turn them into FastMatcher
+    # patterns (source='auto_learned'). After enough usage the LLM
+    # round-trip is bypassed entirely for repeated commands.
+    async def _promote_cache_loop(interval_sec: int = 3600) -> None:
+        from system_modules.llm_engine.intent_cache import get_intent_cache
+        from system_modules.llm_engine.intent_compiler import get_intent_compiler
+        while True:
+            try:
+                await asyncio.sleep(interval_sec)
+                cache = get_intent_cache()
+                n = await cache.promote_frequent_to_patterns(
+                    min_hits=5, session_factory=session_factory,
+                )
+                if n:
+                    logger.info(
+                        "Cache promoted %d hot phrases to FastMatcher patterns", n,
+                    )
+                    await get_intent_compiler().full_reload()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Cache promotion loop error: %s", exc)
+
+    app.state.cache_promotion_task = asyncio.create_task(
+        _promote_cache_loop(), name="cache_promotion",
+    )
+
     logger.info("SelenaCore ready on port %s", settings.core_port)
 
     yield  # App is running
 
     # Shutdown
     logger.info("SelenaCore shutting down...")
+    promo_task = getattr(app.state, "cache_promotion_task", None)
+    if promo_task is not None:
+        promo_task.cancel()
+        try:
+            await promo_task
+        except (asyncio.CancelledError, Exception):
+            pass
     await cloud_sync.stop()
     await bus.publish(
         type=CORE_SHUTDOWN,

@@ -126,6 +126,72 @@ class IntentCache:
             logger.debug("IntentCache get_frequent error: %s", e)
             return []
 
+    async def promote_frequent_to_patterns(
+        self, *, min_hits: int = 5, session_factory=None,
+    ) -> int:
+        """Convert hot cache entries into auto_learned IntentPattern rows.
+
+        Each promoted row uses ``source='auto_learned'`` and
+        ``entity_ref='cache:promoted'`` so it can be cleanly evicted on
+        the next promotion run without touching ``auto_entity`` rows
+        owned by PatternGenerator. Subsequent voice utterances of the
+        same phrase hit FastMatcher (~0 ms) instead of paying the local
+        LLM round-trip.
+
+        Returns the number of new pattern rows inserted.
+        """
+        if session_factory is None:
+            return 0
+
+        rows = await self.get_frequent(min_count=min_hits)
+        if not rows:
+            return 0
+
+        from sqlalchemy import select, delete
+        from core.registry.models import IntentDefinition, IntentPattern
+        import re as _re
+
+        promoted = 0
+        async with session_factory() as session:
+            async with session.begin():
+                # Wipe previous auto_learned rows so we never accumulate
+                # stale promotions when a phrase falls out of the hot set.
+                await session.execute(
+                    delete(IntentPattern).where(
+                        IntentPattern.source == "auto_learned",
+                        IntentPattern.entity_ref == "cache:promoted",
+                    )
+                )
+                for row in rows:
+                    intent_name = row["intent"]
+                    text = (row["text"] or "").strip().lower()
+                    lang = row["lang"]
+                    if not text or intent_name in ("unknown", "llm.response"):
+                        continue
+
+                    idef = (await session.execute(
+                        select(IntentDefinition).where(
+                            IntentDefinition.intent == intent_name
+                        )
+                    )).scalar_one_or_none()
+                    if idef is None:
+                        continue
+
+                    # Anchor the literal exactly so we don't accidentally
+                    # match longer phrases. The trailing ``\??`` absorbs
+                    # the optional question mark Whisper sometimes adds.
+                    pattern = rf"^{_re.escape(text)}\??$"
+
+                    session.add(IntentPattern(
+                        intent_id=idef.id,
+                        lang=lang,
+                        pattern=pattern,
+                        source="auto_learned",
+                        entity_ref="cache:promoted",
+                    ))
+                    promoted += 1
+        return promoted
+
     async def clear(self) -> int:
         """Clear all cached entries. Returns number deleted."""
         try:
