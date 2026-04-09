@@ -111,6 +111,13 @@ class IntentResult:
 from system_modules.llm_engine.intent_compiler import SystemIntentEntry  # noqa: F401
 
 
+# LLM-prompt size guards. The "Devices by room" section grows with the
+# registry; without these caps a 100-device house would saturate the
+# context window and the LLM would lose the spatial story.
+_DEVICES_PER_ROOM_LIMIT = 10
+_ROOMS_LIMIT = 30
+
+
 class IntentRouter:
     """Intent router: DB regex → Module Bus → Cache → LLM → Cloud."""
 
@@ -612,15 +619,25 @@ class IntentRouter:
                                     unroomed.append(label)
                             if by_room or unroomed:
                                 lines = ["\nDevices by room (use the room name to scope intents):"]
-                                for room in sorted(by_room.keys()):
-                                    lines.append(f"  {room}: {', '.join(by_room[room])}")
+                                rooms_sorted = sorted(by_room.keys())
+                                for room in rooms_sorted[:_ROOMS_LIMIT]:
+                                    items = by_room[room][:_DEVICES_PER_ROOM_LIMIT]
+                                    extra = len(by_room[room]) - len(items)
+                                    suffix = f" (+{extra} more)" if extra > 0 else ""
+                                    lines.append(f"  {room}: {', '.join(items)}{suffix}")
+                                if len(rooms_sorted) > _ROOMS_LIMIT:
+                                    lines.append(
+                                        f"  ... ({len(rooms_sorted) - _ROOMS_LIMIT} more rooms omitted)"
+                                    )
                                 if unroomed:
-                                    lines.append(f"  (no room): {', '.join(unroomed)}")
+                                    lines.append(
+                                        f"  (no room): {', '.join(unroomed[:_DEVICES_PER_ROOM_LIMIT])}"
+                                    )
                                 parts.append("\n".join(lines))
                             # Distinct list of known rooms — gives the LLM
                             # the topology of the house so it can scope
                             # intents to the correct physical place.
-                            rooms_list = sorted(by_room.keys())
+                            rooms_list = sorted(by_room.keys())[:_ROOMS_LIMIT]
                             if rooms_list:
                                 parts.append(
                                     "\nKnown indoor rooms in this house: "
