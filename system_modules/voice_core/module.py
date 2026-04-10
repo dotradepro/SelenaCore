@@ -952,11 +952,27 @@ class VoiceCoreModule(SystemModule):
         except Exception as e:
             logger.debug("Vosk warm-up skipped: %s", e)
 
-    # ── Language detection ──────────────────────────────────────────────
+    # ── Language detection + translation ────────────────────────────────
 
     def _detect_lang(self) -> str:
         """Return current language from config (Vosk uses per-language models)."""
         return self._lang
+
+    async def _to_tts_lang(self, text: str) -> str:
+        """[Translation Point 2] Translate English response to TTS language before Piper."""
+        if not text or not text.strip():
+            return text
+        from core.config_writer import get_value as _cfg_get
+        if not _cfg_get("translation", "enabled", False):
+            return text
+        tts_lang = self._tts_primary_lang or "en"
+        if tts_lang == "en":
+            return text
+        from core.translation.local_translator import get_output_translator
+        _out_t = get_output_translator()
+        if not _out_t.is_available():
+            return text
+        return _out_t.from_english(text, tts_lang)
 
     def _get_tts_for_lang(self, stt_lang: str) -> tuple:
         """Select TTS engine and response language based on STT-detected language.
@@ -1014,6 +1030,16 @@ class VoiceCoreModule(SystemModule):
             stt_lang = self._detect_lang()
             tts_engine, tts_lang = self._get_tts_for_lang(stt_lang)
 
+            # [Translation Point 1] Translate STT text to English before routing
+            from core.config_writer import get_value as _cfg_get
+            if _cfg_get("translation", "enabled", False) and stt_lang != "en":
+                from core.translation.local_translator import get_input_translator
+                _inp_t = get_input_translator()
+                if _inp_t.is_available():
+                    text_en = _inp_t.to_english(text, stt_lang)
+                    logger.debug("Vosk→EN [%s]: '%s' → '%s'", stt_lang, text[:60], text_en[:60])
+                    text = text_en
+
             self._log_live("routing", {
                 "text": text, "lang": stt_lang,
                 "msg": "IntentRouter: поиск интента...",
@@ -1050,6 +1076,7 @@ class VoiceCoreModule(SystemModule):
                 if result.response:
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text = sanitize_for_tts(result.response).lower()
+                    tts_text = await self._to_tts_lang(tts_text)
                     if tts_text:
                         done_ev = asyncio.Event()
                         await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
@@ -1085,6 +1112,7 @@ class VoiceCoreModule(SystemModule):
                     })
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text = sanitize_for_tts(result.response).lower()
+                    tts_text = await self._to_tts_lang(tts_text)
                     if tts_text:
                         # Mark BEFORE the await — module's _on_voice_intent
                         # subscriber runs concurrently and may call
@@ -1121,7 +1149,7 @@ class VoiceCoreModule(SystemModule):
                 # Speak response directly — no rephrase needed.
                 # LLM/cloud responses are already natural language.
                 # Cache/system responses are short templates — rephrase wastes time.
-                tts_text = result.response
+                tts_text = await self._to_tts_lang(result.response)
                 self._log_live("tts", {
                     "text": tts_text[:80],
                     "msg": "Piper TTS озвучивает...",
@@ -1576,6 +1604,8 @@ class VoiceCoreModule(SystemModule):
                     text = await self._rephrase_via_llm(text)
 
             if text:
+                # [Translation Point 2] Translate English → TTS language
+                text = await self._to_tts_lang(text)
                 # Full TTS preprocessing: lowercase + numbers
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
                 text = preprocess_for_tts(text, self._tts_primary_lang).lower()

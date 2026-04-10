@@ -740,10 +740,10 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
 
     update_config("voice", "tts", tts_cfg)
 
-    # If TTS language changed → translate custom prompts + flush all LLM caches
+    # If TTS language changed → flush LLM caches (prompts stay in English,
+    # InputTranslator/OutputTranslator handle language conversion)
     if new_lang and old_lang and new_lang != old_lang:
-        logger.info("TTS language changed: %s → %s, updating prompts + clearing caches", old_lang, new_lang)
-        asyncio.create_task(_translate_prompts_on_lang_change(old_lang, new_lang))
+        logger.info("TTS language changed: %s → %s, flushing caches", old_lang, new_lang)
         _flush_llm_caches()
 
     return {"status": "ok"}

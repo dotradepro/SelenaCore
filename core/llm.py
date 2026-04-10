@@ -256,15 +256,17 @@ async def _resolve_system_prompt(prompt_key: str, provider: str) -> str:
         return hidden + " " + (user_instr or "")
 
     if prompt_key == "intent":
-        tpl = await store.get(tts_lang, "intent_system")
-        return _subst(tpl, name=name, lang=lang_name)
+        # Core operates in English — always load EN prompt
+        tpl = await store.get("en", "intent_system")
+        return _subst(tpl, name=name, lang="English")
 
     if prompt_key == "rephrase":
-        tpl = await store.get(tts_lang, "rephrase_system")
-        return _subst(tpl, lang_name=lang_name, lang=lang_name, name=name)
+        # Rephrase in English — OutputTranslator handles en→target_lang
+        tpl = await store.get("en", "rephrase_system")
+        return _subst(tpl, lang_name="English", lang="English", name=name)
 
     if prompt_key == "translate":
-        return await store.get(tts_lang, "translate_system")
+        return await store.get("en", "translate_system")
 
     logger.warning("Unknown prompt_key: %s", prompt_key)
     return ""

@@ -103,6 +103,13 @@ wizard:
   completed: false
   current_step: null
 
+translation:
+  enabled: false
+  input_model_dir: /var/lib/selena/models/translate/mul-en
+  output_model_dir: /var/lib/selena/models/translate/en-mul
+  fallback_to_llm: true
+  spell_correction: false
+
 system:
   device_name: "SelenaCore"
   language: "ru"

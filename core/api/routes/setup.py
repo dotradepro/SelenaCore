@@ -1574,6 +1574,62 @@ def _build_piper_download_urls(voice_id: str) -> list[str]:
     ]
 
 
+# ================================================================== #
+#  Translation models (Helsinki-NLP opus-mt via CTranslate2)           #
+# ================================================================== #
+
+
+@router.get("/translate/status")
+async def translate_status() -> dict[str, Any]:
+    """Translation models availability and download status."""
+    from core.translation.local_translator import get_input_translator, get_output_translator
+    from core.translation.downloader import get_status
+    return {
+        "enabled": get_nested("translation.enabled", False),
+        "fallback_to_llm": get_nested("translation.fallback_to_llm", True),
+        "spell_correction": get_nested("translation.spell_correction", False),
+        "input": {
+            "model_available": get_input_translator().is_available(),
+            **get_status("input"),
+        },
+        "output": {
+            "model_available": get_output_translator().is_available(),
+            **get_status("output"),
+        },
+    }
+
+
+@router.post("/translate/download")
+async def translate_download(req: dict[str, Any]) -> dict[str, Any]:
+    """Download translation models. direction: 'input' | 'output' | 'both'."""
+    from core.translation.downloader import download_model, get_status
+    direction = req.get("direction", "both")
+    targets = ["input", "output"] if direction == "both" else [direction]
+    for d in targets:
+        if get_status(d)["state"] != "downloading":
+            asyncio.create_task(download_model(d))
+    return {"status": "started", "direction": direction}
+
+
+@router.post("/translate/settings")
+async def translate_settings(req: dict[str, Any]) -> dict[str, Any]:
+    """Update translation settings (enabled, fallback_to_llm, spell_correction)."""
+    from core.translation.local_translator import reload_translators
+    updates = []
+    for k in ("enabled", "fallback_to_llm", "spell_correction"):
+        if k in req:
+            updates.append(("translation", k, bool(req[k])))
+    if updates:
+        update_many(updates)
+        reload_translators()
+    return {"status": "ok"}
+
+
+# ================================================================== #
+#  Provisioning pipeline                                               #
+# ================================================================== #
+
+
 @router.post("/provision")
 async def start_provision() -> dict[str, Any]:
     """Start the provisioning pipeline: download STT model, TTS voice, apply config."""

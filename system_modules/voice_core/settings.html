@@ -762,6 +762,41 @@
     </div>
 </div>
 
+<!-- Translation models -->
+<div class="card" id="translationCard">
+    <div class="mb12">
+        <span class="section-title" data-i18n="translation_title"></span>
+        <div class="section-sub" data-i18n="translation_desc"></div>
+    </div>
+    <div class="card-inner mb12">
+        <div class="flex gap8 mb6" style="align-items:center">
+            <span class="label-xs" style="min-width:200px" data-i18n="translation_input_model"></span>
+            <span id="translateInputBadge" class="badge badge-off">—</span>
+        </div>
+        <div class="flex gap8 mb8" style="align-items:center">
+            <span class="label-xs" style="min-width:200px" data-i18n="translation_output_model"></span>
+            <span id="translateOutputBadge" class="badge badge-off">—</span>
+        </div>
+        <div id="translateProgress" class="label-xs hidden" style="color:var(--gr);margin-bottom:8px"></div>
+        <button id="translateDownloadBtn" class="btn btn-primary btn-sm" data-i18n="translation_download_both"></button>
+    </div>
+    <div class="card-inner mb8">
+        <label class="flex gap8" style="align-items:center;cursor:pointer">
+            <input type="checkbox" id="translateEnabled">
+            <span class="label-sm" data-i18n="translation_enable"></span>
+        </label>
+        <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_enable_desc"></div>
+    </div>
+    <div class="card-inner mb8">
+        <label class="flex gap8" style="align-items:center;cursor:pointer">
+            <input type="checkbox" id="translateFallback" checked>
+            <span class="label-sm" data-i18n="translation_fallback"></span>
+        </label>
+        <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_fallback_desc"></div>
+    </div>
+    <button id="translateSaveBtn" class="btn btn-green" data-i18n="save"></button>
+</div>
+
 </div><!-- /tabEngines -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -1205,6 +1240,17 @@
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
             prompts_tab_desc: 'System prompts used by the AI engine. Read-only — managed by the system automatically.',
+            translation_title: 'Local Translator',
+            translation_desc: 'Core works in English. Translation at STT output and TTS input.',
+            translation_input_model: 'Input: speech → English (after STT)',
+            translation_output_model: 'Output: English → speech (before TTS)',
+            translation_download_both: 'Download both models (~600 MB)',
+            translation_ready: 'Ready',
+            translation_downloading: 'Downloading...',
+            translation_enable: 'Enable local translator',
+            translation_enable_desc: 'Both models must be downloaded. Falls back to LLM if disabled.',
+            translation_fallback: 'Fallback to LLM if model unavailable',
+            translation_fallback_desc: 'Use LLM for translation when local model is not downloaded.',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1402,6 +1448,17 @@
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
             prompts_tab_desc: 'Системні промпти AI-движка. Тільки перегляд — керуються системою автоматично.',
+            translation_title: 'Локальний перекладач',
+            translation_desc: 'Ядро працює англійською. Переклад на виході STT та вході TTS.',
+            translation_input_model: 'Вхід: мовлення → англійська (після STT)',
+            translation_output_model: 'Вихід: англійська → мовлення (перед TTS)',
+            translation_download_both: 'Завантажити обидві моделі (~600 МБ)',
+            translation_ready: 'Готово',
+            translation_downloading: 'Завантаження...',
+            translation_enable: 'Увімкнути локальний перекладач',
+            translation_enable_desc: 'Обидві моделі мають бути завантажені. Без них — LLM fallback.',
+            translation_fallback: 'Fallback на LLM якщо модель недоступна',
+            translation_fallback_desc: 'Використовувати LLM для перекладу коли локальна модель не завантажена.',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -2350,6 +2407,66 @@
     }
 
     function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    // ── Translation ──────────────────────────────────────────────
+    async function loadTranslateStatus() {
+        try {
+            var res = await api('/setup/translate/status');
+            var downloading = false;
+            function setBadge(id, info) {
+                var b = $(id);
+                if (info.model_available) {
+                    b.textContent = t('translation_ready');
+                    b.className = 'badge badge-ok';
+                } else if (info.state === 'downloading') {
+                    b.textContent = t('translation_downloading');
+                    b.className = 'badge badge-pr';
+                    $('translateProgress').textContent = info.progress;
+                    show('translateProgress');
+                    downloading = true;
+                } else if (info.state === 'error') {
+                    b.textContent = 'Error';
+                    b.className = 'badge badge-err';
+                    $('translateProgress').textContent = info.error;
+                    show('translateProgress');
+                } else {
+                    b.textContent = t('not_installed');
+                    b.className = 'badge badge-off';
+                }
+            }
+            setBadge('translateInputBadge', res.input);
+            setBadge('translateOutputBadge', res.output);
+            if ($('translateEnabled')) $('translateEnabled').checked = !!res.enabled;
+            if ($('translateFallback')) $('translateFallback').checked = !!res.fallback_to_llm;
+            if (downloading) setTimeout(loadTranslateStatus, 3000);
+            else hide('translateProgress');
+        } catch(e) { /* ignore */ }
+    }
+
+    if ($('translateDownloadBtn')) {
+        $('translateDownloadBtn').onclick = async function() {
+            this.disabled = true;
+            try {
+                await postJson('/setup/translate/download', { direction: 'both' });
+                showToast(t('translation_downloading'));
+                setTimeout(loadTranslateStatus, 2000);
+            } catch(e) { showToast('Error', 'error'); this.disabled = false; }
+        };
+    }
+
+    if ($('translateSaveBtn')) {
+        $('translateSaveBtn').onclick = async function() {
+            try {
+                await postJson('/setup/translate/settings', {
+                    enabled: $('translateEnabled').checked,
+                    fallback_to_llm: $('translateFallback').checked,
+                });
+                showToast(t('saved'));
+            } catch(e) { showToast('Error', 'error'); }
+        };
+    }
+
+    loadTranslateStatus();
 
     // ── Ollama ────────────────────────────────────────────────────
     async function loadOllamaStatus() {

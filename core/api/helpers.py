@@ -17,15 +17,39 @@ logger = logging.getLogger(__name__)
 # ── Translation helpers ─────────────────────────────────────────────────────
 
 
+def _detect_text_lang(text: str) -> str:
+    """Rough language guess from character ranges."""
+    for ch in text:
+        cp = ord(ch)
+        if 0x0400 <= cp <= 0x04FF:
+            return "uk"  # Cyrillic → assume Ukrainian (configurable)
+    return "en"
+
+
 async def translate_to_en(text: str) -> str:
-    """Translate a single phrase to English via LLM.  Returns original on failure."""
+    """Translate a single phrase to English.
+
+    Priority: local CTranslate2 model → LLM fallback → original text.
+    """
     if not text:
         return ""
     if all(ord(c) < 128 for c in text):
         return text
+
+    # Try local translator first (~50ms, offline)
+    from core.config_writer import get_value
+    if get_value("translation", "enabled", False):
+        from core.translation.local_translator import get_input_translator
+        t = get_input_translator()
+        if t.is_available():
+            lang = _detect_text_lang(text)
+            return t.to_english(text, lang)
+
+    # Fallback to LLM if configured
+    if not get_value("translation", "fallback_to_llm", True):
+        return text
     try:
         from core.llm import llm_call
-
         result = await llm_call(
             f"Translate to English (single phrase, no quotes): {text}",
             prompt_key="translate",
@@ -38,7 +62,10 @@ async def translate_to_en(text: str) -> str:
 
 
 async def translate_keywords_to_en(keywords: list[str]) -> list[str]:
-    """Translate a list of smart-home keywords to English via LLM."""
+    """Translate a list of smart-home keywords to English.
+
+    Priority: local CTranslate2 batch → LLM fallback → original keywords.
+    """
     if not keywords:
         return []
 
@@ -46,12 +73,28 @@ async def translate_keywords_to_en(keywords: list[str]) -> list[str]:
     if all_ascii:
         return [kw.lower().strip() for kw in keywords]
 
+    # Try local translator first (batch mode, ~50ms)
+    from core.config_writer import get_value
+    if get_value("translation", "enabled", False):
+        from core.translation.local_translator import get_input_translator
+        t = get_input_translator()
+        if t.is_available():
+            sample = next((k for k in keywords if k.strip()), "")
+            lang = _detect_text_lang(sample) if sample else "uk"
+            return [r.lower().strip()
+                    for r in t.keywords_to_english(
+                        [kw.strip() for kw in keywords], lang,
+                    )]
+
+    # Fallback to LLM
+    if not get_value("translation", "fallback_to_llm", True):
+        return [kw.lower().strip() for kw in keywords]
     try:
         from core.llm import llm_call
-
         text = ", ".join(keywords)
         result = await llm_call(
-            f"Translate these smart home keywords to English. Return ONLY a comma-separated list of English words, nothing else: {text}",
+            f"Translate these smart home keywords to English. "
+            f"Return ONLY a comma-separated list: {text}",
             prompt_key="translate",
             temperature=0.0,
             timeout=10.0,

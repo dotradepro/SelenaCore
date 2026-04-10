@@ -425,18 +425,18 @@ class IntentRouter:
     # ── Local LLM (single call) ────────────────────────────────────────
 
     async def _local_llm_classify(self, text: str, lang: str, *, tts_lang: str | None = None) -> IntentResult | None:
-        """Single LLM call via core.llm.llm_call(): returns intent JSON + response in TTS language."""
-        tts_lang = tts_lang or lang
+        """Single LLM call via core.llm.llm_call(): returns intent JSON.
+
+        Text is expected to be already in English (translated by InputTranslator
+        before reaching IntentRouter). No language instructions in prompt.
+        """
         from core.llm import llm_call
 
-        catalog = self._build_intent_catalog(tts_lang)
+        catalog = self._build_intent_catalog(lang)
 
-        lang_name = _lang_name(lang)
-        tts_lang_name = _lang_name(tts_lang)
-        user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
-
+        # Text is already English — send directly, no language wrapping
         raw = await llm_call(
-            user_prompt,
+            text,
             prompt_key="intent",
             extra_context=catalog,
             temperature=0.1,
@@ -486,18 +486,16 @@ class IntentRouter:
     async def _cloud_llm_classify(
         self, text: str, lang: str, cloud_cfg: dict, *, tts_lang: str | None = None,
     ) -> IntentResult | None:
-        """Cloud LLM classification via core.llm.llm_call()."""
-        tts_lang = tts_lang or lang
+        """Cloud LLM classification via core.llm.llm_call().
+
+        Text is already English (translated by InputTranslator).
+        """
         from core.llm import llm_call
 
-        catalog = self._build_intent_catalog(tts_lang)
-
-        lang_name = _lang_name(lang)
-        tts_lang_name = _lang_name(tts_lang)
-        user_prompt = f"[spoken: {lang_name}, respond in: {tts_lang_name}] {text}"
+        catalog = self._build_intent_catalog(lang)
 
         raw = await llm_call(
-            user_prompt,
+            text,
             prompt_key="intent",
             extra_context=catalog,
             temperature=0.1,
@@ -547,8 +545,8 @@ class IntentRouter:
         if db_catalog:
             parts.append(db_catalog)
 
-        # Language enforcement (compact)
-        parts.append(f"Response language: {lang_name}.")
+        # No language enforcement — core operates in English.
+        # OutputTranslator handles en→target_lang before TTS.
 
         return "\n".join(parts)
 

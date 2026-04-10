@@ -30,6 +30,11 @@ apscheduler>=3.10  # used by scheduler + clock modules for cron/date triggers
 # Vosk STT (Vosk model files live under /var/lib/selena/models/vosk)
 vosk>=0.3.45
 
+# Local translation (Helsinki-NLP/opus-mt via CTranslate2 int8)
+# Models downloaded on demand via Settings → Translation
+ctranslate2>=3.24.0
+sentencepiece>=0.1.99
+
 # Smart device drivers (used by system_modules/device_control)
 tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persistent socket)
 tuya-device-sharing-sdk>=0.2  # Tuya Smart Life / Tuya Smart OAuth via user-code (no developer account needed)

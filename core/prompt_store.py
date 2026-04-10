@@ -47,18 +47,16 @@ _EN_FALLBACK = {
     ),
     "intent_system": (
         "You are {name}, smart home assistant. Classify → JSON only.\n"
-        '{{"intent":"namespace.action","params":{{}},"location":"<English room or null>","response":"<short {lang}>"}}\n'
+        '{{"intent":"namespace.action","params":{{}},"location":"<room or null>","response":"<short English>"}}\n'
         "RULES:\n"
         "1. Intent MUST have a dot: device.on, media.play, weather.query. NEVER bare words.\n"
-        '2. Location in English. Use "unknown" if request not in intents list.\n\n'
-        "UA→EN: увімкни=on, вимкни=off, встанови=set, яка/який=query, "
-        "заблокуй=lock, розблокуй=unlock, зупини/стоп=stop, пауза=pause, грай/постав=play\n\n"
+        '2. Use "unknown" if request not in intents list.\n\n'
         "Examples:\n"
-        '"увімкни світло" → {{"intent":"device.on","location":null,"response":"Вмикаю."}}\n'
-        '"вимкни кондиціонер у вітальні" → {{"intent":"device.off","location":"living room","response":"Вимикаю."}}\n'
-        '"яка температура" → {{"intent":"device.query_temperature","location":null,"response":"Перевіряю."}}\n'
-        '"заблокуй замок" → {{"intent":"device.lock","location":null,"response":"Блокую."}}\n'
-        '"розкажи анекдот" → {{"intent":"unknown","location":null,"response":"Не розумію."}}'
+        '"turn on the light" → {{"intent":"device.on","location":null,"response":"Turning on."}}\n'
+        '"turn off AC in living room" → {{"intent":"device.off","location":"living room","response":"Turning off."}}\n'
+        '"what is the temperature" → {{"intent":"device.query_temperature","location":null,"response":"Checking."}}\n'
+        '"lock the door" → {{"intent":"device.lock","location":null,"response":"Locking."}}\n'
+        '"tell me a joke" → {{"intent":"unknown","location":null,"response":"I can\'t do that."}}'
     ),
     "rephrase_system": (
         "You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
@@ -172,32 +170,14 @@ class PromptStore:
         if lang == "en":
             return True
 
-        lang_name = lang_code_to_name(lang)
+        # Core operates in English — prompts are language-independent.
+        # Just copy English prompts for any new language (no LLM translation).
         en_prompts = await self.get_all("en")
-
-        try:
-            from core.llm import llm_call
-
-            for key, en_text in en_prompts.items():
-                if not en_text:
-                    continue
-                translated = await llm_call(
-                    f"Translate this voice assistant system prompt to {lang_name}. "
-                    f"Keep the same meaning, tone, structure, and formatting exactly. "
-                    f"Output ONLY the translated text, nothing else.\n\n"
-                    f"{en_text}",
-                    prompt_key="translate",
-                    temperature=0.2,
-                    timeout=15.0,
-                )
-                if translated and translated.strip():
-                    await self.set(lang, key, translated.strip(), is_custom=False)
-                    logger.info("Generated prompt '%s' for lang=%s", key, lang)
-
-            return True
-        except Exception as e:
-            logger.warning("Prompt generation for %s failed: %s", lang, e)
-            return False
+        for key, en_text in en_prompts.items():
+            if en_text:
+                await self.set(lang, key, en_text, is_custom=False)
+        logger.info("Prompts copied from EN for lang=%s", lang)
+        return True
 
     async def translate_custom_prompts(self, old_lang: str, new_lang: str) -> None:
         """Translate user-edited (custom) prompts from old_lang to new_lang via LLM."""
