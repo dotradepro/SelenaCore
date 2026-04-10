@@ -255,18 +255,18 @@ install_host_packages() {
     fi
 
     if $HAS_DISPLAY && ! $HEADLESS; then
-        # cage / wtype / seatd are only in jammy/noble/bookworm/trixie main
+        # cage / cog / wtype / seatd are only in jammy/noble/bookworm/trixie
         # repos. Older releases (focal, bullseye) don't ship them, so we skip
-        # quietly instead of producing three "Unable to locate package" errors.
+        # quietly instead of producing "Unable to locate package" errors.
         local kiosk_supported=true
         case "$OS_CODENAME" in
             focal|bullseye|buster|xenial|stretch) kiosk_supported=false ;;
         esac
         if $kiosk_supported; then
-            log "Display detected — installing kiosk helpers (cage, wtype, seatd)"
-            install_apt cage wtype seatd
+            log "Display detected — installing kiosk helpers (cage, cog, wtype, seatd)"
+            install_apt cage cog wtype seatd
         else
-            log "Display detected, but $OS_ID $OS_CODENAME does not ship cage/wtype/seatd in main repos — skipping kiosk helpers (selena-display.service won't be installed)"
+            log "Display detected, but $OS_ID $OS_CODENAME does not ship cage/cog/wtype/seatd — skipping kiosk helpers (selena-display.service won't be installed)"
         fi
     else
         log "No display — skipping kiosk helpers"

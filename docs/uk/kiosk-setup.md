@@ -2,15 +2,16 @@
 
 ## Огляд
 
-SelenaCore підтримує три режими дисплея залежно від обладнання:
+SelenaCore підтримує чотири режими дисплея залежно від обладнання:
 
 | Режим | Коли | Як |
 |-------|------|-----|
-| **Кіоск (Xorg)** | Headless + HDMI-екран (Jetson/RPi) | getty autologin → xinit → Chromium |
+| **Кіоск (Wayland/cog)** | Headless + HDMI-екран (RPi/generic) | cage + cog (WPE WebKit), ~50 МБ |
+| **Кіоск (Xorg)** | Headless + HDMI-екран (Jetson) | getty autologin → xinit → Chromium |
 | **Вікно робочого столу** | GNOME/KDE запущено | Вікно Chromium у режимі кіоску |
 | **TUI** | Дисплей відсутній | Python TUI з QR-кодом |
 
-**Рекомендовано для production:** Headless кіоск (без робочого столу). Економить ~1 ГБ RAM.
+**Рекомендовано для production:** Headless кіоск з cog (WPE WebKit). Економить ~1 ГБ RAM порівняно з desktop та ~250 МБ порівняно з Chromium кіоском.
 
 ---
 
@@ -77,7 +78,9 @@ sudo systemctl restart getty@tty1.service
 `install_native_services`) через [scripts/install-systemd.sh](../../scripts/install-systemd.sh).
 Скрипт визначає наявність `cage` та підключеного DRM-виходу і генерує
 `selena-display.service`, що вказує на [scripts/start-display.sh](../../scripts/start-display.sh),
-який запускає `cage + chromium` у kiosk-режимі на активному VT.
+який запускає `cage + cog` (WPE WebKit) у kiosk-режимі на активному VT. Якщо
+`cog` не встановлений, використовується `cage + chromium` як fallback. Можна
+примусово вибрати браузер через змінну оточення `SELENA_KIOSK_BROWSER`.
 
 Ніяких ручних модифікацій `~/.bash_profile` чи autologin agetty більше не
 потрібно.
@@ -107,11 +110,11 @@ docker compose restart core
 
 ```
 systemd (multi-user.target)
-  ├── getty@tty1 (autologin)
-  │     └── .bash_profile
-  │           └── kiosk-start.sh
-  │                 ├── очікування API health
-  │                 └── xinit → Xorg + Chromium кіоск
+  ├── selena-display.service
+  │     └── start-display.sh
+  │           ├── kiosk: cage → cog (WPE WebKit, пріоритет) або Chromium
+  │           ├── desktop: вікно Chromium кіоск у існуючому DE
+  │           └── tty: Python TUI з QR-кодом
   ├── docker (контейнер selena-core)
   │     └── FastAPI :80 (єдиний API + SPA) + TLS-проксі :443
   ├── vosk-server.service
@@ -126,7 +129,9 @@ systemd (multi-user.target)
 
 - **Wayland (cage) не працює** на Jetson Tegra DRM — використовуйте Xorg
 - GPU-драйвер NVIDIA Tegra вимагає Xorg; `wlroots` не може відкрити `/dev/dri/card0`
+- cog (WPE WebKit) має ту саму обмеженість Tegra DRM — він працює всередині cage
 - Chromium використовує GPU-растеризацію через `--enable-gpu-rasterization`
+- На Jetson використовуйте `kiosk-start.sh` (шлях Xorg) або desktop режим
 
 ---
 
@@ -135,7 +140,8 @@ systemd (multi-user.target)
 | Режим | RAM ОС | Доступно для AI |
 |-------|--------|-----------------|
 | Повний GNOME desktop | ~1.7 ГБ | ~5.7 ГБ |
-| **Headless кіоск (Xorg)** | **~0.7 ГБ** | **~6.7 ГБ** |
+| Headless кіоск (Chromium/Xorg) | ~0.7 ГБ | ~6.7 ГБ |
+| **Headless кіоск (cog/Wayland)** | **~0.5 ГБ** | **~7.0 ГБ** |
 | Без дисплея (тільки SSH) | ~0.65 ГБ | ~6.75 ГБ |
 
 На 8 ГБ Jetson headless економить ~1 ГБ для моделей Ollama LLM.
@@ -147,11 +153,14 @@ systemd (multi-user.target)
 Після деплою змін фронтенду:
 
 ```bash
-# З xdotool (Xorg кіоск)
+# З wtype (Wayland кіоск — працює з cog та Chromium)
+sudo XDG_RUNTIME_DIR=/run/user/0 WAYLAND_DISPLAY=wayland-0 wtype -k F5
+
+# З xdotool (Xorg кіоск — Jetson)
 DISPLAY=:0 xdotool key F5
 
 # Повний перезапуск кіоску
-sudo systemctl restart getty@tty1.service
+sudo systemctl restart selena-display.service
 ```
 
 ---
@@ -193,10 +202,13 @@ ui:
 
 | Проблема | Рішення |
 |----------|---------|
-| **Екран порожній після завантаження** | Перевірте `systemctl status getty@tty1` та `journalctl -u getty@tty1` |
+| **Екран порожній після завантаження** | Перевірте `systemctl status selena-display` та `journalctl -u selena-display` |
 | **Chromium не запускається** | Перевірте наявність Xorg: `which Xorg` та `/tmp/.xinitrc-kiosk` |
 | **Немає аудіо в контейнері** | PulseAudio може не працювати — перезапустіть: `docker compose restart core` |
 | **cage: "Found 0 GPUs"** | Jetson Tegra DRM несумісний з cage/wlroots — використовуйте Xorg |
+| **cog: порожній екран, немає GPU** | Встановіть `WLR_RENDERER=pixman` та `LIBGL_ALWAYS_SOFTWARE=1` в selena-display.service |
+| **Примусово Chromium замість cog** | Встановіть `SELENA_KIOSK_BROWSER=chromium` в змінних оточення selena-display.service |
+| **Видалити cog повністю** | `sudo apt remove cog` → `sudo systemctl restart selena-display.service` |
 | **getty restart loop** | Перевірте власника `/run/user/1000`: `stat -c '%U' /run/user/1000` |
 | **Сенсорний екран не працює** | Додайте користувача в групу `input`: `sudo usermod -aG input <user>` |
 | **Курсор видимий** | Встановіть `unclutter`: `sudo apt install unclutter` |
