@@ -36,9 +36,23 @@
 
 **Ключові інваріанти**
 
-- **Уся pipeline працює англійською** внутрішньо. Не-англійський ввід перекладається Tier 3 (LLM) у англійський `intent` + англійські `params.location` / `params.entity`. Українських / російських / німецьких FastMatcher-патернів немає і не буде (`IntentCompiler.match()` за дизайном ходить тільки по `patterns["en"]`).
-- Мова *відповіді* TTS незалежна — вона визначається `voice.tts.primary.lang`.
-- Усі рівні маршрутизації проходять через `IntentRouter` і випускають один `voice.intent` event з уніфікованим payload.
+- **Уся pipeline працює англійською** внутрішньо. Починаючи з v0.4
+  переклад виконується [Argos Translate](translation.md) на краях
+  пайплайну (після Vosk STT, перед Piper TTS), а не LLM.
+- IntentRouter отримує **вже англійський текст** і випускає англійський
+  `intent` + англійський `params.location` / `params.entity` +
+  англійський `response`. Українських / російських / німецьких
+  FastMatcher-патернів немає і не буде (`IntentCompiler.match()` за
+  дизайном ходить тільки по `patterns["en"]`).
+- Мова *відповіді* TTS обробляється `OutputTranslator` (en→target_lang)
+  безпосередньо перед `preprocess_for_tts` і Piper.
+- Усі рівні маршрутизації проходять через `IntentRouter` і випускають
+  один `voice.intent` event з уніфікованим payload.
+
+**Переклад можна вимкнути.** Коли `translation.enabled=false` або
+користувач використовує тільки англійську (Vosk EN + Piper EN), обидва
+перекладачі замикаються накоротко (~0 мс passthrough). Тоді система
+очікує текст англійською напряму від Vosk.
 
 ## 2. Звідки беруться інтенти
 

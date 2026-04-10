@@ -392,7 +392,13 @@ The intent router uses a 5-tier cascade. Each tier is tried in order; the first 
 
 **IntentCache promotion.** Hot phrases that hit the cache `>=5` times are promoted to FastMatcher patterns once per hour from the `core/main.py` lifespan. Promoted rows use `source='auto_learned'` namespaced separately from `auto_entity`. English-only by design.
 
-**LLM Response Rephrase:** After a module executes a voice command, voice-core sends the structured action context to the rephrase LLM (temperature=0.9). This produces natural-sounding TTS responses instead of templated strings. A conversation session (last 20 messages, 5-min timeout) provides context for coherent dialogue.
+**LLM Response Rephrase:** After a module executes a voice command, voice-core sends the structured action context to the rephrase LLM (temperature=0.9). The rephrase LLM produces English text (since v0.4 the core operates in English internally), which then goes through `OutputTranslator` to the user's language before Piper TTS.
+
+**Translation at the edges.** For non-English users, [Argos Translate](translation.md) sits at two points in the voice pipeline:
+- **Input:** after Vosk STT, before IntentRouter — `uk→en` (~200 ms warm)
+- **Output:** after IntentRouter / rephrase LLM, before Piper TTS — `en→uk`
+
+This makes the entire LLM stack (intent classification, response rephrase, prompt examples) English-only, which dramatically improves reliability of small local models (qwen2.5:3b, phi3:mini) and shrinks the intent prompt from ~1700 tokens to ~300.
 
 For full implementation details — pattern specificity scoring, composite resolver, ambiguous-name disambiguation, prompt structure, scaling envelope — see [intent-routing.md](intent-routing.md).
 

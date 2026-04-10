@@ -36,9 +36,23 @@
 
 **Key invariants**
 
-- The **whole pipeline operates on English** internally. Non-English input is translated by Tier 3 (LLM) into an English `intent` + English `params.location` / `params.entity`. There are no Ukrainian / Russian / German FastMatcher patterns and there never will be (`IntentCompiler.match()` only walks `patterns["en"]` by design).
-- The TTS *response* language is independent — it follows `voice.tts.primary.lang`.
-- All routing tiers go through `IntentRouter` and emit one `voice.intent` event with a uniform payload shape.
+- The **whole pipeline operates on English** internally. Since v0.4 the
+  translation is done by [Argos Translate](translation.md) at the edges
+  of the pipeline (after Vosk STT, before Piper TTS), not by the LLM.
+- IntentRouter receives **already-English text** and emits an English
+  `intent` + English `params.location` / `params.entity` + an English
+  `response`. There are no Ukrainian / Russian / German FastMatcher
+  patterns and there never will be (`IntentCompiler.match()` only walks
+  `patterns["en"]` by design).
+- The TTS *response* language is handled by `OutputTranslator`
+  (en→target_lang) right before `preprocess_for_tts` and Piper.
+- All routing tiers go through `IntentRouter` and emit one `voice.intent`
+  event with a uniform payload shape.
+
+**Translation can be disabled.** When `translation.enabled=false` or
+the user runs an English-only setup (Vosk EN + Piper EN), both
+translators short-circuit (~0 ms passthrough). The system then expects
+text in English directly from Vosk.
 
 ## 2. Where intents come from
 
@@ -190,41 +204,72 @@ Once an entry has been hit `>= 5` times, the **promotion loop** turns it into a 
 
 **English-only by design.** The cache still records non-ASCII utterances for cache hits, but the promotion step skips them with a log message — the FastMatcher would never read them anyway. Ukrainian / Russian / German queries keep paying the LLM cost on first encounter, then the IntentCache cost (~10 ms) on subsequent ones.
 
-## 5. LLM tier (Tier 3) — dynamic registry context
+## 5. LLM tier (Tier 3) — compact English prompt
 
-Source: [system_modules/llm_engine/intent_router.py](../system_modules/llm_engine/intent_router.py) — `_load_db_catalog()` and `_build_intent_catalog()`.
+Source: [system_modules/llm_engine/intent_router.py](../system_modules/llm_engine/intent_router.py) — `_load_db_catalog_compact()` and `_build_intent_catalog()`.
 
-The local LLM (Ollama) prompt is rebuilt on every device CRUD. It contains:
+Since v0.4 the local LLM prompt is **compact and English-only**. The
+base prompt is ~200 tokens (loaded from `intent_system` in the prompt
+store) plus a tiny dynamic catalog appended at runtime. Total prompt
+size is typically **300-500 tokens** — fits comfortably in 2 K context
+windows of qwen2.5:0.5b/1.5b/3b.
 
-1. **Registered intents** — every row in `intent_definitions`, with name, description, params schema. Includes pattern-less hard intents.
-2. **Connected modules** — each user / system module's display name and intent list.
-3. **Devices by room** — grouped by `meta.location_en` with `entity_type: name_en` per device:
+### 5.1 What the catalog contains
+
+1. **Intents grouped by namespace** — pipe-separated actions:
    ```
-   Devices by room (use the room name to scope intents):
-     bedroom: light: bedside lamp, light: ceiling light
-     kitchen: outlet: kettle, light: kitchen light
-     living room: air_conditioner: air conditioner
+   Intents: device.on|off|set_temperature|set_mode|lock|unlock,
+            media.play|stop|pause|volume_set, weather.query,
+            clock.set_alarm|set_timer, presence.query
    ```
-4. **Known indoor rooms** — distinct list with the routing rule:
-   > "If the user names any of these rooms, choose an intent that acts on or reads from a device in that room. Pick a non-room/global intent only when the user does NOT name any known room or explicitly says 'outside' / 'outdoor' / 'globally'."
-5. **Radio stations / scenes** — for media-player and automation-engine.
-6. **TTS language directive** — `Response MUST be in <lang>`.
+2. **Module-extra intents** — module intents not already in the
+   IntentCompiler list (same compact namespace format).
+3. **Rooms with device types**:
+   ```
+   Rooms: living room (air_conditioner, light), bedroom (light)
+   ```
+4. **Radio stations** — flat list of `name_en` for media-player.
 
-### 5.1 Prompt size guards
+No verbose descriptions, no language directives, no per-language
+examples. The whole catalog is typically **100-300 tokens**.
 
-Two module-level constants prevent the prompt from growing without bound:
+### 5.2 Why compact?
+
+- Local 1-3B models on Pi 5 / Jetson Nano have effective context
+  windows of 2 K-4 K tokens
+- Verbose intent descriptions don't help small models — the **name**
+  carries enough signal for classification
+- Translation handled at the edges means no language-mixing in the
+  prompt
+- The base intent_system prompt holds 5 short English example
+  classifications which give the model the JSON shape to follow
+
+### 5.3 Size guards
+
+Two module-level constants cap catalog growth:
 
 ```python
 _DEVICES_PER_ROOM_LIMIT = 10
 _ROOMS_LIMIT = 30
 ```
 
-A house with 60 devices in 35 rooms produces:
-- Up to 30 visible rooms × 10 devices each = 300 entries
-- `... (5 more rooms omitted)` footer for the rest
-- Each room line truncates with `(+N more)` if it has more than 10 devices
+A 60-device / 35-room house keeps the prompt under ~1 KB extra.
 
-This caps the catalog at roughly 3-5 KB of prompt text — comfortable for a 4 K-context model like `phi-3-mini`, with headroom for `gemma2:9b` to handle ~150 intents at full clarity.
+### 5.4 Test results on Raspberry Pi 5 (qwen2.5:3b)
+
+| Command | Intent (correct?) | Latency (warm) |
+|---------|-------------------|----------------|
+| turn on the light in the office | device.on, office ✓ | 9 s |
+| turn off the air conditioner in living room | device.off, living room ✓ | 6 s |
+| what is the temperature in living room | device.query_temperature, living room ✓ | 7 s |
+| what is the weather | weather.query ✓ | 5 s |
+| set timer for 5 minutes | clock.set_timer ✓ | 7 s |
+| who is home | presence.query ✓ | 8 s |
+| play music | media.play ✓ | 5 s |
+| tell me a joke | unknown ✓ | 6 s |
+
+**8/9 correct** with ~5-9 s warm response. Cold start (first call after
+restart) is ~30-45 s due to model load into RAM.
 
 ### 5.2 Why this is enough — no hardcoded room mappings
 

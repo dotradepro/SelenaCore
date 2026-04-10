@@ -285,15 +285,39 @@ ai:
       model: "llama-3.1-8b-instant"
 ```
 
-### Dynamic LLM Prompt
+### Dynamic LLM Prompt (English-only)
 
-The system prompt is built dynamically from DB:
-- Registered modules with their intents
-- Known devices
-- Radio stations
-- Scenes
+Since v0.4 the entire LLM intent classification operates in **English**.
+The base system prompt is loaded from `intent_system` in the prompt store
+(always read from `lang="en"` regardless of TTS language) and contains
+~200 tokens of role + JSON schema + 5 examples. A dynamic catalog is
+appended at runtime:
 
-Cached per `tts_lang`, invalidated on data changes.
+- Registered intents grouped by namespace (`device.on|off|...`)
+- Active modules with their intent lists
+- Devices by room (using `meta.location_en` and `meta.name_en` —
+  English forms only)
+- Radio stations / scenes (English names)
+
+The catalog is built fresh per call from DB. No language enforcement is
+added — output is always English. The user-facing language is handled by
+the [translation system](translation.md) at the edges of the pipeline.
+
+### Tabs in Voice & AI settings
+
+| Tab | Purpose |
+|-----|---------|
+| **Engines** | Pick / install Vosk STT, Piper TTS, Ollama LLM |
+| **Translate** | Install / activate Argos Translate language pairs |
+| **Prompts** | Read-only view of active system prompts (5 keys) |
+| **Intents** | Browse all registered voice intents from system + user modules |
+| **Patterns** | Browse compiled regex patterns from FastMatcher |
+| **Test** | Simulate voice commands via text — full pipeline trace |
+
+The **Prompts** tab is intentionally **read-only**. Prompts are managed
+internally and copied identically across all language rows in the DB
+(`en`/`uk`/`ru`/...) — there is no per-language translation anymore,
+since the core operates in English.
 
 ## RAM Budget (Jetson 8GB headless)
 
