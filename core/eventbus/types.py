@@ -59,6 +59,9 @@ VOICE_SPEAK_DONE = "voice.speak_done"
 VOICE_TTS_START = "voice.tts_start"
 VOICE_TTS_DONE = "voice.tts_done"
 
+# Notification events
+NOTIFICATION_SENT = "notification.sent"
+
 # Registry events
 REGISTRY_ENTITY_CHANGED = "registry.entity_changed"
 # payload: {"entity_type": "radio_station"|"device"|"scene"|"module",

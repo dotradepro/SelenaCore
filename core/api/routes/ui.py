@@ -720,7 +720,10 @@ async def ui_stop_module(name: str) -> dict[str, Any]:
     if module.type == "SYSTEM":
         raise HTTPException(status_code=403, detail="Cannot stop SYSTEM modules")
     info = await manager.stop(name)
-    broadcast_event("module.stopped", {"name": info.name})
+    from core.eventbus.bus import get_event_bus
+    await get_event_bus().publish(
+        type="module.stopped", source="core.ui", payload={"name": info.name},
+    )
     return {"name": info.name, "status": info.status.value}
 
 
@@ -732,7 +735,10 @@ async def ui_start_module(name: str) -> dict[str, Any]:
     if module is None:
         raise HTTPException(status_code=404, detail="Module not found")
     info = await manager.start(name)
-    broadcast_event("module.started", {"name": info.name})
+    from core.eventbus.bus import get_event_bus
+    await get_event_bus().publish(
+        type="module.started", source="core.ui", payload={"name": info.name},
+    )
     return {"name": info.name, "status": info.status.value}
 
 
@@ -746,7 +752,10 @@ async def ui_remove_module(name: str) -> None:
     if module.type == "SYSTEM":
         raise HTTPException(status_code=403, detail="Cannot remove SYSTEM modules")
     await manager.remove(name)
-    broadcast_event("module.removed", {"name": name})
+    from core.eventbus.bus import get_event_bus
+    await get_event_bus().publish(
+        type="module.removed", source="core.ui", payload={"name": name},
+    )
 
 
 # ---------- SSE — real-time sync stream ----------
@@ -874,9 +883,9 @@ async def ui_sync_websocket(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "replay", "events": replay_data})
             else:
                 # Too old or no events — send full snapshot
-                await websocket.send_json(manager.get_snapshot())
+                await websocket.send_json(await manager.get_snapshot())
         else:
-            await websocket.send_json(manager.get_snapshot())
+            await websocket.send_json(await manager.get_snapshot())
 
         # Main loop: ping/pong + receive client messages
         ping_task = asyncio.create_task(_ping_loop(manager, client_id))

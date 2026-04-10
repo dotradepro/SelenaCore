@@ -51,10 +51,15 @@ class SyncManager:
         self._version: int = 0
         self._settings: dict[str, Any] = self._load_settings()
         self._layout: dict[str, Any] = self._load_layout()
-        self._event_log: deque[SyncEvent] = deque(maxlen=256)
+        self._event_log: deque[SyncEvent] = deque(maxlen=512)
         self._clients: dict[str, _WSClient] = {}
         self._lock = asyncio.Lock()
         self._client_counter = 0
+        # Snapshot providers — set via set_snapshot_providers() during startup
+        self._devices_fn: Any = None      # async () -> list[dict]
+        self._modules_fn: Any = None      # () -> list[dict]
+        self._system_fn: Any = None       # async () -> dict
+        self._voice_fn: Any = None        # () -> dict
 
     # ── Initial state loading ──────────────────────────────────────────
 
@@ -87,16 +92,65 @@ class SyncManager:
             pass
         return {"pinned": [], "sizes": {}}
 
+    # ── Snapshot providers ────────────────────────────────────────────
+
+    def set_snapshot_providers(
+        self,
+        devices_fn: Any = None,
+        modules_fn: Any = None,
+        system_fn: Any = None,
+        voice_fn: Any = None,
+    ) -> None:
+        """Set callbacks for enriching the hello snapshot with live data.
+
+        Args:
+            devices_fn: async () -> list[dict]  — device registry snapshot
+            modules_fn: () -> list[dict]        — module list snapshot
+            system_fn:  async () -> dict        — lightweight HW metrics
+            voice_fn:   () -> dict              — current voice state
+        """
+        self._devices_fn = devices_fn
+        self._modules_fn = modules_fn
+        self._system_fn = system_fn
+        self._voice_fn = voice_fn
+
     # ── Snapshot & replay ──────────────────────────────────────────────
 
-    def get_snapshot(self) -> dict[str, Any]:
-        """Full authoritative state for new connections."""
-        return {
+    async def get_snapshot(self) -> dict[str, Any]:
+        """Full authoritative state for new connections.
+
+        Includes devices, modules, system metrics, and voice state
+        when snapshot providers are configured. Each provider has a 2s
+        timeout to avoid blocking WebSocket handshake.
+        """
+        snapshot: dict[str, Any] = {
             "type": "hello",
             "version": self._version,
             "settings": self._settings.copy(),
             "layout": self._layout.copy(),
         }
+        # Enrich with live data (best-effort — failures don't block connect)
+        if self._devices_fn:
+            try:
+                snapshot["devices"] = await asyncio.wait_for(self._devices_fn(), timeout=2.0)
+            except Exception as exc:
+                logger.debug("Snapshot: devices provider failed: %s", exc)
+        if self._modules_fn:
+            try:
+                snapshot["modules"] = self._modules_fn()
+            except Exception as exc:
+                logger.debug("Snapshot: modules provider failed: %s", exc)
+        if self._system_fn:
+            try:
+                snapshot["system"] = await asyncio.wait_for(self._system_fn(), timeout=2.0)
+            except Exception as exc:
+                logger.debug("Snapshot: system provider failed: %s", exc)
+        if self._voice_fn:
+            try:
+                snapshot["voice"] = self._voice_fn()
+            except Exception as exc:
+                logger.debug("Snapshot: voice provider failed: %s", exc)
+        return snapshot
 
     def get_events_since(self, version: int) -> list[SyncEvent] | None:
         """Return events after given version, or None if too old (need full snapshot)."""

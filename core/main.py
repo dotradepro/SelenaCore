@@ -120,6 +120,97 @@ async def _preload_module_registry(session_factory) -> None:
         logger.debug("ModuleRegistry pre-load skipped: %s", exc)
 
 
+def _setup_snapshot_providers(session_factory, plugin_manager, sandbox) -> None:
+    """Configure SyncManager snapshot providers for enriched hello messages."""
+    from core.api.sync_manager import get_sync_manager
+    from core.api.sync_bridge import _sanitize_payload
+    from core.registry.service import DeviceRegistry
+
+    async def _devices_snapshot() -> list[dict]:
+        try:
+            async with session_factory() as session:
+                registry = DeviceRegistry(session)
+                devices = await registry.get_all()
+                return [
+                    {
+                        "device_id": d.device_id,
+                        "name": d.name,
+                        "type": d.type,
+                        "protocol": d.protocol,
+                        "state": _sanitize_payload(d.state) if isinstance(d.state, dict) else {},
+                        "capabilities": d.capabilities if isinstance(d.capabilities, list) else [],
+                        "last_seen": d.last_seen,
+                        "module_id": d.module_id,
+                        "meta": _sanitize_payload(d.meta) if isinstance(d.meta, dict) else {},
+                        "entity_type": getattr(d, "entity_type", None),
+                        "location": getattr(d, "location", None),
+                    }
+                    for d in devices
+                ]
+        except Exception as exc:
+            logger.debug("devices_snapshot failed: %s", exc)
+            return []
+
+    def _modules_snapshot() -> list[dict]:
+        try:
+            return [
+                {
+                    "name": m.name,
+                    "version": m.version,
+                    "type": m.type,
+                    "status": m.status.value,
+                    "runtime_mode": m.runtime_mode,
+                    "port": m.port,
+                    "installed_at": m.installed_at,
+                    "ui": m.manifest.get("ui"),
+                }
+                for m in plugin_manager.list_modules()
+            ]
+        except Exception:
+            return []
+
+    async def _system_snapshot() -> dict:
+        from core.api.routes.ui import _read_hw_metrics
+        from core.api.routes.system import get_system_mode
+        from core.version import VERSION
+        loop = asyncio.get_event_loop()
+        hw = await loop.run_in_executor(None, _read_hw_metrics)
+        return {
+            "cpu_temp": hw.get("cpu_temp", 0),
+            "cpu_load": hw.get("cpu_load", [0, 0, 0]),
+            "cpu_count": hw.get("cpu_count", 1),
+            "ram_used_mb": hw.get("ram_used_mb", 0),
+            "ram_total_mb": hw.get("ram_total_mb", 0),
+            "swap_used_mb": hw.get("swap_used_mb", 0),
+            "swap_total_mb": hw.get("swap_total_mb", 0),
+            "disk_used_gb": hw.get("disk_used_gb", 0),
+            "disk_total_gb": hw.get("disk_total_gb", 0),
+            "uptime": hw.get("uptime", 0),
+            "mode": get_system_mode(),
+            "version": VERSION,
+        }
+
+    def _voice_snapshot() -> dict:
+        try:
+            instance = sandbox.get_in_process_module("voice-core")
+            if instance and hasattr(instance, "_privacy_mode"):
+                return {
+                    "state": "idle",
+                    "privacy_mode": bool(instance._privacy_mode),
+                }
+        except Exception:
+            pass
+        return {"state": "idle", "privacy_mode": False}
+
+    get_sync_manager().set_snapshot_providers(
+        devices_fn=None,  # devices delivered via initial fetchDevices() + WS events
+        modules_fn=_modules_snapshot,
+        system_fn=_system_snapshot,
+        voice_fn=_voice_snapshot,
+    )
+    logger.info("SyncManager snapshot providers configured")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan — startup and shutdown logic."""
@@ -151,6 +242,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start event bus
     bus = get_event_bus()
     await bus.start()
+
+    # Start SyncBridge: forwards EventBus events to SyncManager (WebSocket)
+    from core.api.sync_bridge import get_sync_bridge
+    from core.api.sync_manager import get_sync_manager
+    sync_bridge = get_sync_bridge()
+    sync_bridge.start(bus, get_sync_manager())
 
     # Publish startup event
     from core.version import VERSION
@@ -215,6 +312,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # catch-all /{full_path:path} which returns index.html.
     _register_spa_fallback(app)
 
+    # Set snapshot providers for SyncManager hello message enrichment
+    _setup_snapshot_providers(session_factory, manager, sandbox)
+
     # Hot-cache promotion: every hour, walk IntentCache for phrases
     # that have been seen >=5 times and turn them into FastMatcher
     # patterns (source='auto_learned'). After enough usage the LLM
@@ -262,6 +362,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         source="core",
         payload={},
     )
+    # Stop SyncBridge (cancel pending throttle timers)
+    sync_bridge.stop()
     # Gracefully shut down bus-connected user modules (drain period)
     from core.module_bus import get_module_bus
     await get_module_bus().shutdown_all(drain_ms=5000)

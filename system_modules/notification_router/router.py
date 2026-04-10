@@ -184,6 +184,13 @@ class NotificationRouter:
             entry["channels"].append(ch_name)
 
         self._history.append(entry)
+
+        # Publish to EventBus → SyncBridge → frontend WebSocket
+        try:
+            await self._publish("notification.sent", entry)
+        except Exception:
+            pass
+
         return attempted
 
     async def handle_event(self, event_type: str, payload: dict) -> list[str]:
