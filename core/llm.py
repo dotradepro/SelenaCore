@@ -249,16 +249,11 @@ async def _resolve_system_prompt(prompt_key: str, provider: str) -> str:
         return tpl
 
     if prompt_key == "chat":
-        # Cloud: hidden_system + user_instructions
-        # Local: hidden_compact + user_instructions
-        if provider == "ollama":
-            hidden = await store.get(tts_lang, "hidden_compact")
-        else:
-            hidden = await store.get(tts_lang, "hidden_system")
+        # Single system prompt for all providers (local + cloud)
+        hidden = await store.get(tts_lang, "hidden_system")
         hidden = _subst(hidden, name=name, lang=lang_name)
         user_instr = await store.get(tts_lang, "user_instructions")
-        sep = " " if provider == "ollama" else "\n"
-        return hidden + sep + (user_instr or "")
+        return hidden + " " + (user_instr or "")
 
     if prompt_key == "intent":
         tpl = await store.get(tts_lang, "intent_system")

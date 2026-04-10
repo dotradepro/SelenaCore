@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Callable
 
 import httpx
 
@@ -67,9 +67,20 @@ class OllamaClient:
     """Async Ollama API client."""
 
     def __init__(
-        self, base_url: str = OLLAMA_URL, model: str = DEFAULT_MODEL
+        self, base_url: str = OLLAMA_URL, model: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        # Read model dynamically so switch_model() env-var override is
+        # picked up when the singleton is re-created.
+        # Priority: env OLLAMA_MODEL → voice.llm_model (UI selection)
+        #         → voice.providers.ollama.model → llm.default_model
+        if model is None:
+            model = (
+                os.environ.get("OLLAMA_MODEL")
+                or str(_cfg("voice.llm_model", ""))
+                or str(_cfg("voice.providers.ollama.model", ""))
+                or str(_cfg("llm.default_model", "phi3:mini"))
+            )
         self.model = model
 
     async def is_available(self) -> bool:
@@ -130,15 +141,29 @@ class OllamaClient:
             payload["format"] = "json"
 
         try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            # Intent classification with a large catalog can take 30-60s
+            # on low-power devices (Pi 5, Jetson Nano) during cold model
+            # load.  Use a generous timeout that covers first-request load
+            # plus actual generation.
+            gen_timeout = max(REQUEST_TIMEOUT, 90.0)
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(gen_timeout, connect=10.0),
+            ) as client:
                 resp = await client.post(
                     f"{self.base_url}/api/chat",
                     json=payload,
                 )
                 resp.raise_for_status()
                 return resp.json().get("message", {}).get("content", "").strip()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "Ollama generate HTTP error: %s %s — model=%s body=%s",
+                e.response.status_code, e.response.reason_phrase,
+                model or self.model, e.response.text[:200],
+            )
+            return ""
         except Exception as e:
-            logger.error("Ollama generate error: %s", e)
+            logger.error("Ollama generate error (%s): %s", type(e).__name__, e)
             return ""
 
     async def stream_generate(
@@ -182,10 +207,19 @@ class OllamaClient:
         except Exception as e:
             logger.error("Ollama stream_generate error: %s", e)
 
-    async def pull_model(self, model_name: str) -> bool:
-        """Download a model from Ollama registry. Returns True on success."""
+    async def pull_model(
+        self,
+        model_name: str,
+        progress_cb: Callable[[int, int], None] | None = None,
+    ) -> bool:
+        """Download a model from Ollama registry. Returns True on success.
+
+        ``progress_cb(downloaded_bytes, total_bytes)`` is called on every
+        streaming JSON line that includes ``total`` / ``completed`` fields
+        (Ollama reports layer download progress this way).
+        """
         try:
-            async with httpx.AsyncClient(timeout=600) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=30.0)) as client:
                 async with client.stream(
                     "POST", f"{self.base_url}/api/pull", json={"name": model_name}
                 ) as resp:
@@ -194,7 +228,10 @@ class OllamaClient:
                         if line:
                             try:
                                 data = json.loads(line)
-                                logger.info("Pulling %s: %s", model_name, data.get("status", ""))
+                                status = data.get("status", "")
+                                logger.info("Pulling %s: %s", model_name, status)
+                                if progress_cb and "total" in data and "completed" in data:
+                                    progress_cb(int(data["completed"]), int(data["total"]))
                             except Exception:
                                 pass
             logger.info("Model '%s' pulled successfully", model_name)

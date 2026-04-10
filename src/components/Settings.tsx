@@ -8,6 +8,7 @@ import UsersPanel from './UsersPanel';
 import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
+import ProvisionProgress from './ProvisionProgress';
 // Wrapper for tabs whose root content is just a form / list with no
 // built-in scroll container.  Defined OUTSIDE the component so React
 // preserves the component identity across re-renders (prevents
@@ -724,6 +725,7 @@ function SystemSettings() {
   const [autoStopRam, setAutoStopRam] = useState(true);
   const [stopLlmTemp, setStopLlmTemp] = useState(true);
   const [resetting, setResetting] = useState(false);
+  const [showReprovision, setShowReprovision] = useState(false);
 
   const saveSetting = async (key: string, value: boolean) => {
     try {
@@ -771,6 +773,36 @@ function SystemSettings() {
           </label>
         </div>
       </div>
+
+      {/* Re-provision: re-download models / reinstall services */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <h4 className="font-medium mb-2">{t('settings.rerunSetupTitle')}</h4>
+        <p className="text-sm text-zinc-400 mb-4">{t('settings.rerunSetupDesc')}</p>
+        <button
+          onClick={() => setShowReprovision(true)}
+          className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors flex items-center gap-2"
+        >
+          <RefreshCw size={14} />
+          {t('settings.rerunSetupBtn')}
+        </button>
+      </div>
+
+      {/* Re-provision modal */}
+      {showReprovision && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+            <ProvisionProgress
+              onDone={() => {
+                setShowReprovision(false);
+                showToast(t('settings.rerunSetupDone'));
+              }}
+              onSkip={() => setShowReprovision(false)}
+              showActions={true}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
         <h4 className="font-medium mb-2">{t('settings.resetWizardTitle')}</h4>
         <p className="text-sm text-zinc-400 mb-4">{t('settings.resetWizardDesc')}</p>

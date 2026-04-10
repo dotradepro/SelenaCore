@@ -198,10 +198,71 @@ ui:
 
 ---
 
+## DietPi / Minimal Distros — KMS Not Enabled
+
+Some minimal distributions (DietPi, Armbian minimal, custom images) ship
+with the KMS video driver **disabled** by default.  Without KMS the kernel
+does not create `/sys/class/drm/`, so `install.sh` sees no display and
+falls back to **headless** mode — even when an HDMI screen is physically
+connected to the Raspberry Pi.
+
+**Symptoms:**
+- `install.sh` reports `Display=false Headless=true` on a Pi with a screen
+- `cage`, `cog`, `wtype` are not installed
+- `selena-display.service` is not created
+- `/sys/class/drm/` does not exist
+
+**Automatic fix (install.sh ≥ 0.3):**
+
+Starting with v0.3, `install.sh` detects this situation automatically on
+Raspberry Pi 4/5: it patches `/boot/firmware/config.txt`, installs kiosk
+packages, and asks you to reboot.  After reboot the display service starts
+on its own.
+
+**Manual fix (if needed):**
+
+```bash
+# 1. Add KMS overlay to boot config
+echo -e '\ndtoverlay=vc4-kms-v3d\nhdmi_force_hotplug=1' | \
+    sudo tee -a /boot/firmware/config.txt
+
+# 2. Raise gpu_mem (DietPi sets it to 16 MB — too low for KMS)
+sudo sed -i -E 's/^(gpu_mem(_[0-9]+)?=)(8|16)$/\164/' /boot/firmware/config.txt
+
+# 3. Enable audio if disabled
+sudo sed -i 's/dtparam=audio=off/dtparam=audio=on/' /boot/firmware/config.txt
+
+# 4. Reboot
+sudo reboot
+
+# 5. After reboot — verify DRM is active
+ls /sys/class/drm/
+# Expected: card0  card1  card1-HDMI-A-1  card1-HDMI-A-2  ...
+
+# 6. Install kiosk packages
+sudo apt-get install -y cage cog wtype seatd
+
+# 7. Enable seatd and re-run systemd setup
+sudo systemctl enable --now seatd
+cd /opt/selena-core && sudo bash scripts/install-systemd.sh
+```
+
+**What changes in `/boot/firmware/config.txt`:**
+
+| Setting | DietPi default | Required |
+|---------|---------------|----------|
+| `dtoverlay=vc4-kms-v3d` | absent | **added** — enables KMS video driver |
+| `hdmi_force_hotplug=1` | commented out | **added** — ensures HDMI is detected |
+| `gpu_mem_*` | `16` | **64** — minimum for KMS |
+| `dtparam=audio` | `off` | **on** — enables onboard audio |
+
+---
+
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
+| **DietPi: no display, headless detected** | KMS overlay missing — see "DietPi / Minimal Distros" section above |
 | **Screen blank after boot** | Check `systemctl status selena-display` and `journalctl -u selena-display` |
 | **Chromium not starting** | Verify Xorg is installed: `which Xorg` and check `/tmp/.xinitrc-kiosk` |
 | **No audio in container** | PulseAudio may not be running yet — restart container: `docker compose restart core` |

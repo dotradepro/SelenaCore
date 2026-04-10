@@ -225,10 +225,103 @@ detect_environment() {
     echo "    Profile:   $PROFILE"
 }
 
+# ── Phase 1b: RPi KMS/DRM auto-fix ───────────────────────────────
+#
+# DietPi (and some other minimal distros) ship without the vc4-kms-v3d
+# overlay enabled.  Without it /sys/class/drm/ never appears and
+# install.sh silently falls back to "headless" even when an HDMI
+# display is physically connected.  This function detects the situation
+# on Raspberry Pi 4/5 and patches /boot/firmware/config.txt so that
+# after reboot KMS is available and the kiosk can start.
+
+NEEDS_REBOOT=false
+
+fix_rpi_kms() {
+    # Only relevant for Raspberry Pi without DRM loaded
+    $IS_RPI || return 0
+    [ -d /sys/class/drm ] && return 0
+
+    local boot_cfg=""
+    for f in /boot/firmware/config.txt /boot/config.txt; do
+        [ -f "$f" ] && boot_cfg="$f" && break
+    done
+    [ -z "$boot_cfg" ] && { warn "RPi detected but no config.txt found — cannot fix KMS"; return 0; }
+
+    # Already has the overlay — just not loaded yet (first boot after edit?)
+    if grep -qE '^\s*dtoverlay\s*=\s*vc4-kms-v3d' "$boot_cfg" 2>/dev/null; then
+        warn "vc4-kms-v3d overlay is in $boot_cfg but DRM is not loaded — reboot required"
+        NEEDS_REBOOT=true
+        return 0
+    fi
+
+    log "RPi detected without KMS video driver — patching $boot_cfg"
+
+    # Enable KMS overlay
+    cat >> "$boot_cfg" <<'KMSEOF'
+
+#-------SelenaCore KMS/DRM (added by install.sh)------
+# Enable KMS video driver for Wayland/cage kiosk display
+dtoverlay=vc4-kms-v3d
+# Force HDMI hotplug so the display is detected even if
+# the cable was plugged after boot
+hdmi_force_hotplug=1
+KMSEOF
+
+    # Raise gpu_mem from ≤16 to 64 — required for KMS
+    if grep -qE '^\s*gpu_mem(_\d+)?\s*=\s*(8|16)\s*$' "$boot_cfg" 2>/dev/null; then
+        sed -i -E 's/^(\s*gpu_mem(_[0-9]+)?\s*=\s*)(8|16)\s*$/\164/' "$boot_cfg"
+        log "Raised gpu_mem to 64 MB (was ≤16)"
+    fi
+
+    # Enable onboard audio if it was disabled (DietPi default)
+    if grep -qE '^\s*dtparam\s*=\s*audio\s*=\s*off' "$boot_cfg" 2>/dev/null; then
+        sed -i -E 's/^(\s*dtparam\s*=\s*audio\s*=\s*)off/\1on/' "$boot_cfg"
+        log "Enabled onboard audio (was off)"
+        # Re-detect audio after enabling
+        HAS_AUDIO=true
+        HEADLESS=false
+    fi
+
+    warn "KMS overlay added to $boot_cfg — a reboot is required after install"
+    NEEDS_REBOOT=true
+
+    # Optimistically set HAS_DISPLAY so kiosk packages are installed now,
+    # even though DRM won't be active until after reboot.
+    HAS_DISPLAY=true
+    HEADLESS=false
+}
+
+# ── Phase 1c: Fix DietPi network defaults ─────────────────────────
+#
+# DietPi's /etc/network/interfaces ships with "iface wlan0 inet dhcp"
+# but also has a static "gateway 192.168.0.1" placeholder.  On any
+# non-192.168.0.x network the gateway is unreachable so the kernel
+# never adds a default route → no internet despite a valid DHCP lease.
+# Comment out the stale static lines so DHCP works properly.
+
+fix_dietpi_network() {
+    local ifaces="/etc/network/interfaces"
+    [ -f "$ifaces" ] || return 0
+
+    # Only fix if the file has the DietPi-specific combo: "inet dhcp" +
+    # static "gateway 192.168.0.1" placeholder.
+    grep -q 'inet dhcp' "$ifaces" 2>/dev/null || return 0
+    grep -q '^gateway 192\.168\.0\.1' "$ifaces" 2>/dev/null || return 0
+
+    log "DietPi network placeholder detected — commenting out static address/gateway lines under dhcp interfaces"
+    # Comment out address/netmask/gateway under every "inet dhcp" stanza
+    sed -i '/^iface .* inet dhcp$/,/^$/{
+        /^address /s/^/#/
+        /^netmask /s/^/#/
+        /^gateway /s/^/#/
+    }' "$ifaces"
+}
+
 # ── Phase 2: Conditional package install ───────────────────────────
 
 BASE_PACKAGES=(
-    ca-certificates curl wget git jq unzip
+    ca-certificates curl wget git jq unzip zstd fonts-noto-color-emoji
+    iw wireless-tools
     python3 python3-venv python3-pip python3-yaml
     ffmpeg libsndfile1
     arp-scan arping iproute2 net-tools
@@ -951,6 +1044,17 @@ print_banner() {
     echo "    • register the device with the platform"
     echo "    • install the native systemd services"
     echo ""
+    if $NEEDS_REBOOT; then
+        echo -e "  ${BOLD}${YELLOW}⚠  Reboot required!${NC}"
+        echo "  KMS video driver was enabled in boot config but needs a"
+        echo "  reboot to activate.  Run:"
+        echo ""
+        echo "    sudo reboot"
+        echo ""
+        echo "  After reboot the kiosk display will start automatically."
+        echo ""
+    fi
+
     echo "  Logs:"
     echo "    docker compose logs -f core"
     echo "    docker compose logs -f agent"
@@ -977,6 +1081,8 @@ main() {
     title "SelenaCore unified installer"
     require_root
     detect_environment
+    fix_rpi_kms
+    fix_dietpi_network
 
     if ! $SKIP_DEPS; then
         install_host_packages

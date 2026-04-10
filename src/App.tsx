@@ -27,6 +27,18 @@ export default function App() {
     fetchWizardRequirements();
   }, [fetchWizardStatus, fetchWizardRequirements]);
 
+  // Poll wizard status while not configured — covers the case where the
+  // wizard was completed in another browser/tab (e.g. PC browser while
+  // the kiosk device screen still shows the wizard).
+  useEffect(() => {
+    if (isConfigured) return;
+    const id = setInterval(() => {
+      fetchWizardStatus();
+      fetchWizardRequirements();
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [isConfigured, fetchWizardStatus, fetchWizardRequirements]);
+
   // Apply theme and listen for system preference changes
   useEffect(() => {
     const cleanup = initThemeListener();

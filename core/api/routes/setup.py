@@ -141,7 +141,7 @@ def _nmcli_available() -> bool:
 
 @router.get("/wifi/scan")
 async def wifi_scan() -> dict[str, Any]:
-    """Scan for available Wi-Fi networks via nmcli."""
+    """Scan for available Wi-Fi networks via nmcli (or iw fallback)."""
     if not _nmcli_available():
         return {
             "networks": [],
@@ -152,10 +152,22 @@ async def wifi_scan() -> dict[str, Any]:
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(None, _scan_wifi_sync)
-        return {"networks": result, "available": True, "message": ""}
+        if result:
+            return {"networks": result, "available": True, "message": ""}
+        # nmcli returned success but zero networks — typical for
+        # unmanaged interfaces (DietPi / ifupdown).  Fall through.
+        logger.info("nmcli scan returned empty — trying iw fallback")
     except Exception as exc:
-        logger.warning("WiFi scan failed: %s", exc)
-        return {"networks": [], "available": True, "message": str(exc)}
+        logger.warning("WiFi scan via nmcli failed: %s — trying iw fallback", exc)
+
+    # Fallback: iw dev wlan0 scan in host namespace (works regardless
+    # of whether NM manages the interface).
+    try:
+        result = await loop.run_in_executor(None, _scan_wifi_iw_fallback)
+        return {"networks": result, "available": True, "message": ""}
+    except Exception as exc2:
+        logger.warning("WiFi iw fallback scan also failed: %s", exc2)
+        return {"networks": [], "available": True, "message": str(exc2)}
 
 
 def _scan_wifi_sync() -> list[dict[str, Any]]:
@@ -255,11 +267,29 @@ async def wifi_status() -> dict[str, Any]:
             if proc.returncode == 0:
                 for line in proc.stdout.splitlines():
                     if "CONNECTION" in line:
-                        ssid = line.split(":", 1)[-1].strip()
+                        val = line.split(":", 1)[-1].strip()
+                        if val and val != "--":
+                            ssid = val
                         break
         except Exception:
             pass
-    return {"connected": ip != "unknown", "ssid": ssid, "ip": ip}
+    # Fallback for unmanaged/ifupdown WiFi (DietPi): get SSID and IP
+    # via host namespace tools when NM has no info.
+    if not ssid:
+        ssid = _get_wlan_ssid_fallback() or ""
+    if ip == "unknown":
+        # Inside Docker the socket trick connects via the bridge, not
+        # wlan0.  Try reading wlan0 IP in the host network namespace.
+        try:
+            proc = _host_cmd(["ip", "-4", "-o", "addr", "show", "wlan0"])
+            if proc.returncode == 0:
+                match = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", proc.stdout)
+                if match:
+                    ip = match.group(1)
+        except Exception:
+            pass
+    connected = ip != "unknown" or bool(ssid)
+    return {"connected": connected, "ssid": ssid, "ip": ip}
 
 
 @router.get("/wifi/enabled")
@@ -269,15 +299,27 @@ async def wifi_enabled() -> dict[str, Any]:
         return {"enabled": False, "adapter_found": False}
     try:
         proc = subprocess.run(
-            ["nmcli", "-t", "-f", "TYPE,STATE", "device"],
+            ["nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device"],
             capture_output=True, text=True, timeout=5,
         )
         for line in proc.stdout.strip().splitlines():
             parts = line.split(":")
-            if len(parts) >= 2 and parts[0] == "wifi":
-                state = parts[1].strip()
+            if len(parts) >= 3 and parts[1] == "wifi":
+                dev = parts[0]
+                state = parts[2].strip()
+                if state == "unmanaged":
+                    # DietPi / ifupdown: NM does not manage the
+                    # interface but wpa_supplicant may still have it
+                    # connected.  Report enabled if it has an IP.
+                    has_ip = _get_interface_ip(dev) is not None
+                    return {
+                        "enabled": has_ip,
+                        "adapter_found": True,
+                        "state": state,
+                        "unmanaged": True,
+                    }
                 return {
-                    "enabled": state not in ("unavailable", "unmanaged"),
+                    "enabled": state != "unavailable",
                     "adapter_found": True,
                     "state": state,
                 }
@@ -324,7 +366,8 @@ async def network_status() -> dict[str, Any]:
         "wifi": {"connected": False, "ssid": None, "ip": None, "enabled": False, "adapter_found": False},
     }
 
-    # Check internet connectivity
+    # Check internet connectivity (try locally first, then via host
+    # namespace — inside Docker the bridge may not route to WAN).
     try:
         proc = subprocess.run(
             ["ping", "-c", "1", "-W", "2", "8.8.8.8"],
@@ -333,6 +376,12 @@ async def network_status() -> dict[str, Any]:
         result["internet"] = proc.returncode == 0
     except Exception:
         pass
+    if not result["internet"]:
+        try:
+            proc = _host_cmd(["ping", "-c", "1", "-W", "2", "8.8.8.8"])
+            result["internet"] = proc.returncode == 0
+        except Exception:
+            pass
 
     if not _nmcli_available():
         # Fallback: still try to detect IP
@@ -364,11 +413,26 @@ async def network_status() -> dict[str, Any]:
                 }
             elif dtype == "wifi":
                 result["wifi"]["adapter_found"] = True
-                result["wifi"]["enabled"] = state not in ("unavailable", "unmanaged")
                 if state == "connected":
+                    result["wifi"]["enabled"] = True
                     result["wifi"]["connected"] = True
                     result["wifi"]["ssid"] = conn
                     result["wifi"]["ip"] = _get_interface_ip(dev)
+                elif state == "unmanaged":
+                    # DietPi / ifupdown-managed WiFi: NM doesn't control
+                    # the interface but it may still be connected via
+                    # wpa_supplicant.  Detect actual link state.
+                    wifi_ip = _get_interface_ip(dev)
+                    if wifi_ip:
+                        result["wifi"]["enabled"] = True
+                        result["wifi"]["connected"] = True
+                        result["wifi"]["ip"] = wifi_ip
+                        result["wifi"]["ssid"] = _get_wlan_ssid_fallback() or ""
+                        result["wifi"]["unmanaged"] = True
+                    else:
+                        result["wifi"]["enabled"] = False
+                else:
+                    result["wifi"]["enabled"] = state != "unavailable"
     except Exception as exc:
         logger.warning("Network status check failed: %s", exc)
 
@@ -376,16 +440,119 @@ async def network_status() -> dict[str, Any]:
 
 
 def _get_interface_ip(interface: str) -> str | None:
-    """Get IP address of a specific network interface."""
+    """Get IP address of a specific network interface.
+
+    Tries locally first, then falls back to the host network namespace
+    via nsenter (needed when running inside Docker for host interfaces
+    like wlan0 / eth0).
+    """
     try:
         proc = subprocess.run(
             ["ip", "-4", "-o", "addr", "show", interface],
             capture_output=True, text=True, timeout=5,
         )
         match = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", proc.stdout)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    # Fallback: host namespace (Docker container can't see host wlan0)
+    try:
+        proc = _host_cmd(["ip", "-4", "-o", "addr", "show", interface])
+        match = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", proc.stdout)
         return match.group(1) if match else None
     except Exception:
         return None
+
+
+def _host_cmd(cmd: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str]:
+    """Run a command in the host namespaces via nsenter.
+
+    Inside a Docker container the wireless interface lives in the host
+    network/mount namespace.  ``nsenter --target 1 --net --mount`` lets
+    us reach ``iw`` / ``wpa_cli`` / ``iw scan`` that are installed on the
+    host but invisible from the container's own rootfs.
+    """
+    full = ["nsenter", "--target", "1", "--net", "--mount", "--"] + cmd
+    return subprocess.run(full, capture_output=True, text=True, timeout=timeout)
+
+
+def _get_wlan_ssid_fallback() -> str | None:
+    """Get current WiFi SSID via iw/wpa_cli when NM does not manage wlan0.
+
+    Commands run in the host namespace (via nsenter) so they work both
+    on bare metal and inside the Docker container.
+    """
+    # Try iw first
+    try:
+        proc = _host_cmd(["iw", "dev", "wlan0", "link"])
+        if proc.returncode == 0:
+            match = re.search(r"SSID:\s*(.+)", proc.stdout)
+            if match:
+                return match.group(1).strip()
+    except Exception:
+        pass
+    # Fallback to wpa_cli
+    try:
+        proc = _host_cmd(["wpa_cli", "-i", "wlan0", "status"])
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                if line.startswith("ssid="):
+                    return line.split("=", 1)[1].strip()
+    except Exception:
+        pass
+    return None
+
+
+def _scan_wifi_iw_fallback() -> list[dict[str, Any]]:
+    """Scan WiFi networks via iw when nmcli cannot (unmanaged interface).
+
+    Runs ``iw dev wlan0 scan`` in the host namespace via nsenter.
+    """
+    proc = _host_cmd(["iw", "dev", "wlan0", "scan"], timeout=20)
+    if proc.returncode != 0:
+        raise RuntimeError(f"iw scan failed: {proc.stderr.strip()}")
+
+    current_ssid = _get_wlan_ssid_fallback()
+    networks: dict[str, dict[str, Any]] = {}
+    ssid = ""
+    signal = 0
+    security = ""
+
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("BSS ") and "(" in line:
+            # Save previous entry
+            if ssid:
+                if ssid not in networks or signal > networks[ssid]["signal"]:
+                    networks[ssid] = {
+                        "ssid": ssid,
+                        "signal": min(100, max(0, signal + 100)),  # dBm→%
+                        "security": security,
+                        "connected": ssid == current_ssid,
+                    }
+            ssid, signal, security = "", 0, ""
+        elif line.startswith("SSID:"):
+            ssid = line.split(":", 1)[1].strip()
+        elif line.startswith("signal:"):
+            try:
+                signal = int(float(line.split(":")[1].strip().split()[0]))
+            except (ValueError, IndexError):
+                pass
+        elif "WPA" in line or "RSN" in line:
+            security = "WPA2" if "RSN" in line else "WPA"
+
+    # Last entry
+    if ssid:
+        if ssid not in networks or signal > networks[ssid]["signal"]:
+            networks[ssid] = {
+                "ssid": ssid,
+                "signal": min(100, max(0, signal + 100)),
+                "security": security,
+                "connected": ssid == current_ssid,
+            }
+
+    return sorted(networks.values(), key=lambda n: n["signal"], reverse=True)
 
 
 # ================================================================== #
@@ -1480,11 +1647,11 @@ async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) 
                 if task["id"] == "apply_config":
                     await _provision_apply_config()
                 elif task["id"] == "download_stt":
-                    await _provision_download_stt(stt_model)
+                    await _provision_download_stt(stt_model, task)
                 elif task["id"] == "download_tts":
-                    await _provision_download_tts(tts_voice)
+                    await _provision_download_tts(tts_voice, task)
                 elif task["id"] == "download_llm":
-                    await _provision_download_llm(llm_model or "")
+                    await _provision_download_llm(llm_model or "", task)
                 elif task["id"] == "install_native_services":
                     await _provision_install_native_services()
                 elif task["id"] == "finalize":
@@ -1526,7 +1693,7 @@ async def _provision_apply_config() -> None:
     await asyncio.sleep(1)
 
 
-async def _provision_download_tts(voice_id: str) -> None:
+async def _provision_download_tts(voice_id: str, task: dict[str, Any] | None = None) -> None:
     """Download Piper TTS voice model (.onnx + .onnx.json)."""
     import httpx
 
@@ -1543,7 +1710,27 @@ async def _provision_download_tts(voice_id: str) -> None:
         logger.info("TTS voice %s copied from local cache to %s", voice_id, piper_dir)
         return
 
+    # Pre-compute total size across all files for progress reporting
+    total_bytes = 0
+    downloaded_bytes = 0
+    if task is not None:
+        task["progress"] = {"downloaded_bytes": 0, "total_bytes": 0}
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
+        # Probe total size with HEAD requests
+        if task is not None:
+            for url in urls:
+                filename = url.rsplit("/", 1)[-1]
+                if (piper_dir / filename).exists():
+                    continue
+                try:
+                    head = await client.head(url, follow_redirects=True)
+                    cl = int(head.headers.get("content-length", 0))
+                    total_bytes += cl
+                except Exception:
+                    pass
+            task["progress"]["total_bytes"] = total_bytes
+
         for url in urls:
             filename = url.rsplit("/", 1)[-1]
             dest = piper_dir / filename
@@ -1554,22 +1741,43 @@ async def _provision_download_tts(voice_id: str) -> None:
                 with open(dest, "wb") as f:
                     async for chunk in resp.aiter_bytes(chunk_size=65536):
                         f.write(chunk)
+                        if task is not None:
+                            downloaded_bytes += len(chunk)
+                            task["progress"]["downloaded_bytes"] = downloaded_bytes
     logger.info("TTS voice %s downloaded to %s", voice_id, piper_dir)
 
 
-async def _provision_download_llm(model_id: str) -> None:
-    """Download LLM model via Ollama pull."""
+async def _provision_download_llm(model_id: str, task: dict[str, Any] | None = None) -> None:
+    """Download LLM model via Ollama pull.
+
+    Raises on failure so the provisioning runner marks the task as
+    ``error`` instead of silently marking it ``done``.
+    """
     if not model_id:
         return
-    try:
-        from system_modules.llm_engine.model_manager import get_model_manager
-        manager = get_model_manager()
-        await manager.download(model_id)
-    except Exception as exc:
-        logger.warning("LLM model download failed (non-critical): %s", exc)
+    from system_modules.llm_engine.ollama_client import get_ollama_client
+    client = get_ollama_client()
+    if not await client.is_available():
+        raise RuntimeError(
+            "Ollama server is not running — install it on the host "
+            "(curl -fsSL https://ollama.com/install.sh | sh) and start "
+            "with: sudo systemctl enable --now ollama"
+        )
+
+    if task is not None:
+        task["progress"] = {"downloaded_bytes": 0, "total_bytes": 0}
+
+    def _on_progress(downloaded: int, total: int) -> None:
+        if task is not None:
+            task["progress"]["downloaded_bytes"] = downloaded
+            task["progress"]["total_bytes"] = total
+
+    ok = await client.pull_model(model_id, progress_cb=_on_progress)
+    if not ok:
+        raise RuntimeError(f"Ollama pull failed for model '{model_id}'")
 
 
-async def _provision_download_stt(model_id: str) -> None:
+async def _provision_download_stt(model_id: str, task: dict[str, Any] | None = None) -> None:
     """Download Vosk STT model into configured models_dir AND activate it.
 
     `model_id` is the alphacephei.com model identifier (e.g. vosk-model-small-en-us-0.15).
@@ -1586,12 +1794,35 @@ async def _provision_download_stt(model_id: str) -> None:
         import httpx
         import zipfile
         import io
+
+        downloaded_bytes = 0
+        if task is not None:
+            task["progress"] = {"downloaded_bytes": 0, "total_bytes": 0}
+
         async with httpx.AsyncClient(timeout=httpx.Timeout(600.0, connect=30.0)) as client:
+            # Probe total size
+            if task is not None:
+                try:
+                    head = await client.head(url, follow_redirects=True)
+                    task["progress"]["total_bytes"] = int(
+                        head.headers.get("content-length", 0)
+                    )
+                except Exception:
+                    pass
+
             async with client.stream("GET", url, follow_redirects=True) as resp:
                 resp.raise_for_status()
+                # Use Content-Length from GET if HEAD didn't work
+                if task is not None and task["progress"]["total_bytes"] == 0:
+                    task["progress"]["total_bytes"] = int(
+                        resp.headers.get("content-length", 0)
+                    )
                 buf = io.BytesIO()
                 async for chunk in resp.aiter_bytes(chunk_size=131072):
                     buf.write(chunk)
+                    if task is not None:
+                        downloaded_bytes += len(chunk)
+                        task["progress"]["downloaded_bytes"] = downloaded_bytes
         buf.seek(0)
         with zipfile.ZipFile(buf) as zf:
             zf.extractall(models_dir)

@@ -5,6 +5,7 @@ import { useStore } from '../store/useStore';
 import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity, AlertCircle, RefreshCw, Signal, Lock, Play, WifiOff, Cable, Radio, Eye, EyeOff, Smartphone, QrCode } from 'lucide-react';
 import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
+import ProvisionProgress from './ProvisionProgress';
 
 function HomeIcon(props: any) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
@@ -732,104 +733,11 @@ export default function Wizard() {
 
         {/* ── Provisioning Screen ── */}
         {provisioning ? (
-          <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
-            {/* Animated spinner ring */}
-            <div className="relative w-24 h-24">
-              <svg className="w-full h-full animate-spin" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#27272a" strokeWidth="6" />
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#10b981" strokeWidth="6"
-                  strokeLinecap="round"
-                  strokeDasharray={`${provisionTotal > 0 ? (provisionCompleted / provisionTotal) * 264 : 30} 264`}
-                  className="transition-all duration-700"
-                  style={{ transformOrigin: 'center', transform: 'rotate(-90deg)' }}
-                />
-              </svg>
-              <div className="absolute inset-0 flex items-center justify-center">
-                {provisionDone ? (
-                  <Check size={32} className="text-emerald-500" />
-                ) : provisionFailed ? (
-                  <AlertCircle size={32} className="text-red-400" />
-                ) : (
-                  <span className="text-sm font-bold text-emerald-500">
-                    {provisionTotal > 0 ? `${provisionCompleted}/${provisionTotal}` : '…'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Title */}
-            <div className="text-center">
-              <h2 className="text-lg font-semibold mb-1">
-                {provisionDone ? t('wizard.provisionDone') : provisionFailed ? t('wizard.provisionFailed') : t('wizard.provisionTitle')}
-              </h2>
-              <p className="text-xs text-zinc-400">
-                {provisionDone ? t('wizard.provisionDoneDesc') : provisionFailed ? (provisionError || t('wizard.provisionFailedDesc')) : t('wizard.provisionDesc')}
-              </p>
-            </div>
-
-            {/* Task list */}
-            <div className="w-full max-w-sm space-y-2">
-              {provisionTasks.map((task) => (
-                <div
-                  key={task.id}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all",
-                    task.status === 'running' ? "border-emerald-500/50 bg-emerald-500/5" :
-                      task.status === 'done' ? "border-zinc-800 bg-zinc-900/50 opacity-70" :
-                        task.status === 'error' ? "border-red-500/30 bg-red-500/5" :
-                          "border-zinc-800/50 bg-zinc-900/30 opacity-40"
-                  )}
-                >
-                  <div className="shrink-0 w-5 h-5 flex items-center justify-center">
-                    {task.status === 'running' ? (
-                      <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                    ) : task.status === 'done' ? (
-                      <Check size={16} className="text-emerald-500" />
-                    ) : task.status === 'error' ? (
-                      <AlertCircle size={14} className="text-red-400" />
-                    ) : (
-                      <div className="w-2 h-2 rounded-full bg-zinc-600" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className={cn("text-sm font-medium", task.status === 'running' && "text-emerald-400")}>
-                      {t(`wizard.provTask_${task.label}` as any)}
-                    </span>
-                    {task.error && <p className="text-[10px] text-red-400 mt-0.5 truncate">{task.error}</p>}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Done / Retry buttons */}
-            {provisionDone && (
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
-                className="px-6 py-2.5 rounded-lg text-sm font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-2"
-              >
-                {t('wizard.provisionContinue')}
-                <ChevronRight size={16} />
-              </motion.button>
-            )}
-            {provisionFailed && (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => startProvision()}
-                  className="px-5 py-2 rounded-lg text-xs font-medium bg-zinc-800 text-zinc-50 hover:bg-zinc-700 transition-colors flex items-center gap-1.5"
-                >
-                  <RefreshCw size={14} />
-                  {t('wizard.provisionRetry')}
-                </button>
-                <button
-                  onClick={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
-                  className="px-5 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 transition-colors"
-                >
-                  {t('common.skip')}
-                </button>
-              </div>
-            )}
+          <div className="min-h-[70vh] flex items-center justify-center">
+            <ProvisionProgress
+              onDone={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
+              onSkip={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
+            />
           </div>
         ) : (
           <>

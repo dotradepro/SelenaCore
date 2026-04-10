@@ -440,7 +440,7 @@ class IntentRouter:
             prompt_key="intent",
             extra_context=catalog,
             temperature=0.1,
-            timeout=25.0,
+            timeout=60.0,
         )
 
         if not raw:
@@ -512,43 +512,53 @@ class IntentRouter:
     # ── Prompt building ────────────────────────────────────────────────
 
     def _build_intent_catalog(self, lang: str) -> str:
-        """Build the dynamic intent catalog (extra_context for llm_call).
+        """Build compact dynamic intent catalog (extra_context for llm_call).
 
-        Includes registered intents from IntentCompiler, DB catalog
-        (modules, devices, radio stations, scenes), and language enforcement.
-        The base system prompt is loaded by llm_call() from PromptStore.
+        Optimized for small local models (1-3B): intent names grouped by
+        namespace (no descriptions), compact device listing, room translations.
         """
         lang_name = _lang_name(lang)
         parts: list[str] = []
 
-        # Add known intents from IntentCompiler (DB-driven)
+        # Compact intents: group by namespace, pipe-separated actions
         try:
             from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            extra_intents: list[str] = []
+            # group: {"device": ["on","off",...], "media": ["play","stop",...]}
+            ns_map: dict[str, list[str]] = {}
             for ci in get_intent_compiler().get_all_intents():
-                desc = ci.description or ci.intent
-                params_keys = list(ci.params_schema.keys()) if ci.params_schema else []
-                params_str = ", ".join(params_keys) if params_keys else "none"
-                extra_intents.append(f"  {ci.intent}: {desc} (params: {params_str})")
-            if extra_intents:
-                parts.append("Registered intents:\n" + "\n".join(extra_intents))
+                dot = ci.intent.find(".")
+                if dot > 0:
+                    ns = ci.intent[:dot]
+                    action = ci.intent[dot + 1:]
+                else:
+                    ns = ci.intent
+                    action = ""
+                ns_map.setdefault(ns, []).append(action)
+            if ns_map:
+                items = []
+                for ns, actions in sorted(ns_map.items()):
+                    items.append(f"{ns}.{'|'.join(actions)}" if actions else ns)
+                parts.append("Intents: " + ", ".join(items))
         except Exception:
             pass
 
-        # Dynamic catalog from DB (registered_modules, devices, radio_stations, scenes)
-        db_catalog = self._load_db_catalog()
+        # Add module intents not in IntentCompiler (from registered_modules)
+        db_catalog = self._load_db_catalog_compact()
         if db_catalog:
             parts.append(db_catalog)
 
-        # Language enforcement
-        parts.append(f"TTS language: {lang_name} ({lang}). Response MUST be in {lang_name}.")
+        # Language enforcement (compact)
+        parts.append(f"Response language: {lang_name}.")
 
         return "\n".join(parts)
 
-    def _load_db_catalog(self) -> str:
-        """Load dynamic catalog from DB (sync wrapper for startup speed).
+    def _load_db_catalog_compact(self) -> str:
+        """Load compact dynamic catalog from DB.
 
-        Returns prompt section string or empty string.
+        Compact format for small local models:
+        - Module intents as namespace groups (no descriptions)
+        - Devices as "room (type, type)" (no full names)
+        - Room UA→EN translations from device metadata
         """
         try:
             from core.module_loader.sandbox import get_sandbox
@@ -558,113 +568,83 @@ class IntentRouter:
 
             import asyncio
             try:
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
             except RuntimeError:
                 return ""
 
-            # Use sync approach via thread to avoid nested async issues
             import threading
             result: list[str] = [""]
 
             def _sync_load() -> None:
                 async def _inner() -> str:
                     from sqlalchemy import select
-                    from core.registry.models import RegisteredModule, RadioStation, Scene, Device
+                    from core.registry.models import RegisteredModule, RadioStation, Device
 
                     parts: list[str] = []
 
                     async with sf() as session:
-                        # Registered modules (enabled + connected)
-                        stmt = select(RegisteredModule).where(
-                            RegisteredModule.enabled == True,
-                        )
-                        modules = list((await session.execute(stmt)).scalars().all())
-                        if modules:
-                            lines = []
-                            for m in modules:
-                                intents = m.get_intents()
-                                desc = m.description_en or m.name
-                                if intents:
-                                    lines.append(f"  {m.name}: {desc} (intents: {', '.join(intents)})")
-                                else:
-                                    lines.append(f"  {m.name}: {desc}")
-                            parts.append("\nConnected modules:\n" + "\n".join(lines))
+                        # Module intents — compact namespace groups
+                        # Only add intents NOT already in IntentCompiler
+                        known_intents: set[str] = set()
+                        try:
+                            from system_modules.llm_engine.intent_compiler import get_intent_compiler
+                            for ci in get_intent_compiler().get_all_intents():
+                                known_intents.add(ci.intent)
+                        except Exception:
+                            pass
 
-                        # Devices — group by room with entity_type so the LLM
-                        # can answer "temperature in <room>" by looking at
-                        # what physical devices live there. We always emit
-                        # English forms (meta.name_en / meta.location_en)
-                        # so the model produces English entity/location
-                        # values in its JSON output regardless of TTS lang.
+                        stmt = select(RegisteredModule).where(RegisteredModule.enabled == True)
+                        modules = list((await session.execute(stmt)).scalars().all())
+                        ns_extra: dict[str, list[str]] = {}
+                        for m in modules:
+                            for intent in m.get_intents():
+                                if intent not in known_intents:
+                                    dot = intent.find(".")
+                                    if dot > 0:
+                                        ns_extra.setdefault(intent[:dot], []).append(intent[dot + 1:])
+                                    else:
+                                        ns_extra.setdefault(intent, [])
+                        if ns_extra:
+                            items = []
+                            for ns, actions in sorted(ns_extra.items()):
+                                items.append(f"{ns}.{'|'.join(actions)}" if actions else ns)
+                            parts.append(", ".join(items))
+
+                        # Devices — compact: "room (type, type)"
                         devices = list((await session.execute(select(Device))).scalars().all())
                         if devices:
                             import json as _json
-                            # room_en → list of "<entity_type>: <name_en>"
                             by_room: dict[str, list[str]] = {}
-                            unroomed: list[str] = []
+                            room_ua_en: dict[str, str] = {}
                             for d in devices:
                                 try:
                                     meta = _json.loads(d.meta) if d.meta else {}
                                 except Exception:
                                     meta = {}
-                                name_en = (meta.get("name_en") or "").strip()
-                                if not name_en:
-                                    continue
                                 room_en = (meta.get("location_en") or "").strip()
+                                room_ua = (meta.get("location") or "").strip()
                                 etype = (d.entity_type or "device").strip()
-                                label = f"{etype}: {name_en}"
                                 if room_en:
-                                    by_room.setdefault(room_en, []).append(label)
-                                else:
-                                    unroomed.append(label)
-                            if by_room or unroomed:
-                                lines = ["\nDevices by room (use the room name to scope intents):"]
-                                rooms_sorted = sorted(by_room.keys())
-                                for room in rooms_sorted[:_ROOMS_LIMIT]:
-                                    items = by_room[room][:_DEVICES_PER_ROOM_LIMIT]
-                                    extra = len(by_room[room]) - len(items)
-                                    suffix = f" (+{extra} more)" if extra > 0 else ""
-                                    lines.append(f"  {room}: {', '.join(items)}{suffix}")
-                                if len(rooms_sorted) > _ROOMS_LIMIT:
-                                    lines.append(
-                                        f"  ... ({len(rooms_sorted) - _ROOMS_LIMIT} more rooms omitted)"
-                                    )
-                                if unroomed:
-                                    lines.append(
-                                        f"  (no room): {', '.join(unroomed[:_DEVICES_PER_ROOM_LIMIT])}"
-                                    )
-                                parts.append("\n".join(lines))
-                            # Distinct list of known rooms — gives the LLM
-                            # the topology of the house so it can scope
-                            # intents to the correct physical place.
-                            rooms_list = sorted(by_room.keys())[:_ROOMS_LIMIT]
-                            if rooms_list:
-                                parts.append(
-                                    "\nKnown indoor rooms in this house: "
-                                    + ", ".join(rooms_list)
-                                    + ". If the user names any of these "
-                                    "rooms, choose an intent that acts on "
-                                    "or reads from a device in that room "
-                                    "(see 'Devices by room' above). "
-                                    "Pick a non-room/global intent only "
-                                    "when the user does NOT name any "
-                                    "known room or explicitly says "
-                                    "'outside' / 'outdoor' / 'globally'."
-                                )
+                                    by_room.setdefault(room_en, []).append(etype)
+                                    if room_ua and room_ua != room_en:
+                                        room_ua_en[room_ua] = room_en
+                            if by_room:
+                                items = []
+                                for room in sorted(by_room.keys())[:_ROOMS_LIMIT]:
+                                    types = list(dict.fromkeys(by_room[room]))[:_DEVICES_PER_ROOM_LIMIT]
+                                    items.append(f"{room} ({', '.join(types)})")
+                                parts.append("Rooms: " + ", ".join(items))
+                            # Room UA→EN translations
+                            if room_ua_en:
+                                mappings = [f"{ua}={en}" for ua, en in room_ua_en.items()]
+                                parts.append("Room names: " + ", ".join(mappings))
 
-                        # Radio stations
+                        # Radio stations — just names
                         stmt = select(RadioStation).where(RadioStation.enabled == True)
                         stations = list((await session.execute(stmt)).scalars().all())
                         if stations:
-                            items = [f"{s.name_en} ({s.genre_en})" if s.genre_en else s.name_en for s in stations[:20]]
-                            parts.append(f"\nRadio stations: {', '.join(items)}")
-
-                        # Scenes
-                        stmt = select(Scene).where(Scene.enabled == True)
-                        scenes = list((await session.execute(stmt)).scalars().all())
-                        if scenes:
-                            names = [s.name_en for s in scenes[:15]]
-                            parts.append(f"\nScenes: {', '.join(names)}")
+                            names = [s.name_en for s in stations[:10]]
+                            parts.append(f"Radio: {', '.join(names)}")
 
                     return "\n".join(parts)
 

@@ -765,106 +765,16 @@
 </div><!-- /tabEngines -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Prompts                                                     -->
+<!--  TAB: Prompts (read-only view of active system prompts)           -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabPrompts">
-
 <div class="card">
     <div class="mb12">
-        <div class="flex gap8">
-            <span class="section-title" data-i18n="prompt_section"></span>
-            <span id="detectedLangBadge" class="badge badge-ok"></span>
-            <span id="customPromptBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
+        <span class="section-title" data-i18n="tab_prompts"></span>
         <div class="section-sub" data-i18n="prompts_tab_desc"></div>
     </div>
-
-    <!-- 1. User instructions (all models) -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="user_prompt_label"></span>
-            <span id="customUserBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="user_prompt_desc"></div>
-        <textarea id="userPromptText" rows="3" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveUserBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 5. System identity prompt (cloud) — template: {name}, {lang} -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="hidden_system_label_edit"></span>
-            <span id="customHiddenBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="hidden_system_desc"></div>
-        <textarea id="hiddenSystemText" rows="4" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveHiddenBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 6. System identity prompt (local/compact) -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="hidden_compact_label"></span>
-            <span id="customHiddenCompactBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="hidden_compact_desc"></div>
-        <textarea id="hiddenCompactText" rows="2" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveHiddenCompactBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 7. Intent router prompt — template: {name}, {lang} -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="intent_system_label"></span>
-            <span id="customIntentSysBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="intent_system_desc"></div>
-        <textarea id="intentSystemText" rows="6" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveIntentSysBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 8. Rephrase system wrapper — template: {lang_name}, {rephrase_rules} -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="rephrase_system_label"></span>
-            <span id="customRephraseSysBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="rephrase_system_desc"></div>
-        <textarea id="rephraseSystemText" rows="4" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveRephraseSysBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- 9. Translation prompt -->
-    <div class="card-inner mb12">
-        <div class="flex gap6 mb4">
-            <span class="label-sm" data-i18n="translate_system_label"></span>
-            <span id="customTranslateBadge" class="badge badge-pr hidden" data-i18n="custom"></span>
-        </div>
-        <div class="label-xs mb4" style="opacity:.6" data-i18n="translate_system_desc"></div>
-        <textarea id="translateSystemText" rows="3" style="width:100%"></textarea>
-        <div class="flex gap8 mt4" style="align-items:center">
-            <button id="saveTranslateBtn" class="btn btn-green" data-i18n="save"></button>
-        </div>
-    </div>
-
-    <!-- Reset -->
-    <div style="padding-top:14px;border-top:1px solid var(--b)">
-        <div class="flex gap8 mb8">
-            <button id="resetPromptsBtn" class="btn btn-secondary" data-i18n="reset_default"></button>
-        </div>
-    </div>
+    <div id="promptsList"></div>
 </div>
-
 </div><!-- /tabPrompts -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
@@ -1281,7 +1191,7 @@
             privacy_off: 'Privacy OFF',
 
             tab_engines: 'Engines',
-            tab_prompts: 'AI Prompts',
+            tab_prompts: 'Prompts',
             tab_intents: 'Intents',
             tab_patterns: 'Patterns',
             patterns_title: 'Registered Patterns',
@@ -1294,7 +1204,7 @@
             patterns_col_pattern: 'Pattern',
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
-            prompts_tab_desc: 'Customize prompts for conversation, intent classification, and response rephrase',
+            prompts_tab_desc: 'System prompts used by the AI engine. Read-only — managed by the system automatically.',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1478,7 +1388,7 @@
             privacy_off: 'Приватнiсть ВИМК',
 
             tab_engines: 'Движки',
-            tab_prompts: 'Промпти AI',
+            tab_prompts: 'Промпти',
             tab_intents: 'Iнтенти',
             tab_patterns: 'Патерни',
             patterns_title: 'Зареєстрованi патерни',
@@ -1491,7 +1401,7 @@
             patterns_col_pattern: 'Патерн',
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
-            prompts_tab_desc: 'Налаштування промптів для діалогу, класифікації інтентів та перефразування відповідей',
+            prompts_tab_desc: 'Системні промпти AI-движка. Тільки перегляд — керуються системою автоматично.',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -1760,7 +1670,7 @@
                 body: JSON.stringify(payload),
             });
             if (resp.ok) {
-                rebuildPrompts().then(loadSystemPrompt);
+                rebuildPrompts();
                 showToast(t('saved'));
             } else {
                 showToast('Error: ' + resp.status);
@@ -2398,80 +2308,48 @@
     }
 
     // ── AI Prompts ─────────────────────────────────────────────────
+    // ── Prompts (read-only view) ────────────────────────────────────
+    var PROMPT_META = {
+        intent_system:    { en: 'Intent classification',       uk: 'Класифікація інтентів',         where: { en: 'IntentRouter → LLM (Tier 3/4)', uk: 'IntentRouter → LLM (Tier 3/4)' } },
+        hidden_system:    { en: 'System identity',             uk: 'Системна ідентичність',         where: { en: 'Chat with any LLM (local + cloud)', uk: 'Чат з будь-якою LLM (локал + хмара)' } },
+        user_instructions:{ en: 'User instructions',           uk: 'Інструкції користувача',        where: { en: 'Appended to every chat prompt', uk: 'Додається до кожного чат-промпту' } },
+        rephrase_system:  { en: 'TTS rephrase',               uk: 'Перефразування для TTS',        where: { en: 'VoiceCore → natural TTS response', uk: 'VoiceCore → природна відповідь TTS' } },
+        translate_system: { en: 'Translation',                 uk: 'Переклад',                      where: { en: 'Internal prompt translation engine', uk: 'Внутрішній движок перекладу промптів' } }
+    };
     state.promptsLoaded = false;
 
-    async function loadSystemPrompt() {
+    async function loadPromptsReadonly() {
         try {
             var res = await api('/setup/llm/system-prompt');
             state.promptsLoaded = true;
-            state.detectedLang = res.lang || '';
-            state.assistantName = res.name || '';
-            if (res.limits) state.limits = res.limits;
-
-            // All prompts from res.prompts (universal endpoint)
             var pm = res.prompts || {};
-
-            // User instructions
-            if (pm.user_instructions) {
-                $('userPromptText').value = pm.user_instructions.value || '';
-                state.isCustomUser = pm.user_instructions.is_custom || false;
-            }
-            if (state.isCustomUser) show('customUserBadge'); else hide('customUserBadge');
-
-            // System prompts
-            if (pm.hidden_system) $('hiddenSystemText').value = pm.hidden_system.value || '';
-            if (pm.hidden_compact) $('hiddenCompactText').value = pm.hidden_compact.value || '';
-            if (pm.intent_system) $('intentSystemText').value = pm.intent_system.value || '';
-            if (pm.rephrase_system) $('rephraseSystemText').value = pm.rephrase_system.value || '';
-            if (pm.translate_system) $('translateSystemText').value = pm.translate_system.value || '';
-
-            // Custom badges
-            if (pm.hidden_system && pm.hidden_system.is_custom) show('customHiddenBadge'); else hide('customHiddenBadge');
-            if (pm.hidden_compact && pm.hidden_compact.is_custom) show('customHiddenCompactBadge'); else hide('customHiddenCompactBadge');
-            if (pm.intent_system && pm.intent_system.is_custom) show('customIntentSysBadge'); else hide('customIntentSysBadge');
-            if (pm.rephrase_system && pm.rephrase_system.is_custom) show('customRephraseSysBadge'); else hide('customRephraseSysBadge');
-            if (pm.translate_system && pm.translate_system.is_custom) show('customTranslateBadge'); else hide('customTranslateBadge');
-
-            // Global custom badge
-            var anyCustom = state.isCustomUser ||
-                (pm.hidden_system && pm.hidden_system.is_custom) ||
-                (pm.hidden_compact && pm.hidden_compact.is_custom) ||
-                (pm.intent_system && pm.intent_system.is_custom) ||
-                (pm.rephrase_system && pm.rephrase_system.is_custom) ||
-                (pm.translate_system && pm.translate_system.is_custom);
-            if (anyCustom) show('customPromptBadge'); else hide('customPromptBadge');
-
-            $('detectedLangBadge').textContent = (state.assistantName || '?') + ' / ' + (state.detectedLang || '?');
+            var lang = res.lang || 'en';
+            var container = $('promptsList');
+            container.innerHTML = '';
+            var keys = ['intent_system', 'hidden_system', 'user_instructions', 'rephrase_system', 'translate_system'];
+            keys.forEach(function(key) {
+                var meta = PROMPT_META[key] || {};
+                var title = (meta[LANG] || meta.en || key);
+                var where = (meta.where && (meta.where[LANG] || meta.where.en)) || '';
+                var val = (pm[key] && pm[key].value) || '';
+                var isCustom = pm[key] && pm[key].is_custom;
+                var div = document.createElement('div');
+                div.className = 'card-inner mb12';
+                div.innerHTML =
+                    '<div class="flex gap6 mb4" style="align-items:center">' +
+                        '<span class="label-sm">' + title + '</span>' +
+                        (isCustom ? '<span class="badge badge-pr">' + t('custom') + '</span>' : '') +
+                    '</div>' +
+                    '<div class="label-xs mb4" style="opacity:.55">' + where + '</div>' +
+                    '<pre style="background:var(--c2);border:1px solid var(--b);border-radius:8px;padding:8px 10px;' +
+                    'font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:160px;' +
+                    'overflow-y:auto;color:var(--tx);margin:0">' + _esc(val) + '</pre>';
+                container.appendChild(div);
+            });
         } catch(e) { /* ignore */ }
     }
 
-    // Universal save for all prompt fields
-    function _saveUniversalPrompt(btnId, textId, key) {
-        $(btnId).onclick = async function() {
-            this.disabled = true;
-            try {
-                await postJson('/setup/llm/prompt', { key: key, value: $(textId).value });
-                rebuildPrompts().then(loadSystemPrompt);
-                showToast(t('saved'));
-            } catch(e) { showToast('Error', 'error'); }
-            this.disabled = false;
-        };
-    }
-    _saveUniversalPrompt('saveUserBtn', 'userPromptText', 'user_instructions');
-    _saveUniversalPrompt('saveHiddenBtn', 'hiddenSystemText', 'hidden_system');
-    _saveUniversalPrompt('saveHiddenCompactBtn', 'hiddenCompactText', 'hidden_compact');
-    _saveUniversalPrompt('saveIntentSysBtn', 'intentSystemText', 'intent_system');
-    _saveUniversalPrompt('saveRephraseSysBtn', 'rephraseSystemText', 'rephrase_system');
-    _saveUniversalPrompt('saveTranslateBtn', 'translateSystemText', 'translate_system');
-
-    // Reset all
-    $('resetPromptsBtn').onclick = async function() {
-        try {
-            await api('/setup/llm/system-prompt/reset', { method: 'POST' });
-            rebuildPrompts().then(loadSystemPrompt);
-            showToast(t('saved'));
-        } catch(e) { /* ignore */ }
-    };
+    function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
     // ── Ollama ────────────────────────────────────────────────────
     async function loadOllamaStatus() {
@@ -2751,9 +2629,9 @@
             btn.classList.add('active');
             var panel = $(tabMap[btn.getAttribute('data-tab')]);
             if (panel) panel.classList.add('active');
+            if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadPromptsReadonly();
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
             if (btn.getAttribute('data-tab') === 'patterns' && !state.patternsLoaded) loadPatterns();
-            if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadSystemPrompt();
         });
     });
 

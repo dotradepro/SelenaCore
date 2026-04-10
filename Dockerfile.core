@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     zstd \
     git \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/* \
     && git config --system --add safe.directory /opt/selena-core
 

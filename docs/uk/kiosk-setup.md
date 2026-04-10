@@ -198,10 +198,71 @@ ui:
 
 ---
 
+## DietPi / Мінімальні дистрибутиви — KMS не увімкнено
+
+Деякі мінімальні дистрибутиви (DietPi, Armbian minimal, кастомні образи)
+поставляються з **вимкненим** KMS-відеодрайвером. Без KMS ядро не створює
+`/sys/class/drm/`, тому `install.sh` не бачить дисплей і переходить у
+режим **headless** — навіть якщо HDMI-екран фізично підключено до
+Raspberry Pi.
+
+**Симптоми:**
+- `install.sh` повідомляє `Display=false Headless=true` на Pi з екраном
+- `cage`, `cog`, `wtype` не встановлені
+- `selena-display.service` не створено
+- `/sys/class/drm/` не існує
+
+**Автоматичне виправлення (install.sh ≥ 0.3):**
+
+Починаючи з v0.3, `install.sh` автоматично виявляє цю ситуацію на
+Raspberry Pi 4/5: патчить `/boot/firmware/config.txt`, встановлює
+kiosk-пакети і просить перезавантажити. Після reboot display service
+запускається автоматично.
+
+**Ручне виправлення (за потреби):**
+
+```bash
+# 1. Додати KMS overlay до boot config
+echo -e '\ndtoverlay=vc4-kms-v3d\nhdmi_force_hotplug=1' | \
+    sudo tee -a /boot/firmware/config.txt
+
+# 2. Підняти gpu_mem (DietPi ставить 16 МБ — замало для KMS)
+sudo sed -i -E 's/^(gpu_mem(_[0-9]+)?=)(8|16)$/\164/' /boot/firmware/config.txt
+
+# 3. Увімкнути аудіо якщо вимкнене
+sudo sed -i 's/dtparam=audio=off/dtparam=audio=on/' /boot/firmware/config.txt
+
+# 4. Перезавантажити
+sudo reboot
+
+# 5. Після reboot — перевірити DRM
+ls /sys/class/drm/
+# Очікувано: card0  card1  card1-HDMI-A-1  card1-HDMI-A-2  ...
+
+# 6. Встановити kiosk-пакети
+sudo apt-get install -y cage cog wtype seatd
+
+# 7. Увімкнути seatd і перезапустити systemd setup
+sudo systemctl enable --now seatd
+cd /opt/selena-core && sudo bash scripts/install-systemd.sh
+```
+
+**Що змінюється в `/boot/firmware/config.txt`:**
+
+| Параметр | DietPi за замовчуванням | Потрібно |
+|----------|----------------------|----------|
+| `dtoverlay=vc4-kms-v3d` | відсутній | **додано** — вмикає KMS-відеодрайвер |
+| `hdmi_force_hotplug=1` | закоментований | **додано** — гарантує виявлення HDMI |
+| `gpu_mem_*` | `16` | **64** — мінімум для KMS |
+| `dtparam=audio` | `off` | **on** — вмикає вбудоване аудіо |
+
+---
+
 ## Усунення несправностей
 
 | Проблема | Рішення |
 |----------|---------|
+| **DietPi: немає дисплея, headless** | KMS overlay відсутній — див. секцію "DietPi / Мінімальні дистрибутиви" вище |
 | **Екран порожній після завантаження** | Перевірте `systemctl status selena-display` та `journalctl -u selena-display` |
 | **Chromium не запускається** | Перевірте наявність Xorg: `which Xorg` та `/tmp/.xinitrc-kiosk` |
 | **Немає аудіо в контейнері** | PulseAudio може не працювати — перезапустіть: `docker compose restart core` |
