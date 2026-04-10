@@ -183,36 +183,58 @@ def _classify_pulse_name(name: str) -> str:
 
 
 def detect_audio_devices() -> AudioDevices:
-    """Detect all available audio input and output devices, sorted by priority."""
-    devices = AudioDevices()
+    """Detect all available audio input and output devices, sorted by priority.
 
+    Strategy: ALSA is the primary source (always sees all hardware cards,
+    even those held by ``arecord`` or not loaded by PulseAudio).
+    PulseAudio supplements with virtual/Bluetooth devices that ALSA
+    doesn't know about.
+    """
+    devices = AudioDevices()
+    alsa_cards: set[int] = set()
+
+    # ── 1. ALSA hardware (always) ───────────────────────────────────
+    # De-duplicate: keep only the first sub-device per (card, type) pair.
+    # E.g. Jetson HDA exposes HDMI 0-3 on the same card — show one entry.
+    seen_out: set[tuple[int, str]] = set()
+    for dev in _parse_aplay_arecord("aplay"):
+        alsa_id = f"plughw:{dev['card']},{dev['device']}"
+        dtype = _classify_device(dev["card_name"], dev["device_name"])
+        key = (dev["card"], dtype)
+        if key in seen_out:
+            continue
+        seen_out.add(key)
+        display = f"{dev['device_name']} ({dev['card_name']})"
+        devices.outputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
+        alsa_cards.add(dev["card"])
+
+    seen_in: set[tuple[int, str]] = set()
+    for dev in _parse_aplay_arecord("arecord"):
+        alsa_id = f"plughw:{dev['card']},{dev['device']}"
+        dtype = _classify_device(dev["card_name"], dev["device_name"])
+        key = (dev["card"], dtype)
+        if key in seen_in:
+            continue
+        seen_in.add(key)
+        display = f"{dev['device_name']} ({dev['card_name']})"
+        devices.inputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
+        alsa_cards.add(dev["card"])
+
+    # ── 2. PulseAudio extras (bluetooth, virtual — not visible to ALSA) ─
     if _is_pulse_running():
-        # PulseAudio / PipeWire is running — use it as the primary source.
         for sink in _pactl_list_detailed("sinks"):
             dtype = _classify_pulse_name(sink["name"])
-            desc = sink.get("description", sink["name"])
-            devices.outputs.append(AudioDevice(id=sink["name"], name=desc, type=dtype))
+            if dtype == "bluetooth":
+                desc = sink.get("description", sink["name"])
+                devices.outputs.append(AudioDevice(id=sink["name"], name=desc, type=dtype))
 
         for source in _pactl_list_detailed("sources"):
-            # Skip monitor sources — they are not real inputs
             if ".monitor" in source["name"]:
                 continue
             dtype = _classify_pulse_name(source["name"])
-            desc = source.get("description", source["name"])
-            devices.inputs.append(AudioDevice(id=source["name"], name=desc, type=dtype))
-    else:
-        # Fallback: parse aplay -l / arecord -l for real device numbers
-        for dev in _parse_aplay_arecord("aplay"):
-            alsa_id = f"plughw:{dev['card']},{dev['device']}"
-            dtype = _classify_device(dev["card_name"], dev["device_name"])
-            display = f"{dev['device_name']} ({dev['card_name']})"
-            devices.outputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
-
-        for dev in _parse_aplay_arecord("arecord"):
-            alsa_id = f"plughw:{dev['card']},{dev['device']}"
-            dtype = _classify_device(dev["card_name"], dev["device_name"])
-            display = f"{dev['device_name']} ({dev['card_name']})"
-            devices.inputs.append(AudioDevice(id=alsa_id, name=display, type=dtype))
+            if dtype == "bluetooth":
+                desc = source.get("description", source["name"])
+                devices.inputs.append(AudioDevice(id=source["name"], name=desc, type=dtype))
 
     # Sort by priority
     devices.inputs.sort(key=lambda d: _priority_score(d.type, PRIORITY_INPUT))
