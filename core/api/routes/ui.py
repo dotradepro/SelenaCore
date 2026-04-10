@@ -223,9 +223,27 @@ async def _read_ollama_status() -> dict[str, Any]:
     try:
         from core.config import get_yaml_config
         voice_cfg = get_yaml_config().get("voice", {})
-        active_model = voice_cfg.get("llm_model") or os.environ.get("OLLAMA_MODEL", "phi3:mini")
+        active_model = (
+            voice_cfg.get("llm_model")
+            or voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
+            or os.environ.get("OLLAMA_MODEL", "")
+        )
     except Exception:
-        active_model = os.environ.get("OLLAMA_MODEL", "phi3:mini")
+        voice_cfg = {}
+        active_model = os.environ.get("OLLAMA_MODEL", "")
+
+    # Skip Ollama HTTP probe entirely when a cloud provider is active —
+    # avoids connection-timeout errors and unnecessary network traffic.
+    active_provider = voice_cfg.get("llm_provider", "ollama") or "ollama"
+    if active_provider != "ollama":
+        return {
+            "installed": False,
+            "running": False,
+            "model": active_model,
+            "model_loaded": False,
+            "url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+            "skipped": True,
+        }
 
     now = time.monotonic()
     if _ollama_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_CACHE_TTL:
@@ -301,7 +319,8 @@ async def _read_llm_engine_status() -> dict[str, Any]:
     active_provider = voice_cfg.get("llm_provider", "ollama") or "ollama"
     active_model = (
         voice_cfg.get("llm_model")
-        or os.environ.get("OLLAMA_MODEL", "phi3:mini")
+        or provider_configs.get(active_provider, {}).get("model", "")
+        or os.environ.get("OLLAMA_MODEL", "")
     )
     two_step = bool(voice_cfg.get("llm_two_step", False))
 

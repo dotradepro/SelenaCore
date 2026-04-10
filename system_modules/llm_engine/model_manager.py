@@ -21,10 +21,36 @@ class ModelManager:
         return get_value("voice", "llm_provider", "ollama") or "ollama"
 
     def get_active(self) -> str:
-        return get_value("voice", "llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini")) or ""
+        model = get_value("voice", "llm_model", "") or ""
+        if not model:
+            provider = self.get_provider()
+            config = read_config()
+            model = (
+                config.get("voice", {}).get("providers", {}).get(provider, {}).get("model", "")
+                or os.environ.get("OLLAMA_MODEL", "")
+            )
+        return model
 
     async def list_models(self) -> list[dict]:
-        """Return installed models from Ollama."""
+        """Return installed models for the active provider."""
+        provider = self.get_provider()
+        active = self.get_active()
+
+        if provider != "ollama":
+            config = read_config()
+            voice_cfg = config.get("voice", {})
+            p_cfg = voice_cfg.get("providers", {}).get(provider, {})
+            api_key = p_cfg.get("api_key", "")
+            if not api_key:
+                return []
+            from system_modules.llm_engine.cloud_providers import list_models as cloud_list
+            models = await cloud_list(provider, api_key)
+            return [
+                {"id": m.get("id", ""), "display_name": m.get("name", m.get("id", "")),
+                 "installed": True, "active": m.get("id", "") == active}
+                for m in models
+            ]
+
         from system_modules.llm_engine.ollama_client import get_ollama_client
         client = get_ollama_client()
         try:
@@ -32,7 +58,6 @@ class ModelManager:
         except Exception:
             installed = []
 
-        active = self.get_active()
         return [
             {"id": name, "display_name": name, "installed": True, "active": name == active}
             for name in installed

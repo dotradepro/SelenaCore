@@ -444,7 +444,7 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
     voice_cfg = config.get("voice", {})
     if provider == "ollama":
         model = voice_cfg.get("providers", {}).get("ollama", {}).get("model", "") or \
-                voice_cfg.get("llm_model", os.environ.get("OLLAMA_MODEL", "phi3:mini"))
+                voice_cfg.get("llm_model", "") or os.environ.get("OLLAMA_MODEL", "")
     else:
         model = voice_cfg.get("providers", {}).get(provider, {}).get("model", "")
 

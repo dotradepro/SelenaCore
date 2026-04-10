@@ -1183,10 +1183,11 @@ async def patterns_regenerate(entity_type: str | None = None) -> dict[str, Any]:
 
 @router.get("/llm/models")
 async def llm_models() -> dict[str, Any]:
-    """List installed LLM models from Ollama."""
+    """List installed LLM models for the active provider."""
     try:
         from system_modules.llm_engine.model_manager import get_model_manager
         manager = get_model_manager()
+        provider = manager.get_provider()
         models = await manager.list_models()
         active = manager.get_active()
 
@@ -1201,7 +1202,8 @@ async def llm_models() -> dict[str, Any]:
             "models": models,
             "active": active,
             "ram_available_gb": round(ram_available_gb, 1),
-            "ollama_available": True,
+            "ollama_available": provider == "ollama",
+            "provider": provider,
         }
     except Exception as exc:
         logger.warning("LLM model listing failed: %s", exc)
@@ -1266,13 +1268,22 @@ async def _download_model_bg(model_id: str) -> None:
 
 @router.get("/llm/status")
 async def llm_status() -> dict[str, Any]:
-    """Check Ollama availability and current model."""
+    """Check LLM availability and current model."""
     try:
-        from system_modules.llm_engine.ollama_client import get_ollama_client
         from system_modules.llm_engine.model_manager import get_model_manager
-        client = get_ollama_client()
         manager = get_model_manager()
+        provider = manager.get_provider()
 
+        if provider != "ollama":
+            return {
+                "available": True,
+                "active_model": manager.get_active(),
+                "installed_models": [],
+                "provider": provider,
+            }
+
+        from system_modules.llm_engine.ollama_client import get_ollama_client
+        client = get_ollama_client()
         is_available = await client.is_available()
         installed = await client.list_models() if is_available else []
 
@@ -1280,6 +1291,7 @@ async def llm_status() -> dict[str, Any]:
             "available": is_available,
             "active_model": manager.get_active(),
             "installed_models": installed,
+            "provider": "ollama",
         }
     except Exception as exc:
         logger.warning("Ollama status check failed: %s", exc)
