@@ -233,16 +233,6 @@ const CACHE_TTL: Record<string, number> = {
   '/api/ui/wizard/requirements': 60_000,
 };
 
-let _lastModulesFetch = 0;
-let _modulesFetchTimer: ReturnType<typeof setTimeout> | null = null;
-
-function debounceFetchModules(getFn: () => AppState) {
-  if (_modulesFetchTimer) clearTimeout(_modulesFetchTimer);
-  // Skip if a direct fetch (from mutation) ran within the last 2 s
-  if (Date.now() - _lastModulesFetch < 2_000) return;
-  _modulesFetchTimer = setTimeout(() => { getFn().fetchModules(); }, 400);
-}
-
 async function apiFetch(path: string, opts?: RequestInit): Promise<unknown> {
   const isGet = !opts?.method || opts.method.toUpperCase() === 'GET';
   const ttl = isGet ? CACHE_TTL[path] : undefined;
@@ -512,7 +502,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchModules: async () => {
     set({ modulesLoading: true });
-    _lastModulesFetch = Date.now();
     try {
       const data = await apiFetch('/api/ui/modules');
       const mods = data?.modules ?? [];
@@ -527,17 +516,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   stopModule: async (name) => {
     await apiFetch(`/api/ui/modules/${name}/stop`, { method: 'POST' });
-    get().fetchModules();
+    // No fetchModules() — WebSocket module.stopped event updates state inline
   },
 
   startModule: async (name) => {
     await apiFetch(`/api/ui/modules/${name}/start`, { method: 'POST' });
-    get().fetchModules();
+    // No fetchModules() — WebSocket module.started event updates state inline
   },
 
   removeModule: async (name) => {
     await apiFetch(`/api/ui/modules/${name}`, { method: 'DELETE' });
-    get().fetchModules();
+    // No fetchModules() — WebSocket module.removed event updates state inline
   },
 
   updateDeviceState: async (deviceId, state) => {
@@ -546,7 +535,7 @@ export const useStore = create<AppState>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state }),
     });
-    get().fetchDevices();
+    // No fetchDevices() — WebSocket device.state_changed event updates state inline
   },
 
   widgetLayout: loadWidgetLayout(),
@@ -698,7 +687,10 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     // Apply full authoritative state from server (overwrite localStorage)
-    function applyFullState(settings: Record<string, string>, layout: Record<string, unknown>) {
+    function applyFullState(msg: Record<string, unknown>) {
+      const settings = (msg.settings ?? {}) as Record<string, string>;
+      const layout = (msg.layout ?? {}) as Record<string, unknown>;
+
       // Settings: theme
       if (settings.theme && settings.theme !== get().theme) {
         localStorage.setItem('selena-theme', settings.theme);
@@ -722,6 +714,55 @@ export const useStore = create<AppState>((set, get) => ({
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(parsed)); } catch { /* ignore */ }
         set({ widgetLayout: parsed });
       }
+
+      // Devices snapshot (from enriched hello)
+      if (Array.isArray(msg.devices)) {
+        set({ devices: msg.devices as Device[] });
+      }
+
+      // Modules snapshot
+      if (Array.isArray(msg.modules)) {
+        set({ modules: msg.modules as Module[] });
+      }
+
+      // System metrics snapshot (HW only — no ollama/llm probes)
+      const sys = msg.system as Record<string, unknown> | undefined;
+      if (sys) {
+        set(state => {
+          const base = state.stats ?? {} as SystemStats;
+          return {
+            stats: {
+              ...base,
+              cpuTemp: (sys.cpu_temp as number) ?? base.cpuTemp ?? 0,
+              cpuLoad: (sys.cpu_load as [number, number, number]) ?? base.cpuLoad ?? [0, 0, 0],
+              cpuCount: (sys.cpu_count as number) ?? base.cpuCount ?? 1,
+              ramUsedMb: (sys.ram_used_mb as number) ?? base.ramUsedMb ?? 0,
+              ramTotalMb: (sys.ram_total_mb as number) ?? base.ramTotalMb ?? 0,
+              swapUsedMb: (sys.swap_used_mb as number) ?? base.swapUsedMb ?? 0,
+              swapTotalMb: (sys.swap_total_mb as number) ?? base.swapTotalMb ?? 0,
+              diskUsedGb: (sys.disk_used_gb as number) ?? base.diskUsedGb ?? 0,
+              diskTotalGb: (sys.disk_total_gb as number) ?? base.diskTotalGb ?? 0,
+              uptime: (sys.uptime as number) ?? base.uptime ?? 0,
+              integrity: base.integrity ?? 'ok',
+              mode: (sys.mode as string) ?? base.mode ?? 'normal',
+              version: (sys.version as string) ?? base.version ?? '',
+              corePort: base.corePort ?? 7070,
+              ollama: base.ollama ?? { installed: false, running: false, model: null, modelLoaded: false },
+              llmEngine: base.llmEngine ?? { provider: '', model: '', twoStep: false, cloudProviders: [], intentCache: { size: 0, hot: 0 } },
+              nativeServices: base.nativeServices ?? [],
+            } as SystemStats,
+          };
+        });
+      }
+
+      // Voice state snapshot
+      const voice = msg.voice as Record<string, unknown> | undefined;
+      if (voice) {
+        const st = voice.state as string;
+        if (st === 'speaking') set({ voiceStatus: 'speaking' });
+        else if (st === 'listening') set({ voiceStatus: 'listening' });
+        else set({ voiceStatus: 'idle' });
+      }
     }
 
     // Apply a single delta event
@@ -730,16 +771,13 @@ export const useStore = create<AppState>((set, get) => ({
       const payload = msg.payload as Record<string, unknown> | undefined;
       if (!payload) return;
 
+      // ── Layout ──
       if (eventType === 'layout_changed') {
         const layout = parseLayout(payload);
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
         set({ widgetLayout: layout });
-      } else if (
-        eventType === 'module.started' ||
-        eventType === 'module.stopped' ||
-        eventType === 'module.removed'
-      ) {
-        debounceFetchModules(get);
+
+      // ── Settings ──
       } else if (eventType === 'settings_changed') {
         const p = payload as Record<string, string>;
         if (p.theme && p.theme !== get().theme) {
@@ -757,7 +795,104 @@ export const useStore = create<AppState>((set, get) => ({
             try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { /* cross-origin */ }
           });
         }
+
+      // ── Device events ──
+      } else if (eventType === 'device.state_changed') {
+        const deviceId = payload.device_id as string | undefined;
+        if (deviceId) {
+          set(state => ({
+            devices: state.devices.map(d =>
+              d.device_id === deviceId
+                ? { ...d, state: { ...d.state, ...(payload.new_state as Record<string, unknown> ?? {}) }, last_seen: (payload.timestamp as number) ?? d.last_seen }
+                : d
+            ),
+          }));
+        }
+      } else if (eventType === 'device.registered') {
+        get().fetchDevices();
+      } else if (eventType === 'device.removed') {
+        const deviceId = payload.device_id as string | undefined;
+        if (deviceId) {
+          set(state => ({ devices: state.devices.filter(d => d.device_id !== deviceId) }));
+        }
+      } else if (eventType === 'device.offline' || eventType === 'device.online') {
+        const deviceId = payload.device_id as string | undefined;
+        if (deviceId) {
+          set(state => ({
+            devices: state.devices.map(d =>
+              d.device_id === deviceId
+                ? { ...d, meta: { ...d.meta, watchdog_online: eventType === 'device.online' } }
+                : d
+            ),
+          }));
+        }
+
+      // ── Module events (inline update, no REST call) ──
+      } else if (eventType === 'module.started' || eventType === 'module.stopped') {
+        const name = payload.name as string | undefined;
+        if (name) {
+          set(state => ({
+            modules: state.modules.map(m =>
+              m.name === name
+                ? { ...m, status: eventType === 'module.started' ? 'RUNNING' : 'STOPPED' }
+                : m
+            ),
+          }));
+        }
+      } else if (eventType === 'module.removed') {
+        const name = payload.name as string | undefined;
+        if (name) {
+          set(state => ({ modules: state.modules.filter(m => m.name !== name) }));
+        }
+      } else if (eventType === 'module.installed') {
+        get().fetchModules();
+
+      // ── Voice events ──
+      } else if (eventType === 'voice.state') {
+        const st = payload.state as string | undefined;
+        if (st === 'speaking') set({ voiceStatus: 'speaking' });
+        else if (st === 'listening') set({ voiceStatus: 'listening' });
+        else set({ voiceStatus: 'idle' });
+      } else if (eventType === 'voice.privacy_on') {
+        set({ voiceStatus: 'idle' });
+      } else if (eventType === 'voice.privacy_off') {
+        // no-op, voice will resume when next wake word is detected
+
+      // ── System metrics (HW only — merge into stats without overwriting ollama/llm) ──
+      } else if (eventType === 'monitor.metrics') {
+        set(state => {
+          if (!state.stats) return {};
+          return {
+            stats: {
+              ...state.stats,
+              cpuTemp: (payload.cpu_temp_c as number) ?? state.stats.cpuTemp,
+              cpuLoad: (payload.cpu_load as [number, number, number]) ?? state.stats.cpuLoad,
+              ramUsedMb: (payload.ram_used_mb as number) ?? state.stats.ramUsedMb,
+              ramTotalMb: (payload.ram_total_mb as number) ?? state.stats.ramTotalMb,
+              swapUsedMb: (payload.swap_used_mb as number) ?? state.stats.swapUsedMb,
+              swapTotalMb: (payload.swap_total_mb as number) ?? state.stats.swapTotalMb,
+              diskUsedGb: (payload.disk_used_gb as number) ?? state.stats.diskUsedGb,
+              diskTotalGb: (payload.disk_total_gb as number) ?? state.stats.diskTotalGb,
+              uptime: (payload.uptime as number) ?? state.stats.uptime,
+            },
+          };
+        });
+
+      // ── Notification push ──
+      } else if (eventType === 'notification.sent') {
+        // Handled by components that listen to store; add to a notifications list if needed
       }
+
+      // ── Relay all events to widget iframes via postMessage ──
+      document.querySelectorAll('iframe').forEach(f => {
+        try {
+          f.contentWindow?.postMessage({
+            type: 'selena_event',
+            event_type: eventType,
+            payload,
+          }, '*');
+        } catch (_) { /* cross-origin */ }
+      });
     }
 
     function connect() {
@@ -776,7 +911,7 @@ export const useStore = create<AppState>((set, get) => ({
 
           if (msg.type === 'hello') {
             lastVersion = msg.version ?? 0;
-            applyFullState(msg.settings ?? {}, msg.layout ?? {});
+            applyFullState(msg);
           } else if (msg.type === 'replay') {
             const events = msg.events as Array<{ version: number; event_type: string; payload?: unknown }>;
             for (const e of events) {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 
 const STALE_THRESHOLD_MS = 60_000; // 60 seconds without server contact
@@ -8,13 +8,16 @@ const CHECK_INTERVAL_MS = 10_000;  // check every 10 seconds
  * Kiosk watchdog: forces page reload if the WebSocket sync connection
  * has been unresponsive for longer than STALE_THRESHOLD_MS.
  *
- * This ensures the kiosk display never shows stale state even if
- * the WebSocket client has a bug or the network is unstable.
+ * Reads lastServerContact via getState() (non-reactive) to avoid
+ * re-rendering the entire component tree on every WebSocket message.
  */
 export function useConnectionHealth() {
-  const lastServerContact = useStore((s) => s.lastServerContact);
+  const started = useRef(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+
     // Only active on kiosk (localhost / 127.0.0.1 / ?kiosk=1)
     const host = window.location.hostname;
     const isKiosk =
@@ -24,12 +27,12 @@ export function useConnectionHealth() {
     if (!isKiosk) return;
 
     const interval = setInterval(() => {
-      const elapsed = Date.now() - lastServerContact;
+      const elapsed = Date.now() - useStore.getState().lastServerContact;
       if (elapsed > STALE_THRESHOLD_MS) {
         window.location.reload();
       }
     }, CHECK_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [lastServerContact]);
+  }, []);
 }

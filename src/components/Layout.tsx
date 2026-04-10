@@ -134,24 +134,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { time, date } = useClock();
 
-  const stats = useStore((s) => s.stats);
-  const health = useStore((s) => s.health);
+  // Subscribe to scalar fields only — avoids re-renders when stats object
+  // is replaced by monitor.metrics WebSocket events.
+  const isOnline = useStore((s) => s.health?.status === 'ok') ?? false;
+  const intOk = useStore((s) => (s.stats?.integrity ?? 'ok') === 'ok');
   const fetchStats = useStore((s) => s.fetchStats);
-  const fetchModules = useStore((s) => s.fetchModules);
   const voiceStatus = useStore((s) => s.voiceStatus);
 
   useEffect(() => {
+    // Initial fetch for full stats (includes Ollama/LLM probes not in WS snapshot).
+    // No polling — HW metrics arrive via WebSocket monitor.metrics events.
     fetchStats();
-    fetchModules();
-    const id = setInterval(fetchStats, 30000);
-    return () => clearInterval(id);
-  }, [fetchStats, fetchModules]);
+  }, [fetchStats]);
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
-
-  const isOnline = health?.status === 'ok' || health?.status === 'ok';
-  const intOk = (stats?.integrity ?? 'ok') === 'ok';
 
   const snav: React.CSSProperties = {
     width: 38, height: 38,

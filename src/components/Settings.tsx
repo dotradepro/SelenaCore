@@ -8,6 +8,14 @@ import UsersPanel from './UsersPanel';
 import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
+// Wrapper for tabs whose root content is just a form / list with no
+// built-in scroll container.  Defined OUTSIDE the component so React
+// preserves the component identity across re-renders (prevents
+// unmount/remount of children which would re-fire useEffects).
+function FormPage({ children }: { children: React.ReactNode }) {
+  return <div className="generic-page">{children}</div>;
+}
+
 export default function Settings() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -26,14 +34,6 @@ export default function Settings() {
   const activeId =
     tabs.find(tab => location.pathname === tab.path || location.pathname.startsWith(tab.path + '/'))?.id ??
     (location.pathname === '/settings' ? 'appearance' : '');
-
-  // Wrapper for tabs whose root content is just a form / list with no
-  // built-in scroll container. .generic-page provides height:100% +
-  // overflow-y:auto + padding so the content scrolls within the viewport
-  // instead of being clipped.
-  const FormPage = ({ children }: { children: React.ReactNode }) => (
-    <div className="generic-page">{children}</div>
-  );
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
