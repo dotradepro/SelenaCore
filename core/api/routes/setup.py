@@ -1575,48 +1575,80 @@ def _build_piper_download_urls(voice_id: str) -> list[str]:
 
 
 # ================================================================== #
-#  Translation models (Helsinki-NLP opus-mt via CTranslate2)           #
+#  Translation models (Helsinki-NLP opus-mt / NLLB via CTranslate2)    #
 # ================================================================== #
 
 
 @router.get("/translate/status")
 async def translate_status() -> dict[str, Any]:
-    """Translation models availability and download status."""
+    """Translation status: active model, settings."""
     from core.translation.local_translator import get_input_translator, get_output_translator
-    from core.translation.downloader import get_status
     return {
         "enabled": get_nested("translation.enabled", False),
         "fallback_to_llm": get_nested("translation.fallback_to_llm", True),
-        "spell_correction": get_nested("translation.spell_correction", False),
-        "input": {
-            "model_available": get_input_translator().is_available(),
-            **get_status("input"),
-        },
-        "output": {
-            "model_available": get_output_translator().is_available(),
-            **get_status("output"),
-        },
+        "active_model": get_nested("translation.active_model", ""),
+        "input_available": get_input_translator().is_available(),
+        "output_available": get_output_translator().is_available(),
     }
+
+
+@router.get("/translate/catalog")
+async def translate_catalog() -> dict[str, Any]:
+    """List all available translation models with installed/active status."""
+    from core.translation.downloader import get_catalog
+    return {"models": get_catalog()}
 
 
 @router.post("/translate/download")
 async def translate_download(req: dict[str, Any]) -> dict[str, Any]:
-    """Download translation models. direction: 'input' | 'output' | 'both'."""
-    from core.translation.downloader import download_model, get_status
-    direction = req.get("direction", "both")
-    targets = ["input", "output"] if direction == "both" else [direction]
-    for d in targets:
-        if get_status(d)["state"] != "downloading":
-            asyncio.create_task(download_model(d))
-    return {"status": "started", "direction": direction}
+    """Download a translation model by id. Body: {"model": "opus-mt-uk-en"}"""
+    from core.translation.downloader import download_model as dl, get_download_status
+    model_id = req.get("model", "")
+    if not model_id:
+        raise HTTPException(status_code=422, detail="model is required")
+    st = get_download_status()
+    if st["active"]:
+        return {"status": "already_downloading", **st}
+    asyncio.create_task(dl(model_id))
+    return {"status": "started", "model": model_id}
+
+
+@router.get("/translate/download/status")
+async def translate_download_status() -> dict[str, Any]:
+    """Poll download progress."""
+    from core.translation.downloader import get_download_status
+    return get_download_status()
+
+
+@router.post("/translate/activate")
+async def translate_activate(req: dict[str, Any]) -> dict[str, Any]:
+    """Activate a downloaded model. Body: {"model": "opus-mt-uk-en"}"""
+    from core.translation.downloader import activate_model
+    model_id = req.get("model", "")
+    if not model_id:
+        raise HTTPException(status_code=422, detail="model is required")
+    ok = activate_model(model_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Model not installed or not found")
+    return {"status": "ok", "model": model_id}
+
+
+@router.delete("/translate/model/{model_id}")
+async def translate_delete(model_id: str) -> dict[str, Any]:
+    """Delete a downloaded model."""
+    from core.translation.downloader import delete_model
+    ok = delete_model(model_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail="Cannot delete active model or not found")
+    return {"status": "deleted", "model": model_id}
 
 
 @router.post("/translate/settings")
 async def translate_settings(req: dict[str, Any]) -> dict[str, Any]:
-    """Update translation settings (enabled, fallback_to_llm, spell_correction)."""
+    """Update translation settings (enabled, fallback_to_llm)."""
     from core.translation.local_translator import reload_translators
     updates = []
-    for k in ("enabled", "fallback_to_llm", "spell_correction"):
+    for k in ("enabled", "fallback_to_llm"):
         if k in req:
             updates.append(("translation", k, bool(req[k])))
     if updates:

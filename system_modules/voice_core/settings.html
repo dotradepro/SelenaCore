@@ -347,6 +347,7 @@
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="settings-tabs" id="settingsTabs">
     <button class="settings-tab active" data-tab="engines" data-i18n="tab_engines"></button>
+    <button class="settings-tab" data-tab="translate" data-i18n="tab_translate"></button>
     <button class="settings-tab" data-tab="prompts" data-i18n="tab_prompts"></button>
     <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
     <button class="settings-tab" data-tab="patterns" data-i18n="tab_patterns"></button>
@@ -762,42 +763,59 @@
     </div>
 </div>
 
-<!-- Translation models -->
-<div class="card" id="translationCard">
+</div><!-- /tabEngines -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: Translation                                                  -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabTranslate">
+
+<div class="card">
     <div class="mb12">
         <span class="section-title" data-i18n="translation_title"></span>
         <div class="section-sub" data-i18n="translation_desc"></div>
     </div>
+
+    <!-- Settings -->
     <div class="card-inner mb12">
-        <div class="flex gap8 mb6" style="align-items:center">
-            <span class="label-xs" style="min-width:200px" data-i18n="translation_input_model"></span>
-            <span id="translateInputBadge" class="badge badge-off">—</span>
-        </div>
-        <div class="flex gap8 mb8" style="align-items:center">
-            <span class="label-xs" style="min-width:200px" data-i18n="translation_output_model"></span>
-            <span id="translateOutputBadge" class="badge badge-off">—</span>
-        </div>
-        <div id="translateProgress" class="label-xs hidden" style="color:var(--gr);margin-bottom:8px"></div>
-        <button id="translateDownloadBtn" class="btn btn-primary btn-sm" data-i18n="translation_download_both"></button>
-    </div>
-    <div class="card-inner mb8">
         <label class="flex gap8" style="align-items:center;cursor:pointer">
             <input type="checkbox" id="translateEnabled">
             <span class="label-sm" data-i18n="translation_enable"></span>
         </label>
         <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_enable_desc"></div>
     </div>
-    <div class="card-inner mb8">
+    <div class="card-inner mb12">
         <label class="flex gap8" style="align-items:center;cursor:pointer">
             <input type="checkbox" id="translateFallback" checked>
             <span class="label-sm" data-i18n="translation_fallback"></span>
         </label>
         <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_fallback_desc"></div>
     </div>
-    <button id="translateSaveBtn" class="btn btn-green" data-i18n="save"></button>
+    <button id="translateSaveBtn" class="btn btn-green mb12" data-i18n="save"></button>
 </div>
 
-</div><!-- /tabEngines -->
+<!-- Model catalog -->
+<div class="card">
+    <div class="mb12">
+        <span class="section-title" data-i18n="translation_models_title"></span>
+        <div class="section-sub" data-i18n="translation_models_desc"></div>
+    </div>
+
+    <!-- Download progress -->
+    <div id="translateDownloadSection" class="card-inner mb12 hidden">
+        <div class="label-xs mb4" data-i18n="translation_downloading"></div>
+        <div id="translateDownloadName" style="font-size:12px;font-weight:600;margin-bottom:4px"></div>
+        <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
+            <div id="translateDownloadBar" style="height:100%;background:var(--ac);width:0;transition:width .3s;border-radius:4px"></div>
+        </div>
+        <div id="translateDownloadPercent" class="label-xs mt4" style="opacity:.6">0%</div>
+    </div>
+
+    <!-- Model list -->
+    <div id="translateModelList"></div>
+</div>
+
+</div><!-- /tabTranslate -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  TAB: Prompts (read-only view of active system prompts)           -->
@@ -1240,17 +1258,23 @@
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
             prompts_tab_desc: 'System prompts used by the AI engine. Read-only — managed by the system automatically.',
+            tab_translate: 'Translate',
             translation_title: 'Local Translator',
-            translation_desc: 'Core works in English. Translation at STT output and TTS input.',
-            translation_input_model: 'Input: speech → English (after STT)',
-            translation_output_model: 'Output: English → speech (before TTS)',
-            translation_download_both: 'Download both models (~600 MB)',
+            translation_desc: 'Core works in English. Local models translate at STT output and TTS input (~50ms).',
+            translation_models_title: 'Translation Models',
+            translation_models_desc: 'Download and activate a translation model. Dedicated pairs are faster, multilingual covers more languages.',
             translation_ready: 'Ready',
             translation_downloading: 'Downloading...',
             translation_enable: 'Enable local translator',
-            translation_enable_desc: 'Both models must be downloaded. Falls back to LLM if disabled.',
+            translation_enable_desc: 'Requires a downloaded and activated model. Falls back to LLM if disabled.',
             translation_fallback: 'Fallback to LLM if model unavailable',
             translation_fallback_desc: 'Use LLM for translation when local model is not downloaded.',
+            translation_active: 'Active',
+            translation_activate: 'Activate',
+            translation_install: 'Install',
+            translation_languages: 'languages',
+            translation_delete_confirm: 'Delete this translation model?',
+            common_delete: 'Delete',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1448,17 +1472,23 @@
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
             prompts_tab_desc: 'Системні промпти AI-движка. Тільки перегляд — керуються системою автоматично.',
+            tab_translate: 'Переклад',
             translation_title: 'Локальний перекладач',
-            translation_desc: 'Ядро працює англійською. Переклад на виході STT та вході TTS.',
-            translation_input_model: 'Вхід: мовлення → англійська (після STT)',
-            translation_output_model: 'Вихід: англійська → мовлення (перед TTS)',
-            translation_download_both: 'Завантажити обидві моделі (~600 МБ)',
+            translation_desc: 'Ядро працює англійською. Локальні моделі перекладають на виході STT та вході TTS (~50мс).',
+            translation_models_title: 'Моделі перекладу',
+            translation_models_desc: 'Завантажте та активуйте модель перекладу. Спеціалізовані пари швидші, мультимовні покривають більше мов.',
             translation_ready: 'Готово',
             translation_downloading: 'Завантаження...',
             translation_enable: 'Увімкнути локальний перекладач',
-            translation_enable_desc: 'Обидві моделі мають бути завантажені. Без них — LLM fallback.',
+            translation_enable_desc: 'Потрібна завантажена та активована модель. Без неї — LLM fallback.',
             translation_fallback: 'Fallback на LLM якщо модель недоступна',
             translation_fallback_desc: 'Використовувати LLM для перекладу коли локальна модель не завантажена.',
+            translation_active: 'Активна',
+            translation_activate: 'Активувати',
+            translation_install: 'Встановити',
+            translation_languages: 'мов',
+            translation_delete_confirm: 'Видалити цю модель перекладу?',
+            common_delete: 'Видалити',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -2408,51 +2438,93 @@
 
     function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-    // ── Translation ──────────────────────────────────────────────
-    async function loadTranslateStatus() {
+    // ── Translation (catalog-based) ─────────────────────────────
+    state.translateLoaded = false;
+
+    async function loadTranslateCatalog() {
         try {
-            var res = await api('/setup/translate/status');
-            var downloading = false;
-            function setBadge(id, info) {
-                var b = $(id);
-                if (info.model_available) {
-                    b.textContent = t('translation_ready');
-                    b.className = 'badge badge-ok';
-                } else if (info.state === 'downloading') {
-                    b.textContent = t('translation_downloading');
-                    b.className = 'badge badge-pr';
-                    $('translateProgress').textContent = info.progress;
-                    show('translateProgress');
-                    downloading = true;
-                } else if (info.state === 'error') {
-                    b.textContent = 'Error';
-                    b.className = 'badge badge-err';
-                    $('translateProgress').textContent = info.error;
-                    show('translateProgress');
+            var res = await api('/setup/translate/catalog');
+            var status = await api('/setup/translate/status');
+            state.translateLoaded = true;
+
+            if ($('translateEnabled')) $('translateEnabled').checked = !!status.enabled;
+            if ($('translateFallback')) $('translateFallback').checked = !!status.fallback_to_llm;
+
+            var list = $('translateModelList');
+            list.innerHTML = '';
+            (res.models || []).forEach(function(m) {
+                var desc = (LANG === 'uk' && m.description_uk) ? m.description_uk : m.description_en;
+                var langs = (m.languages || []).join(', ').toUpperCase();
+                if (langs === 'MUL') langs = '200+ ' + t('translation_languages');
+
+                var statusHtml = '';
+                if (m.active) {
+                    statusHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
+                } else if (m.installed) {
+                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + m.id + '\')">' + t('translation_activate') + '</button>' +
+                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + m.id + '\')">' + t('common_delete') + '</button>';
                 } else {
-                    b.textContent = t('not_installed');
-                    b.className = 'badge badge-off';
+                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + m.id + '\')">' + t('translation_install') + '</button>';
                 }
-            }
-            setBadge('translateInputBadge', res.input);
-            setBadge('translateOutputBadge', res.output);
-            if ($('translateEnabled')) $('translateEnabled').checked = !!res.enabled;
-            if ($('translateFallback')) $('translateFallback').checked = !!res.fallback_to_llm;
-            if (downloading) setTimeout(loadTranslateStatus, 3000);
-            else hide('translateProgress');
+
+                var qualityBadge = m.quality === 'high' ? 'badge-ok' : m.quality === 'good' ? 'badge-ac' : 'badge-pr';
+                var speedBadge = m.speed === 'fast' ? 'badge-ok' : 'badge-pr';
+
+                var div = document.createElement('div');
+                div.className = 'card-inner mb8';
+                div.innerHTML =
+                    '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
+                        '<span style="font-size:13px;font-weight:600">' + m.name + '</span>' +
+                        '<span class="badge ' + qualityBadge + '">' + m.quality + '</span>' +
+                        '<span class="badge ' + speedBadge + '">' + m.speed + '</span>' +
+                        '<span class="badge badge-off">' + m.size_mb + ' MB</span>' +
+                    '</div>' +
+                    '<div class="label-xs mb4" style="opacity:.6">' + langs + ' — ' + desc + '</div>' +
+                    '<div class="flex gap6">' + statusHtml + '</div>';
+                list.appendChild(div);
+            });
         } catch(e) { /* ignore */ }
     }
 
-    if ($('translateDownloadBtn')) {
-        $('translateDownloadBtn').onclick = async function() {
-            this.disabled = true;
-            try {
-                await postJson('/setup/translate/download', { direction: 'both' });
-                showToast(t('translation_downloading'));
-                setTimeout(loadTranslateStatus, 2000);
-            } catch(e) { showToast('Error', 'error'); this.disabled = false; }
-        };
-    }
+    window._trDownload = async function(id) {
+        try {
+            await postJson('/setup/translate/download', { model: id });
+            show('translateDownloadSection');
+            $('translateDownloadName').textContent = id;
+            var pollId = setInterval(async function() {
+                try {
+                    var s = await api('/setup/translate/download/status');
+                    var pct = Math.round(s.progress || 0);
+                    $('translateDownloadBar').style.width = pct + '%';
+                    $('translateDownloadPercent').textContent = pct + '% — ' + (s.direction || '');
+                    if (s.done) {
+                        clearInterval(pollId);
+                        hide('translateDownloadSection');
+                        if (s.error) showToast(s.error, 'error');
+                        else showToast(t('saved'));
+                        loadTranslateCatalog();
+                    }
+                } catch(e) { /* retry */ }
+            }, 1000);
+        } catch(e) { showToast('Error', 'error'); }
+    };
+
+    window._trActivate = async function(id) {
+        try {
+            await postJson('/setup/translate/activate', { model: id });
+            showToast(t('saved'));
+            loadTranslateCatalog();
+        } catch(e) { showToast('Error', 'error'); }
+    };
+
+    window._trDelete = async function(id) {
+        if (!confirm(t('translation_delete_confirm'))) return;
+        try {
+            await api('/setup/translate/model/' + id, { method: 'DELETE' });
+            showToast(t('saved'));
+            loadTranslateCatalog();
+        } catch(e) { showToast('Error', 'error'); }
+    };
 
     if ($('translateSaveBtn')) {
         $('translateSaveBtn').onclick = async function() {
@@ -2465,8 +2537,6 @@
             } catch(e) { showToast('Error', 'error'); }
         };
     }
-
-    loadTranslateStatus();
 
     // ── Ollama ────────────────────────────────────────────────────
     async function loadOllamaStatus() {
@@ -2738,7 +2808,7 @@
     // ══════════════════════════════════════════════════════════════
     //  Tab Navigation
     // ══════════════════════════════════════════════════════════════
-    var tabMap = { engines: 'tabEngines', prompts: 'tabPrompts', intents: 'tabIntents', patterns: 'tabPatterns', test: 'tabTest' };
+    var tabMap = { engines: 'tabEngines', translate: 'tabTranslate', prompts: 'tabPrompts', intents: 'tabIntents', patterns: 'tabPatterns', test: 'tabTest' };
     document.querySelectorAll('.settings-tab').forEach(function(btn) {
         btn.addEventListener('click', function() {
             document.querySelectorAll('.settings-tab').forEach(function(b) { b.classList.remove('active'); });
@@ -2746,6 +2816,7 @@
             btn.classList.add('active');
             var panel = $(tabMap[btn.getAttribute('data-tab')]);
             if (panel) panel.classList.add('active');
+            if (btn.getAttribute('data-tab') === 'translate' && !state.translateLoaded) loadTranslateCatalog();
             if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadPromptsReadonly();
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
             if (btn.getAttribute('data-tab') === 'patterns' && !state.patternsLoaded) loadPatterns();
