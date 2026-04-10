@@ -2438,7 +2438,7 @@
 
     function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-    // ── Translation (catalog-based) ─────────────────────────────
+    // ── Translation (Argos Translate) ──────────────────────────
     state.translateLoaded = false;
 
     async function loadTranslateCatalog() {
@@ -2453,50 +2453,44 @@
             var list = $('translateModelList');
             list.innerHTML = '';
             (res.models || []).forEach(function(m) {
-                var desc = (LANG === 'uk' && m.description_uk) ? m.description_uk : m.description_en;
-                var langs = (m.languages || []).join(', ').toUpperCase();
-                if (langs === 'MUL') langs = '200+ ' + t('translation_languages');
-
                 var statusHtml = '';
                 if (m.active) {
                     statusHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
                 } else if (m.installed) {
-                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + m.id + '\')">' + t('translation_activate') + '</button>' +
-                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + m.id + '\')">' + t('common_delete') + '</button>';
+                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + m.lang_code + '\')">' + t('translation_activate') + '</button>' +
+                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + m.lang_code + '\')">' + t('common_delete') + '</button>';
                 } else {
-                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + m.id + '\')">' + t('translation_install') + '</button>';
+                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + m.lang_code + '\')">' + t('translation_install') + '</button>';
                 }
 
-                var qualityBadge = m.quality === 'high' ? 'badge-ok' : m.quality === 'good' ? 'badge-ac' : 'badge-pr';
-                var speedBadge = m.speed === 'fast' ? 'badge-ok' : 'badge-pr';
+                var inputBadge = m.input_installed ? '<span class="badge badge-ok">' + m.lang_code + '→en</span>' : '<span class="badge badge-off">' + m.lang_code + '→en</span>';
+                var outputBadge = m.output_installed ? '<span class="badge badge-ok">en→' + m.lang_code + '</span>' : '<span class="badge badge-off">en→' + m.lang_code + '</span>';
 
                 var div = document.createElement('div');
                 div.className = 'card-inner mb8';
                 div.innerHTML =
                     '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
-                        '<span style="font-size:13px;font-weight:600">' + m.name + '</span>' +
-                        '<span class="badge ' + qualityBadge + '">' + m.quality + '</span>' +
-                        '<span class="badge ' + speedBadge + '">' + m.speed + '</span>' +
-                        '<span class="badge badge-off">' + m.size_mb + ' MB</span>' +
+                        '<span style="font-size:13px;font-weight:600">' + (m.lang_name || m.lang_code) + '</span>' +
+                        '<span class="badge badge-off">' + m.lang_code.toUpperCase() + ' ↔ EN</span>' +
+                        inputBadge + outputBadge +
                     '</div>' +
-                    '<div class="label-xs mb4" style="opacity:.6">' + langs + ' — ' + desc + '</div>' +
                     '<div class="flex gap6">' + statusHtml + '</div>';
                 list.appendChild(div);
             });
         } catch(e) { /* ignore */ }
     }
 
-    window._trDownload = async function(id) {
+    window._trDownload = async function(lang) {
         try {
-            await postJson('/setup/translate/download', { model: id });
+            await postJson('/setup/translate/download', { lang: lang });
             show('translateDownloadSection');
-            $('translateDownloadName').textContent = id;
+            $('translateDownloadName').textContent = lang + ' ↔ en';
             var pollId = setInterval(async function() {
                 try {
                     var s = await api('/setup/translate/download/status');
                     var pct = Math.round(s.progress || 0);
                     $('translateDownloadBar').style.width = pct + '%';
-                    $('translateDownloadPercent').textContent = pct + '% — ' + (s.direction || '');
+                    $('translateDownloadPercent').textContent = pct + '% — ' + (s['package'] || '');
                     if (s.done) {
                         clearInterval(pollId);
                         hide('translateDownloadSection');
@@ -2505,22 +2499,22 @@
                         loadTranslateCatalog();
                     }
                 } catch(e) { /* retry */ }
-            }, 1000);
+            }, 1500);
         } catch(e) { showToast('Error', 'error'); }
     };
 
-    window._trActivate = async function(id) {
+    window._trActivate = async function(lang) {
         try {
-            await postJson('/setup/translate/activate', { model: id });
+            await postJson('/setup/translate/activate', { lang: lang });
             showToast(t('saved'));
             loadTranslateCatalog();
         } catch(e) { showToast('Error', 'error'); }
     };
 
-    window._trDelete = async function(id) {
+    window._trDelete = async function(lang) {
         if (!confirm(t('translation_delete_confirm'))) return;
         try {
-            await api('/setup/translate/model/' + id, { method: 'DELETE' });
+            await api('/setup/translate/lang/' + lang, { method: 'DELETE' });
             showToast(t('saved'));
             loadTranslateCatalog();
         } catch(e) { showToast('Error', 'error'); }

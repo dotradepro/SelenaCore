@@ -1575,18 +1575,18 @@ def _build_piper_download_urls(voice_id: str) -> list[str]:
 
 
 # ================================================================== #
-#  Translation models (Helsinki-NLP opus-mt / NLLB via CTranslate2)    #
+#  Translation (Argos Translate — offline language pairs)               #
 # ================================================================== #
 
 
 @router.get("/translate/status")
 async def translate_status() -> dict[str, Any]:
-    """Translation status: active model, settings."""
+    """Translation status: active language, settings."""
     from core.translation.local_translator import get_input_translator, get_output_translator
     return {
         "enabled": get_nested("translation.enabled", False),
         "fallback_to_llm": get_nested("translation.fallback_to_llm", True),
-        "active_model": get_nested("translation.active_model", ""),
+        "active_lang": get_nested("translation.active_lang", ""),
         "input_available": get_input_translator().is_available(),
         "output_available": get_output_translator().is_available(),
     }
@@ -1594,23 +1594,25 @@ async def translate_status() -> dict[str, Any]:
 
 @router.get("/translate/catalog")
 async def translate_catalog() -> dict[str, Any]:
-    """List all available translation models with installed/active status."""
+    """List available translation language pairs (XX↔EN)."""
     from core.translation.downloader import get_catalog
-    return {"models": get_catalog()}
+    loop = asyncio.get_event_loop()
+    catalog = await loop.run_in_executor(None, get_catalog)
+    return {"models": catalog}
 
 
 @router.post("/translate/download")
 async def translate_download(req: dict[str, Any]) -> dict[str, Any]:
-    """Download a translation model by id. Body: {"model": "opus-mt-uk-en"}"""
-    from core.translation.downloader import download_model as dl, get_download_status
-    model_id = req.get("model", "")
-    if not model_id:
-        raise HTTPException(status_code=422, detail="model is required")
+    """Install both directions for a language. Body: {"lang": "uk"}"""
+    from core.translation.downloader import install_pair, get_download_status
+    lang = req.get("lang", "")
+    if not lang:
+        raise HTTPException(status_code=422, detail="lang is required")
     st = get_download_status()
     if st["active"]:
         return {"status": "already_downloading", **st}
-    asyncio.create_task(dl(model_id))
-    return {"status": "started", "model": model_id}
+    asyncio.create_task(install_pair(lang))
+    return {"status": "started", "lang": lang}
 
 
 @router.get("/translate/download/status")
@@ -1622,25 +1624,23 @@ async def translate_download_status() -> dict[str, Any]:
 
 @router.post("/translate/activate")
 async def translate_activate(req: dict[str, Any]) -> dict[str, Any]:
-    """Activate a downloaded model. Body: {"model": "opus-mt-uk-en"}"""
-    from core.translation.downloader import activate_model
-    model_id = req.get("model", "")
-    if not model_id:
-        raise HTTPException(status_code=422, detail="model is required")
-    ok = activate_model(model_id)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Model not installed or not found")
-    return {"status": "ok", "model": model_id}
+    """Activate a language pair. Body: {"lang": "uk"}"""
+    from core.translation.downloader import activate_lang
+    lang = req.get("lang", "")
+    if not lang:
+        raise HTTPException(status_code=422, detail="lang is required")
+    ok = activate_lang(lang)
+    return {"status": "ok", "lang": lang}
 
 
-@router.delete("/translate/model/{model_id}")
-async def translate_delete(model_id: str) -> dict[str, Any]:
-    """Delete a downloaded model."""
-    from core.translation.downloader import delete_model
-    ok = delete_model(model_id)
+@router.delete("/translate/lang/{lang_code}")
+async def translate_delete(lang_code: str) -> dict[str, Any]:
+    """Delete both directions of a language pair."""
+    from core.translation.downloader import delete_pair
+    ok = delete_pair(lang_code)
     if not ok:
-        raise HTTPException(status_code=400, detail="Cannot delete active model or not found")
-    return {"status": "deleted", "model": model_id}
+        raise HTTPException(status_code=400, detail="Cannot delete active pair or not found")
+    return {"status": "deleted", "lang": lang_code}
 
 
 @router.post("/translate/settings")

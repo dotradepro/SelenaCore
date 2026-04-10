@@ -307,9 +307,14 @@ class DeviceControlModule(SystemModule):
                     "device-control: driver error for %s: %s",
                     device["device_id"], exc,
                 )
+                _emeta = device.get("meta") or {}
+                if isinstance(_emeta, str):
+                    import json as _json
+                    try: _emeta = _json.loads(_emeta)
+                    except Exception: _emeta = {}
                 await self.speak_action(intent, {
                     "result": "driver_error",
-                    "device_name": device["name"],
+                    "device_name": _emeta.get("name_en") or device["name"],
                     "error": str(exc),
                 })
                 return
@@ -324,10 +329,16 @@ class DeviceControlModule(SystemModule):
                 "source": self.name,
             })
 
+            # Use English names for rephrase LLM (core operates in English)
+            _meta = device.get("meta") or {}
+            if isinstance(_meta, str):
+                import json as _json
+                try: _meta = _json.loads(_meta)
+                except Exception: _meta = {}
             ack: dict[str, Any] = {
                 "result": "ok",
-                "device_name": device["name"],
-                "location": device.get("location"),
+                "device_name": _meta.get("name_en") or device["name"],
+                "location": _meta.get("location_en") or device.get("location"),
             }
             if intent in (INTENT_ON, INTENT_OFF):
                 ack["state"] = "on" if intent == INTENT_ON else "off"
@@ -369,18 +380,28 @@ class DeviceControlModule(SystemModule):
         if current is None:
             current = state.get("current_temperature")
         if current is None:
+            _qm = device.get("meta") or {}
+            if isinstance(_qm, str):
+                import json as _json
+                try: _qm = _json.loads(_qm)
+                except Exception: _qm = {}
             await self.speak_action(INTENT_QUERY_TEMPERATURE, {
                 "result": "no_data",
-                "device_name": device["name"],
-                "location": device.get("location"),
+                "device_name": _qm.get("name_en") or device["name"],
+                "location": _qm.get("location_en") or device.get("location"),
             })
             return
 
+        _qm = device.get("meta") or {}
+        if isinstance(_qm, str):
+            import json as _json
+            try: _qm = _json.loads(_qm)
+            except Exception: _qm = {}
         await self.speak_action(INTENT_QUERY_TEMPERATURE, {
             "result": "ok",
             "temperature": current,
-            "device_name": device["name"],
-            "location": device.get("location"),
+            "device_name": _qm.get("name_en") or device["name"],
+            "location": _qm.get("location_en") or device.get("location"),
         })
 
     # ── Intent → state translation ───────────────────────────────────────

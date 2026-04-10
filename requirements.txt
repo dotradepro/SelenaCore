@@ -30,10 +30,9 @@ apscheduler>=3.10  # used by scheduler + clock modules for cron/date triggers
 # Vosk STT (Vosk model files live under /var/lib/selena/models/vosk)
 vosk>=0.3.45
 
-# Local translation (Helsinki-NLP/opus-mt via CTranslate2 int8)
-# Models downloaded on demand via Settings → Translation
-ctranslate2>=3.24.0
-sentencepiece>=0.1.99
+# Local translation (Argos Translate — offline, ~50-100 MB per language pair)
+# Packages downloaded on demand via Settings → Translation tab
+argostranslate>=1.9.0
 
 # Smart device drivers (used by system_modules/device_control)
 tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persistent socket)

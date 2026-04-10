@@ -972,7 +972,17 @@ class VoiceCoreModule(SystemModule):
         _out_t = get_output_translator()
         if not _out_t.is_available():
             return text
-        return _out_t.from_english(text, tts_lang)
+        import time as _tm
+        _tr_start = _tm.monotonic()
+        result = _out_t.from_english(text, tts_lang)
+        _tr_ms = int((_tm.monotonic() - _tr_start) * 1000)
+        self._log_live("translate_out", {
+            "from": text, "to": result,
+            "lang": tts_lang, "ms": _tr_ms,
+            "msg": f"🔄 en→{tts_lang} ({_tr_ms}ms): {text} → {result}",
+        })
+        logger.info("Translate OUT [en→%s] %dms: '%s' → '%s'", tts_lang, _tr_ms, text[:60], result[:60])
+        return result
 
     def _get_tts_for_lang(self, stt_lang: str) -> tuple:
         """Select TTS engine and response language based on STT-detected language.
@@ -1036,8 +1046,16 @@ class VoiceCoreModule(SystemModule):
                 from core.translation.local_translator import get_input_translator
                 _inp_t = get_input_translator()
                 if _inp_t.is_available():
+                    import time as _tm
+                    _tr_start = _tm.monotonic()
                     text_en = _inp_t.to_english(text, stt_lang)
-                    logger.debug("Vosk→EN [%s]: '%s' → '%s'", stt_lang, text[:60], text_en[:60])
+                    _tr_ms = int((_tm.monotonic() - _tr_start) * 1000)
+                    self._log_live("translate_in", {
+                        "from": text, "to": text_en,
+                        "lang": stt_lang, "ms": _tr_ms,
+                        "msg": f"🔄 {stt_lang}→en ({_tr_ms}ms): {text} → {text_en}",
+                    })
+                    logger.info("Translate IN [%s→en] %dms: '%s' → '%s'", stt_lang, _tr_ms, text[:60], text_en[:60])
                     text = text_en
 
             self._log_live("routing", {
@@ -1077,6 +1095,8 @@ class VoiceCoreModule(SystemModule):
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text = sanitize_for_tts(result.response).lower()
                     tts_text = await self._to_tts_lang(tts_text)
+                    from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+                    tts_text = _pp(tts_text, tts_lang)
                     if tts_text:
                         done_ev = asyncio.Event()
                         await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
@@ -1113,6 +1133,8 @@ class VoiceCoreModule(SystemModule):
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text = sanitize_for_tts(result.response).lower()
                     tts_text = await self._to_tts_lang(tts_text)
+                    from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+                    tts_text = _pp(tts_text, tts_lang)
                     if tts_text:
                         # Mark BEFORE the await — module's _on_voice_intent
                         # subscriber runs concurrently and may call
@@ -1150,6 +1172,9 @@ class VoiceCoreModule(SystemModule):
                 # LLM/cloud responses are already natural language.
                 # Cache/system responses are short templates — rephrase wastes time.
                 tts_text = await self._to_tts_lang(result.response)
+                # Number-to-words AFTER translation, in target TTS language
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+                tts_text = _pp(tts_text, tts_lang)
                 self._log_live("tts", {
                     "text": tts_text[:80],
                     "msg": "Piper TTS озвучивает...",
@@ -1516,10 +1541,17 @@ class VoiceCoreModule(SystemModule):
             return False
 
     async def _rephrase_via_llm(self, default_text: str) -> str:
-        """Ask LLM to rephrase text for natural TTS output."""
-        from core.llm import llm_call
+        """Ask LLM to rephrase text for natural TTS output.
 
-        lang = self._tts_primary_lang or self._detect_lang()
+        When translation is enabled, output is English (translated by
+        OutputTranslator afterwards). Number-to-words preprocessing is
+        deferred to AFTER translation in _process_command.
+        """
+        from core.llm import llm_call
+        from core.config_writer import get_value as _cfg_get
+
+        translation_on = _cfg_get("translation", "enabled", False)
+        lang = "en" if translation_on else (self._tts_primary_lang or self._detect_lang())
         from core.lang_utils import lang_code_to_name
         lang_name = lang_code_to_name(lang)
 
@@ -1532,15 +1564,26 @@ class VoiceCoreModule(SystemModule):
 
         result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
         if result and len(result) < 300:
+            if translation_on:
+                return result
             from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
             return preprocess_for_tts(result, lang)
 
+        if translation_on:
+            return default_text
         from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
         return preprocess_for_tts(default_text, lang)
 
     async def _generate_via_llm(self, action_context: dict) -> str:
-        """Ask LLM to generate TTS response from action context."""
+        """Ask LLM to generate TTS response from action context.
+
+        When translation is enabled, output is English (translated to TTS
+        language by OutputTranslator afterwards). Otherwise output is in
+        the TTS language directly. Number-to-words preprocessing is done
+        AFTER translation in _process_command, not here.
+        """
         from core.llm import llm_call
+        from core.config_writer import get_value as _cfg_get
         import json as _json
 
         intent = action_context.get("intent", "unknown")
@@ -1548,7 +1591,9 @@ class VoiceCoreModule(SystemModule):
         ctx_summary = ", ".join(f"{k}={v}" for k, v in ctx_parts.items()) if ctx_parts else "done"
         fallback_text = f"{intent}: {ctx_summary}"
 
-        lang = self._tts_primary_lang or self._detect_lang()
+        # Core operates in English when translation is enabled
+        translation_on = _cfg_get("translation", "enabled", False)
+        lang = "en" if translation_on else (self._tts_primary_lang or self._detect_lang())
         from core.lang_utils import lang_code_to_name
         lang_name = lang_code_to_name(lang)
 
@@ -1561,11 +1606,14 @@ class VoiceCoreModule(SystemModule):
 
         result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
         if result:
-            # Multi-day forecasts and similar rich responses can legitimately
-            # exceed a few hundred characters in Ukrainian. Trim only when
-            # absurdly long (LLM ramble / hallucination).
             if len(result) > 1200:
                 result = result[:1200].rsplit(".", 1)[0] + "."
+            # Skip number-to-words when translation is enabled —
+            # OutputTranslator + Piper will handle digits naturally,
+            # OR caller will run preprocess_for_tts with the TTS lang
+            # AFTER translation.
+            if translation_on:
+                return result
             from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
             return preprocess_for_tts(result, lang)
 
@@ -2056,6 +2104,23 @@ class VoiceCoreModule(SystemModule):
             else:
                 lang = _detect_text_lang(text, svc._tts_primary_lang)
             _tts_engine, tts_lang = svc._get_tts_for_lang(lang)
+
+            # [Translation Point 1] Translate to English before routing
+            from core.config_writer import get_value as _cfg_get
+            if _cfg_get("translation", "enabled", False) and lang != "en":
+                from core.translation.local_translator import get_input_translator
+                _inp = get_input_translator()
+                if _inp.is_available():
+                    _tr_s = _time.monotonic()
+                    text_en = _inp.to_english(text, lang)
+                    _tr_ms = int((_time.monotonic() - _tr_s) * 1000)
+                    svc._log_live("translate_in", {
+                        "from": text, "to": text_en,
+                        "lang": lang, "ms": _tr_ms,
+                        "msg": f"🔄 {lang}→en ({_tr_ms}ms): {text} → {text_en}",
+                    })
+                    text = text_en
+
             result, trace_steps = await get_intent_router().route(
                 text, user_id=None, lang=lang, tts_lang=tts_lang, trace=True,
             )
@@ -2113,8 +2178,10 @@ class VoiceCoreModule(SystemModule):
                 except asyncio.TimeoutError:
                     pass
             elif req.speak and result.response:
+                # [Translation Point 2] Translate response before TTS
+                tts_text = await svc._to_tts_lang(result.response)
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-                tts_text = preprocess_for_tts(result.response, tts_lang)
+                tts_text = preprocess_for_tts(tts_text, tts_lang)
                 await svc.publish("voice.response", {"text": tts_text, "query": text})
                 try:
                     await svc._stream_speak(tts_text)
