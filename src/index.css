@@ -896,6 +896,7 @@ html.light .bg-blue-500 .text-white {
   color: var(--tx);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   cursor: pointer;
   user-select: none;
@@ -926,6 +927,16 @@ html.light .numpad-key:hover {
 html.light .numpad-key:active {
   background: rgba(0, 0, 0, 0.12);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* Fallback for browsers without backdrop-filter (e.g. WPE pixman renderer) */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .numpad-key {
+    background: rgba(255, 255, 255, 0.12);
+  }
+  html.light .numpad-key {
+    background: rgba(0, 0, 0, 0.08);
+  }
 }
 
 /* PIN shake animation */
