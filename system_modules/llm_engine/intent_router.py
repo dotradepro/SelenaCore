@@ -32,6 +32,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from core.config_writer import get_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -40,7 +42,7 @@ class IntentResult:
     intent: str
     response: str
     action: dict[str, Any] | None
-    source: str          # "fast_matcher" | "system_module" | "module_bus" | "llm" | "cloud" | "cache" | "fallback"
+    source: str          # "fast_matcher" | "system_module" | "module_bus" | "embedding" | "llm" | "cloud" | "cache" | "fallback"
     latency_ms: int
     lang: str = "en"
     user_id: str | None = None
@@ -72,6 +74,33 @@ def _tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(norm)
 
 
+def _parse_catalog_to_candidates(catalog_text: str) -> list[dict[str, str]]:
+    """Pull intent rows out of the prompt catalog block.
+
+    The router prints intents like ``  intent.name — description``
+    inside an ``Intents:`` block. This helper recovers the original
+    (name, description) pairs without re-querying the IntentCompiler,
+    so the embedding classifier can re-use the exact filtered list
+    that the LLM tier would have seen.
+    """
+    candidates: list[dict[str, str]] = []
+    in_intents = False
+    for line in catalog_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Intents:"):
+            in_intents = True
+            continue
+        if not stripped:
+            in_intents = False
+            continue
+        if in_intents and " — " in stripped:
+            name, _, desc = stripped.partition(" — ")
+            name = name.strip()
+            if name:
+                candidates.append({"name": name, "description": desc.strip()})
+    return candidates
+
+
 def _normalize_en(text: str) -> str:
     """NFKC + lower + strip leading EN article + collapse whitespace.
 
@@ -92,10 +121,11 @@ def _normalize_en(text: str) -> str:
 
 
 class IntentRouter:
-    """Intent router: Module Bus → Local LLM → Cloud LLM (no cache)."""
+    """Intent router: Module Bus → Embedding → Local LLM → Cloud LLM (no cache)."""
 
     def __init__(self) -> None:
         self._live_log_fn: Any = None  # callback for live monitor logging
+        self._embedding = None  # lazy-loaded EmbeddingIntentClassifier
 
     def set_live_log(self, fn: Any) -> None:
         """Set callback for live monitor: fn(event: str, data: dict)."""
@@ -120,7 +150,7 @@ class IntentRouter:
         native_text: str | None = None,
         trace: bool = False,
     ) -> IntentResult | tuple[IntentResult, list[dict[str, Any]]]:
-        """Route user text: Module Bus → Local LLM → Cloud LLM.
+        """Route user text: Module Bus → Embedding → Local LLM → Cloud LLM.
 
         Args:
             text: English form of the utterance (post-Argos).
@@ -220,7 +250,42 @@ class IntentRouter:
         # call) that the ~10 ms cache saving is not worth the risk of
         # stale hits.
 
-        # ── Tier 1: Local LLM (single call) ──
+        # ── Tier 1: Embedding classifier (fast path) ──
+        # Sentence-transformers cosine over per-utterance candidates.
+        # Confident hits short-circuit the LLM tier (~60× faster).
+        # Low-margin or low-score cases fall through to Local LLM.
+        # Runs only when intent.embedding_enabled is true (default).
+        emb_result = None
+        emb_error = None
+        if self._embedding_enabled():
+            try:
+                emb_result = await self._embedding_classify(
+                    text, lang, native_text=native_text,
+                )
+            except Exception as exc:
+                emb_error = str(exc)
+                logger.warning("Embedding classifier error: %s", exc)
+
+            if trace:
+                steps.append({
+                    "tier": "1", "name": "Embedding",
+                    "status": "hit" if emb_result else (
+                        "error" if emb_error else "fallthrough"
+                    ),
+                    "ms": _elapsed(),
+                    "detail": emb_result.intent if emb_result else emb_error,
+                })
+
+        if emb_result is not None and emb_result.intent != "unknown":
+            emb_result.latency_ms = _elapsed()
+            emb_result.lang = lang
+            emb_result.user_id = user_id
+            emb_result = await self._resolve_entity_ref(emb_result)
+            emb_result = await self._disambiguate_device(emb_result, tts_lang)
+            await self._publish_event(emb_result, raw_text=text, lang=lang)
+            return (emb_result, steps) if trace else emb_result
+
+        # ── Tier 2: Local LLM (single call) ──
         llm_result = None
         llm_error = None
         try:
@@ -236,7 +301,7 @@ class IntentRouter:
 
         if trace:
             steps.append({
-                "tier": "1", "name": "Local LLM",
+                "tier": "2", "name": "Local LLM",
                 "status": "hit" if llm_result else ("error" if llm_error else "skip"),
                 "ms": _elapsed(),
                 "detail": llm_result.intent if llm_result else llm_error,
@@ -251,7 +316,7 @@ class IntentRouter:
             await self._publish_event(llm_result, raw_text=text, lang=lang)
             return (llm_result, steps) if trace else llm_result
 
-        # ── Tier 2: Cloud LLM (if configured) ──
+        # ── Tier 3: Cloud LLM (if configured) ──
         cloud_result = None
         cloud_error = None
         cloud_cfg = self._get_cloud_config()
@@ -268,7 +333,7 @@ class IntentRouter:
 
             if trace:
                 steps.append({
-                    "tier": "2", "name": "Cloud LLM",
+                    "tier": "3", "name": "Cloud LLM",
                     "status": "hit" if cloud_result else ("error" if cloud_error else "skip"),
                     "ms": _elapsed(),
                     "detail": cloud_result.intent if cloud_result else cloud_error,
@@ -284,7 +349,7 @@ class IntentRouter:
                 return (cloud_result, steps) if trace else cloud_result
         elif trace:
             steps.append({
-                "tier": "2", "name": "Cloud LLM",
+                "tier": "3", "name": "Cloud LLM",
                 "status": "skip",
                 "ms": _elapsed(),
                 "detail": "not configured",
@@ -313,6 +378,124 @@ class IntentRouter:
         )
         await self._publish_event(result, raw_text=text, lang=lang)
         return (result, steps) if trace else result
+
+    # ── Embedding classifier (Tier 1, fast path) ─────────────────────
+
+    def warmup_embedding(self) -> None:
+        """Force-load the embedding model up front (called from voice-core
+        boot). Without this the first user request after a cold start
+        eats the ~26 sec model-load latency.
+        """
+        if not self._embedding_enabled():
+            return
+        emb = self._ensure_embedding()
+        if emb:
+            emb.warmup()
+
+    def _ensure_embedding(self):
+        """Lazy-load the embedding classifier (heavy: ~80 MB RAM, 26 s
+        first-call cold start). Voice-core warms it up on boot via
+        ``warmup()``; this is the safety net for any other entry point.
+        """
+        if self._embedding is not None:
+            return self._embedding
+        try:
+            from system_modules.llm_engine.embedding_classifier import (
+                EmbeddingIntentClassifier,
+            )
+            self._embedding = EmbeddingIntentClassifier()
+        except ImportError as exc:
+            logger.warning(
+                "Embedding classifier import failed (%s) — Tier 1 disabled, "
+                "falling through to LLM.", exc,
+            )
+            self._embedding = False  # sentinel: never try again
+        return self._embedding
+
+    def _embedding_enabled(self) -> bool:
+        """Read the embedding-tier toggle from config (default on)."""
+        return bool(get_value("intent", "embedding_enabled", True))
+
+    async def _embedding_classify(
+        self,
+        text: str,
+        lang: str,
+        *,
+        native_text: str | None = None,
+    ) -> IntentResult | None:
+        """Run the embedding classifier over the filtered catalog.
+
+        Returns a confident IntentResult or ``None`` if score / margin
+        thresholds were not met (caller falls through to LLM tier).
+        Confidence policy is configurable via:
+
+          intent.embedding_score_threshold  (default 0.30)
+          intent.embedding_margin_threshold (default 0.05)
+
+        score < score_threshold      → return None (fall through)
+        margin < margin_threshold    → return None (fall through, top-2 too close)
+        otherwise                    → return IntentResult(source="embedding")
+
+        The hallucination guard from the LLM path is unnecessary here:
+        the classifier picks ONLY from candidates already inside the
+        filtered catalog (which equals the per-utterance ``allowed`` set).
+        """
+        emb = self._ensure_embedding()
+        if not emb:
+            return None
+
+        catalog, allowed = await self._build_filtered_catalog(
+            text, native_text=native_text,
+        )
+        candidates = _parse_catalog_to_candidates(catalog)
+        if not candidates:
+            return None
+
+        result = emb.classify(text, candidates)
+
+        score_threshold = float(
+            get_value("intent", "embedding_score_threshold", 0.30) or 0.30
+        )
+        margin_threshold = float(
+            get_value("intent", "embedding_margin_threshold", 0.05) or 0.05
+        )
+
+        if result.score < score_threshold:
+            logger.debug(
+                "embedding: score %.3f < %.3f → fall through to LLM",
+                result.score, score_threshold,
+            )
+            return None
+        if result.margin < margin_threshold:
+            logger.debug(
+                "embedding: margin %.3f < %.3f (winner=%r vs runner_up=%r) "
+                "→ fall through to LLM",
+                result.margin, margin_threshold,
+                result.intent, result.runner_up,
+            )
+            return None
+        # Final hallucination guard mirroring _parse_llm_response. The
+        # classifier picks from `candidates` which came from `allowed`,
+        # so this should never trip — kept for parity.
+        if result.intent != "unknown" and result.intent not in allowed:
+            logger.warning(
+                "embedding: intent %r not in allowed set %s — falling through",
+                result.intent, sorted(allowed),
+            )
+            return None
+
+        return IntentResult(
+            intent=result.intent,
+            response="",
+            action=None,
+            source="embedding",
+            latency_ms=0,
+            params=result.params,
+            raw_llm=(
+                f"score={result.score:.3f} margin={result.margin:.3f} "
+                f"runner_up={result.runner_up}({result.runner_up_score:.3f})"
+            ),
+        )
 
     # ── Local LLM (single call) ────────────────────────────────────────
 

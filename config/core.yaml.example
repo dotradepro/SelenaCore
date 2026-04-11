@@ -103,6 +103,22 @@ wizard:
   completed: false
   current_step: null
 
+intent:
+  # Tier 1 of IntentRouter.route(): sentence-transformers cosine over
+  # the per-utterance filtered catalog. Confident hits short-circuit
+  # the Local LLM tier (~60× faster, ~22 MB model footprint vs ~1 GB
+  # for qwen 1.5b). Falls through to LLM when score or margin is too
+  # low to trust. See system_modules/llm_engine/embedding_classifier.py.
+  embedding_enabled: true
+  # Cosine score threshold below which we fall through to LLM. Tuned
+  # against the 40-case trace bench: anchors are normalized so 0.30
+  # cleanly separates "definitely something" from "weird input".
+  embedding_score_threshold: 0.30
+  # Margin (winner_score - runner_up_score) threshold. Below this
+  # the top-2 are too close to trust the embedding pick alone, fall
+  # through to LLM for disambiguation.
+  embedding_margin_threshold: 0.05
+
 translation:
   enabled: false
   # Engine: argos | helsinki

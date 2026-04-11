@@ -37,7 +37,7 @@ for candidate in (_here.parents[2], Path("/opt/selena-core")):
     if (candidate / "core" / "llm.py").is_file() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
-from tests.experiments.embedding_classifier import EmbeddingIntentClassifier
+from system_modules.llm_engine.embedding_classifier import EmbeddingIntentClassifier
 
 
 # ── Corpus ──────────────────────────────────────────────────────────

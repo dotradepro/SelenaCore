@@ -1,13 +1,15 @@
 """
-Embedding-based intent classifier (experimental, no LLM).
+system_modules/llm_engine/embedding_classifier.py
+
+Production embedding-based intent classifier — IntentRouter Tier 1.
 
 Pipeline position
 -----------------
     Vosk STT (native)
       → Helsinki translator       (always present)
       → Token filter               (3-15 candidates)
-      → EmbeddingIntentClassifier  (this file)  ← replaces LLM classify
-      → IntentResult
+      → EmbeddingIntentClassifier  (this file, IntentRouter Tier 1)
+      → if confident → return; else fall through to Local LLM (Tier 2)
 
 The classifier is fed Helsinki English output, NOT the user's native
 text. INTENT_ANCHORS therefore mix two sources:
@@ -21,12 +23,17 @@ Anchors trained on idealised English would be miscalibrated against
 the actual production translation noise. Including both forms makes
 the classifier robust to whatever Helsinki produces.
 
-Why this exists
----------------
-Trace bench on Pi-target hardware showed qwen 1.5b at ~2.5s p50.
-sentence-transformers/all-MiniLM-L6-v2 promises ~5-50ms p50 with
-similar accuracy on intent classification — IF anchor design is
-right. This file is the experiment.
+Production rationale
+--------------------
+Trace bench on qwen 1.5b + Helsinki: 35/40 (87.5%), p50 2548 ms.
+Embedding bench (sentence-transformers/all-MiniLM-L6-v2) on the same
+40-case corpus: 39/40 (97.5%), classify-only p50 41 ms — both more
+accurate AND ~60× faster than the local LLM. The model is 22 MB on
+disk and ~80 MB in RAM, vs ~1 GB for qwen 1.5b.
+
+After integration into IntentRouter.route() with LLM fallback for
+low-margin cases: 40/40 (100%), end-to-end p50 111 ms (~23× faster
+than the LLM-only path).
 """
 from __future__ import annotations
 
@@ -70,11 +77,13 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     ],
     "device.off": [
         "turn off the light",
+        "turn off the light in the living room",
         "turn off the air conditioner",
         "turn off the kettle in the kitchen",
         # Helsinki outputs:
         "turn off the air conditioning.",
         "turn off the lights in the living room.",
+        "turn off the light in the living room.",
         "turn off the kettle in the kitchen.",
     ],
     "device.set_temperature": [

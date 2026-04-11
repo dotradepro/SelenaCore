@@ -1576,6 +1576,24 @@ class VoiceCoreModule(SystemModule):
         # Warm up Vosk model (JIT priming via LLM → Piper → Vosk)
         asyncio.create_task(self._warmup_vosk())
 
+        # Warm up the IntentRouter Tier 1 embedding classifier in the
+        # background. The first cold-start load takes ~26 sec on Jetson
+        # Orin (model + 21 anchor centroids); without this the first
+        # user request after a container restart eats that latency.
+        # Runs as a fire-and-forget task so it doesn't block start().
+        async def _warmup_embedding():
+            try:
+                from system_modules.llm_engine.intent_router import (
+                    get_intent_router,
+                )
+                router = get_intent_router()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, router.warmup_embedding)
+                logger.info("Embedding classifier warm-up complete")
+            except Exception as exc:
+                logger.warning("Embedding warm-up failed: %s", exc)
+        asyncio.create_task(_warmup_embedding())
+
         # Start single audio loop
         self._listen_task = asyncio.create_task(self._audio_loop())
 
