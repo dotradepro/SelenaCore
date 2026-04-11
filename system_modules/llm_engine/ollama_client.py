@@ -135,6 +135,8 @@ class OllamaClient:
                 "temperature": temperature,
                 "num_predict": max_tokens,
                 "num_ctx": num_ctx,
+                "top_p": 0.9,
+                "repeat_penalty": 1.1,
             },
         }
         if json_mode:

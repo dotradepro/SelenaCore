@@ -184,6 +184,11 @@ class IntentDefinition(Base):
     source: Mapped[str] = mapped_column(String(20), default="system")  # system|user|auto
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     params_schema: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    # JSON array of entity types this intent is allowed to act on, e.g.
+    # '["air_conditioner","thermostat","radiator"]'. NULL / empty = no
+    # restriction. Lets the router's device resolver narrow down candidates
+    # without any hardcoded Python mapping.
+    entity_types: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     patterns: Mapped[list[IntentPattern]] = relationship(
@@ -195,6 +200,19 @@ class IntentDefinition(Base):
 
     def set_params_schema(self, schema: dict) -> None:
         self.params_schema = json.dumps(schema)
+
+    def get_entity_types(self) -> list[str]:
+        """Return the allowed entity types for this intent, or []."""
+        if not self.entity_types:
+            return []
+        try:
+            val = json.loads(self.entity_types)
+            return [str(x) for x in val] if isinstance(val, list) else []
+        except Exception:
+            return []
+
+    def set_entity_types(self, types: list[str] | None) -> None:
+        self.entity_types = json.dumps(list(types)) if types else None
 
 
 class IntentPattern(Base):

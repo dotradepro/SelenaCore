@@ -230,6 +230,10 @@ async def tts_speak(req: SttTtsTestRequest) -> Any:
 
 
 MAX_PROMPT_LEN = 5000  # universal max for any prompt
+MIN_SYSTEM_PROMPT_LEN = 100  # the user-editable 'system' prompt must keep at
+                             # least this much identity/behaviour text, so the
+                             # dynamic keyword-filtered catalog still has a
+                             # coherent shell to slot into.
 
 from core.lang_utils import lang_code_to_name
 
@@ -246,29 +250,45 @@ def _detect_lang_from_stt(stt_model: str) -> str:
 
 
 def _extract_name_from_wake(wake_phrase: str) -> str:
-    """Extract assistant name from wake phrase: 'привіт_селена' → 'Селена'."""
+    """Extract the last word of a wake phrase as the assistant name.
+
+    The result is transliterated to Latin if it contains Cyrillic, so
+    ``{name}`` in the English-only prompt is always pronounceable by
+    Piper voices in any language.
+    """
     parts = wake_phrase.replace("_", " ").strip().split()
-    # Name is the last word (after greeting like "привіт", "hello", "hey", etc.)
+    native = ""
     if len(parts) >= 2:
-        return parts[-1].capitalize()
-    if len(parts) == 1:
-        return parts[0].capitalize()
-    return "Selena"
+        native = parts[-1]
+    elif len(parts) == 1:
+        native = parts[0]
+    if not native:
+        return "Selena"
+    if any("\u0400" <= ch <= "\u04ff" for ch in native):
+        from core.translit import cyrillic_to_latin
+        return (cyrillic_to_latin(native).capitalize() or "Selena")
+    return native.capitalize()
 
 
 def _get_prompt_context() -> tuple[str, str, str]:
-    """Return (assistant_name, response_language, tts_lang_code) from config.
+    """Return (assistant_name_en, response_language, tts_lang_code).
 
-    Response language is derived from TTS primary voice language
-    (voice.tts.primary.lang), so prompts match the voice output language.
-    Falls back to system.language if TTS lang not configured.
+    Name is the English form of the wake word (``voice.wake_word_en``),
+    falling back to a transliteration of ``voice.wake_word_model``. The
+    prompt is English-only and OutputTranslator handles the TTS-language
+    conversion downstream, so we always return the English name here.
     """
     config = read_config()
     voice_cfg = config.get("voice", {})
     sys_cfg = config.get("system", {})
-    wake = voice_cfg.get("wake_word_model", "")
-    name = _extract_name_from_wake(wake) if wake else "Selena"
-    # TTS language takes priority over UI language for prompt context
+
+    wake_en = (voice_cfg.get("wake_word_en") or "").strip()
+    if wake_en:
+        name = wake_en.split()[-1].capitalize()
+    else:
+        wake = voice_cfg.get("wake_word_model", "")
+        name = _extract_name_from_wake(wake) if wake else "Selena"
+
     tts_lang = voice_cfg.get("tts", {}).get("primary", {}).get("lang", "")
     if not tts_lang:
         tts_lang = sys_cfg.get("language", "en")
@@ -277,24 +297,19 @@ def _get_prompt_context() -> tuple[str, str, str]:
 
 
 def _flush_llm_caches() -> None:
-    """Flush LLM-related caches after prompt or language change."""
+    """Refresh router state after a prompt or language change.
+
+    Historically this also purged ``IntentCache``, but the cache was
+    removed because it could return a stale classification pointing at a
+    deleted or renamed entity. ``refresh_system_prompt()`` is a no-op
+    these days — the catalog is built per-request — but we keep the call
+    as a hook for future router state.
+    """
     try:
         from system_modules.llm_engine.intent_router import get_intent_router
-        router = get_intent_router()
-        router.refresh_system_prompt()
-        logger.info("Refreshed IntentRouter system prompt")
+        get_intent_router().refresh_system_prompt()
     except Exception as exc:
         logger.warning("Failed to refresh IntentRouter: %s", exc)
-    try:
-        from system_modules.llm_engine.intent_cache import get_intent_cache
-        task = asyncio.create_task(get_intent_cache().clear())
-        task.add_done_callback(
-            lambda t: logger.warning("IntentCache clear failed: %s", t.exception())
-            if t.exception()
-            else logger.info("IntentCache cleared successfully")
-        )
-    except Exception as exc:
-        logger.warning("Failed to schedule IntentCache clear: %s", exc)
 
 
 async def _build_prompt_preview(compact: bool = False) -> str:
@@ -313,30 +328,34 @@ async def _build_prompt_preview(compact: bool = False) -> str:
 
 @router.get("/llm/system-prompt")
 async def get_system_prompt() -> dict[str, Any]:
-    """Get all prompt settings from DB."""
-    from core.prompt_store import get_prompt_store, PROMPT_KEYS
+    """Get the unified system prompt from DB (English slot only).
+
+    Core operates in English end-to-end — the single ``system`` prompt
+    lives in the ``en`` row; OutputTranslator converts responses to the
+    TTS language downstream. There is no per-language prompt anymore.
+    """
+    from core.prompt_store import get_prompt_store, PROMPT_KEYS, _EN_FALLBACK
     store = get_prompt_store()
     name, lang, tts_lang = _get_prompt_context()
 
     prompts_meta: dict[str, dict] = {}
     for key in PROMPT_KEYS:
-        prompts_meta[key] = await store.get_meta(tts_lang, key)
-
-    en_prompts = await store.get_all("en")
+        meta = await store.get_meta("en", key)
+        prompts_meta[key] = {
+            "value": meta["value"],
+            "is_custom": meta["is_custom"],
+            "default": _EN_FALLBACK.get(key, ""),
+        }
 
     return {
         "name": name,
         "lang": lang,
         "ui_lang": tts_lang,
-        "prompts": {
-            key: {
-                "value": meta["value"],
-                "is_custom": meta["is_custom"],
-                "default": en_prompts.get(key, ""),
-            }
-            for key, meta in prompts_meta.items()
+        "prompts": prompts_meta,
+        "limits": {
+            "max_prompt_len": MAX_PROMPT_LEN,
+            "min_system_prompt_len": MIN_SYSTEM_PROMPT_LEN,
         },
-        "limits": {"max_prompt_len": MAX_PROMPT_LEN},
         "full_preview": await _build_prompt_preview(compact=False),
         "compact_preview": await _build_prompt_preview(compact=True),
     }
@@ -344,36 +363,37 @@ async def get_system_prompt() -> dict[str, Any]:
 
 @router.post("/llm/prompt")
 async def save_any_prompt(body: dict[str, Any]) -> dict[str, Any]:
-    """Save any prompt by key. Universal endpoint for all prompt types."""
+    """Save a prompt by key into the English slot."""
     from core.prompt_store import get_prompt_store, PROMPT_KEYS
     key = body.get("key", "")
     value = body.get("value", "").strip()
     if key not in PROMPT_KEYS:
         raise HTTPException(400, f"Unknown prompt key: {key}")
-    _, _, tts_lang = _get_prompt_context()
-    await get_prompt_store().set(tts_lang, key, value, is_custom=True)
+    if len(value) > MAX_PROMPT_LEN:
+        raise HTTPException(
+            400, f"Prompt exceeds max length ({len(value)} > {MAX_PROMPT_LEN})",
+        )
+    # The editable 'system' prompt is the identity/behaviour shell the
+    # dynamic catalog gets appended to. Without a minimum we end up with
+    # an empty system prompt and the LLM free-form hallucinates.
+    if key == "system" and len(value) < MIN_SYSTEM_PROMPT_LEN:
+        raise HTTPException(
+            400,
+            f"System prompt too short ({len(value)} < {MIN_SYSTEM_PROMPT_LEN} chars). "
+            f"Keep the core identity + rules block.",
+        )
+    await get_prompt_store().set("en", key, value, is_custom=True)
     _flush_llm_caches()
     return {"status": "ok", "key": key}
 
 
 @router.post("/llm/system-prompt/reset")
 async def reset_system_prompt() -> dict[str, Any]:
-    """Reset prompts: regenerate for TTS language from English via LLM."""
+    """Reset all prompts to the English defaults from en.json."""
     from core.prompt_store import get_prompt_store
     store = get_prompt_store()
-    _, _, tts_lang = _get_prompt_context()
-
-    if tts_lang == "en":
-        # English: reset to JSON defaults
-        await store.reset("en")
-    else:
-        # Other languages: regenerate from English via LLM
-        success = await store.generate_for_language(tts_lang)
-        if not success:
-            # Fallback: copy English as-is
-            await store.reset(tts_lang)
-
-    prompts = await store.get_all(tts_lang)
+    await store.reset("en")
+    prompts = await store.get_all("en")
     _flush_llm_caches()
     return {"status": "ok", "prompts": prompts}
 

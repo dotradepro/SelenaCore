@@ -138,52 +138,6 @@ class TestTTS:
         assert sanitize_for_tts("   ") == ""
 
 
-# ── IntentCache tests ───────────────────────────────────────────────────────
-
-class TestIntentCache:
-    """Test intent_cache.py SQLite cache."""
-
-    @pytest.mark.asyncio
-    async def test_cache_put_and_get(self, tmp_path) -> None:
-        from system_modules.llm_engine.intent_cache import IntentCache
-        cache = IntentCache(str(tmp_path / "test_cache.db"))
-        await cache.put("turn on light", "en", "device.on", {"entity": "light"}, "Light on")
-        result = await cache.get("turn on light", "en")
-        assert result is not None
-        assert result["intent"] == "device.on"
-        assert result["params"]["entity"] == "light"
-
-    @pytest.mark.asyncio
-    async def test_cache_miss(self, tmp_path) -> None:
-        from system_modules.llm_engine.intent_cache import IntentCache
-        cache = IntentCache(str(tmp_path / "test_cache.db"))
-        result = await cache.get("unknown phrase", "en")
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_cache_lang_separation(self, tmp_path) -> None:
-        from system_modules.llm_engine.intent_cache import IntentCache
-        cache = IntentCache(str(tmp_path / "test_cache.db"))
-        await cache.put("play music", "en", "media.play", {}, "Playing")
-        await cache.put("play music", "de", "media.play", {}, "Wird abgespielt")
-        en = await cache.get("play music", "en")
-        de = await cache.get("play music", "de")
-        assert en["response"] == "Playing"
-        assert de["response"] == "Wird abgespielt"
-
-    @pytest.mark.asyncio
-    async def test_cache_hit_count(self, tmp_path) -> None:
-        from system_modules.llm_engine.intent_cache import IntentCache
-        cache = IntentCache(str(tmp_path / "test_cache.db"))
-        await cache.put("hello", "en", "greeting", {})
-        await cache.get("hello", "en")
-        await cache.get("hello", "en")
-        await cache.get("hello", "en")
-        frequent = await cache.get_frequent(min_count=3)
-        assert len(frequent) >= 1
-        assert frequent[0]["intent"] == "greeting"
-
-
 # ── Privacy Mode tests ───────────────────────────────────────────────────────
 
 class TestPrivacy:

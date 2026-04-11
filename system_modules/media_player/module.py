@@ -634,13 +634,8 @@ class MediaPlayerModule(SystemModule):
                             if db_station:
                                 station_id = db_station.id
                                 await session.delete(db_station)
-                    # Delete patterns
-                    if db_station:
-                        try:
-                            from system_modules.llm_engine.pattern_generator import get_pattern_generator
-                            await get_pattern_generator().delete_for_entity("radio_station", station_id)
-                        except Exception:
-                            pass
+                    # Pattern-generation removed: LLM-only router reads live
+                    # registry state, so deleting the row is enough.
                 else:
                     # Translate name to English
                     from core.api.helpers import translate_to_en as _translate_to_en
@@ -681,22 +676,11 @@ class MediaPlayerModule(SystemModule):
                         await session.refresh(db_station)
                         station_id = db_station.id
 
-                    # Generate English voice patterns via LLM
-                    try:
-                        from system_modules.llm_engine.pattern_generator import get_pattern_generator
-                        await get_pattern_generator().generate_for_entity("radio_station", station_id)
-                    except Exception as exc:
-                        logger.debug("Pattern generation failed for station '%s': %s", name, exc)
-
-                # Reload intent compiler + prompt cache
+                # Reload intent definitions so the next LLM catalog
+                # filter picks up the new station row.
                 try:
                     from system_modules.llm_engine.intent_compiler import get_intent_compiler
                     await get_intent_compiler().full_reload()
-                except Exception:
-                    pass
-                try:
-                    from system_modules.llm_engine.intent_router import get_intent_router
-                    get_intent_router().refresh_system_prompt()
                 except Exception:
                     pass
 

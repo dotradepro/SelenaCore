@@ -1327,20 +1327,24 @@ async def tts_preview(req: PreviewVoiceRequest) -> Any:
 
 @router.post("/patterns/regenerate")
 async def patterns_regenerate(entity_type: str | None = None) -> dict[str, Any]:
-    """Regenerate auto_entity intent patterns for radios/devices/scenes.
+    """Legacy endpoint — pattern regeneration is a no-op now.
 
-    PatternGenerator wipes existing source='auto_entity' rows and rebuilds
-    them via the hardcoded English LLM prompt. Hot-reloads IntentCompiler.
-
-    Optional ?entity_type=radio_station|device|scene narrows the rebuild.
+    The router is LLM-only; there are no regex patterns to rebuild.
+    We still rebuild the device name_en index so the Devices tab's
+    manual "rebuild patterns" button stays useful — it now refreshes
+    the composite name lookup instead.
     """
     try:
         from system_modules.llm_engine.pattern_generator import get_pattern_generator
-        gen = get_pattern_generator()
-        count = await gen.regenerate_all(entity_type)
-        return {"status": "ok", "count": count, "entity_type": entity_type or "all"}
+        count = await get_pattern_generator().rebuild()
+        return {
+            "status": "ok",
+            "count": count,
+            "entity_type": entity_type or "all",
+            "note": "pattern generation removed; rebuilt device name index instead",
+        }
     except Exception as exc:
-        logger.error("Pattern regeneration failed: %s", exc)
+        logger.error("Device name index rebuild failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

@@ -1,19 +1,25 @@
 """
-system_modules/llm_engine/intent_router.py — Three-tier Intent Router
+system_modules/llm_engine/intent_router.py — LLM-only Intent Router
 
-Tier 0: FastMatcher + IntentCompiler (regex from YAML vocabulary) — zero latency
-Tier 1: Local LLM (single call: intent JSON + response) — 300-800ms
-Tier 2: Cloud LLM (OpenAI-compatible API, optional) — 1-3s
+Architecture:
+  1. Try Module Bus (WebSocket user module intents)              — ~50ms
+  2. Local LLM with keyword-filtered catalog                     — 500-2000ms
+  3. Cloud LLM fallback (optional)                               — 1-3s
+  4. Fallback → ``intent="unknown"``
 
-Orchestration:
-  1. Try Fast Matcher first (keyword/regex YAML rules)
-  2. Try system module registered intents (in-process regex)
-  3. Try Module Bus (WebSocket user module intents)
-  4. Check IntentCache (SQLite cache of previous LLM results)
-  5. Try local LLM (single call with fixed system prompt)
-  6. Try cloud LLM fallback (if configured)
-  7. Fallback → "not understood"
-  8. Publish voice.intent event to EventBus
+The legacy Tier-0 regex FastMatcher, PatternGenerator and IntentCache
+are all gone. Every request runs a fresh classification so that a
+deleted / renamed device or freshly added radio station is reflected
+immediately — no stale ``(text → intent)`` mapping can return a pointer
+to something that no longer exists.
+
+Every query builds a tight prompt that contains only the intents /
+devices / rooms / stations whose names appear in the user's utterance.
+That keeps the context short (→ faster, more accurate on small models)
+and removes 2000+ lines of regex-generation and cache-promotion code.
+
+All non-English utterances arrive already translated to English by
+InputTranslator, so the filter and the prompt work in English only.
 """
 from __future__ import annotations
 
@@ -29,69 +35,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# ── Template responses for regex hits (no LLM needed) ──────────────────
-
-_TEMPLATE_RESPONSES: dict[str, dict[str, str]] = {
-    # device.on / device.off intentionally NOT here — they are owned by
-    # the device-control module which generates an LLM-rephrased ack via
-    # speak_action() after the real driver call succeeds. A templated
-    # response here would race with that and announce success even if the
-    # driver failed.
-    "media.play": {
-        "en": "Playing",
-        "uk": "Вмикаю",
-        "de": "Wird abgespielt",
-        "fr": "Lecture en cours",
-        "es": "Reproduciendo",
-    },
-    "media.stop": {
-        "en": "Stopped",
-        "uk": "Зупинено",
-        "de": "Gestoppt",
-        "fr": "Arrêté",
-        "es": "Detenido",
-    },
-    "media.pause": {
-        "en": "Paused",
-        "uk": "Пауза",
-        "de": "Pausiert",
-        "fr": "En pause",
-        "es": "En pausa",
-    },
-    "media.resume": {
-        "en": "Resuming",
-        "uk": "Продовжую",
-        "de": "Fortgesetzt",
-        "fr": "Reprise",
-        "es": "Reanudado",
-    },
-    "privacy_on": {
-        "en": "Privacy mode on",
-        "uk": "Режим приватності увімкнено",
-    },
-    "privacy_off": {
-        "en": "Privacy mode off",
-        "uk": "Режим приватності вимкнено",
-    },
-}
-
 from core.lang_utils import lang_code_to_name as _lang_name
-
-
-# ── Param normalization: non-English captured values → English ─────────
-_PARAM_NORMALIZE: dict[str, dict[str, str]] = {
-    "genre": {
-        "рок": "rock", "джаз": "jazz", "класику": "classical",
-        "класичну": "classical", "ембієнт": "ambient", "поп": "pop",
-        "новини": "news",
-    },
-}
-
-
-def _get_template_response(intent: str, lang: str) -> str:
-    """Get a template response for a regex-matched intent, or empty string."""
-    templates = _TEMPLATE_RESPONSES.get(intent, {})
-    return templates.get(lang, templates.get("en", ""))
 
 
 @dataclass
@@ -107,19 +51,51 @@ class IntentResult:
     raw_llm: str | None = None    # raw LLM response before parsing (debug)
 
 
-# Re-export for backward compatibility
-from system_modules.llm_engine.intent_compiler import SystemIntentEntry  # noqa: F401
+# Language-agnostic tokenisation. We intentionally do not keep per-
+# language stopword lists: a length threshold of 3 characters acts as a
+# universal stopword filter (articles, short prepositions and pronouns
+# are ≤2 chars in every language we support). ``\w+`` under the UNICODE
+# flag matches Latin, Cyrillic, Greek, CJK, Hangul, Arabic, Hebrew and
+# every other connected script, so Russian / Ukrainian / German /
+# Spanish / Chinese all tokenise correctly with the exact same regex.
+_TOKEN_MIN_LEN = 3
+_TOKEN_RE = re.compile(r"\w{%d,}" % _TOKEN_MIN_LEN, flags=re.UNICODE)
 
 
-# LLM-prompt size guards. The "Devices by room" section grows with the
-# registry; without these caps a 100-device house would saturate the
-# context window and the LLM would lose the spatial story.
-_DEVICES_PER_ROOM_LIMIT = 10
-_ROOMS_LIMIT = 30
+def _tokenize(text: str) -> list[str]:
+    """Return ≥3-char word tokens, NFKC-normalised and lower-cased.
+
+    Language-agnostic: works on any script that has a Unicode ``\\w``
+    class, which is every modern alphabet we care about.
+    """
+    if not text:
+        return []
+    import unicodedata
+    norm = unicodedata.normalize("NFKC", text.lower())
+    return _TOKEN_RE.findall(norm)
+
+
+def _normalize_en(text: str) -> str:
+    """NFKC + lower + strip leading EN article + collapse whitespace.
+
+    Applied to *English* fields coming out of Argos (``name_en``,
+    ``location_en``) to erase inconsistent single-word outputs like
+    ``"the living room"`` vs ``"living room"``. Safe to call on any
+    string — non-English input simply loses its trailing spaces.
+    """
+    if not text:
+        return ""
+    import unicodedata
+    s = unicodedata.normalize("NFKC", text).strip().lower()
+    for article in ("the ", "a ", "an "):
+        if s.startswith(article):
+            s = s[len(article):]
+            break
+    return " ".join(s.split())
 
 
 class IntentRouter:
-    """Intent router: DB regex → Module Bus → Cache → LLM → Cloud."""
+    """Intent router: Module Bus → Local LLM → Cloud LLM (no cache)."""
 
     def __init__(self) -> None:
         self._live_log_fn: Any = None  # callback for live monitor logging
@@ -135,16 +111,6 @@ class IntentRouter:
             except Exception:
                 pass
 
-    # ── Legacy registration (no-op, kept for backward compat) ────────
-
-    def register_system_intent(self, entry: SystemIntentEntry) -> None:
-        """No-op. Intents are now loaded from DB by IntentCompiler."""
-        pass
-
-    def unregister_system_intents(self, module: str) -> None:
-        """No-op. Intents are now loaded from DB by IntentCompiler."""
-        pass
-
     # ── Main routing ────────────────────────────────────────────────────
 
     async def route(
@@ -154,56 +120,33 @@ class IntentRouter:
         lang: str = "en",
         *,
         tts_lang: str | None = None,
+        native_text: str | None = None,
         trace: bool = False,
     ) -> IntentResult | tuple[IntentResult, list[dict[str, Any]]]:
-        """Route user text: DB regex → Module Bus → Cache → LLM → Cloud.
+        """Route user text: Module Bus → Local LLM → Cloud LLM.
 
         Args:
-            lang: STT-detected language (used for regex matching, cache key)
-            tts_lang: TTS output language (used for response generation).
-                      If None, defaults to lang.
+            text: English form of the utterance (post-Argos).
+            lang: STT-detected language code.
+            tts_lang: TTS output language. Defaults to ``lang``.
+            native_text: The original utterance BEFORE Argos. When set,
+                the catalog filter and param sanitizer consider tokens
+                from BOTH ``text`` and ``native_text``, so an Argos
+                misfire on the source verb (e.g. "вимкни" → "turn") no
+                longer breaks classification. Defaults to ``text`` when
+                there was no translation step.
 
         Returns IntentResult (or (IntentResult, trace_steps) when trace=True).
         """
         if tts_lang is None:
             tts_lang = lang
+        if native_text is None:
+            native_text = text
         start_ms = int(time.time() * 1000)
         steps: list[dict[str, Any]] = [] if trace else []
 
         def _elapsed() -> int:
             return int(time.time() * 1000) - start_ms
-
-        # ── Tier 0: IntentCompiler (DB-driven regex, all patterns) ──
-        from system_modules.llm_engine.intent_compiler import get_intent_compiler
-        db_match = get_intent_compiler().match(text, lang=lang)
-
-        if trace:
-            steps.append({
-                "tier": "0", "name": "IntentCompiler (DB)",
-                "status": "hit" if db_match else "miss",
-                "ms": _elapsed(),
-                "detail": db_match["intent"] if db_match else None,
-            })
-
-        if db_match:
-            response = _get_template_response(db_match["intent"], tts_lang)
-            params = db_match.get("params", {})
-            # Inject entity_ref into params so handlers can resolve by ID
-            entity_ref = db_match.get("entity_ref")
-            if entity_ref:
-                params["entity_ref"] = entity_ref
-            result = IntentResult(
-                intent=db_match["intent"],
-                response=response,
-                action=None,
-                source="system_module",
-                latency_ms=_elapsed(),
-                lang=lang,
-                user_id=user_id,
-                params=params,
-            )
-            await self._publish_event(result, raw_text=text, lang=lang)
-            return (result, steps) if trace else result
 
         # ── Tier 1: Module Bus (WebSocket user module intents) ──
         bus_hit = False
@@ -272,48 +215,21 @@ class IntentRouter:
                 "detail": bus_error,
             })
 
-        # ── Check IntentCache (SQLite) before LLM ──
-        cached = None
-        try:
-            from system_modules.llm_engine.intent_cache import get_intent_cache
-            cached = await get_intent_cache().get(text, lang)
-        except Exception:
-            pass
-
-        if cached:
-            if trace:
-                steps.append({
-                    "tier": "cache", "name": "IntentCache",
-                    "status": "hit",
-                    "ms": _elapsed(),
-                    "detail": cached.get("intent"),
-                })
-            result = IntentResult(
-                intent=cached["intent"],
-                response=cached.get("response", ""),
-                action=None,
-                source="cache",
-                latency_ms=_elapsed(),
-                lang=lang,
-                user_id=user_id,
-                params=cached.get("params", {}),
-            )
-            # Resolve entity_ref for cached results (may lack it)
-            result = await self._resolve_entity_ref(result)
-            await self._publish_event(result, raw_text=text, lang=lang)
-            return (result, steps) if trace else result
-        elif trace:
-            steps.append({
-                "tier": "cache", "name": "IntentCache",
-                "status": "miss",
-                "ms": _elapsed(),
-            })
+        # No IntentCache: the router always runs a fresh classification.
+        # Devices, rooms and radio stations can change between requests,
+        # and a cached (text → intent) pair could return a classification
+        # that references a deleted or renamed entity. The keyword-
+        # filtered catalog is cheap enough (a few SQL reads + one LLM
+        # call) that the ~10 ms cache saving is not worth the risk of
+        # stale hits.
 
         # ── Tier 1: Local LLM (single call) ──
         llm_result = None
         llm_error = None
         try:
-            llm_result = await self._local_llm_classify(text, lang, tts_lang=tts_lang)
+            llm_result = await self._local_llm_classify(
+                text, lang, tts_lang=tts_lang, native_text=native_text,
+            )
         except asyncio.TimeoutError:
             llm_error = "timeout"
             logger.warning("Local LLM timeout for: %s", text[:50])
@@ -329,24 +245,11 @@ class IntentRouter:
                 "detail": llm_result.intent if llm_result else llm_error,
             })
 
-        if llm_result is not None:
+        if llm_result is not None and llm_result.intent != "unknown":
             llm_result.latency_ms = _elapsed()
             llm_result.lang = lang
             llm_result.user_id = user_id
-            # Resolve entity_ref BEFORE caching (so cache stores it)
             llm_result = await self._resolve_entity_ref(llm_result)
-            # Cache successful classification
-            if llm_result.intent not in ("unknown", "llm.response"):
-                try:
-                    from system_modules.llm_engine.intent_cache import get_intent_cache
-                    await get_intent_cache().put(
-                        text, lang, llm_result.intent,
-                        llm_result.params or {},
-                        llm_result.response,
-                    )
-                except Exception:
-                    pass
-            # Device disambiguation: resolve entity+location → device_id
             llm_result = await self._disambiguate_device(llm_result, tts_lang)
             await self._publish_event(llm_result, raw_text=text, lang=lang)
             return (llm_result, steps) if trace else llm_result
@@ -357,7 +260,9 @@ class IntentRouter:
         cloud_cfg = self._get_cloud_config()
         if cloud_cfg:
             try:
-                cloud_result = await self._cloud_llm_classify(text, lang, cloud_cfg, tts_lang=tts_lang)
+                cloud_result = await self._cloud_llm_classify(
+                    text, lang, cloud_cfg, tts_lang=tts_lang, native_text=native_text,
+                )
             except asyncio.TimeoutError:
                 cloud_error = "timeout"
             except Exception as exc:
@@ -372,23 +277,11 @@ class IntentRouter:
                     "detail": cloud_result.intent if cloud_result else cloud_error,
                 })
 
-            if cloud_result is not None:
+            if cloud_result is not None and cloud_result.intent != "unknown":
                 cloud_result.latency_ms = _elapsed()
                 cloud_result.lang = lang
                 cloud_result.user_id = user_id
-                # Resolve entity_ref BEFORE caching
                 cloud_result = await self._resolve_entity_ref(cloud_result)
-                if cloud_result.intent not in ("unknown", "llm.response"):
-                    try:
-                        from system_modules.llm_engine.intent_cache import get_intent_cache
-                        await get_intent_cache().put(
-                            text, lang, cloud_result.intent,
-                            cloud_result.params or {},
-                            cloud_result.response,
-                        )
-                    except Exception:
-                        pass
-                # Device disambiguation
                 cloud_result = await self._disambiguate_device(cloud_result, tts_lang)
                 await self._publish_event(cloud_result, raw_text=text, lang=lang)
                 return (cloud_result, steps) if trace else cloud_result
@@ -400,9 +293,11 @@ class IntentRouter:
                 "detail": "not configured",
             })
 
-        # ── Fallback ──
-        fallback_msg = "Sorry, I didn't understand. Please try again."
-
+        # ── Fallback: classifier found nothing, LLM timed out, etc. ──
+        # No hardcoded English text — VoiceCore / format_action_context()
+        # will turn ``intent="unknown"`` into the deterministic fallback
+        # phrase ("I did not understand that command.") and OutputTranslator
+        # renders it in the TTS language.
         if trace:
             steps.append({
                 "tier": "—", "name": "Fallback",
@@ -412,7 +307,7 @@ class IntentRouter:
 
         result = IntentResult(
             intent="unknown",
-            response=fallback_msg,
+            response="",
             action=None,
             source="fallback",
             latency_ms=_elapsed(),
@@ -424,29 +319,50 @@ class IntentRouter:
 
     # ── Local LLM (single call) ────────────────────────────────────────
 
-    async def _local_llm_classify(self, text: str, lang: str, *, tts_lang: str | None = None) -> IntentResult | None:
+    async def _local_llm_classify(
+        self,
+        text: str,
+        lang: str,
+        *,
+        tts_lang: str | None = None,
+        native_text: str | None = None,
+    ) -> IntentResult | None:
         """Single LLM call via core.llm.llm_call(): returns intent JSON.
 
-        Text is expected to be already in English (translated by InputTranslator
-        before reaching IntentRouter). No language instructions in prompt.
+        ``text`` is the post-Argos English form, ``native_text`` is the
+        original utterance (may equal ``text`` for English speakers).
+        Both forms feed the bilingual filter and post-classification
+        sanitizer so Argos glitches cannot drop information.
         """
         from core.llm import llm_call
 
-        catalog = self._build_intent_catalog(lang)
+        native_text = native_text or text
+        catalog = await self._build_filtered_catalog(text, native_text=native_text)
 
-        # Text is already English — send directly, no language wrapping
+        # Text is already English — send directly, no language wrapping.
+        # 8k context gives headroom for the enriched catalog (intent
+        # descriptions, per-device names, radio station list).
+        # max_tokens=256: the JSON response is small (~100 tokens); capping
+        # tight cuts generation time dramatically on 3B models (qwen2.5,
+        # phi3:mini) without truncating real answers.
         raw = await llm_call(
             text,
             prompt_key="intent",
             extra_context=catalog,
             temperature=0.1,
-            timeout=60.0,
+            max_tokens=256,
+            timeout=10.0,
+            num_ctx=8192,
         )
 
         if not raw:
             return None
 
-        return self._parse_llm_response(raw, source="llm")
+        # Sanitizer checks BOTH the Argos-translated form AND the
+        # original utterance, so values spoken natively survive even if
+        # the English form dropped them.
+        sanity_text = f"{text}\n{native_text}" if native_text != text else text
+        return self._parse_llm_response(raw, source="llm", utter_text=sanity_text)
 
     # ── Cloud LLM ──────────────────────────────────────────────────────
 
@@ -484,201 +400,339 @@ class IntentRouter:
         return None
 
     async def _cloud_llm_classify(
-        self, text: str, lang: str, cloud_cfg: dict, *, tts_lang: str | None = None,
+        self,
+        text: str,
+        lang: str,
+        cloud_cfg: dict,
+        *,
+        tts_lang: str | None = None,
+        native_text: str | None = None,
     ) -> IntentResult | None:
-        """Cloud LLM classification via core.llm.llm_call().
-
-        Text is already English (translated by InputTranslator).
-        """
+        """Cloud LLM classification via core.llm.llm_call()."""
         from core.llm import llm_call
 
-        catalog = self._build_intent_catalog(lang)
+        native_text = native_text or text
+        catalog = await self._build_filtered_catalog(text, native_text=native_text)
 
         raw = await llm_call(
             text,
             prompt_key="intent",
             extra_context=catalog,
             temperature=0.1,
+            max_tokens=256,
             timeout=15.0,
+            num_ctx=8192,
         )
 
         if not raw:
             return None
 
-        return self._parse_llm_response(raw, source="cloud")
+        sanity_text = f"{text}\n{native_text}" if native_text != text else text
+        return self._parse_llm_response(raw, source="cloud", utter_text=sanity_text)
 
-    # ── Prompt building ────────────────────────────────────────────────
+    # ── Prompt building (per-request word-overlap filter) ─────────────
 
-    def _build_intent_catalog(self, lang: str) -> str:
-        """Build compact dynamic intent catalog (extra_context for llm_call).
+    # Static instructions appended to the user-editable identity. Describes
+    # the JSON contract and the allowed params. Kept tight on purpose —
+    # small models are better classifiers than multi-shot imitators.
+    _SCHEMA_HEADER = (
+        "Reply with ONE JSON object, no prose, no markdown, no code fences:\n"
+        '{"intent":"<namespace.action>","params":{"entity":"...","location":"..."}}\n\n'
+        "Rules:\n"
+        "- Pick the intent name EXACTLY from the Intents list below.\n"
+        "- Use \"unknown\" if nothing in the list fits the command.\n"
+        "- Do NOT invent intent names. Do NOT add a \"response\" field.\n"
+        "- Include a param ONLY if the user literally said it. If the user\n"
+        "  did not name a device/station/number, OMIT that key. Never copy\n"
+        "  placeholder values from the schema above.\n\n"
+        "Params:\n"
+        "- entity: device TYPE when the user said one (light, outlet, air_conditioner, lock, thermostat, ...)\n"
+        "- location: room name from the catalog when the user said a room\n"
+        "- value: the number the user explicitly said (temperature, level, volume, ...)\n"
+        "- name_en: exact catalog device name ONLY when the user said that exact name\n"
+        "- station / genre: ONLY for media intents when the user named a station or genre\n"
+    )
 
-        Optimized for small local models (1-3B): intent names grouped by
-        namespace (no descriptions), compact device listing, room translations.
+    def invalidate_catalog_cache(self) -> None:
+        """No-op. Catalog is built per-request from live DB state."""
+        return
+
+    async def _build_filtered_catalog(
+        self, user_text: str, native_text: str | None = None,
+    ) -> str:
+        """Assemble the dynamic prompt section for one utterance.
+
+        The filter tokenises BOTH ``user_text`` (post-Argos English) AND
+        ``native_text`` (original pre-translation) with the same Unicode
+        tokeniser. Match-set is the union, so an utterance whose verb
+        Argos dropped ("вимкни" → "turn") still picks up the right
+        intents via the native token "вимкни" hitting the device's
+        Ukrainian name/location.
         """
-        lang_name = _lang_name(lang)
-        parts: list[str] = []
+        if native_text is None:
+            native_text = user_text
+        tokens = set(_tokenize(user_text)) | set(_tokenize(native_text))
+        parts: list[str] = [self._SCHEMA_HEADER]
 
-        # Compact intents: group by namespace, pipe-separated actions
+        # ── Intents via description + verb word overlap ──
+        matched_intents: list[tuple[str, str]] = []
         try:
             from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            # group: {"device": ["on","off",...], "media": ["play","stop",...]}
-            ns_map: dict[str, list[str]] = {}
-            for ci in get_intent_compiler().get_all_intents():
-                dot = ci.intent.find(".")
-                if dot > 0:
-                    ns = ci.intent[:dot]
-                    action = ci.intent[dot + 1:]
-                else:
-                    ns = ci.intent
-                    action = ""
-                ns_map.setdefault(ns, []).append(action)
-            if ns_map:
-                items = []
-                for ns, actions in sorted(ns_map.items()):
-                    items.append(f"{ns}.{'|'.join(actions)}" if actions else ns)
-                parts.append("Intents: " + ", ".join(items))
-        except Exception:
-            pass
+            compiled = get_intent_compiler().get_all_intents()
+            for ci in compiled:
+                desc = (ci.description or "").strip().replace("\n", " ")
+                desc_tokens = set(_tokenize(desc))
+                verb_tokens = set(
+                    _tokenize(ci.intent.replace(".", " ").replace("_", " "))
+                )
+                if tokens & (desc_tokens | verb_tokens):
+                    short = desc if len(desc) <= 80 else desc[:77] + "..."
+                    matched_intents.append((ci.intent, short))
+        except Exception as exc:
+            logger.debug("intent filter failed: %s", exc)
 
-        # Add module intents not in IntentCompiler (from registered_modules)
-        db_catalog = self._load_db_catalog_compact()
-        if db_catalog:
-            parts.append(db_catalog)
+        # Always include "unknown" so the LLM has a safe bail-out.
+        # Never include "chat" — freeform falls through to unknown and
+        # VoiceCore plays the deterministic fallback phrase.
+        matched_intents.append((
+            "unknown",
+            "Use this when no other intent fits the command",
+        ))
 
-        # No language enforcement — core operates in English.
-        # OutputTranslator handles en→target_lang before TTS.
+        intent_lines = [
+            f"  {n} — {d}" if d else f"  {n}" for n, d in matched_intents
+        ]
+        parts.append("Intents:\n" + "\n".join(intent_lines))
 
-        return "\n".join(parts)
+        # ── Devices / radio stations ──
+        db_part = await self._load_db_filtered_catalog(tokens)
+        if db_part:
+            parts.append(db_part)
 
-    def _load_db_catalog_compact(self) -> str:
-        """Load compact dynamic catalog from DB.
+        built = "\n\n".join(parts)
+        logger.debug(
+            "filtered catalog: %d intents, %d chars (tokens=%s)",
+            len(matched_intents), len(built), sorted(tokens),
+        )
+        return built
 
-        Compact format for small local models:
-        - Module intents as namespace groups (no descriptions)
-        - Devices as "room (type, type)" (no full names)
-        - Room UA→EN translations from device metadata
+    async def _load_db_filtered_catalog(self, tokens: set[str]) -> str:
+        """Pull devices / radio stations that match ``tokens``.
+
+        Matching is **bilingual**: each device and station is compared
+        against BOTH its native-language fields (``meta.name``,
+        ``meta.location``, ``name_user``, ``genre_user``) AND its English
+        fields (``meta.name_en``, ``meta.location_en``, ``name_en``,
+        ``genre_en``). The utterance tokens are Unicode so they can
+        match whichever form appears in the user's actual speech.
+
+        Emitting the catalog then includes both forms so a small LLM
+        classifier sees a single row like
+        ``вітальня / living room: light "світло" / "light"`` and can
+        key off whichever signal is clearer even when Argos mangles
+        the input translation.
         """
+        if not tokens:
+            return ""
         try:
             from core.module_loader.sandbox import get_sandbox
             sf = get_sandbox()._session_factory
             if sf is None:
                 return ""
 
-            import asyncio
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                return ""
+            from sqlalchemy import select
+            from core.registry.models import RadioStation, Device
+            import json as _json
 
-            import threading
-            result: list[str] = [""]
+            parts: list[str] = []
 
-            def _sync_load() -> None:
-                async def _inner() -> str:
-                    from sqlalchemy import select
-                    from core.registry.models import RegisteredModule, RadioStation, Device
+            async with sf() as session:
+                # ── Devices (bilingual matching) ──
+                devices = list(
+                    (await session.execute(select(Device))).scalars().all()
+                )
+                # matched_rooms: key → list[(etype, name_native, name_en)]
+                matched_rooms: dict[str, list[tuple[str, str, str]]] = {}
+                for d in devices:
+                    try:
+                        meta = _json.loads(d.meta) if d.meta else {}
+                    except Exception:
+                        meta = {}
+                    name_native = (meta.get("name") or d.name or "").strip()
+                    name_en     = _normalize_en(meta.get("name_en") or "")
+                    room_native = (meta.get("location") or d.location or "").strip()
+                    room_en     = _normalize_en(meta.get("location_en") or "")
+                    etype       = (d.entity_type or "device").strip()
 
-                    parts: list[str] = []
+                    haystack: set[str] = set()
+                    haystack |= set(_tokenize(name_native))
+                    haystack |= set(_tokenize(name_en))
+                    haystack |= set(_tokenize(room_native))
+                    haystack |= set(_tokenize(room_en))
+                    haystack |= set(_tokenize(etype.replace("_", " ")))
 
-                    async with sf() as session:
-                        # Module intents — compact namespace groups
-                        # Only add intents NOT already in IntentCompiler
-                        known_intents: set[str] = set()
-                        try:
-                            from system_modules.llm_engine.intent_compiler import get_intent_compiler
-                            for ci in get_intent_compiler().get_all_intents():
-                                known_intents.add(ci.intent)
-                        except Exception:
-                            pass
+                    if tokens & haystack:
+                        # Pick the best room label: prefer joined form.
+                        if room_native and room_en and room_native.lower() != room_en:
+                            room_key = f"{room_native} / {room_en}"
+                        else:
+                            room_key = room_en or room_native or "unassigned"
+                        matched_rooms.setdefault(room_key, []).append(
+                            (etype, name_native, name_en)
+                        )
 
-                        stmt = select(RegisteredModule).where(RegisteredModule.enabled == True)
-                        modules = list((await session.execute(stmt)).scalars().all())
-                        ns_extra: dict[str, list[str]] = {}
-                        for m in modules:
-                            for intent in m.get_intents():
-                                if intent not in known_intents:
-                                    dot = intent.find(".")
-                                    if dot > 0:
-                                        ns_extra.setdefault(intent[:dot], []).append(intent[dot + 1:])
-                                    else:
-                                        ns_extra.setdefault(intent, [])
-                        if ns_extra:
-                            items = []
-                            for ns, actions in sorted(ns_extra.items()):
-                                items.append(f"{ns}.{'|'.join(actions)}" if actions else ns)
-                            parts.append(", ".join(items))
+                # Emit ENGLISH-only forms into the prompt. Bilingual
+                # MATCHING happens above, but the prompt must show a
+                # single canonical form so small LLMs do not copy joined
+                # "native / english" strings verbatim into params.
+                if matched_rooms:
+                    lines: list[str] = []
+                    for room_key, entries in sorted(matched_rooms.items()):
+                        # ``room_key`` may be "native / english" internally
+                        # for uniqueness; strip back to english-only for
+                        # display.
+                        room_display = room_key.split(" / ")[-1] or "unassigned"
+                        rendered_entries = [
+                            f'{etype} "{ne or nn}"'
+                            for etype, nn, ne in entries
+                        ]
+                        lines.append(f"  {room_display}: " + ", ".join(rendered_entries))
+                    parts.append("Matching devices:\n" + "\n".join(lines))
 
-                        # Devices — compact: "room (type, type)"
-                        devices = list((await session.execute(select(Device))).scalars().all())
-                        if devices:
-                            import json as _json
-                            by_room: dict[str, list[str]] = {}
-                            room_ua_en: dict[str, str] = {}
-                            for d in devices:
-                                try:
-                                    meta = _json.loads(d.meta) if d.meta else {}
-                                except Exception:
-                                    meta = {}
-                                room_en = (meta.get("location_en") or "").strip()
-                                room_ua = (meta.get("location") or "").strip()
-                                etype = (d.entity_type or "device").strip()
-                                if room_en:
-                                    by_room.setdefault(room_en, []).append(etype)
-                                    if room_ua and room_ua != room_en:
-                                        room_ua_en[room_ua] = room_en
-                            if by_room:
-                                items = []
-                                for room in sorted(by_room.keys())[:_ROOMS_LIMIT]:
-                                    types = list(dict.fromkeys(by_room[room]))[:_DEVICES_PER_ROOM_LIMIT]
-                                    items.append(f"{room} ({', '.join(types)})")
-                                parts.append("Rooms: " + ", ".join(items))
-                            # Room UA→EN translations
-                            if room_ua_en:
-                                mappings = [f"{ua}={en}" for ua, en in room_ua_en.items()]
-                                parts.append("Room names: " + ", ".join(mappings))
+                # ── Radio stations (bilingual on name / genre) ──
+                stmt = select(RadioStation).where(
+                    RadioStation.enabled == True  # noqa: E712
+                )
+                stations = list((await session.execute(stmt)).scalars().all())
+                matched_stations: list[str] = []
+                for s in stations:
+                    name_native = (getattr(s, "name_user", "") or "").strip()
+                    name_en     = (s.name_en or "").strip()
+                    genre_native= (getattr(s, "genre_user", "") or "").strip()
+                    genre_en    = (s.genre_en or "").strip()
 
-                        # Radio stations — just names
-                        stmt = select(RadioStation).where(RadioStation.enabled == True)
-                        stations = list((await session.execute(stmt)).scalars().all())
-                        if stations:
-                            names = [s.name_en for s in stations[:10]]
-                            parts.append(f"Radio: {', '.join(names)}")
+                    hay: set[str] = set()
+                    hay |= set(_tokenize(name_native))
+                    hay |= set(_tokenize(name_en))
+                    hay |= set(_tokenize(genre_native))
+                    hay |= set(_tokenize(genre_en))
 
-                    return "\n".join(parts)
+                    if tokens & hay:
+                        label = name_en or name_native
+                        genre_label = genre_en or genre_native
+                        matched_stations.append(
+                            f"{label} ({genre_label})" if genre_label else label
+                        )
+                if matched_stations:
+                    parts.append(
+                        "Matching radio stations: " + ", ".join(matched_stations[:15])
+                    )
 
-                new_loop = asyncio.new_event_loop()
-                try:
-                    result[0] = new_loop.run_until_complete(_inner())
-                finally:
-                    new_loop.close()
-
-            t = threading.Thread(target=_sync_load, daemon=True)
-            t.start()
-            t.join(timeout=3.0)
-            return result[0]
+            return "\n\n".join(parts)
 
         except Exception as exc:
-            logger.debug("DB catalog load failed: %s", exc)
+            logger.debug("DB filtered catalog load failed: %s", exc)
             return ""
 
     # ── Response parsing ───────────────────────────────────────────────
 
-    def _parse_llm_response(self, raw: str, source: str = "llm") -> IntentResult | None:
-        """Parse LLM JSON response into IntentResult."""
-        raw_debug = raw
+    # Fields the LLM likes to hallucinate into when a schema slot exists
+    # but the user said nothing about it. They go through the stricter
+    # substring check below. Intentionally generic — no language-specific
+    # rules, no number-word lists. If the value literally appears in the
+    # original utterance (NFKC-normalised, case-insensitive), we keep
+    # it; otherwise it's a fabrication.
+    _SANITIZE_KEYS = ("name_en", "station", "genre", "value")
 
-        # Strip code fences
-        cleaned = raw.strip()
+    @staticmethod
+    def _in_utterance(value: Any, utter: str) -> bool:
+        """True if ``value`` appears as a substring in ``utter``.
+
+        NFKC + case-fold on both sides. Language-agnostic: works for
+        any script the user's Vosk/Argos pair produces.
+        """
+        if value in (None, "", "null"):
+            return False
+        import unicodedata
+        v = unicodedata.normalize("NFKC", str(value)).strip().lower()
+        if not v:
+            return False
+        u = unicodedata.normalize("NFKC", utter or "").lower()
+        return v in u
+
+    def _sanitize_params(
+        self, params: dict[str, Any], utter_text: str,
+    ) -> dict[str, Any]:
+        """Drop params that cannot be justified from the utterance.
+
+        Universal rule: ``entity`` and ``location`` pass through (the
+        LLM often canonicalises a room or device type and that is
+        allowed). Everything else in ``_SANITIZE_KEYS`` must either
+        (a) appear literally as a substring in the original utterance,
+        or (b) for ``value`` specifically, be a number whose digits
+        appear in the utterance.
+        """
+        clean: dict[str, Any] = {}
+        digit_only_utter = bool(re.search(r"\d", utter_text or ""))
+        for key, raw_val in params.items():
+            if raw_val in (None, "", "null"):
+                continue
+            val_str = str(raw_val).strip()
+            if not val_str or val_str.lower() == "null":
+                continue
+
+            if key in self._SANITIZE_KEYS:
+                if key == "value":
+                    # Numeric values need at least one digit in the source
+                    # (any language) OR a spelled-out form that literally
+                    # appears in the utterance.
+                    is_digit_value = bool(re.search(r"\d", val_str))
+                    if is_digit_value and digit_only_utter:
+                        pass  # keep
+                    elif self._in_utterance(val_str, utter_text):
+                        pass  # keep
+                    else:
+                        logger.debug(
+                            "dropped fabricated value=%r (utter=%r)",
+                            raw_val, utter_text,
+                        )
+                        continue
+                else:
+                    if not self._in_utterance(val_str, utter_text):
+                        logger.debug(
+                            "dropped fabricated %s=%r (utter=%r)",
+                            key, raw_val, utter_text,
+                        )
+                        continue
+            clean[key] = raw_val
+        return clean
+
+    def _parse_llm_response(
+        self,
+        raw: str,
+        source: str = "llm",
+        utter_text: str = "",
+    ) -> IntentResult | None:
+        """Parse the classifier JSON into an IntentResult.
+
+        The contract is strict: the LLM must return a JSON object with
+        ``intent`` + optional ``params``. Any ``response`` key it tries to
+        sneak in is silently dropped — the spoken reply is composed later
+        by :func:`format_action_context`. Parse errors / empty output
+        degrade to ``intent="unknown"`` so the caller always gets a
+        well-formed :class:`IntentResult`.
+        """
+        raw_debug = raw
+        cleaned = (raw or "").strip()
         if cleaned.startswith("```"):
             cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
             cleaned = re.sub(r"\s*```$", "", cleaned)
 
-        # Find JSON object
         start_idx = cleaned.find("{")
         end_idx = cleaned.rfind("}")
         if start_idx == -1 or end_idx == -1:
             return IntentResult(
-                intent="llm.response", response=cleaned, action=None,
+                intent="unknown", response="", action=None,
                 source=source, latency_ms=0, raw_llm=raw_debug,
             )
 
@@ -686,40 +740,46 @@ class IntentRouter:
             data = json.loads(cleaned[start_idx:end_idx + 1])
         except json.JSONDecodeError:
             return IntentResult(
-                intent="llm.response", response=cleaned, action=None,
+                intent="unknown", response="", action=None,
                 source=source, latency_ms=0, raw_llm=raw_debug,
             )
 
-        intent_name = data.get("intent", "")
+        intent_name = (data.get("intent") or "").strip()
         params = data.get("params") or {}
-        response = data.get("response", "")
+
+        # Legacy top-level entity/location shim: some models still emit
+        # these at the root instead of under params. Fold them in silently.
         entity = data.get("entity")
         location = data.get("location")
-
-        # Merge entity/location into params for module consumption
         if entity and entity != "null":
-            params["entity"] = entity
+            params.setdefault("entity", entity)
         if location and location != "null":
-            params["location"] = location
+            params.setdefault("location", location)
 
-        if intent_name and intent_name != "unknown":
-            return IntentResult(
-                intent=intent_name, response=response, action=None,
-                source=source, latency_ms=0, params=params,
-                raw_llm=raw_debug,
-            )
-        elif response:
-            return IntentResult(
-                intent="llm.response", response=response, action=None,
-                source=source, latency_ms=0, params=params,
-                raw_llm=raw_debug,
-            )
+        # "chat" is a leftover from older prompts; collapse it to unknown
+        # so the deterministic fallback speech fires.
+        if not intent_name or intent_name == "chat":
+            intent_name = "unknown"
 
-        return None
+        # Sanity-check params against the original utterance so the LLM
+        # can't invent device names, stations, genres, or numeric values.
+        # Substring-based — language-agnostic.
+        params = self._sanitize_params(params, utter_text)
+
+        return IntentResult(
+            intent=intent_name, response="", action=None,
+            source=source, latency_ms=0, params=params,
+            raw_llm=raw_debug,
+        )
 
     def refresh_system_prompt(self) -> None:
-        """No-op kept for API compatibility. Prompts are built fresh each time."""
-        pass
+        """Invalidate the cached intent catalog.
+
+        Called from ``core.api.helpers.on_entity_changed`` whenever a
+        registry row (device/radio/scene) changes, so the next LLM call
+        rebuilds the catalog from fresh DB state.
+        """
+        self.invalidate_catalog_cache()
 
     def _get_known_intent_names(self) -> set[str]:
         """Collect all known intent names from DB compiler + module bus."""
@@ -872,19 +932,15 @@ class IntentRouter:
 
     @staticmethod
     def _normalize_params(params: dict[str, Any] | None) -> dict[str, Any]:
-        """Normalize param values to English for internal EventBus communication.
+        """Pass-through for historical callers.
 
-        E.g. Ukrainian genre names captured by regex → English equivalents.
+        The old implementation mapped Cyrillic genre/mode values back to
+        their English form so downstream modules could assume English.
+        With InputTranslator handling the whole utterance before it ever
+        reaches the router, every captured value is already English, so
+        no normalization is needed.
         """
-        if not params:
-            return {}
-        result: dict[str, Any] = {}
-        for key, val in params.items():
-            if isinstance(val, str) and key in _PARAM_NORMALIZE:
-                result[key] = _PARAM_NORMALIZE[key].get(val.lower(), val)
-            else:
-                result[key] = val
-        return result
+        return dict(params) if params else {}
 
     async def _publish_event(self, result: IntentResult, raw_text: str = "", lang: str = "en") -> None:
         try:

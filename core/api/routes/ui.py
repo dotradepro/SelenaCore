@@ -341,23 +341,15 @@ async def _read_llm_engine_status() -> dict[str, Any]:
     except Exception as exc:
         logger.debug("LLM cloud providers enumeration failed: %s", exc)
 
-    cache_size = 0
-    cache_hot = 0
-    try:
-        from system_modules.llm_engine.intent_cache import get_intent_cache
-        ic = get_intent_cache()
-        cache_size = ic.count
-        frequent = await ic.get_frequent(min_count=5)
-        cache_hot = len(frequent)
-    except Exception as exc:
-        logger.debug("LLM intent cache stats failed: %s", exc)
-
     return {
         "provider": active_provider,
         "model": active_model,
         "two_step": two_step,
         "cloud_providers": cloud_providers,
-        "intent_cache": {"size": cache_size, "hot": cache_hot},
+        # Legacy stats block for the UI store. IntentCache was removed —
+        # always return zeros so the frontend doesn't have to special-case
+        # the missing field.
+        "intent_cache": {"size": 0, "hot": 0},
     }
 
 

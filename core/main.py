@@ -84,6 +84,20 @@ def _migrate_enabled_column(connection) -> None:
         logger.info("Migration: added enabled column to devices")
 
 
+def _migrate_intent_entity_types(connection) -> None:
+    """Add entity_types JSON column to intent_definitions (no-hardcode refactor)."""
+    import sqlalchemy as sa
+    inspector = sa.inspect(connection)
+    if "intent_definitions" not in inspector.get_table_names():
+        return
+    columns = {c["name"] for c in inspector.get_columns("intent_definitions")}
+    if "entity_types" not in columns:
+        connection.execute(sa.text(
+            "ALTER TABLE intent_definitions ADD COLUMN entity_types TEXT"
+        ))
+        logger.info("Migration: added entity_types column to intent_definitions")
+
+
 async def _preload_module_registry(session_factory) -> None:
     """Load registered_modules from DB into in-memory ModuleRegistry.
 
@@ -229,6 +243,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await conn.run_sync(_migrate_entity_location_columns)
         # Migration: add enabled column for inactive cloud-only Tuya devices
         await conn.run_sync(_migrate_enabled_column)
+        # Migration: add entity_types JSON column on intent_definitions
+        await conn.run_sync(_migrate_intent_entity_types)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     app.state.db_session_factory = session_factory
     app.state.db_engine = engine
@@ -315,47 +331,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Set snapshot providers for SyncManager hello message enrichment
     _setup_snapshot_providers(session_factory, manager, sandbox)
 
-    # Hot-cache promotion: every hour, walk IntentCache for phrases
-    # that have been seen >=5 times and turn them into FastMatcher
-    # patterns (source='auto_learned'). After enough usage the LLM
-    # round-trip is bypassed entirely for repeated commands.
-    async def _promote_cache_loop(interval_sec: int = 3600) -> None:
-        from system_modules.llm_engine.intent_cache import get_intent_cache
-        from system_modules.llm_engine.intent_compiler import get_intent_compiler
-        while True:
-            try:
-                await asyncio.sleep(interval_sec)
-                cache = get_intent_cache()
-                n = await cache.promote_frequent_to_patterns(
-                    min_hits=5, session_factory=session_factory,
-                )
-                if n:
-                    logger.info(
-                        "Cache promoted %d hot phrases to FastMatcher patterns", n,
-                    )
-                    await get_intent_compiler().full_reload()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.warning("Cache promotion loop error: %s", exc)
-
-    app.state.cache_promotion_task = asyncio.create_task(
-        _promote_cache_loop(), name="cache_promotion",
-    )
-
     logger.info("SelenaCore ready on port %s", settings.core_port)
 
     yield  # App is running
 
     # Shutdown
     logger.info("SelenaCore shutting down...")
-    promo_task = getattr(app.state, "cache_promotion_task", None)
-    if promo_task is not None:
-        promo_task.cancel()
-        try:
-            await promo_task
-        except (asyncio.CancelledError, Exception):
-            pass
     await cloud_sync.stop()
     await bus.publish(
         type=CORE_SHUTDOWN,

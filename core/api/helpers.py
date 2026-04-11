@@ -112,52 +112,43 @@ async def translate_keywords_to_en(keywords: list[str]) -> list[str]:
 # ── Pattern helpers ─────────────────────────────────────────────────────────
 
 
-async def get_entity_patterns(factory: Any, entity_ref: str) -> list[str]:
-    """Fetch generated English patterns for an entity from DB."""
-    try:
-        from core.registry.models import IntentPattern
+async def get_entity_patterns(factory: Any, entity_ref: str) -> list[str]:  # noqa: ARG001
+    """Legacy shim — always returns an empty list.
 
-        async with factory() as session:
-            result = await session.execute(
-                select(IntentPattern.pattern).where(
-                    IntentPattern.entity_ref == entity_ref,
-                    IntentPattern.lang == "en",
-                )
-            )
-            return [r[0] for r in result.all()]
-    except Exception:
-        return []
+    Patterns were killed with the FastMatcher. The UI still calls this
+    to render a per-entity pattern list; we keep the function so no
+    route needs migration, but there is no table to query anymore.
+    """
+    return []
 
 
 # ── Entity-change invalidation ──────────────────────────────────────────────
 
 
 async def on_entity_changed(entity_type: str, entity_id: int | str, action: str) -> None:
-    """Generate/delete patterns + invalidate caches after entity data change."""
-    try:
-        from system_modules.llm_engine.pattern_generator import get_pattern_generator
+    """Refresh the in-memory indexes after a registry CRUD.
 
-        gen = get_pattern_generator()
-        if action == "deleted":
-            await gen.delete_for_entity(entity_type, entity_id)
-        else:
-            await gen.generate_for_entity(entity_type, entity_id)
-    except Exception as exc:
-        logger.debug("Pattern generation failed: %s", exc)
-
+    With FastMatcher / PatternGenerator gone, the only caches to refresh
+    are:
+      1. ``IntentCompiler`` — lists intent definitions for the LLM catalog.
+      2. ``PatternGenerator.rebuild()`` — unique-name index used by
+         device-control to map LLM-returned ``name_en`` back to a device.
+      3. ``REGISTRY_ENTITY_CHANGED`` event — broadcast for other modules.
+    """
     try:
         from system_modules.llm_engine.intent_compiler import get_intent_compiler
 
         await get_intent_compiler().full_reload()
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("IntentCompiler reload failed: %s", exc)
 
-    try:
-        from system_modules.llm_engine.intent_router import get_intent_router
+    if entity_type == "device":
+        try:
+            from system_modules.llm_engine.pattern_generator import get_pattern_generator
 
-        get_intent_router().refresh_system_prompt()
-    except Exception:
-        pass
+            await get_pattern_generator().rebuild()
+        except Exception as exc:
+            logger.debug("PatternGenerator rebuild failed: %s", exc)
 
     try:
         from core.eventbus.bus import get_event_bus
