@@ -294,18 +294,57 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         from core.registry.models import Device
         if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt", "gree", "matter"):
             raise HTTPException(422, f"Unsupported protocol: {body.protocol}")
+
+        # Normalise + auto-translate native name/location so the intent
+        # router's keyword filter has something to match against. The
+        # user-supplied meta never carries ``name_en``/``location_en`` —
+        # they are server-derived on every save (POST and PATCH alike).
+        from system_modules.llm_engine.intent_router import _normalize_en
+
+        native_name = (body.name or "").strip()
+        native_location = (body.location or "").strip() or None
+
+        meta: dict = dict(body.meta or {})
+        meta.pop("name_en", None)
+        meta.pop("location_en", None)
+
+        if native_name:
+            if native_name.isascii():
+                meta["name_en"] = _normalize_en(native_name)
+            else:
+                # Lowercase the input: Argos returns wildly different
+                # translations for "Кабінет" vs "кабінет" vs "КАБІНЕТ"
+                # on single words. Force lowercase so the output is
+                # deterministic and article-free.
+                try:
+                    translated = await translate_to_en(native_name.lower())
+                except Exception:
+                    translated = native_name
+                meta["name_en"] = _normalize_en(translated or native_name)
+
+        if native_location:
+            meta["location"] = native_location  # mirror for consistency
+            if native_location.isascii():
+                meta["location_en"] = _normalize_en(native_location)
+            else:
+                try:
+                    translated_loc = await translate_to_en(native_location.lower())
+                except Exception:
+                    translated_loc = ""
+                meta["location_en"] = _normalize_en(translated_loc)
+
         async with svc._db_session() as session:
             async with session.begin():
                 device = Device(
-                    name=body.name.strip(),
+                    name=native_name,
                     type=body.type,
                     protocol=body.protocol,
                     entity_type=body.entity_type or None,
-                    location=(body.location or "").strip() or None,
+                    location=native_location,
                     module_id=svc.name,
                 )
                 device.set_capabilities(body.capabilities)
-                device.set_meta(body.meta)
+                device.set_meta(meta)
                 session.add(device)
                 await session.flush()
                 device_id = device.device_id
@@ -368,49 +407,55 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
         new_meta.pop("name_en", None)
         new_meta.pop("location_en", None)
 
+        from system_modules.llm_engine.intent_router import _normalize_en
+
         # ── Auto-translate name → meta.name_en (server-only) ────────────
-        # Always derive from the effective display name. Reuse the cached
-        # translation when the name hasn't changed to avoid burning an LLM
-        # call on every save.
+        # Always re-translate on save. Previous implementation cached the
+        # first translation forever — which means a stale Argos output
+        # (e.g. "кабінет" → "cabinet" from an older model version) would
+        # persist across every subsequent save. The user has no way to
+        # refresh it without deleting the device. The ~50 ms Argos call
+        # is not a concern on a save path.
         desired_name_en = ""
         if effective_name:
-            current_name_en = (existing_meta.get("name_en") or "").strip()
-            if current_name_en and effective_name == current_name:
-                desired_name_en = current_name_en
+            if effective_name.isascii():
+                desired_name_en = _normalize_en(effective_name)
             else:
-                if effective_name.isascii():
-                    desired_name_en = effective_name.lower()
-                else:
-                    try:
-                        translated = await translate_to_en(effective_name)
-                    except Exception:
-                        translated = effective_name
-                    desired_name_en = (translated or "").strip().lower()
+                # Lowercase input: Argos is case-sensitive and returns
+                # different words for "Кабінет" vs "кабінет". Force
+                # lowercase to get stable, article-free output.
+                try:
+                    translated = await translate_to_en(effective_name.lower())
+                except Exception:
+                    translated = effective_name
+                desired_name_en = _normalize_en(translated or effective_name)
         if desired_name_en:
             new_meta["name_en"] = desired_name_en
 
         # ── Auto-translate location → meta.location_en (server-only) ────
-        # Keep the user-language string in device.location (so the UI shows
-        # "Вітальня", not "living room"). The LLM-translated form lives in
-        # meta.location_en — that's what the voice pattern generator and
-        # _resolve_device match against. Same caching rule as name_en.
+        # Keep the user-language string in ``device.location`` (so the UI
+        # shows "Кабінет", not "office"). ``meta.location_en`` is the
+        # English form the intent router's keyword filter matches against.
+        # _normalize_en strips Argos artefacts like leading "the "/"a ".
         final_location: str | None = effective_location or None
         desired_location_en = ""
         if final_location:
-            current_location_en = (existing_meta.get("location_en") or "").strip()
-            if current_location_en and final_location == current_location:
-                desired_location_en = current_location_en
+            if final_location.isascii():
+                desired_location_en = _normalize_en(final_location)
             else:
-                if final_location.isascii():
-                    desired_location_en = final_location.lower()
-                else:
-                    try:
-                        translated_loc = await translate_to_en(final_location)
-                    except Exception:
-                        translated_loc = ""
-                    desired_location_en = (translated_loc or "").strip().lower()
+                try:
+                    translated_loc = await translate_to_en(final_location.lower())
+                except Exception:
+                    translated_loc = ""
+                desired_location_en = _normalize_en(translated_loc)
         if desired_location_en:
             new_meta["location_en"] = desired_location_en
+        # Mirror the native-language location inside meta so the UI and
+        # the filter both have a single source of truth even when legacy
+        # ``d.location`` drifts (it defaulted to None on some earlier
+        # CRUD paths).
+        if final_location:
+            new_meta["location"] = final_location
 
         async with svc._db_session() as session:
             async with session.begin():
