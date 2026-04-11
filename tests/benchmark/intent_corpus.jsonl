@@ -1,0 +1,32 @@
+{"text":"turn on the light","expected":{"intent":"device.on","params":{"entity":"light"}}}
+{"text":"turn on the bedroom light","expected":{"intent":"device.on","params":{"entity":"light","location":"bedroom"}}}
+{"text":"turn off the kitchen light","expected":{"intent":"device.off","params":{"entity":"light","location":"kitchen"}}}
+{"text":"turn off the air conditioner in the living room","expected":{"intent":"device.off","params":{"entity":"air_conditioner","location":"living room"}}}
+{"text":"switch on the kettle","expected":{"intent":"device.on","params":{"entity":"outlet"}}}
+{"text":"set living room AC to 22","expected":{"intent":"device.set_temperature","params":{"location":"living room","value":"22"}}}
+{"text":"set fan speed to high","expected":{"intent":"device.set_fan_speed","params":{"value":"high"}}}
+{"text":"set cool mode","expected":{"intent":"device.set_mode","params":{"value":"cool"}}}
+{"text":"what is the temperature in the kitchen","expected":{"intent":"device.query_temperature","params":{"location":"kitchen"}}}
+{"text":"how warm is the bedroom","expected":{"intent":"device.query_temperature","params":{"location":"bedroom"}}}
+{"text":"lock the front door","expected":{"intent":"device.lock","params":{"entity":"lock"}}}
+{"text":"unlock the front door","expected":{"intent":"device.unlock","params":{"entity":"lock"}}}
+{"text":"play jazz radio","expected":{"intent":"media.play_genre","params":{"genre":"jazz"}}}
+{"text":"play rock music","expected":{"intent":"media.play_genre","params":{"genre":"rock"}}}
+{"text":"pause music","expected":{"intent":"media.pause"}}
+{"text":"stop the music","expected":{"intent":"media.stop"}}
+{"text":"resume playback","expected":{"intent":"media.resume"}}
+{"text":"next track","expected":{"intent":"media.next"}}
+{"text":"volume up","expected":{"intent":"media.volume_up"}}
+{"text":"volume down","expected":{"intent":"media.volume_down"}}
+{"text":"what is playing","expected":{"intent":"media.whats_playing"}}
+{"text":"what's the weather outside","expected":{"intent":"weather.current"}}
+{"text":"what's the forecast for tomorrow","expected":{"intent":"weather.forecast"}}
+{"text":"set an alarm for seven am","expected":{"intent":"clock.set_alarm"}}
+{"text":"set a timer for ten minutes","expected":{"intent":"clock.set_timer"}}
+{"text":"stop the alarm","expected":{"intent":"clock.stop_alarm"}}
+{"text":"enable privacy mode","expected":{"intent":"privacy_on"}}
+{"text":"disable privacy mode","expected":{"intent":"privacy_off"}}
+{"text":"who is at home","expected":{"intent":"presence.who_home"}}
+{"text":"xyzzy plover quux","expected":{"intent":"unknown"}}
+{"text":"tell me a joke","expected":{"intent":"unknown"}}
+{"text":"who are you","expected":{"intent":"unknown"}}
