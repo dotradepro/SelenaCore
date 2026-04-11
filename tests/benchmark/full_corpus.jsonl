@@ -1,0 +1,40 @@
+{"text":"turn on the light in the living room","lang":"en","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"turn off the light in the living room","lang":"en","expected":{"intent":"device.off","params":{"entity":"light","location":"living room"}}}
+{"text":"включи світло у вітальні","lang":"uk","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"увімкни світло у вітальні","lang":"uk","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"виключи світло у вітальні","lang":"uk","expected":{"intent":"device.off","params":{"entity":"light","location":"living room"}}}
+{"text":"вимкни світло у вітальні","lang":"uk","expected":{"intent":"device.off","params":{"entity":"light","location":"living room"}}}
+{"text":"turn on the air conditioner","lang":"en","expected":{"intent":"device.on","params":{"entity":"air_conditioner"}}}
+{"text":"увімкни кондиціонер у вітальні","lang":"uk","expected":{"intent":"device.on","params":{"entity":"air_conditioner","location":"living room"}}}
+{"text":"вимкни кондиціонер","lang":"uk","expected":{"intent":"device.off","params":{"entity":"air_conditioner"}}}
+{"text":"set the air conditioner to 22 degrees","lang":"en","expected":{"intent":"device.set_temperature","params":{"entity":"air_conditioner","value":"22"}}}
+{"text":"встанови кондиціонер на 22 градуси","lang":"uk","expected":{"intent":"device.set_temperature","params":{"value":"22"}}}
+{"text":"set the fan speed to high","lang":"en","expected":{"intent":"device.set_fan_speed","params":{"value":"high"}}}
+{"text":"встанови швидкість вентилятора на високу","lang":"uk","expected":{"intent":"device.set_fan_speed","params":{"value":"high"}}}
+{"text":"set cool mode on the air conditioner","lang":"en","expected":{"intent":"device.set_mode","params":{"value":"cool"}}}
+{"text":"встанови режим охолодження","lang":"uk","expected":{"intent":"device.set_mode","params":{"value":"cool"}}}
+{"text":"what is the temperature in the living room","lang":"en","expected":{"intent":"device.query_temperature","params":{"location":"living room"}}}
+{"text":"яка температура у вітальні","lang":"uk","expected":{"intent":"device.query_temperature","params":{"location":"living room"}}}
+{"text":"lock the front door","lang":"en","expected":{"intent":"device.lock","params":{"entity":"lock"}}}
+{"text":"замкни вхідні двері","lang":"uk","expected":{"intent":"device.lock"}}
+{"text":"unlock the front door","lang":"en","expected":{"intent":"device.unlock","params":{"entity":"lock"}}}
+{"text":"play jazz radio","lang":"en","expected":{"intent":"media.play_genre","params":{"genre":"jazz"}}}
+{"text":"вмикни джазове радіо","lang":"uk","expected":{"intent":"media.play_genre","params":{"genre":"jazz"}}}
+{"text":"pause the music","lang":"en","expected":{"intent":"media.pause"}}
+{"text":"постав музику на паузу","lang":"uk","expected":{"intent":"media.pause"}}
+{"text":"what's the weather outside","lang":"en","expected":{"intent":"weather.current"}}
+{"text":"яка погода надворі","lang":"uk","expected":{"intent":"weather.current"}}
+{"text":"set a timer for ten minutes","lang":"en","expected":{"intent":"clock.set_timer"}}
+{"text":"постав таймер на 10 хвилин","lang":"uk","expected":{"intent":"clock.set_timer"}}
+{"text":"enable privacy mode","lang":"en","expected":{"intent":"privacy_on"}}
+{"text":"увімкни режим приватності","lang":"uk","expected":{"intent":"privacy_on"}}
+{"text":"turn on the humidifier in the bedroom","lang":"en","expected":{"intent":"device.on","params":{"entity":"humidifier","location":"bedroom"}}}
+{"text":"увімкни зволожувач у спальні","lang":"uk","expected":{"intent":"device.on","params":{"location":"bedroom"}}}
+{"text":"turn off the kettle in the kitchen","lang":"en","expected":{"intent":"device.off","params":{"entity":"outlet","location":"kitchen"}}}
+{"text":"вимкни чайник на кухні","lang":"uk","expected":{"intent":"device.off","params":{"location":"kitchen"}}}
+{"text":"open the curtains","lang":"en","expected":{"intent":"unknown"}}
+{"text":"відкрий штори","lang":"uk","expected":{"intent":"unknown"}}
+{"text":"xyzzy plover quux","lang":"en","expected":{"intent":"unknown"}}
+{"text":"розкажи анекдот","lang":"uk","expected":{"intent":"unknown"}}
+{"text":"who are you","lang":"en","expected":{"intent":"unknown"}}
+{"text":"хто ти","lang":"uk","expected":{"intent":"unknown"}}
