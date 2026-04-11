@@ -440,6 +440,22 @@ class IntentRouter:
     # Static instructions appended to the user-editable identity. Describes
     # the JSON contract and the allowed params. Kept tight on purpose —
     # small models are better classifiers than multi-shot imitators.
+    #
+    # IMPORTANT: do NOT remove the Examples block.
+    # Tested 2026-04-11 on qwen2.5:1.5b + Helsinki, 40-case trace bench:
+    #   * Full prompt with 4 examples:                32/40 (baseline)
+    #   * Slimmed prompt, no examples, no template:   24/40 (-8 cases)
+    #   * Slim prompt + bare format line `{...}`:     29/40 (-3 cases)
+    #   * Baseline + namespace hint + AC synonym:     35/40 (+3 cases)
+    # Removing the examples drops qwen 1.5b sharply because the 4
+    # examples act as a structural anchor for form imitation —
+    # without them small models flatten params, omit the intent
+    # field, or hallucinate Home-Assistant-style dotted entity IDs
+    # like `light.office`, `lock.front_door`. The namespace hint and
+    # entity synonyms below are supplements, not replacements.
+    # If you want to tune this header, run run_trace_bench.py before
+    # AND after every change to qwen 1.5b + Helsinki and check the
+    # raw responses for these failure modes.
     _SCHEMA_HEADER = (
         "Reply with ONE JSON object, no prose, no markdown, no code fences:\n"
         '{"intent":"<namespace.action>","params":{"entity":"...","location":"..."}}\n\n'
@@ -447,6 +463,7 @@ class IntentRouter:
         "- Pick the intent name EXACTLY from the Intents list below.\n"
         "- Use \"unknown\" if nothing in the list fits the command.\n"
         "- Do NOT invent intent names. Do NOT add a \"response\" field.\n"
+        "- Namespaces: device.* = hardware, clock.* = timers/alarms, media.* = playback.\n"
         "- Include a param ONLY if the user literally said it. If the user\n"
         "  did not name a device/station/number, OMIT that key. Never copy\n"
         "  placeholder values from the schema above.\n"
@@ -459,7 +476,8 @@ class IntentRouter:
         '  "turn on the kitchen light" -> {"intent":"device.on","params":{"entity":"light","location":"kitchen"}}\n'
         '  "set fan speed to high"     -> {"intent":"device.set_fan_speed","params":{"value":"high"}}\n\n'
         "Params:\n"
-        "- entity: device TYPE when the user said one (light, outlet, air_conditioner, lock, thermostat, ...)\n"
+        "- entity: device TYPE when the user said one "
+        "(light, outlet, air_conditioner/\"air conditioning\", lock, thermostat, fan, humidifier, ...)\n"
         "- location: room name from the catalog when the user said a room\n"
         "- value: the exact word or number the user said for a setting "
         "(e.g. 22, high, low, cool, auto)\n"
@@ -500,7 +518,11 @@ class IntentRouter:
                     _tokenize(ci.intent.replace(".", " ").replace("_", " "))
                 )
                 if tokens & (desc_tokens | verb_tokens):
-                    short = desc if len(desc) <= 80 else desc[:77] + "..."
+                    # 120 char cap leaves room for disambiguating phrases
+                    # like "NOT for specific station names" without
+                    # truncating them. Legacy descriptions ("Turn a device
+                    # on") are still ≤30 chars and unaffected.
+                    short = desc if len(desc) <= 120 else desc[:117] + "..."
                     matched_intents.append((ci.intent, short))
         except Exception as exc:
             logger.debug("intent filter failed: %s", exc)
