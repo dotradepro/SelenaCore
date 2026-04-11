@@ -63,6 +63,25 @@ class PushSendRequest(BaseModel):
 class PresenceDetectionModule(SystemModule):
     name = "presence-detection"
 
+    # Module-owned descriptions for presence intents. Resynced from
+    # _resync_intent_descriptions() on every boot so prompt-tuning
+    # changes here propagate to live IntentRouter prompts. The seed
+    # script (scripts/seed_intents_to_db.py) creates the rows; we
+    # only own the wording.
+    #
+    # who_home description was the default "List all users currently
+    # at home" until qwen 3b started misclassifying "who are you"
+    # (the user asking who the assistant is) as presence.who_home —
+    # the verb 'who' was the only token overlap and the description
+    # didn't disambiguate. Adding "NOT for 'who are you' questions
+    # about the assistant itself" gives the LLM a negative anchor.
+    _INTENT_DESCRIPTIONS: dict[str, str] = {
+        "presence.who_home": (
+            "List who is currently at home. NOT for 'who are you' "
+            "questions about the assistant itself."
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._detector: PresenceDetector | None = None
@@ -93,7 +112,43 @@ class PresenceDetectionModule(SystemModule):
             self._on_event,
         )
 
+        # Push module-owned intent descriptions into DB so IntentRouter
+        # prompts pick up disambiguation phrases (see _INTENT_DESCRIPTIONS).
+        await self._resync_intent_descriptions()
+
         await self.publish("module.started", {"name": self.name})
+
+    async def _resync_intent_descriptions(self) -> None:
+        """Push the module-owned descriptions for presence.* into DB.
+
+        Mirrors the description-resync added to device-control's
+        _claim_intent_ownership in commit 2b0cfa2: each module is the
+        source of truth for the wording its prompt sees. We don't claim
+        the ``module`` column here (the seed script still owns it),
+        only ``description``.
+        """
+        if self._session_factory is None:
+            return
+        try:
+            from sqlalchemy import update
+            from core.registry.models import IntentDefinition
+            async with self._session_factory() as session:
+                for intent_name, desc in self._INTENT_DESCRIPTIONS.items():
+                    await session.execute(
+                        update(IntentDefinition)
+                        .where(IntentDefinition.intent == intent_name)
+                        .values(description=desc)
+                    )
+                await session.commit()
+            logger.info(
+                "PresenceDetection: resynced %d intent descriptions",
+                len(self._INTENT_DESCRIPTIONS),
+            )
+        except Exception as exc:
+            logger.warning(
+                "PresenceDetection: intent description resync failed: %s",
+                exc,
+            )
 
     async def _on_event(self, event) -> None:
         """Route EventBus events to the appropriate handler."""

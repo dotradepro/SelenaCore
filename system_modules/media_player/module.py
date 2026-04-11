@@ -95,6 +95,32 @@ class ImportRBBody(BaseModel):
 class MediaPlayerModule(SystemModule):
     name = "media-player"
 
+    # Disambiguating descriptions for the radio media intents. The seed
+    # script (scripts/seed_intents_to_db.py) creates initial rows; this
+    # module owns the wording from now on and resyncs on every boot via
+    # _resync_intent_descriptions(). Without the resync, prompt-tuning
+    # changes here would never propagate to live IntentRouter prompts.
+    #
+    # Three intents share a verb (play) and an object (radio), and qwen
+    # 1.5b confused play_radio with play_genre on cases like "play jazz
+    # radio" / "вмикни джазове радіо". Each description now spells out
+    # what the intent is FOR and what it is NOT for, with concrete
+    # examples in parentheses. Length kept ≤ 110 chars to fit the
+    # 120-char cap in IntentRouter._build_filtered_catalog.
+    _INTENT_DESCRIPTIONS: dict[str, str] = {
+        "media.play_genre": (
+            "Play radio by genre (jazz, rock, classical). "
+            "NOT for specific station names."
+        ),
+        "media.play_radio": (
+            "Play radio, no genre and no station name specified."
+        ),
+        "media.play_radio_name": (
+            "Play a specific named station ('Radio Relax', 'BBC'). "
+            "Use ONLY when user said the station name."
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._player: MediaPlayer
@@ -142,8 +168,45 @@ class MediaPlayerModule(SystemModule):
         # Broadcast state periodically while playing
         self._state_task = asyncio.create_task(self._state_broadcast_loop())
 
+        # Resync radio-intent descriptions from _INTENT_DESCRIPTIONS into
+        # the DB so IntentRouter prompts pick up disambiguation phrases
+        # we've tuned here. Idempotent — runs every boot, no-op if
+        # values already match.
+        await self._resync_intent_descriptions()
+
         await self.publish("module.started", {"name": self.name})
         logger.info("MediaPlayer module started")
+
+    async def _resync_intent_descriptions(self) -> None:
+        """Push the module-owned descriptions for media.play_* into DB.
+
+        Mirrors the description-resync added to device-control's
+        _claim_intent_ownership in commit 2b0cfa2: each module is the
+        source of truth for the wording its prompt sees. We don't claim
+        the ``module`` column here (the seed script still owns it),
+        only ``description``.
+        """
+        if self._session_factory is None:
+            return
+        try:
+            from sqlalchemy import update
+            from core.registry.models import IntentDefinition
+            async with self._session_factory() as session:
+                for intent_name, desc in self._INTENT_DESCRIPTIONS.items():
+                    await session.execute(
+                        update(IntentDefinition)
+                        .where(IntentDefinition.intent == intent_name)
+                        .values(description=desc)
+                    )
+                await session.commit()
+            logger.info(
+                "MediaPlayer: resynced %d intent descriptions",
+                len(self._INTENT_DESCRIPTIONS),
+            )
+        except Exception as exc:
+            logger.warning(
+                "MediaPlayer: intent description resync failed: %s", exc,
+            )
 
     async def stop(self) -> None:
         if self._state_task:
