@@ -105,10 +105,24 @@ wizard:
 
 translation:
   enabled: false
-  input_model_dir: /var/lib/selena/models/translate/mul-en
-  output_model_dir: /var/lib/selena/models/translate/en-mul
+  # Engine: argos | helsinki
+  #   argos    — Argos Translate (.argosmodel packages, default)
+  #   helsinki — Helsinki-NLP/opus-mt via CTranslate2 (better quality
+  #              on most pairs, especially en→target). Requires
+  #              pre-converted models on disk under input_model_dir /
+  #              output_model_dir; see docs/helsinki-translator.md.
+  # Each /translate/activate call rewrites this key explicitly so the
+  # currently-active row in the UI always pins both lang AND engine.
+  engine: argos
+  active_lang: ""
   fallback_to_llm: true
   spell_correction: false
+  # Model dirs are HELSINKI-only. Each holds one subfolder per language
+  # pair (e.g. uk-en/, en-uk/) containing model.bin + source.spm +
+  # target.spm. Argos manages its own storage under
+  # ~/.local/share/argos-translate/packages/ and ignores these keys.
+  input_model_dir: /var/lib/selena/models/translate/helsinki/in
+  output_model_dir: /var/lib/selena/models/translate/helsinki/out
 
 system:
   device_name: "SelenaCore"

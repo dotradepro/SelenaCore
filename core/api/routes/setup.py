@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import available_timezones
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from core.config_writer import get_nested, get_value, read_config, update_config, update_many
@@ -1583,14 +1583,35 @@ def _build_piper_download_urls(voice_id: str) -> list[str]:
 # ================================================================== #
 
 
+def _parse_engine_lang(req: dict[str, Any]) -> tuple[str, str]:
+    """Extract (engine, lang) from a /translate/* request body.
+
+    Frontend may send any of:
+      {"id": "argos-uk-en"}      → ("argos", "uk")
+      {"id": "helsinki-uk-en"}   → ("helsinki", "uk")
+      {"engine": "helsinki", "lang": "uk"}
+      {"lang": "uk"}             → defaults to engine="argos" (legacy)
+    """
+    raw_id = (req.get("id") or "").strip()
+    if raw_id:
+        if raw_id.startswith("helsinki-") and raw_id.endswith("-en"):
+            return "helsinki", raw_id[len("helsinki-"):-len("-en")]
+        if raw_id.startswith("argos-") and raw_id.endswith("-en"):
+            return "argos", raw_id[len("argos-"):-len("-en")]
+    engine = (req.get("engine") or "argos").strip() or "argos"
+    lang = (req.get("lang") or "").strip()
+    return engine, lang
+
+
 @router.get("/translate/status")
 async def translate_status() -> dict[str, Any]:
-    """Translation status: active language, settings."""
+    """Translation status: active language, engine, settings."""
     from core.translation.local_translator import get_input_translator, get_output_translator
     return {
         "enabled": get_nested("translation.enabled", False),
         "fallback_to_llm": get_nested("translation.fallback_to_llm", True),
         "active_lang": get_nested("translation.active_lang", ""),
+        "engine": get_nested("translation.engine", "argos"),
         "input_available": get_input_translator().is_available(),
         "output_available": get_output_translator().is_available(),
     }
@@ -1607,44 +1628,153 @@ async def translate_catalog() -> dict[str, Any]:
 
 @router.post("/translate/download")
 async def translate_download(req: dict[str, Any]) -> dict[str, Any]:
-    """Install both directions for a language. Body: {"lang": "uk"}"""
+    """Install both directions for a language pair.
+
+    Body accepts ``{"id": "argos-uk-en"}`` or ``{"id": "helsinki-uk-en"}``
+    from the catalog row, or ``{"engine": "...", "lang": "..."}``, or
+    legacy ``{"lang": "..."}`` (defaults to argos).
+    """
     from core.translation.downloader import install_pair, get_download_status
-    lang = req.get("lang", "")
+    from core.translation.helsinki_downloader import (
+        install_helsinki_pair, get_helsinki_download_status,
+    )
+    engine, lang = _parse_engine_lang(req)
     if not lang:
-        raise HTTPException(status_code=422, detail="lang is required")
+        raise HTTPException(status_code=422, detail="lang or id is required")
+
+    if engine == "helsinki":
+        st = get_helsinki_download_status()
+        if st["active"]:
+            return {"status": "already_downloading", **st}
+        asyncio.create_task(install_helsinki_pair(lang))
+        return {"status": "started", "engine": engine, "lang": lang}
+
     st = get_download_status()
     if st["active"]:
         return {"status": "already_downloading", **st}
     asyncio.create_task(install_pair(lang))
-    return {"status": "started", "lang": lang}
+    return {"status": "started", "engine": engine, "lang": lang}
 
 
 @router.get("/translate/download/status")
 async def translate_download_status() -> dict[str, Any]:
-    """Poll download progress."""
+    """Poll download progress.
+
+    Whichever engine is currently running a download wins. Frontend
+    polls one endpoint regardless of engine.
+    """
     from core.translation.downloader import get_download_status
-    return get_download_status()
+    from core.translation.helsinki_downloader import get_helsinki_download_status
+    argos_st = get_download_status()
+    if argos_st["active"]:
+        return {**argos_st, "engine": "argos"}
+    helsinki_st = get_helsinki_download_status()
+    if helsinki_st["active"]:
+        return {**helsinki_st, "engine": "helsinki"}
+    # Neither active — return whichever finished most recently (prefer
+    # helsinki if it has a non-zero done flag, else argos).
+    if helsinki_st.get("done"):
+        return {**helsinki_st, "engine": "helsinki"}
+    return {**argos_st, "engine": "argos"}
 
 
 @router.post("/translate/activate")
 async def translate_activate(req: dict[str, Any]) -> dict[str, Any]:
-    """Activate a language pair. Body: {"lang": "uk"}"""
+    """Activate a language pair. Same body shape as /translate/download."""
     from core.translation.downloader import activate_lang
-    lang = req.get("lang", "")
+    from core.translation.helsinki_downloader import activate_helsinki_lang
+    engine, lang = _parse_engine_lang(req)
     if not lang:
-        raise HTTPException(status_code=422, detail="lang is required")
-    ok = activate_lang(lang)
-    return {"status": "ok", "lang": lang}
+        raise HTTPException(status_code=422, detail="lang or id is required")
+    if engine == "helsinki":
+        activate_helsinki_lang(lang)
+    else:
+        activate_lang(lang)
+    return {"status": "ok", "engine": engine, "lang": lang}
 
 
 @router.delete("/translate/lang/{lang_code}")
-async def translate_delete(lang_code: str) -> dict[str, Any]:
-    """Delete both directions of a language pair."""
+async def translate_delete(lang_code: str, engine: str = "argos") -> dict[str, Any]:
+    """Delete both directions of a language pair.
+
+    ``engine`` query param picks Argos vs Helsinki. Defaults to argos
+    so legacy clients keep working.
+    """
     from core.translation.downloader import delete_pair
-    ok = delete_pair(lang_code)
+    from core.translation.helsinki_downloader import delete_helsinki_pair
+    if engine == "helsinki":
+        ok = delete_helsinki_pair(lang_code)
+    else:
+        ok = delete_pair(lang_code)
     if not ok:
         raise HTTPException(status_code=400, detail="Cannot delete active pair or not found")
-    return {"status": "deleted", "lang": lang_code}
+    return {"status": "deleted", "engine": engine, "lang": lang_code}
+
+
+@router.post("/translate/upload")
+async def translate_upload(
+    engine: str = Form(...),
+    lang: str = Form(...),
+    direction: str = Form(...),
+    file: UploadFile = File(...),
+) -> dict[str, Any]:
+    """End-user model upload (Helsinki only).
+
+    Accepts a Colab-converted tar.gz archive and extracts it into the
+    correct pair directory. ``direction`` must be ``"input"`` (lang→en)
+    or ``"output"`` (en→lang). Lets users install Helsinki models from
+    a browser without SCP, GitHub releases, or shell access.
+    """
+    if engine != "helsinki":
+        raise HTTPException(
+            status_code=400,
+            detail="Upload is only supported for the Helsinki engine. "
+                   "Argos packages are managed via /translate/download.",
+        )
+    if direction not in ("input", "output"):
+        raise HTTPException(
+            status_code=422,
+            detail="direction must be 'input' or 'output'",
+        )
+    if not lang:
+        raise HTTPException(status_code=422, detail="lang is required")
+
+    import tempfile
+    from pathlib import Path as _P
+
+    # Stream the upload to a temp file before handing off to the extractor —
+    # tarfile needs a real seekable path on disk.
+    suffix = ".tar.gz"
+    fname = (file.filename or "").lower()
+    if fname.endswith(".tgz"):
+        suffix = ".tgz"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = _P(tmp.name)
+        while True:
+            chunk = await file.read(1 << 20)  # 1 MB
+            if not chunk:
+                break
+            tmp.write(chunk)
+    try:
+        from core.translation.helsinki_downloader import install_helsinki_archive
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, install_helsinki_archive, lang, direction, tmp_path,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Helsinki upload failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return {
+        "status": "ok",
+        "engine": engine,
+        "lang": lang,
+        "direction": direction,
+    }
 
 
 @router.post("/translate/settings")

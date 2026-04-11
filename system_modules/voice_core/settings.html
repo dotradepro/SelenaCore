@@ -2528,24 +2528,64 @@
             var list = $('translateModelList');
             list.innerHTML = '';
             (res.models || []).forEach(function(m) {
+                var rowId = m.id || ('argos-' + m.lang_code + '-en');
+                var rowIdEsc = _esc(rowId);
+                var langEsc = _esc(m.lang_code);
+                var isHelsinki = (m.engine === 'helsinki');
                 var statusHtml = '';
                 if (m.active) {
                     statusHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
                 } else if (m.installed) {
-                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + m.lang_code + '\')">' + t('translation_activate') + '</button>' +
-                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + m.lang_code + '\')">' + t('common_delete') + '</button>';
+                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + rowIdEsc + '\')">' + t('translation_activate') + '</button>' +
+                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + rowIdEsc + '\')">' + t('common_delete') + '</button>';
+                } else if (isHelsinki) {
+                    // No GitHub-release URLs are wired up by default, so the
+                    // end-user path is to upload Colab-converted .tar.gz
+                    // archives directly from the browser. One file picker
+                    // per direction; both must be uploaded before the row
+                    // flips to "Activate".
+                    var inMissing = !m.input_installed;
+                    var outMissing = !m.output_installed;
+                    statusHtml =
+                        '<div class="flex gap6" style="flex-wrap:wrap;flex-direction:column;width:100%">' +
+                            (inMissing ?
+                              '<label class="flex gap6" style="align-items:center">' +
+                                '<span style="font-size:11px;color:var(--muted);min-width:80px">' + langEsc + ' → en:</span>' +
+                                '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
+                                  'onchange="window._trUpload(this, \'' + langEsc + '\', \'input\')" ' +
+                                  'style="font-size:11px;flex:1" />' +
+                              '</label>' : '') +
+                            (outMissing ?
+                              '<label class="flex gap6" style="align-items:center">' +
+                                '<span style="font-size:11px;color:var(--muted);min-width:80px">en → ' + langEsc + ':</span>' +
+                                '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
+                                  'onchange="window._trUpload(this, \'' + langEsc + '\', \'output\')" ' +
+                                  'style="font-size:11px;flex:1" />' +
+                              '</label>' : '') +
+                            '<div style="font-size:10px;color:var(--muted);margin-top:2px">' +
+                              'Upload Colab-converted .tar.gz (see docs/helsinki-translator.md)' +
+                            '</div>' +
+                        '</div>';
                 } else {
-                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + m.lang_code + '\')">' + t('translation_install') + '</button>';
+                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + rowIdEsc + '\')">' + t('translation_install') + '</button>';
                 }
 
                 var inputBadge = m.input_installed ? '<span class="badge badge-ok">' + m.lang_code + '→en</span>' : '<span class="badge badge-off">' + m.lang_code + '→en</span>';
                 var outputBadge = m.output_installed ? '<span class="badge badge-ok">en→' + m.lang_code + '</span>' : '<span class="badge badge-off">en→' + m.lang_code + '</span>';
+
+                // Engine badge: makes Argos vs Helsinki rows distinguishable.
+                // Both engines can show the same lang_code so without this
+                // badge two rows for "Ukrainian" look identical.
+                var engineLabel = (m.engine === 'helsinki') ? 'Helsinki' : 'Argos';
+                var engineCls = (m.engine === 'helsinki') ? 'badge badge-ok' : 'badge badge-off';
+                var engineBadge = '<span class="' + engineCls + '">' + engineLabel + '</span>';
 
                 var div = document.createElement('div');
                 div.className = 'card-inner mb8';
                 div.innerHTML =
                     '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
                         '<span style="font-size:13px;font-weight:600">' + (m.lang_name || m.lang_code) + '</span>' +
+                        engineBadge +
                         '<span class="badge badge-off">' + m.lang_code.toUpperCase() + ' ↔ EN</span>' +
                         inputBadge + outputBadge +
                     '</div>' +
@@ -2555,11 +2595,24 @@
         } catch(e) { /* ignore */ }
     }
 
-    window._trDownload = async function(lang) {
+    // Parse a catalog row id ("helsinki-uk-en" / "argos-uk-en") into
+    // {engine, lang}. Backwards-compatible with bare lang codes.
+    function _parseRowId(rowId) {
+        if (rowId && rowId.indexOf('-') >= 0) {
+            var parts = rowId.split('-');
+            if (parts.length >= 3 && parts[parts.length - 1] === 'en') {
+                return { engine: parts[0], lang: parts.slice(1, -1).join('-') };
+            }
+        }
+        return { engine: 'argos', lang: rowId };
+    }
+
+    window._trDownload = async function(rowId) {
         try {
-            await postJson('/setup/translate/download', { lang: lang });
+            var p = _parseRowId(rowId);
+            await postJson('/setup/translate/download', { id: rowId });
             show('translateDownloadSection');
-            $('translateDownloadName').textContent = lang + ' ↔ en';
+            $('translateDownloadName').textContent = p.engine + ':' + p.lang + ' ↔ en';
             var pollId = setInterval(async function() {
                 try {
                     var s = await api('/setup/translate/download/status');
@@ -2578,21 +2631,56 @@
         } catch(e) { showToast('Error', 'error'); }
     };
 
-    window._trActivate = async function(lang) {
+    window._trActivate = async function(rowId) {
         try {
-            await postJson('/setup/translate/activate', { lang: lang });
+            await postJson('/setup/translate/activate', { id: rowId });
             showToast(t('saved'));
             loadTranslateCatalog();
         } catch(e) { showToast('Error', 'error'); }
     };
 
-    window._trDelete = async function(lang) {
+    window._trDelete = async function(rowId) {
         if (!confirm(t('translation_delete_confirm'))) return;
         try {
-            await api('/setup/translate/lang/' + lang, { method: 'DELETE' });
+            var p = _parseRowId(rowId);
+            await api('/setup/translate/lang/' + encodeURIComponent(p.lang) + '?engine=' + encodeURIComponent(p.engine), { method: 'DELETE' });
             showToast(t('saved'));
             loadTranslateCatalog();
         } catch(e) { showToast('Error', 'error'); }
+    };
+
+    // End-user upload of a Colab-converted Helsinki .tar.gz archive.
+    // Called from the file picker rendered for not-yet-installed Helsinki
+    // catalog rows. One picker per direction (input/output) — both must
+    // succeed before the row flips to "Activate" on next refresh.
+    window._trUpload = async function(input, lang, direction) {
+        var f = input && input.files && input.files[0];
+        if (!f) return;
+        try {
+            var fd = new FormData();
+            fd.append('engine', 'helsinki');
+            fd.append('lang', lang);
+            fd.append('direction', direction);
+            fd.append('file', f);
+            showToast('Uploading ' + direction + '… (' + formatSize(f.size) + ')');
+            var resp = await fetch('/api/ui/setup/translate/upload', {
+                method: 'POST', body: fd,
+            });
+            if (!resp.ok) {
+                var msg = 'HTTP ' + resp.status;
+                try {
+                    var j = await resp.json();
+                    if (j && j.detail) msg = j.detail;
+                } catch(_) {}
+                throw new Error(msg);
+            }
+            showToast(t('saved'));
+            input.value = '';
+            loadTranslateCatalog();
+        } catch(e) {
+            showToast(String(e.message || e), 'error');
+            if (input) input.value = '';
+        }
     };
 
     if ($('translateSaveBtn')) {

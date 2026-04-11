@@ -31,7 +31,10 @@ apscheduler>=3.10  # used by scheduler + clock modules for cron/date triggers
 vosk>=0.3.45
 
 # Local translation (Argos Translate — offline, ~50-100 MB per language pair)
-# Packages downloaded on demand via Settings → Translation tab
+# Packages downloaded on demand via Settings → Translation tab.
+# argostranslate pulls in ctranslate2 + sentencepiece transitively; the
+# Helsinki engine (core.translation.helsinki_translator) reuses both
+# directly with pre-converted opus-mt models — no extra pip packages.
 argostranslate>=1.9.0
 
 # Smart device drivers (used by system_modules/device_control)

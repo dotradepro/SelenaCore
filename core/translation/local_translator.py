@@ -156,20 +156,41 @@ class OutputTranslator:
         return text
 
 
-# ── Singletons ──────────────────────────────────────────────────────
+# ── Singletons / engine dispatcher ─────────────────────────────────
 
 _input: InputTranslator | None = None
 _output: OutputTranslator | None = None
 
 
-def get_input_translator() -> InputTranslator:
+def _engine() -> str:
+    """Read ``translation.engine`` from config (default ``argos``)."""
+    return get_value("translation", "engine", "argos") or "argos"
+
+
+def get_input_translator():
+    """Return the active InputTranslator implementation.
+
+    Dispatches by ``translation.engine``. Both Argos and Helsinki
+    backends expose the same surface (``is_available``, ``to_english``,
+    ``keywords_to_english``) so callers in voice_core / api/helpers /
+    setup don't need to know which engine is active.
+    """
+    if _engine() == "helsinki":
+        from core.translation.helsinki_translator import get_helsinki_input
+        return get_helsinki_input()
     global _input
     if _input is None:
         _input = InputTranslator()
     return _input
 
 
-def get_output_translator() -> OutputTranslator:
+def get_output_translator():
+    """Return the active OutputTranslator implementation. See
+    ``get_input_translator``.
+    """
+    if _engine() == "helsinki":
+        from core.translation.helsinki_translator import get_helsinki_output
+        return get_helsinki_output()
     global _output
     if _output is None:
         _output = OutputTranslator()
@@ -177,6 +198,20 @@ def get_output_translator() -> OutputTranslator:
 
 
 def reload_translators() -> None:
+    """Drop singletons + cached models for BOTH engines.
+
+    Called after config changes (engine swap, language activate,
+    install, delete) so the next request reloads from disk and a stale
+    Argos instance + its loaded models doesn't linger in RAM after
+    switching to Helsinki (or vice versa).
+    """
     global _input, _output
     _input = None
     _output = None
+    try:
+        from core.translation.helsinki_translator import (
+            reload_helsinki_translators,
+        )
+        reload_helsinki_translators()
+    except Exception as exc:
+        logger.debug("reload_helsinki_translators skipped: %s", exc)

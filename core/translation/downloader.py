@@ -117,15 +117,26 @@ def get_catalog() -> list[dict[str, Any]]:
             pairs[lang]["output_version"] = getattr(p, "package_version", "")
 
     active_lang = get_nested("translation.active_lang", "")
+    active_engine = get_nested("translation.engine", "argos")
 
     result = []
     for lang, info in sorted(pairs.items(), key=lambda x: x[1].get("lang_name", "")):
         both_installed = info.get("input_installed", False) and info.get("output_installed", False)
         result.append({
             **info,
+            "engine": "argos",
             "installed": both_installed,
-            "active": lang == active_lang,
+            "active": (lang == active_lang and active_engine == "argos"),
         })
+
+    # Merge in Helsinki rows. Same row schema, different ``id`` prefix
+    # so the activate route can dispatch by engine.
+    try:
+        from core.translation.helsinki_downloader import get_helsinki_catalog
+        result.extend(get_helsinki_catalog())
+    except Exception as exc:
+        logger.debug("Helsinki catalog merge skipped: %s", exc)
+
     return result
 
 
@@ -183,12 +194,19 @@ async def install_pair(lang_code: str) -> None:
 
 
 def activate_lang(lang_code: str) -> bool:
-    """Set active translation language."""
+    """Set active translation language and pin engine to argos.
+
+    Writing the engine explicitly on every activate keeps the config
+    consistent: each ``Activate`` click in the UI is the source of
+    truth for both ``active_lang`` AND ``engine``, so flipping between
+    Argos and Helsinki rows in the catalog is always unambiguous.
+    """
     update_config("translation", "active_lang", lang_code)
+    update_config("translation", "engine", "argos")
     update_config("translation", "enabled", True)
     from core.translation.local_translator import reload_translators
     reload_translators()
-    logger.info("Translation activated: %s↔en", lang_code)
+    logger.info("Translation activated: argos/%s↔en", lang_code)
     return True
 
 
