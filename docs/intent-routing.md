@@ -341,11 +341,93 @@ If you also want a 0 ms FastMatcher shortcut for English commands, write a regex
 
 See [system-module-development.md](system-module-development.md) for the worked example with file paths and full code.
 
-## 9. References
+## 9. Upgrading translator quality
+
+The voice pipeline uses Argos Translate (opus-mt under the hood) for
+input normalisation. For some language pairs the default Argos package
+is an older / smaller opus-mt checkpoint and you can see systematic
+mistakes on single-word commands (dropped verbs, article insertion,
+register shifts). The router compensates with:
+
+- **Grammar normalisation before MT** — [`_normalize_for_mt`](../core/translation/local_translator.py)
+  adds a capitalised first letter and a trailing period to every Vosk
+  utterance before Argos runs. NMT models were trained on normal
+  written sentences, so this pays +3-5 BLEU on every language pair
+  with zero per-language code.
+- **Bilingual catalog filter** — the router tokenises BOTH the
+  original utterance and the Argos output, so a misfire on the verb
+  still surfaces the right devices via matches on the native room/
+  device name. See [`_build_filtered_catalog`](../system_modules/llm_engine/intent_router.py).
+
+If that is still not enough, you can upgrade the installed Argos
+package to an `opus-mt-tc-big-<src>-en` variant:
+
+| Default package | Recommended upgrade | Size delta | Quality |
+|---|---|---|---|
+| `opus-mt-uk-en` | `opus-mt-tc-big-uk-en` | ~300 MB → ~1.2 GB | +10-15 BLEU |
+| `opus-mt-ru-en` | `opus-mt-tc-big-ru-en` | similar | similar |
+| `opus-mt-de-en` | `opus-mt-tc-big-de-en` | similar | similar |
+
+The `tc-big` checkpoints come from the Tatoeba Challenge and are
+trained on significantly more data. Install them via **Settings →
+Translation → Install package** if the upgrade is available in the
+Argos Package Index, or sideload by dropping the `.argosmodel` file
+into `/var/lib/selena/argos-packages/` and restarting the core.
+
+### Optional: switch to transformers + MarianMT directly
+
+Argos under the hood is just pre-converted opus-mt models. For maximum
+quality you can bypass Argos entirely and use `transformers` +
+`MarianMTModel` with `num_beams=4` beam search. That adds a ~2 GB
+dependency (`transformers` + `torch`), but gives:
+
+- Up-to-date model checkpoints (Argos lags behind Helsinki-NLP releases)
+- Beam search instead of greedy decoding (+3-5 BLEU)
+- Full control over preprocessing / postprocessing
+- Any model from the Helsinki-NLP HuggingFace org, not just the ones
+  Argos packaged
+
+This is *not* wired up in the default build because of the disk
+footprint. If you want it, write a `HelsinkiTranslator` class under
+`core/translation/` that exposes the same interface as
+[`InputTranslator`](../core/translation/local_translator.py)
+(`to_english(text, source_lang) -> str`), then route
+`voice_core/_process_command` through it instead.
+
+```python
+from transformers import MarianMTModel, MarianTokenizer
+
+class HelsinkiTranslator:
+    def __init__(self, models_dir="/var/lib/selena/models/translate"):
+        self._cache = {}
+        self._models_dir = Path(models_dir)
+
+    def _get_model(self, lang_pair):
+        if lang_pair not in self._cache:
+            local = self._models_dir / lang_pair
+            source = str(local) if local.exists() else f"Helsinki-NLP/opus-mt-{lang_pair}"
+            tok = MarianTokenizer.from_pretrained(source)
+            mdl = MarianMTModel.from_pretrained(source)
+            self._cache[lang_pair] = (mdl, tok)
+        return self._cache[lang_pair]
+
+    def to_english(self, text, source_lang):
+        from core.translation.local_translator import _normalize_for_mt
+        text = _normalize_for_mt(text)
+        mdl, tok = self._get_model(f"{source_lang}-en")
+        tokens = tok([text], return_tensors="pt", padding=True)
+        out = mdl.generate(**tokens, num_beams=4)
+        return tok.decode(out[0], skip_special_tokens=True)
+```
+
+Note the re-use of `_normalize_for_mt` — it's language-agnostic and
+works exactly the same way for any MT backend.
+
+## 10. References
 
 - Source: [system_modules/llm_engine/intent_router.py](../system_modules/llm_engine/intent_router.py)
 - Source: [system_modules/llm_engine/intent_compiler.py](../system_modules/llm_engine/intent_compiler.py)
-- Source: [system_modules/llm_engine/intent_cache.py](../system_modules/llm_engine/intent_cache.py)
-- Source: [system_modules/llm_engine/pattern_generator.py](../system_modules/llm_engine/pattern_generator.py)
-- Source: [system_modules/device_control/module.py](../system_modules/device_control/module.py) — canonical hard-intent + composite resolver
+- Source: [system_modules/voice_core/action_phrasing.py](../system_modules/voice_core/action_phrasing.py) — registry + `register_formatter`
+- Source: [core/translation/local_translator.py](../core/translation/local_translator.py) — `_normalize_for_mt`
+- Source: [system_modules/device_control/module.py](../system_modules/device_control/module.py) — canonical hard-intent + `_OWNED_INTENT_META.entity_types`
 - Related docs: [voice-settings.md](voice-settings.md), [architecture.md](architecture.md), [system-module-development.md](system-module-development.md), [climate-and-gree.md](climate-and-gree.md)
