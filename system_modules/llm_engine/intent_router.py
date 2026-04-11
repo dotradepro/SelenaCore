@@ -35,9 +35,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-from core.lang_utils import lang_code_to_name as _lang_name
-
-
 @dataclass
 class IntentResult:
     intent: str
@@ -337,7 +334,9 @@ class IntentRouter:
         from core.llm import llm_call
 
         native_text = native_text or text
-        catalog = await self._build_filtered_catalog(text, native_text=native_text)
+        catalog, allowed = await self._build_filtered_catalog(
+            text, native_text=native_text,
+        )
 
         # Text is already English — send directly, no language wrapping.
         # 8k context gives headroom for the enriched catalog (intent
@@ -362,7 +361,9 @@ class IntentRouter:
         # original utterance, so values spoken natively survive even if
         # the English form dropped them.
         sanity_text = f"{text}\n{native_text}" if native_text != text else text
-        return self._parse_llm_response(raw, source="llm", utter_text=sanity_text)
+        return self._parse_llm_response(
+            raw, source="llm", utter_text=sanity_text, allowed_intents=allowed,
+        )
 
     # ── Cloud LLM ──────────────────────────────────────────────────────
 
@@ -412,7 +413,9 @@ class IntentRouter:
         from core.llm import llm_call
 
         native_text = native_text or text
-        catalog = await self._build_filtered_catalog(text, native_text=native_text)
+        catalog, allowed = await self._build_filtered_catalog(
+            text, native_text=native_text,
+        )
 
         raw = await llm_call(
             text,
@@ -428,7 +431,9 @@ class IntentRouter:
             return None
 
         sanity_text = f"{text}\n{native_text}" if native_text != text else text
-        return self._parse_llm_response(raw, source="cloud", utter_text=sanity_text)
+        return self._parse_llm_response(
+            raw, source="cloud", utter_text=sanity_text, allowed_intents=allowed,
+        )
 
     # ── Prompt building (per-request word-overlap filter) ─────────────
 
@@ -444,11 +449,20 @@ class IntentRouter:
         "- Do NOT invent intent names. Do NOT add a \"response\" field.\n"
         "- Include a param ONLY if the user literally said it. If the user\n"
         "  did not name a device/station/number, OMIT that key. Never copy\n"
-        "  placeholder values from the schema above.\n\n"
+        "  placeholder values from the schema above.\n"
+        "- An empty params object {} is fine. Prefer omitting fields over\n"
+        "  guessing them. NEVER fabricate entity, location, station, genre,\n"
+        "  or value just because the schema lists those fields.\n\n"
+        "Examples (output shape only — pick intents from your list):\n"
+        '  "pause the music"      -> {"intent":"media.pause"}\n'
+        '  "enable privacy mode"  -> {"intent":"privacy_on"}\n'
+        '  "turn on the kitchen light" -> {"intent":"device.on","params":{"entity":"light","location":"kitchen"}}\n'
+        '  "set fan speed to high"     -> {"intent":"device.set_fan_speed","params":{"value":"high"}}\n\n'
         "Params:\n"
         "- entity: device TYPE when the user said one (light, outlet, air_conditioner, lock, thermostat, ...)\n"
         "- location: room name from the catalog when the user said a room\n"
-        "- value: the number the user explicitly said (temperature, level, volume, ...)\n"
+        "- value: the exact word or number the user said for a setting "
+        "(e.g. 22, high, low, cool, auto)\n"
         "- name_en: exact catalog device name ONLY when the user said that exact name\n"
         "- station / genre: ONLY for media intents when the user named a station or genre\n"
     )
@@ -459,7 +473,7 @@ class IntentRouter:
 
     async def _build_filtered_catalog(
         self, user_text: str, native_text: str | None = None,
-    ) -> str:
+    ) -> tuple[str, set[str]]:
         """Assemble the dynamic prompt section for one utterance.
 
         The filter tokenises BOTH ``user_text`` (post-Argos English) AND
@@ -510,11 +524,13 @@ class IntentRouter:
             parts.append(db_part)
 
         built = "\n\n".join(parts)
+        allowed = {n for n, _ in matched_intents}
         logger.debug(
             "filtered catalog: %d intents, %d chars (tokens=%s)",
             len(matched_intents), len(built), sorted(tokens),
         )
-        return built
+        logger.debug("filtered catalog allowed=%s", sorted(allowed))
+        return built, allowed
 
     async def _load_db_filtered_catalog(self, tokens: set[str]) -> str:
         """Pull devices / radio stations that match ``tokens``.
@@ -644,6 +660,17 @@ class IntentRouter:
     # it; otherwise it's a fabrication.
     _SANITIZE_KEYS = ("name_en", "station", "genre", "value")
 
+    # Literal placeholder strings models tend to copy from the schema
+    # example block when they have nothing real to put in a slot. Always
+    # dropped from non-_SANITIZE_KEYS keys (entity, location). For
+    # _SANITIZE_KEYS keys we still allow them through if they literally
+    # appear in the utterance — protects pathological-but-valid inputs
+    # like "set mode to none".
+    _PLACEHOLDER_VALUES = frozenset({
+        "...", "…", "null", "none", "n/a",
+        "<value>", "<entity>", "<location>",
+    })
+
     @staticmethod
     def _in_utterance(value: Any, utter: str) -> bool:
         """True if ``value`` appears as a substring in ``utter``.
@@ -681,6 +708,18 @@ class IntentRouter:
             if not val_str or val_str.lower() == "null":
                 continue
 
+            if val_str.lower() in self._PLACEHOLDER_VALUES:
+                if key in self._SANITIZE_KEYS and self._in_utterance(
+                    val_str, utter_text,
+                ):
+                    pass  # user literally said this word — keep it
+                else:
+                    logger.debug(
+                        "dropped placeholder %s=%r (utter=%r)",
+                        key, raw_val, utter_text,
+                    )
+                    continue
+
             if key in self._SANITIZE_KEYS:
                 if key == "value":
                     # Numeric values need at least one digit in the source
@@ -712,6 +751,7 @@ class IntentRouter:
         raw: str,
         source: str = "llm",
         utter_text: str = "",
+        allowed_intents: set[str] | None = None,
     ) -> IntentResult | None:
         """Parse the classifier JSON into an IntentResult.
 
@@ -729,8 +769,42 @@ class IntentRouter:
             cleaned = re.sub(r"\s*```$", "", cleaned)
 
         start_idx = cleaned.find("{")
-        end_idx = cleaned.rfind("}")
-        if start_idx == -1 or end_idx == -1:
+        if start_idx == -1:
+            return IntentResult(
+                intent="unknown", response="", action=None,
+                source=source, latency_ms=0, raw_llm=raw_debug,
+            )
+
+        # Extract the FIRST balanced JSON object from start_idx. Some cloud
+        # providers (Gemini observed) emit a valid object followed by
+        # garbage like '\n":"living room"}}\n"}}'. The old approach of
+        # rfind('}') swept up all that junk and crashed json.loads. A
+        # depth-counting walk that respects string literals + escapes
+        # gives us exactly the first complete object.
+        end_idx = -1
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start_idx, len(cleaned)):
+            ch = cleaned[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end_idx = i
+                    break
+        if end_idx == -1:
             return IntentResult(
                 intent="unknown", response="", action=None,
                 source=source, latency_ms=0, raw_llm=raw_debug,
@@ -761,6 +835,23 @@ class IntentRouter:
         if not intent_name or intent_name == "chat":
             intent_name = "unknown"
 
+        # Strict per-catalog hallucination guard. The LLM saw a filtered
+        # catalog of intents relevant to this utterance; anything outside
+        # that set is a fabrication. Drop both the intent name AND any
+        # params it carried — unknown with leftover params is worse than
+        # nothing for downstream consumers.
+        if (
+            allowed_intents is not None
+            and intent_name != "unknown"
+            and intent_name not in allowed_intents
+        ):
+            logger.debug(
+                "LLM hallucinated intent %r not in catalog (%d allowed) → unknown",
+                intent_name, len(allowed_intents),
+            )
+            intent_name = "unknown"
+            params = {}
+
         # Sanity-check params against the original utterance so the LLM
         # can't invent device names, stations, genres, or numeric values.
         # Substring-based — language-agnostic.
@@ -780,25 +871,6 @@ class IntentRouter:
         rebuilds the catalog from fresh DB state.
         """
         self.invalidate_catalog_cache()
-
-    def _get_known_intent_names(self) -> set[str]:
-        """Collect all known intent names from DB compiler + module bus."""
-        names: set[str] = set()
-        try:
-            from system_modules.llm_engine.intent_compiler import get_intent_compiler
-            for ci in get_intent_compiler().get_all_intents():
-                names.add(ci.intent)
-        except Exception:
-            pass
-        try:
-            from core.module_bus import get_module_bus
-            for item in get_module_bus()._intent_index:
-                if hasattr(item, "module"):
-                    names.add(f"module.{item.module}")
-        except Exception:
-            pass
-        names.add("llm.response")
-        return names
 
     # ── Resolve entity_ref for named entities ────────────────────────────
 

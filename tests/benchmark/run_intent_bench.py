@@ -70,7 +70,7 @@ async def _classify_once(text: str, model: str) -> tuple[str, float, int]:
     # Per-request filtered catalog — that's the whole point of the new
     # router. Latency includes the catalog build; it's still cheaper than
     # sending 45 intents every time.
-    catalog = await get_intent_router()._build_filtered_catalog(text)
+    catalog, _allowed = await get_intent_router()._build_filtered_catalog(text)
 
     import os
     os.environ["OLLAMA_MODEL"] = model

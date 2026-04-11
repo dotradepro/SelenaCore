@@ -830,12 +830,18 @@ class DeviceControlModule(SystemModule):
         ),
         INTENT_LOCK: dict(
             noun_class="DEVICE", verb="lock", priority=100,
-            description="Lock a smart lock",
+            description=(
+                "Lock a smart lock — secure a door, prevent entry. "
+                "Use for 'lock', 'close lock', 'secure'."
+            ),
             entity_types=["lock", "door_lock"],
         ),
         INTENT_UNLOCK: dict(
             noun_class="DEVICE", verb="unlock", priority=100,
-            description="Unlock a smart lock",
+            description=(
+                "Unlock a smart lock — release the lock, allow entry. "
+                "Opposite of device.lock. Use for 'unlock', 'open lock'."
+            ),
             entity_types=["lock", "door_lock"],
         ),
     }
@@ -873,7 +879,10 @@ class DeviceControlModule(SystemModule):
                 await session.execute(
                     update(IntentDefinition)
                     .where(IntentDefinition.intent == intent_name)
-                    .values(entity_types=payload)
+                    .values(
+                        entity_types=payload,
+                        description=meta["description"],
+                    )
                 )
 
             # Missing rows → insert with module-defined defaults.
