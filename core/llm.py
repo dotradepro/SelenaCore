@@ -1,24 +1,27 @@
 """
 core/llm.py — Unified LLM entry point for SelenaCore.
 
-Every LLM call in the system goes through ``llm_call()``.
-System prompts are loaded from DB (PromptStore) by ``prompt_key``.
-No hardcoded prompts — everything from DB on the TTS language.
+Every LLM call in the system goes through ``llm_call()``. One unified system
+prompt (DB key ``system``) handles both intent classification and chat —
+the LLM always returns an intent JSON, emitting ``intent="chat"`` for
+freeform questions.
 
-Prompt keys:
-    "chat"      — conversation (hidden_system/compact + user_instructions)
-    "intent"    — intent classification (intent_system)
-    "rephrase"  — TTS rephrase/generation (rephrase_system)
-    "translate" — translation tasks (translate_system)
+Prompt keys accepted by ``llm_call``:
+    "intent"    — full intent classification path (JSON mode auto-enabled)
+    "chat"      — alias for "intent", kept for call-site clarity
+    "translate" — offline translation of custom prompts (separate key)
 
-Internal callers (PatternGenerator, wake-word variant generator) bypass the
-DB by passing ``system="..."`` directly — those prompts must stay English-only
-and are NOT user-editable.
+Core operates in English end-to-end: the voice pipeline pre-translates user
+text to English via InputTranslator before calling the LLM, and post-
+translates the LLM's English response via OutputTranslator right before TTS.
+System prompts therefore contain NO "reply in X language" directives.
+
+Internal callers (PatternGenerator) bypass the DB by passing ``system="..."``
+directly — those prompts are English-only and NOT user-editable.
 
 Usage:
     from core.llm import llm_call
 
-    text = await llm_call("pause the music", prompt_key="rephrase", temperature=0.9)
     json_str = await llm_call(query, prompt_key="intent", extra_context=catalog)
 """
 from __future__ import annotations
@@ -51,12 +54,12 @@ def _live_log(event: str, data: dict) -> None:
 async def llm_call(
     user_msg: str,
     *,
-    prompt_key: str = "rephrase",
+    prompt_key: str = "intent",
     system: str | None = None,
     extra_context: str = "",
     temperature: float = 0.7,
     max_tokens: int = 512,
-    timeout: float = 10.0,
+    timeout: float = 15.0,
     json_mode: bool | None = None,
     num_ctx: int = 4096,
 ) -> str:
@@ -65,19 +68,18 @@ async def llm_call(
     Args:
         user_msg:       The user/context message sent to the LLM.
         prompt_key:     Which system prompt to load from DB.
-                        "chat"|"intent"|"rephrase"|"translate"
+                        "intent"|"chat"|"translate" (chat is an alias for intent).
                         Ignored when ``system`` is provided.
         system:         Optional inline system prompt that overrides the DB
-                        lookup. Used by internal callers (PatternGenerator,
-                        wake-word variant generator) for hardcoded English
-                        prompts that are not user-editable.
+                        lookup. Used by internal callers (PatternGenerator)
+                        for hardcoded English prompts that are not user-editable.
         extra_context:  Appended to the system prompt (e.g. intent catalog).
         temperature:    LLM sampling temperature.
         max_tokens:     Max tokens in response.
         timeout:        Timeout in seconds.
         json_mode:      Force structured JSON output (Ollama format=json,
                         OpenAI/Groq response_format, Gemini responseMimeType).
-                        ``None`` means auto-enable for ``prompt_key="intent"``.
+                        ``None`` means auto-enable for intent/chat keys.
                         Inline ``system`` callers must set this explicitly.
         num_ctx:        Ollama context window. Cloud providers manage this
                         themselves and ignore the value.
@@ -86,7 +88,7 @@ async def llm_call(
         LLM response text (stripped). Empty string on failure.
     """
     if json_mode is None:
-        json_mode = (system is None and prompt_key == "intent")
+        json_mode = (system is None and prompt_key in ("intent", "chat"))
     try:
         provider, provider_cfg = _get_provider()
         if system is not None:
@@ -207,38 +209,48 @@ async def _call_provider(
 # ── Prompt resolution ────────────────────────────────────────────────────
 
 
-def _get_context() -> tuple[str, str, str, str]:
-    """Return (assistant_name, lang_name, lang_code, tts_lang_code) from config."""
+def _get_assistant_name() -> str:
+    """Return the English form of the wake-word name (e.g. "Selena").
+
+    Preference order:
+      1. ``voice.wake_word_en`` (explicit EN form, set by wizard or settings)
+      2. ``voice.wake_word_model`` auto-transliterated if Cyrillic
+      3. "Selena" fallback
+    """
     from core.config_writer import read_config
-    from core.lang_utils import lang_code_to_name
 
     config = read_config()
     voice_cfg = config.get("voice", {})
-    sys_cfg = config.get("system", {})
 
-    # Assistant name from wake phrase
-    wake = voice_cfg.get("wake_word_model", "")
+    wake_en = (voice_cfg.get("wake_word_en") or "").strip()
+    if wake_en:
+        return wake_en.split()[-1].capitalize() if wake_en else "Selena"
+
+    wake = (voice_cfg.get("wake_word_model") or "").strip()
     if wake:
         parts = wake.replace("_", " ").strip().split()
-        name = parts[-1].capitalize() if parts else "Selena"
-    else:
-        name = "Selena"
-
-    # TTS language
-    tts_lang = voice_cfg.get("tts", {}).get("primary", {}).get("lang", "")
-    if not tts_lang:
-        tts_lang = sys_cfg.get("language", "en")
-    lang_name = lang_code_to_name(tts_lang)
-
-    return name, lang_name, tts_lang, tts_lang
+        native = parts[-1] if parts else "Selena"
+        # If it contains Cyrillic, transliterate
+        if any("\u0400" <= ch <= "\u04ff" for ch in native):
+            from core.translit import cyrillic_to_latin
+            return cyrillic_to_latin(native).capitalize() or "Selena"
+        return native.capitalize()
+    return "Selena"
 
 
 async def _resolve_system_prompt(prompt_key: str, provider: str) -> str:
-    """Load system prompt from DB by key, format template variables."""
+    """Load system prompt from DB by key, format template variables.
+
+    Core operates in English, so every prompt is loaded from the ``en`` slot
+    and the only template variable honoured is ``{name}`` (the wake-word
+    English form). Since the unified ``system`` prompt now handles both
+    intent classification and chat, ``intent`` and ``chat`` keys resolve
+    to the same row.
+    """
     from core.prompt_store import get_prompt_store
 
     store = get_prompt_store()
-    name, lang_name, lang_code, tts_lang = _get_context()
+    name = _get_assistant_name()
 
     # NOTE: prompt templates may contain literal `{...}` (e.g. JSON examples
     # for the intent classifier), so str.format() raises KeyError on them.
@@ -248,22 +260,9 @@ async def _resolve_system_prompt(prompt_key: str, provider: str) -> str:
             tpl = tpl.replace("{" + k + "}", v)
         return tpl
 
-    if prompt_key == "chat":
-        # Single system prompt for all providers (local + cloud)
-        hidden = await store.get(tts_lang, "hidden_system")
-        hidden = _subst(hidden, name=name, lang=lang_name)
-        user_instr = await store.get(tts_lang, "user_instructions")
-        return hidden + " " + (user_instr or "")
-
-    if prompt_key == "intent":
-        # Core operates in English — always load EN prompt
-        tpl = await store.get("en", "intent_system")
-        return _subst(tpl, name=name, lang="English")
-
-    if prompt_key == "rephrase":
-        # Rephrase in English — OutputTranslator handles en→target_lang
-        tpl = await store.get("en", "rephrase_system")
-        return _subst(tpl, lang_name="English", lang="English", name=name)
+    if prompt_key in ("intent", "chat"):
+        tpl = await store.get("en", "system")
+        return _subst(tpl, name=name)
 
     if prompt_key == "translate":
         return await store.get("en", "translate_system")

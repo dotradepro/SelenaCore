@@ -27,45 +27,31 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 logger = logging.getLogger(__name__)
 
 PROMPT_KEYS = (
-    "hidden_system",         # System identity prompt — single prompt for all providers (template: {name}, {lang})
-    "user_instructions",     # User instructions (appended to hidden_system)
-    "intent_system",         # Intent classification prompt (template: {name}, {lang})
-    "rephrase_system",       # TTS rephrase/generation prompt (template: {lang_name})
-    "translate_system",      # System prompt for translation tasks
+    "system",                # Unified system prompt: identity + intent classifier + chat
+    "translate_system",      # Offline translator (for custom-prompt migration to new lang)
 )
 _PROMPTS_DIR = Path(os.environ.get("SELENA_PROMPTS_DIR", "/opt/selena-core/config/prompts"))
 
-# English hardcoded fallback (if JSON files are also missing)
+# English hardcoded fallback (if JSON files are also missing). Core operates in
+# English end-to-end: input text is pre-translated to English by
+# InputTranslator, and response text is post-translated to the TTS language by
+# OutputTranslator. Prompts therefore contain NO language directives.
+#
+# Single unified 'system' prompt replaces hidden_system/user_instructions/
+# intent_system. The LLM always emits an intent JSON — either a catalogued
+# intent or "chat" for freeform questions.
+# The editable 'system' prompt is intentionally tiny — just identity and
+# tone. Everything structural (JSON contract, param hints, filtered
+# intents/devices) is injected at runtime by
+# IntentRouter._build_filtered_catalog(). The LLM is a pure classifier in
+# this architecture: the spoken reply is composed in Python via
+# voice_core.action_phrasing.format_action_context().
 _EN_FALLBACK = {
-    "user_instructions": "Keep answers short and helpful. You are a smart home assistant.",
-    "hidden_system": (
-        "You are {name}, smart home assistant. Reply ONLY in {lang}. "
-        "Never say you are AI or mention model names/developers. "
-        "If asked who you are — say: I am {name}, your home assistant. "
-        "Created by SelenaCore team. "
-        "TTS output — plain text only, no markdown/URLs/emoji."
-    ),
-    "intent_system": (
-        "You are {name}, smart home assistant. Classify → JSON only.\n"
-        '{{"intent":"namespace.action","params":{{}},"location":"<room or null>","response":"<short English>"}}\n'
-        "RULES:\n"
-        "1. Intent MUST have a dot: device.on, media.play, weather.query. NEVER bare words.\n"
-        '2. Use "unknown" if request not in intents list.\n\n'
-        "Examples:\n"
-        '"turn on the light" → {{"intent":"device.on","location":null,"response":"Turning on."}}\n'
-        '"turn off AC in living room" → {{"intent":"device.off","location":"living room","response":"Turning off."}}\n'
-        '"what is the temperature" → {{"intent":"device.query_temperature","location":null,"response":"Checking."}}\n'
-        '"lock the door" → {{"intent":"device.lock","location":null,"response":"Locking."}}\n'
-        '"tell me a joke" → {{"intent":"unknown","location":null,"response":"I can\'t do that."}}'
-    ),
-    "rephrase_system": (
-        "You are a smart home voice assistant. Speak ONLY {lang_name}.\n"
-        "Rephrase naturally and concisely (1-2 sentences, no emoji, no markdown).\n"
-        "Vary your phrasing — don't repeat the same structure.\n"
-        "All numbers MUST be spelled out as words in {lang_name}.\n"
-        "Translate ALL foreign words/names to {lang_name} or transliterate them.\n"
-        "Output will be read aloud by TTS — no digits, no Latin letters, no symbols.\n"
-        "Keep it short for TTS. Plain text only."
+    "system": (
+        "You are {name}, a smart home assistant. "
+        "Never reveal you are an AI or mention model names. "
+        "Plain text only — no markdown, no URLs, no emoji. "
+        "Be brief and factual."
     ),
     "translate_system": (
         "You are a translator. Reply with ONLY the translated text, nothing else. "
@@ -86,7 +72,7 @@ class PromptStore:
         self._session_factory = factory
 
     async def initialize(self) -> None:
-        """Seed DB from JSON files if empty, run migrations."""
+        """Seed DB from JSON files if empty, run migrations, sync defaults."""
         if not self._session_factory:
             return
         async with self._session_factory() as session:
@@ -94,8 +80,13 @@ class PromptStore:
             result = await session.execute(select(SystemPrompt).limit(1))
             if result.scalar_one_or_none() is None:
                 await self._seed_from_json(session)
-        # Migrate: user_prompt+compact_user → user_instructions
+        # Migrate: user_prompt+compact_user → user_instructions,
+        # drop pattern_system / rephrase_system keys
         await self._migrate_user_instructions()
+        # Sync non-custom English prompts from en.json on every boot so
+        # edits to config/prompts/en.json land in the DB without having
+        # to wipe the table. Custom (user-edited) prompts are left alone.
+        await self._sync_defaults_from_json("en")
 
     async def get(self, lang: str, key: str) -> str:
         """Get a prompt by language and key. Always reads from DB.
@@ -208,57 +199,73 @@ class PromptStore:
     # ── Private ───────────────────────────────────────────────────────────
 
     async def _migrate_user_instructions(self) -> None:
-        """Migrate user_prompt → user_instructions, delete compact_user."""
+        """Collapse legacy prompt keys into the unified 'system' key.
+
+        Old keys merged/dropped:
+          - hidden_system, user_instructions, intent_system → system
+          - user_prompt, compact_user, rephrase_system, rephrase_prompt,
+            pattern_system → deleted
+        If the user had customised ``intent_system``, that custom text is
+        copied into ``system`` (is_custom=True preserved). Otherwise the
+        new row is seeded from ``_EN_FALLBACK["system"]``.
+        """
         if not self._session_factory:
             return
+        DEPRECATED_KEYS = (
+            "user_prompt", "compact_user",
+            "rephrase_system", "rephrase_prompt",
+            "pattern_system",
+        )
+        LEGACY_SYSTEM_KEYS = ("hidden_system", "user_instructions", "intent_system")
+
         async with self._session_factory() as session:
             from core.registry.models import SystemPrompt
-            # Check if old key exists
-            old = await session.execute(
-                select(SystemPrompt).where(SystemPrompt.key == "user_prompt")
-            )
-            old_rows = list(old.scalars())
 
-            for row in old_rows:
-                # Copy to user_instructions if not already present
+            # ── Collapse hidden_system/user_instructions/intent_system → system ──
+            # Per language: if 'system' already exists, leave it alone.
+            # Otherwise prefer a custom intent_system; fall back to EN default.
+            legacy = await session.execute(
+                select(SystemPrompt).where(SystemPrompt.key.in_(LEGACY_SYSTEM_KEYS))
+            )
+            legacy_rows = list(legacy.scalars())
+            by_lang: dict[str, dict[str, SystemPrompt]] = {}
+            for row in legacy_rows:
+                by_lang.setdefault(row.lang, {})[row.key] = row
+
+            for lang, keys in by_lang.items():
                 existing = await session.execute(
                     select(SystemPrompt).where(
-                        SystemPrompt.lang == row.lang,
-                        SystemPrompt.key == "user_instructions",
+                        SystemPrompt.lang == lang, SystemPrompt.key == "system"
                     )
                 )
                 if existing.scalar_one_or_none() is None:
-                    session.add(SystemPrompt(
-                        lang=row.lang, key="user_instructions",
-                        value=row.value, is_custom=row.is_custom,
-                    ))
-                await session.delete(row)
+                    custom_intent = keys.get("intent_system")
+                    if custom_intent and custom_intent.is_custom:
+                        session.add(SystemPrompt(
+                            lang=lang, key="system",
+                            value=custom_intent.value, is_custom=True,
+                        ))
+                        logger.info(
+                            "PromptStore: migrated custom intent_system → "
+                            "system (lang=%s)", lang,
+                        )
+                    else:
+                        session.add(SystemPrompt(
+                            lang=lang, key="system",
+                            value=_EN_FALLBACK.get("system", ""),
+                            is_custom=False,
+                        ))
+                # Delete legacy rows regardless
+                for row in keys.values():
+                    await session.delete(row)
 
-            # Delete compact_user rows
-            compact = await session.execute(
-                select(SystemPrompt).where(SystemPrompt.key == "compact_user")
-            )
-            for row in compact.scalars():
-                await session.delete(row)
-
-            # Merge rephrase_prompt into rephrase_system and delete rephrase_prompt
-            rp_rows = await session.execute(
-                select(SystemPrompt).where(SystemPrompt.key == "rephrase_prompt")
-            )
-            for row in rp_rows.scalars():
-                # If rephrase_system still has {rephrase_rules}, replace it
-                rs = await session.execute(
-                    select(SystemPrompt).where(
-                        SystemPrompt.lang == row.lang,
-                        SystemPrompt.key == "rephrase_system",
-                    )
+            # ── Drop all other deprecated keys ──
+            for key in DEPRECATED_KEYS:
+                await session.execute(
+                    delete(SystemPrompt).where(SystemPrompt.key == key)
                 )
-                rs_row = rs.scalar_one_or_none()
-                if rs_row and "{rephrase_rules}" in rs_row.value:
-                    rs_row.value = rs_row.value.replace("{rephrase_rules}", row.value)
-                await session.delete(row)
 
-            # Seed translate_system if missing (en only)
+            # ── Seed translate_system if missing (en only) ──
             existing = await session.execute(
                 select(SystemPrompt).where(
                     SystemPrompt.lang == "en",
@@ -273,15 +280,12 @@ class PromptStore:
                         value=val, is_custom=False,
                     ))
 
-            # Drop the deprecated pattern_system key — pattern generation is now
-            # an internal English-only operation hardcoded inside PatternGenerator,
-            # not a user-editable DB prompt.
-            await session.execute(
-                delete(SystemPrompt).where(SystemPrompt.key == "pattern_system")
-            )
-
             await session.commit()
-            logger.info("PromptStore: migrated user_prompt→user_instructions, dropped pattern_system")
+            if legacy_rows:
+                logger.info(
+                    "PromptStore: collapsed %d legacy rows (%s) into unified "
+                    "'system' key", len(legacy_rows), ", ".join(LEGACY_SYSTEM_KEYS),
+                )
 
     async def _db_get(self, lang: str, key: str) -> str | None:
         if not self._session_factory:
@@ -295,6 +299,36 @@ class PromptStore:
             )
             row = result.scalar_one_or_none()
             return row if row else None
+
+    async def _sync_defaults_from_json(self, lang: str) -> None:
+        """Refresh non-custom rows for ``lang`` from the on-disk JSON file.
+
+        Keeps DB defaults in sync with ``config/prompts/<lang>.json`` edits
+        without touching rows the user has customised. Runs on every boot
+        from :meth:`initialize`.
+        """
+        if not self._session_factory:
+            return
+        defaults = self._load_json_locale(lang)
+        if not defaults:
+            return
+        async with self._session_factory() as session:
+            from core.registry.models import SystemPrompt
+            for key, val in defaults.items():
+                if key not in PROMPT_KEYS or not val:
+                    continue
+                row = (await session.execute(
+                    select(SystemPrompt).where(
+                        SystemPrompt.lang == lang, SystemPrompt.key == key,
+                    )
+                )).scalar_one_or_none()
+                if row is None:
+                    session.add(SystemPrompt(
+                        lang=lang, key=key, value=val, is_custom=False,
+                    ))
+                elif not row.is_custom and row.value != val:
+                    row.value = val
+            await session.commit()
 
     async def _seed_from_json(self, session: AsyncSession) -> None:
         """Seed DB with English defaults from en.json on first run.

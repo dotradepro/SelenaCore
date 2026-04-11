@@ -40,6 +40,8 @@ class VoiceConfigRequest(BaseModel):
     stt_model: str | None = None
     tts_voice: str | None = None
     wake_word_model: str | None = None
+    wake_word_en: str | None = None
+    assistant_gender: str | None = None  # "female" | "male" | "neutral"
     wake_word_enabled: bool | None = None
     vosk_use_grammar: bool | None = None
     privacy_mode: bool | None = None
@@ -161,119 +163,11 @@ STATE_LISTENING = "listening"  # recording user command
 STATE_PROCESSING = "processing"  # LLM + TTS
 
 
-def generate_wake_variants(phrase: str) -> list[str]:
-    """Generate phonetic variants of a wake phrase for robust STT matching.
-
-    STT often misrecognizes names as similar-sounding words.
-    Uses rule-based substitutions as a fast fallback.
-    """
-    phrase = phrase.lower().strip()
-    if not phrase:
-        return []
-
-    variants: set[str] = {phrase}
-
-    # Cyrillic phonetic substitutions (common STT misrecognitions)
-    _CYR_SUBS: list[tuple[str, list[str]]] = [
-        ("е", ["и", "є", "э"]),
-        ("и", ["е", "і", "ы"]),
-        ("і", ["и", "е", "ї"]),
-        ("о", ["а"]),
-        ("а", ["о"]),
-        ("с", ["з", "ц"]),
-        ("з", ["с"]),
-        ("г", ["х", "ґ"]),
-        ("к", ["г"]),
-        ("д", ["т"]),
-        ("т", ["д"]),
-        ("б", ["п"]),
-        ("п", ["б"]),
-        ("в", ["ф"]),
-        ("л", ["р"]),
-        ("ц", ["с"]),
-        ("ж", ["ш"]),
-        ("ш", ["щ"]),
-    ]
-    _LAT_SUBS: list[tuple[str, list[str]]] = [
-        ("e", ["a", "i"]),
-        ("a", ["e", "o"]),
-        ("i", ["e", "y"]),
-        ("s", ["z", "c"]),
-        ("c", ["s", "k"]),
-        ("k", ["c", "g"]),
-        ("g", ["k"]),
-        ("v", ["w", "f"]),
-        ("th", ["t"]),
-    ]
-
-    import re
-    is_cyrillic = bool(re.search(r'[а-яіїєґ]', phrase))
-    subs = _CYR_SUBS if is_cyrillic else _LAT_SUBS
-
-    for pattern, replacements in subs:
-        if pattern in phrase:
-            for repl in replacements:
-                variants.add(phrase.replace(pattern, repl, 1))
-
-    # Truncated forms (STT sometimes drops last character)
-    for word in phrase.split():
-        if len(word) >= 4:
-            variants.add(word[:-1])
-
-    variants = {v for v in variants if len(v) >= 3}
-    return sorted(variants)
-
-
-async def generate_wake_variants_llm(phrase: str, lang: str = "uk") -> list[str]:
-    """Generate phonetic variants via LLM (cloud provider).
-
-    Asks the LLM to produce words that STT might output when
-    someone says the wake phrase. Returns list of variants or empty.
-    """
-    try:
-        from core.llm import llm_call
-        from core.lang_utils import lang_code_to_name
-        lang_name = lang_code_to_name(lang)
-
-        prompt_text = (
-            f'The word "{phrase}" is a voice assistant wake word in {lang_name}. '
-            f"When someone says this word, speech recognition (Vosk) sometimes "
-            f"transcribes it incorrectly as a similar-sounding word.\n\n"
-            f"Generate 15-20 common misrecognition variants that Vosk STT might "
-            f"produce when someone says \"{phrase}\". Include:\n"
-            f"- Words with similar vowel sounds (е↔и, о↔а, i↔e)\n"
-            f"- Words with similar consonant sounds (с↔з, д↔т, г↔х)\n"
-            f"- Truncated or slightly different endings\n"
-            f"- Common phonetic confusions in {lang_name}\n\n"
-            f"Output ONLY the variants, one per line, lowercase, no numbering, "
-            f"no explanations. Include the original word first."
-        )
-
-        raw = await llm_call(
-            prompt_text,
-            system=(
-                "You are a helpful linguistic assistant. "
-                "Output exactly what the user asks, nothing else."
-            ),
-            temperature=0.3,
-        )
-
-        if not raw:
-            return []
-
-        # Parse LLM response: one variant per line
-        variants = []
-        for line in raw.strip().splitlines():
-            word = line.strip().lower().strip("- •·0123456789.)")
-            if word and len(word) >= 3 and len(word) <= 30:
-                variants.append(word)
-
-        logger.info("LLM generated %d wake variants for '%s'", len(variants), phrase)
-        return variants
-
-    except Exception as e:
-        logger.warning("LLM wake variant generation failed: %s", e)
-        return []
+# Wake-word phonetic-variant generation was removed: Vosk grammar now
+# receives exactly the phrase the user entered. STT-error variants added
+# noise to matching and the LLM-based enrichment blocked cold start by
+# 1-3 seconds. If a user's chosen wake word is mis-recognised, the fix is
+# to change the wake word itself in settings.
 
 
 def _rms_energy(pcm_data: bytes) -> float:
@@ -353,10 +247,12 @@ class VoiceCoreModule(SystemModule):
         self._stt_provider = None
 
         # Defaults from env, overridden by core.yaml
-        defaults = {
+        defaults: dict[str, Any] = {
             "stt_model": os.getenv("STT_MODEL", "small"),
             "tts_voice": os.getenv("PIPER_VOICE", "uk_UA-ukrainian_tts-medium"),
             "wake_word_model": os.getenv("WAKE_WORD_MODEL", "селена"),
+            "wake_word_en": os.getenv("WAKE_WORD_EN", ""),
+            "assistant_gender": os.getenv("ASSISTANT_GENDER", "neutral"),
             "wake_word_enabled": True,  # False = always listening (no wake word needed)
             "vosk_use_grammar": True,   # False = IDLE recognizer in free-vocab mode (debugging / weak models)
             "privacy_mode": False,
@@ -367,9 +263,28 @@ class VoiceCoreModule(SystemModule):
             saved = read_config().get("voice", {})
             for k in defaults:
                 if k in saved:
-                    defaults[k] = type(defaults[k])(saved[k])
+                    cur_type = type(defaults[k])
+                    if cur_type is bool:
+                        defaults[k] = bool(saved[k])
+                    else:
+                        defaults[k] = cur_type(saved[k])
         except Exception:
             pass
+
+        # One-shot migration: if wake_word_en was never set, auto-fill it
+        # by transliterating wake_word_model. Persisted on the first write
+        # from settings.
+        if not defaults.get("wake_word_en"):
+            wake_model = (defaults.get("wake_word_model") or "").strip()
+            if wake_model:
+                try:
+                    from core.translit import cyrillic_to_latin
+                    defaults["wake_word_en"] = cyrillic_to_latin(
+                        wake_model.replace("_", " ")
+                    ).strip().title()
+                except Exception:
+                    pass
+
         self._config: dict[str, Any] = defaults
 
     # ── Helpers ───────────────────────────────────────────────────────────
@@ -401,14 +316,20 @@ class VoiceCoreModule(SystemModule):
             logger.debug("Speaker capture failed: %s", e)
 
     async def _speak_wake_response(self) -> None:
-        """Speak a short confirmation after wake phrase detected, then listen."""
+        """Speak a short confirmation after wake phrase detected, then listen.
+
+        Uses a static English acknowledgement rather than a second LLM round
+        trip. OutputTranslator + Piper handle the conversion to the user's
+        TTS language.
+        """
         try:
-            from core.llm import llm_call
-            text = await llm_call("wake word activated, greet briefly", prompt_key="rephrase", temperature=0.9, timeout=5.0)
-            if not text:
-                text = "..."  # silent fallback
+            text = "Yes?"
+            text = await self._to_tts_lang(text)
             from system_modules.voice_core.tts import sanitize_for_tts
-            clean = sanitize_for_tts(text).lower()
+            from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+            clean = preprocess_for_tts(
+                sanitize_for_tts(text), self._tts_primary_lang,
+            ).lower()
             if clean:
                 done = asyncio.Event()
                 await self._enqueue_speech(clean, priority=0, done_event=done)
@@ -535,21 +456,14 @@ class VoiceCoreModule(SystemModule):
         return False
 
     def _get_wake_variants(self) -> list[str]:
-        """Return wake phrase + phonetic variants from config cache."""
-        if not hasattr(self, "_wake_variants_cache"):
-            self._wake_variants_cache = []
+        """Return the single wake phrase the user configured.
+
+        Phonetic variants and LLM-enriched forms were removed — Vosk grammar
+        now receives exactly one phrase. If misrecognition becomes a problem
+        the user can change the wake word itself.
+        """
         phrase = self._get_wake_phrase()
-        if self._wake_variants_cache and self._wake_variants_cache[0] == phrase:
-            return self._wake_variants_cache[1]
-        # Load from config or generate
-        variants = self._config.get("wake_word_variants", [])
-        if not variants or not isinstance(variants, list):
-            variants = generate_wake_variants(phrase)
-        # Always include original
-        if phrase and phrase not in variants:
-            variants.insert(0, phrase)
-        self._wake_variants_cache = [phrase, variants]
-        return variants
+        return [phrase] if phrase else []
 
     @staticmethod
     def _prepare_audio_for_stt(audio_buffer: bytearray, rms_floor: float = 120.0) -> bytes:
@@ -868,25 +782,12 @@ class VoiceCoreModule(SystemModule):
             p.create_listening_recognizer()
             return
 
-        # Load wake word variants from config (try both new and legacy formats)
-        variants = []
-        try:
-            from core.config_writer import read_config
-            cfg = read_config()
-            voice_cfg = cfg.get("voice", {})
-            # New format: voice.wake_word.vosk_grammar_variants
-            variants = voice_cfg.get("wake_word", {}).get("vosk_grammar_variants", [])
-            # Legacy format: voice.wake_word_variants (LLM-generated)
-            if not variants:
-                variants = voice_cfg.get("wake_word_variants", [])
-        except Exception:
-            pass
-
-        # Fall back to wake phrase from module config
-        if not variants:
-            wake = self._get_wake_phrase()
-            if wake:
-                variants = [wake.lower().replace("_", " ")]
+        # Vosk grammar is seeded with exactly the wake phrase the user
+        # configured — no phonetic variants, no LLM enrichment. If the
+        # user wants a different-sounding wake word they change the wake
+        # word itself on the voice-core settings page.
+        wake = self._get_wake_phrase()
+        variants = [wake.lower().replace("_", " ")] if wake else []
 
         if variants:
             p.set_grammar(variants)
@@ -896,10 +797,12 @@ class VoiceCoreModule(SystemModule):
         p.create_listening_recognizer()
 
     async def _warmup_vosk(self) -> None:
-        """Warm up Vosk model: LLM generates greeting → Piper speaks → Vosk transcribes.
+        """Warm up Vosk model: random greeting → Piper → Vosk transcribes.
 
         This JIT-primes all internal Vosk structures for faster first recognition.
-        Runs as background task, does not block startup.
+        Runs as background task, does not block startup. The greeting is
+        chosen by :func:`pick_greeting` (time-of-day + gender + language),
+        avoiding the 500-1000 ms LLM round-trip that used to happen here.
         """
         from core.stt.vosk_provider import VoskProvider
         p = self._stt_provider
@@ -907,24 +810,20 @@ class VoiceCoreModule(SystemModule):
             return
 
         try:
-            # 1. Generate greeting via LLM
-            greeting_text = None
+            from system_modules.voice_core.greetings import pick_greeting
+            name = (
+                self._config.get("wake_word_en")
+                or self._config.get("wake_word_model")
+                or "Selena"
+            ).split()[-1].title()
+            gender = str(self._config.get("assistant_gender") or "neutral")
+            # Greeting catalogue is English-only; OutputTranslator converts
+            # to the TTS language the same way it handles every other reply.
+            greeting_text_en = pick_greeting(name, gender=gender)
             try:
-                from core.module_loader.sandbox import get_sandbox
-                llm = get_sandbox().get_in_process_module("llm-engine")
-                if llm and hasattr(llm, "generate"):
-                    lang_name = {"en": "English", "uk": "Ukrainian", "ru": "Russian"}.get(p.lang, p.lang)
-                    prompt = (
-                        f"Generate ONE short greeting phrase in {lang_name} "
-                        f"(2-5 words, like 'hello, ready to help'). "
-                        f"Return ONLY the phrase, no quotes, no explanation."
-                    )
-                    greeting_text = await llm.generate(prompt, max_tokens=30)
+                greeting_text = await self._to_tts_lang(greeting_text_en)
             except Exception:
-                pass
-
-            if not greeting_text:
-                greeting_text = "привіт, система готова" if p.lang == "uk" else "hello, system ready"
+                greeting_text = greeting_text_en
 
             # 2. Synthesize via Piper
             audio_bytes = None
@@ -1040,7 +939,12 @@ class VoiceCoreModule(SystemModule):
             stt_lang = self._detect_lang()
             tts_engine, tts_lang = self._get_tts_for_lang(stt_lang)
 
-            # [Translation Point 1] Translate STT text to English before routing
+            # [Translation Point 1] Translate STT text to English before routing.
+            # Keep BOTH original and translated forms — the router uses them
+            # together for bilingual filter + substring sanitizer so Argos
+            # glitches (dropped verbs, literary-register swaps) can't break
+            # classification.
+            native_text = text
             from core.config_writer import get_value as _cfg_get
             if _cfg_get("translation", "enabled", False) and stt_lang != "en":
                 from core.translation.local_translator import get_input_translator
@@ -1066,11 +970,11 @@ class VoiceCoreModule(SystemModule):
             from system_modules.llm_engine.intent_router import get_intent_router
             result = await get_intent_router().route(
                 text, user_id=None, lang=stt_lang, tts_lang=tts_lang,
+                native_text=native_text,
             )
 
             self._log_live("intent", {
                 "text": text, "intent": result.intent, "source": result.source,
-                "response": result.response[:100] if result.response else "",
                 "latency_ms": result.latency_ms,
             })
             logger.info(
@@ -1078,10 +982,8 @@ class VoiceCoreModule(SystemModule):
                 result.intent, result.source, result.latency_ms,
             )
 
-            # Session context for LLM rephrase
             self._last_query = text
             self._last_intent = result.intent
-            # Reset session after 5 min of inactivity
             if time.monotonic() - self._session_ts > 300:
                 self._session.clear()
             self._session_ts = time.monotonic()
@@ -1091,19 +993,19 @@ class VoiceCoreModule(SystemModule):
             # Otherwise the intent would fall into the system_module branch
             # below and hang for 15s waiting for an external module to ack.
             if result.intent in ("privacy_on", "privacy_off"):
-                if result.response:
-                    from system_modules.voice_core.tts import sanitize_for_tts
-                    tts_text = sanitize_for_tts(result.response).lower()
-                    tts_text = await self._to_tts_lang(tts_text)
-                    from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
-                    tts_text = _pp(tts_text, tts_lang)
-                    if tts_text:
-                        done_ev = asyncio.Event()
-                        await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
-                        try:
-                            await asyncio.wait_for(done_ev.wait(), timeout=8.0)
-                        except asyncio.TimeoutError:
-                            pass
+                from system_modules.voice_core.action_phrasing import format_action_context
+                tts_text_en = format_action_context(result.intent, {})
+                tts_text = await self._to_tts_lang(tts_text_en)
+                from system_modules.voice_core.tts import sanitize_for_tts
+                from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+                tts_text = _pp(sanitize_for_tts(tts_text).lower(), tts_lang)
+                if tts_text:
+                    done_ev = asyncio.Event()
+                    await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
+                    try:
+                        await asyncio.wait_for(done_ev.wait(), timeout=8.0)
+                    except asyncio.TimeoutError:
+                        pass
                 from system_modules.voice_core.privacy import set_privacy_mode
                 await set_privacy_mode(result.intent == "privacy_on")
                 logger.info(
@@ -1112,43 +1014,16 @@ class VoiceCoreModule(SystemModule):
                 )
                 return
 
-            # System modules handle their own TTS via EventBus (voice.speak).
+            # ── Dispatch system-module intents ──
             _is_system_handled = (
                 result.source == "system_module"
                 or (result.source in ("llm", "cloud") and self._is_system_module_intent(result.intent))
             )
             if _is_system_handled:
-                # device.on / device.off defer all speech to device-control's
-                # speak_action() so the user hears the TRUTH (right room or
-                # not_found) instead of a speculative LLM response that may
-                # name a device that doesn't exist.
-                _defer_to_module = result.intent in ("device.on", "device.off")
-                # Speak the intermediate response (e.g. "Checking weather...")
-                # BEFORE waiting for module to complete its action
-                if result.response and not _defer_to_module:
-                    self._log_live("tts", {
-                        "text": result.response[:80],
-                        "msg": "Озвучка промежуточного ответа...",
-                    })
-                    from system_modules.voice_core.tts import sanitize_for_tts
-                    tts_text = sanitize_for_tts(result.response).lower()
-                    tts_text = await self._to_tts_lang(tts_text)
-                    from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
-                    tts_text = _pp(tts_text, tts_lang)
-                    if tts_text:
-                        # Mark BEFORE the await — module's _on_voice_intent
-                        # subscriber runs concurrently and may call
-                        # speak_action() while TTS is still playing. Setting
-                        # the flag now ensures _on_voice_event suppresses the
-                        # redundant LLM ack regardless of timing.
-                        self._pattern_response_spoken = True
-                        done_ev = asyncio.Event()
-                        await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
-                        try:
-                            await asyncio.wait_for(done_ev.wait(), timeout=10.0)
-                        except asyncio.TimeoutError:
-                            pass
-
+                # No intermediate ack — the module will publish voice.speak
+                # with an action_context after the driver call, and
+                # _on_voice_event → format_action_context will render the
+                # SINGLE final speech.
                 self._log_live("action", {
                     "intent": result.intent,
                     "msg": "Dispatched to module — awaiting completion...",
@@ -1167,12 +1042,13 @@ class VoiceCoreModule(SystemModule):
                         "intent": result.intent,
                         "msg": "Timeout waiting for module response (15s)",
                     })
-            elif result.response:
-                # Speak response directly — no rephrase needed.
-                # LLM/cloud responses are already natural language.
-                # Cache/system responses are short templates — rephrase wastes time.
-                tts_text = await self._to_tts_lang(result.response)
-                # Number-to-words AFTER translation, in target TTS language
+            else:
+                # Classifier-only lanes: unknown / chat / any intent not
+                # owned by a system module. Speech is composed locally by
+                # format_action_context → deterministic fallback phrase.
+                from system_modules.voice_core.action_phrasing import format_action_context
+                tts_text_en = format_action_context(result.intent, {})
+                tts_text = await self._to_tts_lang(tts_text_en)
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
                 tts_text = _pp(tts_text, tts_lang)
                 self._log_live("tts", {
@@ -1185,21 +1061,15 @@ class VoiceCoreModule(SystemModule):
                 done = asyncio.Event()
                 await self._enqueue_speech(tts_text, priority=0, done_event=done, voice=use_voice)
                 await done.wait()
-                await self.publish("voice.speak_done", {"text": result.response})
+                await self.publish("voice.speak_done", {"text": tts_text_en})
                 self._log_live("done", {
                     "msg": "Озвучка завершена",
                     "duration_ms": int((time.monotonic() - start_ts) * 1000),
                 })
-            else:
-                self._log_live("done", {
-                    "intent": result.intent,
-                    "msg": "Интент без ответа",
-                    "duration_ms": int((time.monotonic() - start_ts) * 1000),
-                })
 
-            # Track assistant response in session (trim to last 10 exchanges)
-            if result.response:
-                self._session.append({"role": "assistant", "content": result.response})
+            # Session history records the intent — there is no canonical
+            # "response" string anymore, we can rebuild speech any time.
+            self._session.append({"role": "assistant", "content": result.intent})
             if len(self._session) > 20:
                 self._session = self._session[-20:]
 
@@ -1215,6 +1085,7 @@ class VoiceCoreModule(SystemModule):
                     intent=result.intent,
                     response=result.response,
                     duration_ms=duration_ms,
+                    raw_llm=result.raw_llm,
                 ))
 
             logger.info("Voice pipeline: complete (%dms)", duration_ms)
@@ -1540,85 +1411,6 @@ class VoiceCoreModule(SystemModule):
         except ImportError:
             return False
 
-    async def _rephrase_via_llm(self, default_text: str) -> str:
-        """Ask LLM to rephrase text for natural TTS output.
-
-        When translation is enabled, output is English (translated by
-        OutputTranslator afterwards). Number-to-words preprocessing is
-        deferred to AFTER translation in _process_command.
-        """
-        from core.llm import llm_call
-        from core.config_writer import get_value as _cfg_get
-
-        translation_on = _cfg_get("translation", "enabled", False)
-        lang = "en" if translation_on else (self._tts_primary_lang or self._detect_lang())
-        from core.lang_utils import lang_code_to_name
-        lang_name = lang_code_to_name(lang)
-
-        ctx = f"[{lang_name}]\n"
-        if self._last_query:
-            ctx += f"\"{self._last_query}\"\n"
-        if self._last_intent:
-            ctx += f"{self._last_intent}\n"
-        ctx += f"\"{default_text}\""
-
-        result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
-        if result and len(result) < 300:
-            if translation_on:
-                return result
-            from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-            return preprocess_for_tts(result, lang)
-
-        if translation_on:
-            return default_text
-        from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-        return preprocess_for_tts(default_text, lang)
-
-    async def _generate_via_llm(self, action_context: dict) -> str:
-        """Ask LLM to generate TTS response from action context.
-
-        When translation is enabled, output is English (translated to TTS
-        language by OutputTranslator afterwards). Otherwise output is in
-        the TTS language directly. Number-to-words preprocessing is done
-        AFTER translation in _process_command, not here.
-        """
-        from core.llm import llm_call
-        from core.config_writer import get_value as _cfg_get
-        import json as _json
-
-        intent = action_context.get("intent", "unknown")
-        ctx_parts = {k: v for k, v in action_context.items() if k != "intent"}
-        ctx_summary = ", ".join(f"{k}={v}" for k, v in ctx_parts.items()) if ctx_parts else "done"
-        fallback_text = f"{intent}: {ctx_summary}"
-
-        # Core operates in English when translation is enabled
-        translation_on = _cfg_get("translation", "enabled", False)
-        lang = "en" if translation_on else (self._tts_primary_lang or self._detect_lang())
-        from core.lang_utils import lang_code_to_name
-        lang_name = lang_code_to_name(lang)
-
-        ctx = f"[{lang_name}]\n"
-        if self._last_query:
-            ctx += f"\"{self._last_query}\"\n"
-        ctx += f"{intent}\n"
-        if ctx_parts:
-            ctx += f"{_json.dumps(ctx_parts, ensure_ascii=False, default=str)}\n"
-
-        result = await llm_call(ctx, prompt_key="rephrase", temperature=0.9, timeout=10.0)
-        if result:
-            if len(result) > 1200:
-                result = result[:1200].rsplit(".", 1)[0] + "."
-            # Skip number-to-words when translation is enabled —
-            # OutputTranslator + Piper will handle digits naturally,
-            # OR caller will run preprocess_for_tts with the TTS lang
-            # AFTER translation.
-            if translation_on:
-                return result
-            from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-            return preprocess_for_tts(result, lang)
-
-        return fallback_text
-
     async def _on_voice_event(self, event: Any) -> None:
         if event.type == "voice.speak" and self._tts:
             action_ctx = event.payload.get("action_context")
@@ -1626,14 +1418,14 @@ class VoiceCoreModule(SystemModule):
 
             # If the pipeline already spoke a pattern/template response for
             # this intent AND the action succeeded, the module's post-action
-            # LLM ack is redundant. Errors/not_found must still be spoken so
-            # the user is not misled by the intermediate response.
+            # acknowledgement is redundant. Errors/not_found must still be
+            # spoken so the user is not misled by the intermediate response.
             if action_ctx and self._pattern_response_spoken:
                 action_result = str(action_ctx.get("result", "")).lower()
                 if action_result in ("", "ok", "success", "done"):
                     self._log_live("skip_ack", {
                         "intent": action_ctx.get("intent", ""),
-                        "msg": "Подавлено повторное озвучивание (паттерн уже озвучен)",
+                        "msg": "Suppressed duplicate ack (pattern already spoken)",
                     })
                     done_payload: dict[str, Any] = {"text": ""}
                     if speech_id:
@@ -1643,13 +1435,16 @@ class VoiceCoreModule(SystemModule):
                     return
 
             if action_ctx:
-                # LLM generates response from structured action context
-                text = await self._generate_via_llm(action_ctx)
+                # Format the structured action context into English text
+                # using the built-in phrasing dispatcher — no LLM round
+                # trip. Intent classifier already made one LLM call; doing
+                # a second one here was the main source of the "crooked"
+                # replies. OutputTranslator below handles en→TTS lang.
+                from system_modules.voice_core.action_phrasing import format_action_context
+                intent_name = action_ctx.get("intent", "")
+                text = format_action_context(intent_name, action_ctx)
             else:
                 text = event.payload.get("text", "")
-                if text:
-                    # Rephrase/translate existing text via LLM
-                    text = await self._rephrase_via_llm(text)
 
             if text:
                 # [Translation Point 2] Translate English → TTS language
@@ -1878,33 +1673,36 @@ class VoiceCoreModule(SystemModule):
             if "min_speech_chunks" in updates:
                 svc._min_speech_chunks = updates["min_speech_chunks"]
 
-            # Auto-generate wake word phonetic variants when name changes
+            # Wake word changed: rebuild Vosk grammar with the single phrase
+            # the user entered. Auto-fill wake_word_en via transliteration if
+            # the user did not provide an English form.
             if "wake_word_model" in updates:
                 phrase = updates["wake_word_model"].replace("_", " ").lower().strip()
-                # Start with rule-based variants (instant)
-                variants = generate_wake_variants(phrase)
-                # Try LLM for better variants (async, language from TTS config)
-                tts_lang = svc._tts_primary_lang or "uk"
-                try:
-                    llm_variants = await generate_wake_variants_llm(phrase, tts_lang)
-                    if llm_variants:
-                        # Merge: LLM variants + rule-based, deduplicated
-                        combined = list(dict.fromkeys(llm_variants + variants))
-                        variants = combined
-                except Exception:
-                    pass
-                svc._config["wake_word_variants"] = variants
-                _persist("voice", "wake_word_variants", variants)
-                if hasattr(svc, "_wake_variants_cache"):
-                    svc._wake_variants_cache = []
-                logger.info("Wake word '%s': %d variants", phrase, len(variants))
-                # Update Vosk grammar with new variants
+                logger.info("Wake word updated to '%s'", phrase)
+
+                if "wake_word_en" not in updates and not svc._config.get("wake_word_en"):
+                    from core.translit import cyrillic_to_latin
+                    wake_en = cyrillic_to_latin(phrase).strip().title()
+                    if wake_en:
+                        svc._config["wake_word_en"] = wake_en
+                        _persist("voice", "wake_word_en", wake_en)
+                        logger.info("Auto-filled wake_word_en='%s'", wake_en)
+
+                # Drop any legacy phonetic variants lingering in config
+                if svc._config.get("wake_word_variants"):
+                    svc._config["wake_word_variants"] = []
+                    _persist("voice", "wake_word_variants", [])
+
                 svc._setup_vosk_grammar()
-                # Restart audio loop to pick up new grammar
                 if svc._listen_task:
                     svc._listen_task.cancel()
                     await asyncio.sleep(0.5)
                     svc._listen_task = asyncio.create_task(svc._audio_loop())
+
+            if "wake_word_en" in updates:
+                logger.info(
+                    "wake_word_en updated to '%s'", updates["wake_word_en"],
+                )
 
             return JSONResponse({"ok": True, "config": svc._config})
 
@@ -2056,36 +1854,15 @@ class VoiceCoreModule(SystemModule):
 
         @router.get("/patterns")
         async def list_patterns() -> JSONResponse:
-            """List all regex patterns from DB."""
-            patterns: list[dict] = []
-            try:
-                from core.registry.models import IntentPattern, IntentDefinition
-                from sqlalchemy import select
-                async with svc._db_session() as session:
-                    result = await session.execute(
-                        select(
-                            IntentPattern.lang,
-                            IntentPattern.pattern,
-                            IntentPattern.source,
-                            IntentDefinition.intent,
-                            IntentDefinition.module,
-                            IntentDefinition.priority,
-                        )
-                        .join(IntentDefinition, IntentPattern.intent_id == IntentDefinition.id)
-                        .order_by(IntentDefinition.priority.desc(), IntentPattern.lang)
-                    )
-                    for row in result:
-                        patterns.append({
-                            "intent": row.intent or "",
-                            "module": row.module or "",
-                            "lang": row.lang,
-                            "pattern": row.pattern,
-                            "source": row.source or "system",
-                            "priority": row.priority,
-                        })
-            except Exception as exc:
-                logger.warning("patterns list error: %s", exc)
-            return JSONResponse({"patterns": patterns, "total": len(patterns)})
+            """Legacy endpoint — always returns an empty list.
+
+            Regex patterns and the FastMatcher tier were removed; the
+            router is now LLM-only with a keyword-filtered catalog.
+            The UI Patterns tab still calls this endpoint, so we
+            respond with an empty set rather than 404 to keep the
+            existing frontend rendering.
+            """
+            return JSONResponse({"patterns": [], "total": 0})
 
         @router.post("/test-command")
         async def test_command(req: TestCommandRequest) -> JSONResponse:
@@ -2105,7 +1882,9 @@ class VoiceCoreModule(SystemModule):
                 lang = _detect_text_lang(text, svc._tts_primary_lang)
             _tts_engine, tts_lang = svc._get_tts_for_lang(lang)
 
-            # [Translation Point 1] Translate to English before routing
+            # Keep native utterance alongside the Argos translation so the
+            # router's bilingual filter + sanitizer can match against both.
+            native_text = text
             from core.config_writer import get_value as _cfg_get
             if _cfg_get("translation", "enabled", False) and lang != "en":
                 from core.translation.local_translator import get_input_translator
@@ -2122,7 +1901,8 @@ class VoiceCoreModule(SystemModule):
                     text = text_en
 
             result, trace_steps = await get_intent_router().route(
-                text, user_id=None, lang=lang, tts_lang=tts_lang, trace=True,
+                text, user_id=None, lang=lang, tts_lang=tts_lang,
+                native_text=native_text, trace=True,
             )
 
             # Set session context for LLM rephrase
@@ -2133,9 +1913,12 @@ class VoiceCoreModule(SystemModule):
 
             # Privacy mode is owned by voice-core itself — apply inline
             if result.intent in ("privacy_on", "privacy_off"):
-                if req.speak and result.response:
+                if req.speak:
+                    from system_modules.voice_core.action_phrasing import format_action_context
                     from system_modules.voice_core.tts import sanitize_for_tts
-                    tts_text = sanitize_for_tts(result.response).lower()
+                    tts_text_en = format_action_context(result.intent, {})
+                    tts_text = await svc._to_tts_lang(tts_text_en)
+                    tts_text = sanitize_for_tts(tts_text).lower()
                     if tts_text:
                         try:
                             await svc._stream_speak(tts_text)
@@ -2177,10 +1960,14 @@ class VoiceCoreModule(SystemModule):
                     tts_done = True
                 except asyncio.TimeoutError:
                     pass
-            elif req.speak and result.response:
-                # [Translation Point 2] Translate response before TTS
-                tts_text = await svc._to_tts_lang(result.response)
+            elif req.speak:
+                # Classifier-only lanes (unknown / chat / non-system intents):
+                # compose the spoken reply locally via format_action_context,
+                # then run it through OutputTranslator + TTSPreprocessor + Piper.
+                from system_modules.voice_core.action_phrasing import format_action_context
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
+                tts_text_en = format_action_context(result.intent, {})
+                tts_text = await svc._to_tts_lang(tts_text_en)
                 tts_text = preprocess_for_tts(tts_text, tts_lang)
                 await svc.publish("voice.response", {"text": tts_text, "query": text})
                 try:
@@ -2188,7 +1975,7 @@ class VoiceCoreModule(SystemModule):
                     tts_done = True
                 except Exception as tts_exc:
                     logger.warning("test-command TTS failed: %s", tts_exc)
-                await svc.publish("voice.speak_done", {"text": result.response})
+                await svc.publish("voice.speak_done", {"text": tts_text_en})
 
             duration_ms = int((_time.monotonic() - start_ts) * 1000)
 
@@ -2203,6 +1990,7 @@ class VoiceCoreModule(SystemModule):
                     intent=result.intent,
                     response=result.response,
                     duration_ms=duration_ms,
+                    raw_llm=result.raw_llm,
                 ))
 
             return JSONResponse({

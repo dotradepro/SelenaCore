@@ -783,6 +783,7 @@
             <span class="label-sm" data-i18n="translation_enable"></span>
         </label>
         <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_enable_desc"></div>
+        <div class="label-xs mt4" style="opacity:.85;color:#d08d3a" data-i18n="translation_offline_warning"></div>
     </div>
     <div class="card-inner mb12">
         <label class="flex gap8" style="align-items:center;cursor:pointer">
@@ -818,7 +819,7 @@
 </div><!-- /tabTranslate -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Prompts (read-only view of active system prompts)           -->
+<!--  TAB: Prompts (editable unified system prompt)                    -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabPrompts">
 <div class="card">
@@ -826,7 +827,30 @@
         <span class="section-title" data-i18n="tab_prompts"></span>
         <div class="section-sub" data-i18n="prompts_tab_desc"></div>
     </div>
-    <div id="promptsList"></div>
+
+    <div class="mb8 flex gap8" style="align-items:center">
+        <span class="label-sm" data-i18n="prompts_unified_label"></span>
+        <span id="promptsCustomBadge" class="badge badge-pr" style="display:none" data-i18n="custom"></span>
+        <span style="flex:1"></span>
+        <span class="label-xs" style="opacity:.55" id="promptsCharCount">0 chars</span>
+    </div>
+
+    <textarea id="promptsTextarea"
+              style="width:100%;min-height:320px;font-family:monospace;font-size:11px;line-height:1.45;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--c2);color:var(--tx);resize:vertical"
+              spellcheck="false"
+              data-placeholder-i18n="prompts_textarea_placeholder"></textarea>
+
+    <div class="flex gap8 mt8">
+        <button class="btn btn-primary" id="promptsSaveBtn" data-i18n="common_save"></button>
+        <button class="btn btn-ghost" id="promptsResetBtn" data-i18n="prompts_reset_default"></button>
+        <span style="flex:1"></span>
+        <span class="label-xs" style="opacity:.55" data-i18n="prompts_catalog_note"></span>
+    </div>
+
+    <details class="mt12">
+        <summary class="label-xs" style="cursor:pointer;opacity:.7" data-i18n="prompts_preview_label"></summary>
+        <pre id="promptsPreview" style="background:var(--c2);border:1px solid var(--b);border-radius:8px;padding:8px 10px;font-size:10px;line-height:1.35;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;color:var(--tx3);margin:6px 0 0"></pre>
+    </details>
 </div>
 </div><!-- /tabPrompts -->
 
@@ -1257,7 +1281,14 @@
             patterns_col_pattern: 'Pattern',
             patterns_col_source: 'Source',
             tab_test: 'Test Console',
-            prompts_tab_desc: 'System prompts used by the AI engine. Read-only — managed by the system automatically.',
+            prompts_tab_desc: 'This is the user-editable identity shell: name, tone, high-level rules. Keep it short (100-500 chars). Everything structural — JSON schema, filtered intents, matching devices — is assembled on every voice command and appended automatically. The LLM is a pure classifier; spoken replies are composed in code.',
+            prompts_unified_label: 'System prompt (English only)',
+            prompts_textarea_placeholder: 'You are {name}, a smart home assistant...',
+            prompts_reset_default: 'Reset to default',
+            prompts_catalog_note: 'Dynamic catalog is appended automatically',
+            prompts_preview_label: 'Full prompt preview (with catalog)',
+            prompts_empty: 'Prompt cannot be empty',
+            prompts_too_short: 'Prompt too short — keep core identity and rules',
             tab_translate: 'Translate',
             translation_title: 'Local Translator',
             translation_desc: 'Core works in English. Local models translate at STT output and TTS input (~50ms).',
@@ -1267,6 +1298,7 @@
             translation_downloading: 'Downloading...',
             translation_enable: 'Enable local translator',
             translation_enable_desc: 'Requires a downloaded and activated model. Falls back to LLM if disabled.',
+            translation_offline_warning: 'Internal LLM communication is English-only. Disabling translation is supported only when you speak to the assistant in English.',
             translation_fallback: 'Fallback to LLM if model unavailable',
             translation_fallback_desc: 'Use LLM for translation when local model is not downloaded.',
             translation_active: 'Active',
@@ -1471,7 +1503,14 @@
             patterns_col_pattern: 'Патерн',
             patterns_col_source: 'Джерело',
             tab_test: 'Тест консоль',
-            prompts_tab_desc: 'Системні промпти AI-движка. Тільки перегляд — керуються системою автоматично.',
+            prompts_tab_desc: 'Це редагована оболонка ідентичності: ім\'я, тон, загальні правила. Тримайте коротко (100-500 символів). Усе структурне — JSON-схема, відфільтровані інтенти, відповідні пристрої — збирається на кожну голосову команду і додається автоматично. LLM лише класифікатор; відповіді будуються в коді.',
+            prompts_unified_label: 'Системний промпт (лише англійська)',
+            prompts_textarea_placeholder: 'You are {name}, a smart home assistant...',
+            prompts_reset_default: 'Скинути до типового',
+            prompts_catalog_note: 'Динамічний каталог додається автоматично',
+            prompts_preview_label: 'Повний перегляд (з каталогом)',
+            prompts_empty: 'Промпт не може бути порожнім',
+            prompts_too_short: 'Промпт занадто короткий — залиште ідентичність і правила',
             tab_translate: 'Переклад',
             translation_title: 'Локальний перекладач',
             translation_desc: 'Ядро працює англійською. Локальні моделі перекладають на виході STT та вході TTS (~50мс).',
@@ -1481,6 +1520,7 @@
             translation_downloading: 'Завантаження...',
             translation_enable: 'Увімкнути локальний перекладач',
             translation_enable_desc: 'Потрібна завантажена та активована модель. Без неї — LLM fallback.',
+            translation_offline_warning: 'Внутрішнє спілкування з LLM — лише англійською. Вимикати переклад можна тільки якщо ви розмовляєте з асистентом англійською.',
             translation_fallback: 'Fallback на LLM якщо модель недоступна',
             translation_fallback_desc: 'Використовувати LLM для перекладу коли локальна модель не завантажена.',
             translation_active: 'Активна',
@@ -2394,47 +2434,82 @@
         }
     }
 
-    // ── AI Prompts ─────────────────────────────────────────────────
-    // ── Prompts (read-only view) ────────────────────────────────────
-    var PROMPT_META = {
-        intent_system:    { en: 'Intent classification',       uk: 'Класифікація інтентів',         where: { en: 'IntentRouter → LLM (Tier 3/4)', uk: 'IntentRouter → LLM (Tier 3/4)' } },
-        hidden_system:    { en: 'System identity',             uk: 'Системна ідентичність',         where: { en: 'Chat with any LLM (local + cloud)', uk: 'Чат з будь-якою LLM (локал + хмара)' } },
-        user_instructions:{ en: 'User instructions',           uk: 'Інструкції користувача',        where: { en: 'Appended to every chat prompt', uk: 'Додається до кожного чат-промпту' } },
-        rephrase_system:  { en: 'TTS rephrase',               uk: 'Перефразування для TTS',        where: { en: 'VoiceCore → natural TTS response', uk: 'VoiceCore → природна відповідь TTS' } },
-        translate_system: { en: 'Translation',                 uk: 'Переклад',                      where: { en: 'Internal prompt translation engine', uk: 'Внутрішній движок перекладу промптів' } }
-    };
+    // ── Prompts (editable unified 'system' key) ────────────────────
     state.promptsLoaded = false;
+    state.promptsDefault = '';
+    state.promptsMinLen = 100;
+    state.promptsMaxLen = 5000;
+
+    function _updatePromptCharCount() {
+        var ta = $('promptsTextarea');
+        var n = ta ? (ta.value || '').length : 0;
+        var el = $('promptsCharCount');
+        var min = state.promptsMinLen || 100;
+        var max = state.promptsMaxLen || 5000;
+        if (el) {
+            var warn = n < min || n > max;
+            el.textContent = n + ' / min ' + min + ' / max ' + max;
+            el.style.color = warn ? 'var(--err)' : '';
+        }
+        var save = $('promptsSaveBtn');
+        if (save) save.disabled = n < min || n > max;
+    }
 
     async function loadPromptsReadonly() {
         try {
             var res = await api('/setup/llm/system-prompt');
             state.promptsLoaded = true;
             var pm = res.prompts || {};
-            var lang = res.lang || 'en';
-            var container = $('promptsList');
-            container.innerHTML = '';
-            var keys = ['intent_system', 'hidden_system', 'user_instructions', 'rephrase_system', 'translate_system'];
-            keys.forEach(function(key) {
-                var meta = PROMPT_META[key] || {};
-                var title = (meta[LANG] || meta.en || key);
-                var where = (meta.where && (meta.where[LANG] || meta.where.en)) || '';
-                var val = (pm[key] && pm[key].value) || '';
-                var isCustom = pm[key] && pm[key].is_custom;
-                var div = document.createElement('div');
-                div.className = 'card-inner mb12';
-                div.innerHTML =
-                    '<div class="flex gap6 mb4" style="align-items:center">' +
-                        '<span class="label-sm">' + title + '</span>' +
-                        (isCustom ? '<span class="badge badge-pr">' + t('custom') + '</span>' : '') +
-                    '</div>' +
-                    '<div class="label-xs mb4" style="opacity:.55">' + where + '</div>' +
-                    '<pre style="background:var(--c2);border:1px solid var(--b);border-radius:8px;padding:8px 10px;' +
-                    'font-size:11px;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:160px;' +
-                    'overflow-y:auto;color:var(--tx);margin:0">' + _esc(val) + '</pre>';
-                container.appendChild(div);
-            });
+            var limits = res.limits || {};
+            if (limits.min_system_prompt_len) state.promptsMinLen = limits.min_system_prompt_len;
+            if (limits.max_prompt_len) state.promptsMaxLen = limits.max_prompt_len;
+            var sys = pm.system || {};
+            var val = sys.value || '';
+            state.promptsDefault = sys.default || val;
+            var ta = $('promptsTextarea');
+            if (ta) { ta.value = val; }
+            var badge = $('promptsCustomBadge');
+            if (badge) badge.style.display = sys.is_custom ? '' : 'none';
+            _updatePromptCharCount();
+            var pv = $('promptsPreview');
+            if (pv) pv.textContent = res.full_preview || '';
         } catch(e) { /* ignore */ }
     }
+
+    async function savePromptsUnified() {
+        try {
+            var ta = $('promptsTextarea');
+            if (!ta) return;
+            var val = (ta.value || '').trim();
+            var min = state.promptsMinLen || 100;
+            if (val.length < min) {
+                showToast((t('prompts_too_short') || 'Prompt too short') + ' (min ' + min + ')', 'error');
+                return;
+            }
+            await postJson('/setup/llm/prompt', { key: 'system', value: val });
+            showToast(t('saved') || 'Saved');
+            var badge = $('promptsCustomBadge');
+            if (badge) badge.style.display = '';
+            loadPromptsReadonly();
+        } catch(e) { showToast('Error', 'error'); }
+    }
+
+    async function resetPromptsUnified() {
+        try {
+            await postJson('/setup/llm/system-prompt/reset', {});
+            showToast(t('saved') || 'Saved');
+            loadPromptsReadonly();
+        } catch(e) { showToast('Error', 'error'); }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var ta = $('promptsTextarea');
+        if (ta) ta.addEventListener('input', _updatePromptCharCount);
+        var saveBtn = $('promptsSaveBtn');
+        if (saveBtn) saveBtn.addEventListener('click', savePromptsUnified);
+        var resetBtn = $('promptsResetBtn');
+        if (resetBtn) resetBtn.addEventListener('click', resetPromptsUnified);
+    });
 
     function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 

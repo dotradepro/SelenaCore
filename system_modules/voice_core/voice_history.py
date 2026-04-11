@@ -2,14 +2,15 @@
 system_modules/voice_core/voice_history.py — Voice interaction history in SQLite
 
 Schema:
-  voice_history(id, timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms)
+  voice_history(id, timestamp, user_id, wake_word, recognized_text, intent,
+                response, duration_ms, raw_llm)
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class VoiceRecord:
     intent: str | None
     response: str | None
     duration_ms: int
+    raw_llm: str | None = None
 
 
 class VoiceHistory:
@@ -47,8 +49,9 @@ class VoiceHistory:
 
     async def _ensure_table(self) -> None:
         engine = self._engine
+        from sqlalchemy import text
         async with engine.begin() as conn:
-            await conn.execute(__import__("sqlalchemy").text("""
+            await conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS voice_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp REAL NOT NULL,
@@ -57,12 +60,20 @@ class VoiceHistory:
                     recognized_text TEXT NOT NULL DEFAULT '',
                     intent TEXT,
                     response TEXT,
-                    duration_ms INTEGER NOT NULL DEFAULT 0
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    raw_llm TEXT
                 )
             """))
-            await conn.execute(__import__("sqlalchemy").text(
+            await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS idx_vh_timestamp ON voice_history(timestamp)"
             ))
+            # Migrate existing installs that pre-date the raw_llm column
+            result = await conn.execute(text("PRAGMA table_info(voice_history)"))
+            cols = {row[1] for row in result.fetchall()}
+            if "raw_llm" not in cols:
+                await conn.execute(text(
+                    "ALTER TABLE voice_history ADD COLUMN raw_llm TEXT"
+                ))
 
     async def add(self, record: VoiceRecord) -> None:
         """Add a voice record and trim if over MAX_RECORDS."""
@@ -72,8 +83,10 @@ class VoiceHistory:
             async with engine.begin() as conn:
                 await conn.execute(text("""
                     INSERT INTO voice_history
-                        (timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms)
-                    VALUES (:timestamp, :user_id, :wake_word, :recognized_text, :intent, :response, :duration_ms)
+                        (timestamp, user_id, wake_word, recognized_text, intent,
+                         response, duration_ms, raw_llm)
+                    VALUES (:timestamp, :user_id, :wake_word, :recognized_text, :intent,
+                            :response, :duration_ms, :raw_llm)
                 """), asdict(record))
                 # Trim oldest records
                 await conn.execute(text("""
@@ -89,7 +102,7 @@ class VoiceHistory:
         engine = await self._get_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text("""
-                SELECT id, timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms
+                SELECT id, timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms, raw_llm
                 FROM voice_history
                 ORDER BY timestamp DESC
                 LIMIT :limit
@@ -103,7 +116,7 @@ class VoiceHistory:
         engine = await self._get_engine()
         async with engine.connect() as conn:
             result = await conn.execute(text("""
-                SELECT id, timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms
+                SELECT id, timestamp, user_id, wake_word, recognized_text, intent, response, duration_ms, raw_llm
                 FROM voice_history
                 WHERE user_id = :user_id
                 ORDER BY timestamp DESC

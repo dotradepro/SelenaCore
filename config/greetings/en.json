@@ -1,0 +1,70 @@
+{
+  "morning": {
+    "female": [
+      "Good morning, I'm {name}. Ready to help.",
+      "Morning. {name} is online and listening.",
+      "Good morning. {name} here, ready for the day."
+    ],
+    "male": [
+      "Good morning, I'm {name}. At your service.",
+      "Morning. {name} here, ready for the day.",
+      "Good morning. {name} online."
+    ],
+    "neutral": [
+      "Good morning. {name} is ready.",
+      "Morning. System online.",
+      "Good morning. All systems ready."
+    ]
+  },
+  "afternoon": {
+    "female": [
+      "Good afternoon, I'm {name}. How can I help.",
+      "Afternoon. {name} online.",
+      "Hello. {name} here, at your service."
+    ],
+    "male": [
+      "Good afternoon, I'm {name}. How can I help.",
+      "Afternoon. {name} here, ready.",
+      "Hello. {name} at your service."
+    ],
+    "neutral": [
+      "Good afternoon. System ready.",
+      "Afternoon. All systems online.",
+      "Hello. Ready to help."
+    ]
+  },
+  "evening": {
+    "female": [
+      "Good evening, I'm {name}. Ready for you.",
+      "Evening. {name} is online.",
+      "Good evening. How can I help."
+    ],
+    "male": [
+      "Good evening, I'm {name}. Ready for you.",
+      "Evening. {name} here.",
+      "Good evening. How can I help."
+    ],
+    "neutral": [
+      "Good evening. System ready.",
+      "Evening. All systems online.",
+      "Good evening."
+    ]
+  },
+  "night": {
+    "female": [
+      "Good night, I'm {name}. Still here if you need me.",
+      "Late hour. {name} is online.",
+      "Working late. {name} ready."
+    ],
+    "male": [
+      "Good night, I'm {name}. Still here if you need me.",
+      "Late hour. {name} is online.",
+      "Working late. {name} ready."
+    ],
+    "neutral": [
+      "Night shift. System online.",
+      "Working late. All systems ready.",
+      "Night mode. Ready to help."
+    ]
+  }
+}
