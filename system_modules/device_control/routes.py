@@ -292,7 +292,8 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     @router.post("/devices", status_code=201)
     async def add_device(body: AddDeviceBody) -> dict[str, Any]:
         from core.registry.models import Device
-        if body.protocol not in ("tuya_local", "tuya_cloud", "mqtt", "gree", "matter"):
+        from .providers.catalog import PROVIDERS
+        if body.protocol not in PROVIDERS:
             raise HTTPException(422, f"Unsupported protocol: {body.protocol}")
 
         # Normalise + auto-translate native name/location so the intent
