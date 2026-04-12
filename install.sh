@@ -396,6 +396,12 @@ install_ollama() {
     # The official installer creates ollama.service. Make sure it's enabled.
     systemctl enable --now ollama 2>/dev/null || \
         warn "Could not enable ollama.service — start it manually with: sudo systemctl start ollama"
+    # Keep only one model loaded at a time to save RAM on Pi/Jetson.
+    if ! grep -q "OLLAMA_MAX_LOADED_MODELS" /etc/systemd/system/ollama.service 2>/dev/null; then
+        sed -i '/^\[Service\]/a Environment="OLLAMA_MAX_LOADED_MODELS=1"' \
+            /etc/systemd/system/ollama.service 2>/dev/null && \
+            systemctl daemon-reload 2>/dev/null
+    fi
     log "Ollama installed: $(ollama --version 2>/dev/null | head -1 || echo unknown)"
 }
 
