@@ -187,6 +187,103 @@ _VERB_BUCKETS = {
 
 Жорсткі інтенти на кшталт `device.query_temperature` можуть мати нуль скомпільованих патернів. `IntentCompiler` тримає їх у `_compiled` (і відповідно у `get_all_intents()`) щоб LLM-tier бачив їх у своєму динамічному каталозі. Вони просто відсутні у `_flat_en` і `_buckets_en` — FastMatcher їх ніколи не пробує, але LLM пробує.
 
+## 3.5. Embedding Classifier (Tier 1.5) — `EmbeddingIntentClassifier`
+
+Джерело: [system_modules/llm_engine/embedding_classifier.py](../../system_modules/llm_engine/embedding_classifier.py)
+
+Додано 2026-04-12. Запускається **після** побудови відфільтрованого
+каталогу, але **перед** LLM-тиром. Використовує
+`sentence-transformers/all-MiniLM-L6-v2` (22 МБ, encoder-only) для
+порівняння запиту з попередньо обчисленими якірними центроїдами
+кожного кандидата. Впевнені хіти обходять LLM-виклик повністю.
+
+### 3.5.1 Позиція в пайплайні
+
+```
+Vosk STT (будь-яка мова)
+  → Helsinki translator → англійський текст
+  → Token filter         → 3-15 кандидатів
+  → Embedding classifier → cosine по anchor центроїдах   ← ЦЕЙ ТИР
+      ↓ впевнений хіт (score ≥ 0.30, margin ≥ 0.02)
+      → return IntentResult(source="embedding")          ~50-200 мс
+      ↓ низький score / margin / повертає None
+  → Локальний LLM qwen     (Tier 2 fallback)            ~2-5 с
+```
+
+### 3.5.2 Як працює
+
+1. **Warmup** (раз при старті, ~15 с на Jetson, ~30 с на Pi 5):
+   попередньо обчислити середній embedding центроїд для кожного
+   інтенту з `INTENT_ANCHORS` + закешувати.
+
+2. **На запит** (~40-150 мс):
+   - Закодувати запит через MiniLM
+   - Для кожного кандидата: комбінувати кешований anchor-центроїд
+     з live description-ембеддингом
+   - Обрати інтент з найвищою cosine-подібністю
+   - Якщо `score >= 0.30` і `margin >= 0.02` → повернути
+   - Інакше → передати LLM
+
+3. **Виділення командного сегменту**: для довгих фраз (>8 слів)
+   `_extract_command_segment()` розбиває по сполучниках і бере
+   клаузу з командним дієсловом. Це запобігає розбавленню сигналу
+   контекстним шумом ("я щойно прийшов додому і мені холодно").
+
+4. **Параметри**: лексичний `extract_params()` з entity map,
+   room keywords, value keywords, word-to-number конвертацією та
+   genre list. Обробляє артефакти Helsinki
+   (`"air conditioning"` → `air_conditioner`).
+
+### 3.5.3 Стратегія якорів
+
+`INTENT_ANCHORS` — єдине джерело правди для того, що embedding модель
+вважає репрезентативним для кожного інтенту. Два правила:
+
+1. **Включати реальні Helsinki outputs**, не лише чистий англійський.
+   Класифікатор бачить production translation шум, не ідеалізований
+   текст. Приклад: `"вмикни джазове радіо"` → Helsinki → `"Turn on the
+   jazz radio."` — саме цей рядок має бути якорем `media.play_genre`.
+
+2. **Включати негативні якорі для `unknown`**. Без них класифікатор
+   не має поняття "дивний ввід". Якорі типу `"xyzzy plover quux"`,
+   `"tell me a joke"`, `"who are you"` виштовхують unknown-центроїд
+   у окрему область embedding простору.
+
+### 3.5.4 Конфігурація
+
+```yaml
+intent:
+  embedding_enabled: true           # головний перемикач
+  embedding_score_threshold: 0.30   # нижче → передати LLM
+  embedding_margin_threshold: 0.02  # winner - runner_up нижче → передати
+```
+
+### 3.5.5 Результати бенчмарків
+
+Тестовано на 40-case канонічному корпусі + 40-case шумному корпусі
+(filler words, STT stutter, довгі контекстні речення, друкарські
+помилки):
+
+| Платформа | Канонічний | Шумний | Embedding % | LLM % |
+|---|---|---|---|---|
+| Jetson Orin (8 ГБ) | **40/40 (100%)** p50=111мс | **35/40 (87.5%)** | 95% | 2.5% |
+| Raspberry Pi 5 (16 ГБ) | **38/40 (95%)** p50=78мс | **33/40 (82.5%)** | 82% | 1.25% |
+
+LLM викликається для <3% запитів. Решта ~15-20% які embedding не
+обробляє — це `unknown` випадки що коректно розв'язуються через
+детермінований fallback (LLM не потрібен).
+
+### 3.5.6 Повне порівняння моделей (40-case канонічний, Jetson Orin)
+
+| Конфігурація | Accuracy | p50 | Розмір моделі |
+|---|---|---|---|
+| tinyllama 1.1b | 50.0% | 1103 мс | 600 МБ |
+| qwen 0.5b | 50.0% | 2131 мс | 400 МБ |
+| qwen 1.5b + prompt opt | 87.5% | 2548 мс | 1 ГБ |
+| qwen 3b | 90.0% | 2854 мс | 2 ГБ |
+| gemini-2.5-flash-lite (cloud) | 92.5% | 856 мс | — |
+| **MiniLM-L6-v2 embedding + LLM fallback** | **100%** | **111 мс** | **22 МБ** |
+
 ## 4. IntentCache (між Tier 2 і Tier 3)
 
 Джерело: [system_modules/llm_engine/intent_cache.py](../../system_modules/llm_engine/intent_cache.py)

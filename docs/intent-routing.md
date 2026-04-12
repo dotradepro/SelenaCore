@@ -187,6 +187,105 @@ Words missing from `_VERB_BUCKETS` fall through to the full scan, so omissions o
 
 Hard intents like `device.query_temperature` may have zero compiled patterns. `IntentCompiler` keeps them in `_compiled` (and therefore in `get_all_intents()`) so the LLM tier sees them in its dynamic catalog. They are simply absent from `_flat_en` and `_buckets_en` — the FastMatcher never tries them, but the LLM does.
 
+## 3.5. Embedding Classifier (Tier 1.5) — `EmbeddingIntentClassifier`
+
+Source: [system_modules/llm_engine/embedding_classifier.py](../system_modules/llm_engine/embedding_classifier.py)
+
+Added 2026-04-12. Runs **after** the token-filtered catalog is built
+but **before** the LLM tier. Uses `sentence-transformers/all-MiniLM-L6-v2`
+(22 MB, encoder-only) to compare the query against pre-computed anchor
+centroids for each candidate intent. Confident hits short-circuit the
+LLM call entirely.
+
+### 3.5.1 Pipeline position
+
+```
+Vosk STT (any language)
+  → Helsinki translator → English text
+  → Token filter         → 3-15 candidate intents
+  → Embedding classifier → cosine over anchor centroids     ← THIS TIER
+      ↓ confident hit (score ≥ 0.30, margin ≥ 0.02)
+      → return IntentResult(source="embedding")             ~50-200 ms
+      ↓ low score / low margin / returns None
+  → Local LLM qwen        (Tier 2 fallback)                ~2-5 s
+```
+
+### 3.5.2 How it works
+
+1. **Warmup** (once at boot, ~15 s on Jetson, ~30 s on Pi 5):
+   pre-compute a mean embedding centroid for every intent in
+   `INTENT_ANCHORS` + cache it.
+
+2. **Per-request** (~40-150 ms):
+   - Encode the query with MiniLM
+   - For each candidate intent: combine its cached anchor centroid
+     with its live description embedding
+   - Pick the highest cosine-similarity intent
+   - If `score >= 0.30` and `margin >= 0.02` → return
+   - Otherwise → fall through to LLM
+
+3. **Command segment extraction**: for long phrases (>8 words),
+   `_extract_command_segment()` splits on conjunctions and picks the
+   clause containing a command verb. This prevents context noise
+   ("I just got home and it is cold") from diluting the intent signal.
+
+4. **Params**: lexicon-based `extract_params()` with entity map,
+   room keywords, value keywords, word-to-number conversion, and
+   genre list. Handles Helsinki translation artifacts
+   (`"air conditioning"` → `air_conditioner`).
+
+### 3.5.3 Anchor strategy
+
+`INTENT_ANCHORS` is the single source of truth for what the embedding
+model considers representative of each intent. Two rules:
+
+1. **Include real Helsinki outputs**, not just clean English. The
+   classifier sees production translation noise, not idealised text.
+   Example: `"вмикни джазове радіо"` → Helsinki → `"Turn on the jazz
+   radio."` — this exact string must be an anchor for `media.play_genre`.
+
+2. **Include negative anchors for `unknown`**. Without them the
+   classifier has no concept of "weird input". Anchors like
+   `"xyzzy plover quux"`, `"tell me a joke"`, `"who are you"` push
+   the unknown centroid into a distinct region of the embedding space.
+
+When a module owner adds a new intent, they should add ≥3 anchors
+including at least one expected Helsinki output.
+
+### 3.5.4 Config
+
+```yaml
+intent:
+  embedding_enabled: true           # master toggle
+  embedding_score_threshold: 0.30   # below → fall through to LLM
+  embedding_margin_threshold: 0.02  # winner - runner_up below → fall through
+```
+
+### 3.5.5 Benchmark results
+
+Tested on 40-case canonical corpus + 40-case noisy corpus (filler
+words, STT stutter, long contextual sentences, typos):
+
+| Platform | Canonical | Noisy | Embedding % | LLM % |
+|---|---|---|---|---|
+| Jetson Orin (8 GB) | **40/40 (100%)** p50=111ms | **35/40 (87.5%)** | 95% | 2.5% |
+| Raspberry Pi 5 (16 GB) | **38/40 (95%)** p50=78ms | **33/40 (82.5%)** | 82% | 1.25% |
+
+LLM is called for <3% of queries. The remaining ~15-20% that
+embedding doesn't handle are `unknown` cases that resolve correctly
+via the deterministic fallback path (no LLM needed).
+
+### 3.5.6 Full model comparison (40-case canonical, Jetson Orin)
+
+| Config | Accuracy | p50 | Model size |
+|---|---|---|---|
+| tinyllama 1.1b | 50.0% | 1103 ms | 600 MB |
+| qwen 0.5b | 50.0% | 2131 ms | 400 MB |
+| qwen 1.5b + prompt opt | 87.5% | 2548 ms | 1 GB |
+| qwen 3b | 90.0% | 2854 ms | 2 GB |
+| gemini-2.5-flash-lite (cloud) | 92.5% | 856 ms | — |
+| **MiniLM-L6-v2 embedding + LLM fallback** | **100%** | **111 ms** | **22 MB** |
+
 ## 4. IntentCache (between Tier 2 and Tier 3)
 
 Source: [system_modules/llm_engine/intent_cache.py](../system_modules/llm_engine/intent_cache.py)
