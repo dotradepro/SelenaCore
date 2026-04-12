@@ -1043,7 +1043,8 @@ class VoiceCoreModule(SystemModule):
                 # Classifier-only lanes: unknown / chat / any intent not
                 # owned by a system module.
                 if result.source == "assistant" and result.response:
-                    # LLM gave a freeform answer — use it directly.
+                    # LLM responded in English — OutputTranslator
+                    # handles EN→TTS language like any other response.
                     tts_text_en = result.response
                 else:
                     from system_modules.voice_core.action_phrasing import format_action_context

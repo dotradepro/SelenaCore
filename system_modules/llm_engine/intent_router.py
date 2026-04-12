@@ -345,24 +345,22 @@ class IntentRouter:
                     "detail": emb_result.intent if emb_result else emb_error,
                 })
 
-        # Accept any embedding result — including confident "unknown".
+        # Accept confident embedding results for KNOWN intents.
+        # Embedding "unknown" falls through to the assistant tier so
+        # the LLM can give a conversational reply instead of the
+        # static "I did not understand" phrase.
         #
-        # _embedding_classify already filtered by score + margin
-        # thresholds. If it returns a result (not None), the
-        # classification is trustworthy. Letting "unknown" fall
-        # through to the LLM tier is WORSE: the LLM on Jetson
-        # overrides correct unknowns with wrong intents like
-        # `presence.who_home` for "who are you". On Pi the LLM
-        # timed out → accidental correct fallback. Trusting
-        # embedding for unknown gives consistent results on
-        # both platforms.
-        if emb_result is not None:
+        # (Old logic accepted embedding unknown to prevent the LLM
+        # classifier from overriding correct unknowns with wrong
+        # intents like `presence.who_home`. Now the LLM is a freeform
+        # assistant — it won't produce wrong intents, only a spoken
+        # reply — so falling through is safe and desirable.)
+        if emb_result is not None and emb_result.intent != "unknown":
             emb_result.latency_ms = _elapsed()
             emb_result.lang = lang
             emb_result.user_id = user_id
-            if emb_result.intent != "unknown":
-                emb_result = await self._resolve_entity_ref(emb_result)
-                emb_result = await self._disambiguate_device(emb_result, tts_lang)
+            emb_result = await self._resolve_entity_ref(emb_result)
+            emb_result = await self._disambiguate_device(emb_result, tts_lang)
             await self._publish_event(emb_result, raw_text=text, lang=lang)
             return (emb_result, steps) if trace else emb_result
 
@@ -373,9 +371,7 @@ class IntentRouter:
         assistant_result = None
         assistant_error = None
         try:
-            assistant_result = await self._ask_as_assistant(
-                native_text or text,
-            )
+            assistant_result = await self._ask_as_assistant(text)
         except asyncio.TimeoutError:
             assistant_error = "timeout"
             logger.warning("Assistant LLM timeout for: %s", text[:50])
@@ -747,16 +743,11 @@ class IntentRouter:
 
     # ── Freeform LLM assistant (replaces classification tiers) ────────
 
-    _ASSISTANT_SYSTEM_PROMPT = (
-        "You are {name}, a smart-home voice assistant. "
-        "The user said something that does not match any known device "
-        "command. Reply in ONE short sentence (up to 20 words). "
-        "Be helpful and friendly. Answer in the same language the user "
-        "spoke. Do NOT attempt to control devices. Do NOT output JSON."
-    )
-
-    async def _ask_as_assistant(self, native_text: str) -> IntentResult | None:
+    async def _ask_as_assistant(self, text: str) -> IntentResult | None:
         """Call the LLM as a freeform assistant for unrecognised commands.
+
+        Uses the user-configured system prompt from PromptStore — the same
+        prompt visible in the voice module settings UI.
 
         Returns an IntentResult with ``source="assistant"`` and the LLM's
         natural-language reply in ``response``, or ``None`` on failure
@@ -768,21 +759,13 @@ class IntentRouter:
 
         from core.llm import llm_call
 
-        name = "Selena"
-        try:
-            from core.llm import _get_assistant_name
-            name = _get_assistant_name()
-        except Exception:
-            pass
-
-        system = self._ASSISTANT_SYSTEM_PROMPT.replace("{name}", name)
-
         reply = await llm_call(
-            native_text,
-            system=system,
+            text,
+            prompt_key="chat",
             temperature=0.7,
             max_tokens=100,
-            timeout=10.0,
+            timeout=float(get_value("llm", "timeout_sec", 30)),
+            json_mode=False,
             num_ctx=2048,
         )
 
