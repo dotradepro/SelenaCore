@@ -1,28 +1,31 @@
 """
-system_modules/device_control/drivers/philips_hue.py — Philips Hue driver.
+system_modules/device_control/drivers/philips_hue.py — Hue REST API driver.
 
-Controls Philips Hue lights through the Hue Bridge LAN REST API using the
-``phue`` library.  Local-only, no cloud account required.
+Controls Philips Hue lights (and Hue-compatible emulators) through the
+standard Hue Bridge REST API using ``httpx``.  No external pip package
+required — ``httpx`` ships with the container.
+
+Works with:
+  - Real Philips Hue Bridges (register via button-press → obtain token)
+  - Hue-compatible emulators / SDS bridges (pre-set token, custom port)
 
 The Hue Bridge doesn't push state updates, so ``stream_events`` polls every
 3 seconds and yields only when the state actually changes (same pattern as
-``gree.py``).  The ``phue`` library is synchronous — all bridge calls are
-wrapped with ``asyncio.to_thread``.
-
-First-time pairing requires a physical button press on the Hue Bridge.
-``connect()`` detects the ``PhueRegistrationException`` and wraps it in a
-clear ``DriverError`` message for the UI.  After successful pairing, the
-bridge-generated username is persisted into ``device.meta["philips_hue"]``
-so subsequent reconnects are automatic.
+``gree.py``).
 
 ``device.meta["philips_hue"]`` schema::
 
     {
-        "bridge_ip":   str,         # Hue Bridge LAN IP (REQUIRED)
+        "api_host":    str,         # Base URL, e.g. "http://192.168.1.100"
+                                    #   or "http://192.168.1.254:7000"
+        "token":       str,         # API token / username (REQUIRED)
         "light_id":    int | str,   # light id on the bridge (REQUIRED)
-        "username":    str | None,  # API username (populated after pairing)
-        "light_name":  str | None,  # display name from bridge (diagnostic)
     }
+
+Hue REST API endpoints used::
+
+    GET  /api/<token>/lights/<id>        → light object with "state" sub-dict
+    PUT  /api/<token>/lights/<id>/state  → apply partial state update
 
 Logical state shape::
 
@@ -41,18 +44,21 @@ import asyncio
 import logging
 from typing import Any, AsyncGenerator
 
+import httpx
+
 from .base import DeviceDriver, DriverError
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 3.0
+HTTP_TIMEOUT = 10.0
 
 
 # ── State translation helpers ─────────────────────────────────────────────
 
 
 def _to_logical(light_data: dict[str, Any]) -> dict[str, Any]:
-    """Translate phue light state dict into SelenaCore logical keys."""
+    """Translate Hue REST light object into SelenaCore logical keys."""
     state = light_data.get("state") or {}
     out: dict[str, Any] = {}
     if "on" in state:
@@ -71,7 +77,7 @@ def _to_logical(light_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _logical_to_hue(state: dict[str, Any]) -> dict[str, Any]:
-    """Translate logical keys into phue ``set_light`` kwargs."""
+    """Translate logical keys into Hue REST state body."""
     out: dict[str, Any] = {}
     for key, value in state.items():
         if key == "on":
@@ -88,7 +94,7 @@ def _logical_to_hue(state: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-# ── Driver ───────────────��─────────────────────────────────────────────────
+# ── Driver ─────────────────────────────────────────────────────────────────
 
 
 class PhilipsHueDriver(DeviceDriver):
@@ -97,83 +103,47 @@ class PhilipsHueDriver(DeviceDriver):
     def __init__(self, device_id: str, meta: dict[str, Any]) -> None:
         super().__init__(device_id, meta)
         cfg = (meta or {}).get("philips_hue") or {}
-        self._bridge_ip: str = str(cfg.get("bridge_ip") or "").strip()
-        self._light_id: int | str = cfg.get("light_id", "")
-        self._username: str | None = cfg.get("username") or None
-        self._bridge: Any = None
+        api_host = str(cfg.get("api_host") or "").strip().rstrip("/")
+        self._token: str = str(cfg.get("token") or "").strip()
+        self._light_id: str = str(cfg.get("light_id") or "").strip()
+        # Build base URL: http(s)://<host>/api/<token>
+        self._base_url: str = f"{api_host}/api/{self._token}" if api_host else ""
+        self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
         self._last_state: dict[str, Any] | None = None
 
-    def _build_bridge(self) -> Any:
-        """Create a ``phue.Bridge`` instance (lazy import)."""
-        try:
-            from phue import Bridge  # type: ignore
-        except ImportError as exc:
-            raise DriverError(
-                "phue not installed — open device-control settings → "
-                "Providers → Philips Hue and click Install"
-            ) from exc
-        if not self._bridge_ip:
-            raise DriverError(
-                f"PhilipsHueDriver {self.device_id}: "
-                "meta.philips_hue.bridge_ip is missing"
-            )
-        # phue stores its config in ~/.python_hue by default.
-        # Passing ``username`` skips the registration step if we already
-        # have one from a previous pairing.
-        bridge = Bridge(ip=self._bridge_ip, username=self._username)
-        try:
-            bridge.connect()
-        except Exception as exc:
-            exc_name = type(exc).__name__
-            if "Registration" in exc_name or "PhueRegistration" in exc_name:
-                raise DriverError(
-                    f"Hue Bridge at {self._bridge_ip}: press the physical "
-                    "button on the bridge, then retry"
-                ) from exc
-            raise DriverError(
-                f"Hue Bridge connect failed ({self._bridge_ip}): {exc}"
-            ) from exc
-        return bridge
-
     async def connect(self) -> dict[str, Any]:
-        if not self._bridge_ip:
+        if not self._base_url:
             raise DriverError(
                 f"PhilipsHueDriver {self.device_id}: "
-                "meta.philips_hue.bridge_ip is missing"
+                "meta.philips_hue.api_host is missing"
             )
-        if not self._light_id and self._light_id != 0:
+        if not self._token:
+            raise DriverError(
+                f"PhilipsHueDriver {self.device_id}: "
+                "meta.philips_hue.token is missing"
+            )
+        if not self._light_id:
             raise DriverError(
                 f"PhilipsHueDriver {self.device_id}: "
                 "meta.philips_hue.light_id is missing"
             )
         async with self._lock:
+            if self._client is not None:
+                await self._client.aclose()
+            self._client = httpx.AsyncClient(timeout=HTTP_TIMEOUT)
+            url = f"{self._base_url}/lights/{self._light_id}"
             try:
-                self._bridge = await asyncio.to_thread(self._build_bridge)
-            except DriverError:
-                raise
-            except Exception as exc:
+                resp = await self._client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as exc:
                 raise DriverError(
-                    f"Hue Bridge connect failed ({self._bridge_ip}): {exc}"
+                    f"Hue API error: {exc.response.status_code} on GET {url}"
                 ) from exc
-            # Persist the username so future reconnects skip button-press.
-            new_username = getattr(self._bridge, "username", None)
-            if new_username and new_username != self._username:
-                self._username = new_username
-                hue_meta = self.meta.setdefault("philips_hue", {})
-                hue_meta["username"] = new_username
-            # Fetch initial state.
-            try:
-                light_id = int(self._light_id)
-            except (TypeError, ValueError):
-                light_id = self._light_id
-            try:
-                data = await asyncio.to_thread(
-                    self._bridge.get_light, light_id,
-                )
             except Exception as exc:
                 raise DriverError(
-                    f"Hue get_light({self._light_id}) failed: {exc}"
+                    f"Hue connect failed ({url}): {exc}"
                 ) from exc
         state = _to_logical(data)
         self._last_state = dict(state)
@@ -181,64 +151,66 @@ class PhilipsHueDriver(DeviceDriver):
 
     async def disconnect(self) -> None:
         async with self._lock:
-            self._bridge = None
+            client = self._client
+            self._client = None
+        if client is not None:
+            await client.aclose()
 
     async def set_state(self, state: dict[str, Any]) -> None:
         if not state:
             return
-        if self._bridge is None:
+        if self._client is None:
             await self.connect()
         hue_cmd = _logical_to_hue(state)
         if not hue_cmd:
             return
-        try:
-            light_id = int(self._light_id)
-        except (TypeError, ValueError):
-            light_id = self._light_id
+        url = f"{self._base_url}/lights/{self._light_id}/state"
         async with self._lock:
             try:
-                await asyncio.to_thread(
-                    self._bridge.set_light, light_id, hue_cmd,
-                )
+                resp = await self._client.put(url, json=hue_cmd)  # type: ignore[union-attr]
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise DriverError(
+                    f"Hue set_state error: {exc.response.status_code} on "
+                    f"PUT {url} body={hue_cmd}"
+                ) from exc
             except Exception as exc:
                 raise DriverError(
-                    f"Hue set_light({self._light_id}) failed: {exc}"
+                    f"Hue set_state failed ({url}): {exc}"
                 ) from exc
 
     async def get_state(self) -> dict[str, Any]:
-        if self._bridge is None:
+        if self._client is None:
             return await self.connect()
-        try:
-            light_id = int(self._light_id)
-        except (TypeError, ValueError):
-            light_id = self._light_id
+        url = f"{self._base_url}/lights/{self._light_id}"
         async with self._lock:
             try:
-                data = await asyncio.to_thread(
-                    self._bridge.get_light, light_id,
-                )
+                resp = await self._client.get(url)
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError as exc:
+                raise DriverError(
+                    f"Hue get_state error: {exc.response.status_code}"
+                ) from exc
             except Exception as exc:
                 raise DriverError(
-                    f"Hue get_light({self._light_id}) failed: {exc}"
+                    f"Hue get_state failed ({url}): {exc}"
                 ) from exc
             state = _to_logical(data)
         self._last_state = dict(state)
         return state
 
     async def stream_events(self) -> AsyncGenerator[dict[str, Any], None]:
-        if self._bridge is None:
+        if self._client is None:
             await self.connect()
-        try:
-            light_id = int(self._light_id)
-        except (TypeError, ValueError):
-            light_id = self._light_id
+        url = f"{self._base_url}/lights/{self._light_id}"
         while True:
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
             async with self._lock:
                 try:
-                    data = await asyncio.to_thread(
-                        self._bridge.get_light, light_id,
-                    )
+                    resp = await self._client.get(url)  # type: ignore[union-attr]
+                    resp.raise_for_status()
+                    data = resp.json()
                 except Exception as exc:
                     raise DriverError(
                         f"Hue poll failed for {self.device_id}: {exc}"

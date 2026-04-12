@@ -104,17 +104,18 @@ PROVIDERS: dict[str, ProviderSpec] = {
     "philips_hue": {
         "id": "philips_hue",
         "name": "Philips Hue (Bridge LAN)",
-        "description": "Local control of Philips Hue lights via the Hue Bridge "
-                       "LAN API. No cloud account required.",
-        "package": "phue",
-        "version": ">=1.1",
+        "description": "Local control of Philips Hue lights via the standard "
+                       "Hue REST API. Works with real Hue Bridges and "
+                       "Hue-compatible emulators. No external package needed.",
+        "package": None,
+        "version": "",
         "driver_module": "system_modules.device_control.drivers.philips_hue",
         "driver_class": "PhilipsHueDriver",
         "entity_types": ["light"],
         "needs_cloud": False,
         "builtin": False,
         "icon": "💡",
-        "homepage": "https://github.com/studioimaginaire/phue",
+        "homepage": "https://developers.meethue.com/",
     },
     "esphome": {
         "id": "esphome",

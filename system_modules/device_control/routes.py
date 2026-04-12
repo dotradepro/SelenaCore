@@ -26,6 +26,8 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
@@ -117,6 +119,43 @@ class GreeImportEntry(BaseModel):
 
 class GreeImportBody(BaseModel):
     devices: list[GreeImportEntry]
+
+
+class HueDiscoverBody(BaseModel):
+    api_host: str          # e.g. "http://192.168.1.254:7000"
+    token: str             # Hue API username / token
+
+
+class HueImportEntry(BaseModel):
+    light_id: int | str
+    name: str = ""
+    location: str = ""
+
+
+class HueImportBody(BaseModel):
+    api_host: str
+    token: str
+    devices: list[HueImportEntry]
+
+
+class Z2mDiscoverBody(BaseModel):
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+
+
+class Z2mImportEntry(BaseModel):
+    friendly_name: str
+    ieee_address: str = ""
+    name: str = ""
+    entity_type: str = "sensor"
+    location: str = ""
+
+
+class Z2mImportBody(BaseModel):
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+    base_topic: str = "zigbee2mqtt"
+    devices: list[Z2mImportEntry]
 
 
 class ProviderUninstallBody(BaseModel):
@@ -671,6 +710,264 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             })
 
         return {"status": "ok", "created": created, "skipped": skipped}
+
+    # ── Hue discovery + import ────────────────────────────────────────────
+
+    @router.post("/hue/discover")
+    async def hue_discover(body: HueDiscoverBody) -> dict[str, Any]:
+        """Query a Hue Bridge (or compatible emulator) for all lights."""
+        api_host = body.api_host.rstrip("/")
+        url = f"{api_host}/api/{body.token}/lights"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                raw = resp.json()
+            except Exception as exc:
+                raise HTTPException(502, f"Hue API error: {exc}")
+        devices: list[dict[str, Any]] = []
+        for lid, info in raw.items():
+            state = info.get("state", {})
+            devices.append({
+                "light_id": lid,
+                "name": info.get("name", f"Light {lid}"),
+                "type": info.get("type", ""),
+                "model": info.get("modelid", ""),
+                "manufacturer": info.get("manufacturername", ""),
+                "on": state.get("on", False),
+                "reachable": state.get("reachable", True),
+            })
+        return {"status": "ok", "devices": devices}
+
+    @router.post("/hue/import")
+    async def hue_import(body: HueImportBody) -> dict[str, Any]:
+        """Bulk-create Device rows from a Hue discovery result."""
+        from core.registry.models import Device
+
+        created: list[dict[str, Any]] = []
+        for entry in body.devices:
+            lid = entry.light_id
+            display = (entry.name or "").strip() or f"Hue light {lid}"
+            location = (entry.location or "").strip() or None
+            try:
+                name_en = await translate_to_en(display)
+            except Exception:
+                name_en = display
+            loc_en: str | None = None
+            if location:
+                if location.isascii():
+                    loc_en = location.lower()
+                else:
+                    try:
+                        loc_en = (await translate_to_en(location)).strip().lower() or None
+                    except Exception:
+                        loc_en = None
+            meta: dict[str, Any] = {
+                "philips_hue": {
+                    "api_host": body.api_host.rstrip("/"),
+                    "token": body.token,
+                    "light_id": int(lid) if str(lid).isdigit() else lid,
+                },
+                "name_en": (name_en or "").strip().lower() or None,
+                "location_en": loc_en,
+            }
+            for k in ("name_en", "location_en"):
+                if meta.get(k) is None:
+                    meta.pop(k, None)
+
+            async with svc._db_session() as session:
+                async with session.begin():
+                    device = Device(
+                        name=display,
+                        type="actuator",
+                        protocol="philips_hue",
+                        entity_type="light",
+                        location=location,
+                        module_id=svc.name,
+                        enabled=True,
+                    )
+                    device.set_capabilities(["on", "off", "brightness"])
+                    device.set_meta(meta)
+                    session.add(device)
+                    await session.flush()
+                    device_id = device.device_id
+            try:
+                await on_entity_changed("device", device_id, "created")
+            except Exception as exc:
+                logger.warning("device-control: hue import pattern regen failed: %s", exc)
+            await svc.add_device_watcher(device_id)
+            await svc.publish("device.registered", {
+                "device_id": device_id,
+                "name": display,
+                "entity_type": "light",
+                "location": location,
+                "protocol": "philips_hue",
+                "capabilities": ["on", "off", "brightness"],
+            })
+            created.append({"device_id": device_id, "name": display, "light_id": lid})
+
+        return {"status": "ok", "created": created}
+
+    # ── Z2M discovery + import ─────────────────────────────────────────────
+
+    @router.post("/z2m/discover")
+    async def z2m_discover(body: Z2mDiscoverBody) -> dict[str, Any]:
+        """Connect to an MQTT broker and read zigbee2mqtt/bridge/devices."""
+        import socket
+        import struct
+
+        host = body.mqtt_host
+        port = body.mqtt_port
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            sock.connect((host, port))
+            # MQTT CONNECT
+            client_id = b"selena-z2m-discover"
+            connect = bytearray(b"\x00\x04MQTT\x04\x02")
+            connect += struct.pack(">H", 60)
+            connect += struct.pack(">H", len(client_id)) + client_id
+            pkt = b"\x10" + bytes([len(connect)]) + bytes(connect)
+            sock.send(pkt)
+            ack = sock.recv(4)
+            if len(ack) < 4 or ack[3] != 0:
+                raise Exception("MQTT CONNACK failed")
+            # SUBSCRIBE to zigbee2mqtt/bridge/devices
+            topic = b"zigbee2mqtt/bridge/devices"
+            sub = struct.pack(">H", 1) + struct.pack(">H", len(topic)) + topic + b"\x00"
+            pkt = b"\x82" + bytes([len(sub)]) + bytes(sub)
+            sock.send(pkt)
+            sock.recv(5)  # SUBACK
+            # Read retained message — payload may span multiple TCP frames
+            sock.settimeout(3)
+            data = b""
+            devices_raw: list[dict[str, Any]] = []
+            for _ in range(30):
+                try:
+                    chunk = sock.recv(16384)
+                    if not chunk:
+                        break
+                    data += chunk
+                    idx = data.find(b"[")
+                    if idx >= 0:
+                        try:
+                            devices_raw = json.loads(data[idx:])
+                            break
+                        except json.JSONDecodeError:
+                            continue  # incomplete, keep reading
+                except socket.timeout:
+                    # Last attempt: try to parse what we have
+                    idx = data.find(b"[")
+                    if idx >= 0:
+                        try:
+                            devices_raw = json.loads(data[idx:])
+                        except json.JSONDecodeError:
+                            pass
+                    break
+            sock.close()
+        except Exception as exc:
+            raise HTTPException(502, f"MQTT error ({host}:{port}): {exc}")
+
+        devices: list[dict[str, Any]] = []
+        for d in devices_raw:
+            fn = d.get("friendly_name", "")
+            if fn.startswith("Coordinator") or d.get("type") == "Coordinator":
+                continue
+            exposes = d.get("definition", {}).get("exposes", [])
+            expose_names = [e.get("name", "") for e in exposes]
+            # Guess entity_type from exposes
+            if "contact" in expose_names:
+                etype = "sensor"
+            elif "occupancy" in expose_names:
+                etype = "sensor"
+            elif "state" in expose_names or "brightness" in expose_names:
+                etype = "light"
+            else:
+                etype = "switch"
+            devices.append({
+                "friendly_name": fn,
+                "ieee_address": d.get("ieee_address", ""),
+                "model": d.get("model_id", ""),
+                "manufacturer": d.get("manufacturer", ""),
+                "entity_type": etype,
+                "exposes": expose_names,
+            })
+        return {"status": "ok", "devices": devices}
+
+    @router.post("/z2m/import")
+    async def z2m_import(body: Z2mImportBody) -> dict[str, Any]:
+        """Bulk-create Device rows from a Z2M discovery result."""
+        from core.registry.models import Device
+
+        created: list[dict[str, Any]] = []
+        for entry in body.devices:
+            fname = (entry.friendly_name or "").strip()
+            if not fname:
+                continue
+            display = (entry.name or "").strip() or fname
+            etype = entry.entity_type or "sensor"
+            location = (entry.location or "").strip() or None
+            try:
+                name_en = await translate_to_en(display)
+            except Exception:
+                name_en = display
+            loc_en: str | None = None
+            if location:
+                if location.isascii():
+                    loc_en = location.lower()
+                else:
+                    try:
+                        loc_en = (await translate_to_en(location)).strip().lower() or None
+                    except Exception:
+                        loc_en = None
+            caps = ["read"] if etype == "sensor" else ["on", "off"]
+            if etype == "light":
+                caps.append("brightness")
+            meta: dict[str, Any] = {
+                "zigbee2mqtt": {
+                    "friendly_name": fname,
+                    "ieee_address": entry.ieee_address or None,
+                    "base_topic": body.base_topic,
+                },
+                "name_en": (name_en or "").strip().lower() or None,
+                "location_en": loc_en,
+            }
+            for k in ("name_en", "location_en"):
+                if meta.get(k) is None:
+                    meta.pop(k, None)
+
+            async with svc._db_session() as session:
+                async with session.begin():
+                    device = Device(
+                        name=display,
+                        type="sensor" if etype == "sensor" else "actuator",
+                        protocol="zigbee2mqtt",
+                        entity_type=etype,
+                        location=location,
+                        module_id=svc.name,
+                        enabled=True,
+                    )
+                    device.set_capabilities(caps)
+                    device.set_meta(meta)
+                    session.add(device)
+                    await session.flush()
+                    device_id = device.device_id
+            try:
+                await on_entity_changed("device", device_id, "created")
+            except Exception as exc:
+                logger.warning("device-control: z2m import pattern regen failed: %s", exc)
+            await svc.add_device_watcher(device_id)
+            await svc.publish("device.registered", {
+                "device_id": device_id,
+                "name": display,
+                "entity_type": etype,
+                "location": location,
+                "protocol": "zigbee2mqtt",
+                "capabilities": caps,
+            })
+            created.append({"device_id": device_id, "name": display, "friendly_name": fname})
+
+        return {"status": "ok", "created": created}
 
     # ── Tuya cloud wizard (user-code flow) ──────────────────────────────
 

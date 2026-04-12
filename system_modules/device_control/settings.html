@@ -88,6 +88,9 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
     <button class="tab" data-tab="wizard" data-i18n="tab_wizard">Tuya Cloud Wizard</button>
     <button class="tab" data-tab="gree" data-i18n="tab_gree">Gree / Pular</button>
     <button class="tab" data-tab="matter" data-i18n="tab_matter">Matter / Thread</button>
+    <button class="tab" data-tab="hue" data-i18n="tab_hue">Philips Hue</button>
+    <button class="tab" data-tab="esphome" data-i18n="tab_esphome">ESPHome</button>
+    <button class="tab" data-tab="z2m" data-i18n="tab_z2m">Zigbee2MQTT</button>
   </div>
 
   <!-- TAB: Devices ------------------------------------------------------- -->
@@ -284,6 +287,146 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       <div id="greeResults"></div>
     </div>
   </div>
+  <!-- TAB: Philips Hue ---------------------------------------------------- -->
+  <div id="tab-hue" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="hue_help">
+        Add Philips Hue lights via the standard Hue REST API. Works with real
+        Hue Bridges and Hue-compatible emulators (SDS, diyHue, etc.). Enter
+        the API host URL and a token (username). Light IDs are visible via
+        GET /api/&lt;token&gt;/lights.
+      </div>
+      <div class="grid2 mb12">
+        <div>
+          <div class="label-sm" data-i18n="hue_lbl_api_host">API host</div>
+          <input id="hueApiHost" placeholder="http://192.168.1.100" autocomplete="off" style="font-family:'DM Mono',monospace">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="hue_lbl_token">Token / username</div>
+          <input id="hueToken" placeholder="" autocomplete="off" style="font-family:'DM Mono',monospace">
+        </div>
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="hueDiscoverBtn" class="btn btn-green" data-i18n="hue_discover">Discover lights</button>
+        <span id="hueDiscoverSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+      </div>
+      <div id="hueDiscoverResults" class="mb12"></div>
+      <div class="label-sm mb8" data-i18n="hue_devices_label">Hue devices</div>
+      <table>
+        <thead><tr>
+          <th data-i18n="col_name">Name</th>
+          <th data-i18n="hue_lbl_api_host">API host</th>
+          <th data-i18n="hue_lbl_light_id">Light ID</th>
+          <th data-i18n="col_actions">Actions</th>
+        </tr></thead>
+        <tbody id="hueDeviceBody"><tr><td colspan="4" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB: ESPHome --------------------------------------------------------- -->
+  <div id="tab-esphome" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="esp_help">
+        Connect ESPHome devices over the LAN via the native API. Enter the
+        device IP (port 6053 by default). The driver will auto-discover all
+        entities on the device when it connects.
+      </div>
+      <div class="grid2 mb12">
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_ip">Device IP</div>
+          <input id="espIp" placeholder="192.168.1.x" autocomplete="off">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_port">Port</div>
+          <input id="espPort" placeholder="6053" type="number" value="6053" autocomplete="off">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_device_name">Device name</div>
+          <input id="espDeviceName" placeholder="Kitchen relay">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_entity_type">Entity type</div>
+          <select id="espEntityType">
+            <option value="switch">switch</option>
+            <option value="light">light</option>
+            <option value="sensor">sensor</option>
+            <option value="outlet">outlet</option>
+          </select>
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_password">API password (optional)</div>
+          <input id="espPassword" type="password" placeholder="" autocomplete="off">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_encryption_key">Encryption key (optional)</div>
+          <input id="espEncKey" type="password" placeholder="" autocomplete="off">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="esp_lbl_location">Room (optional)</div>
+          <input id="espLocation" placeholder="">
+        </div>
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="espAddBtn" class="btn btn-green" data-i18n="esp_add">Add device</button>
+        <button id="espRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <div id="espAddResult" class="mb12"></div>
+      <div class="label-sm mb8" data-i18n="esp_devices_label">ESPHome devices</div>
+      <table>
+        <thead><tr>
+          <th data-i18n="col_name">Name</th>
+          <th data-i18n="esp_col_ip">IP</th>
+          <th data-i18n="col_type">Type</th>
+          <th data-i18n="col_actions">Actions</th>
+        </tr></thead>
+        <tbody id="espDeviceBody"><tr><td colspan="4" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB: Zigbee2MQTT ----------------------------------------------------- -->
+  <div id="tab-z2m" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="z2m_help">
+        Discover and import devices from a running Zigbee2MQTT instance.
+        Enter the MQTT broker address and click "Discover" to scan
+        zigbee2mqtt/bridge/devices. State is relayed through the
+        protocol-bridge module.
+      </div>
+      <div class="grid2 mb12">
+        <div>
+          <div class="label-sm" data-i18n="z2m_lbl_mqtt_host">MQTT broker host</div>
+          <input id="z2mMqttHost" placeholder="192.168.1.x" autocomplete="off" style="font-family:'DM Mono',monospace">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="z2m_lbl_mqtt_port">MQTT port</div>
+          <input id="z2mMqttPort" type="number" value="1883" autocomplete="off">
+        </div>
+        <div>
+          <div class="label-sm" data-i18n="z2m_lbl_base_topic">Base topic</div>
+          <input id="z2mBaseTopic" value="zigbee2mqtt" autocomplete="off" style="font-family:'DM Mono',monospace">
+        </div>
+      </div>
+      <div class="flex gap8 mb12">
+        <button id="z2mDiscoverBtn" class="btn btn-green" data-i18n="z2m_discover">Discover</button>
+        <span id="z2mDiscoverSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <button id="z2mRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <div id="z2mDiscoverResults" class="mb12"></div>
+      <div class="label-sm mb8" data-i18n="z2m_devices_label">Zigbee2MQTT devices</div>
+      <table>
+        <thead><tr>
+          <th data-i18n="col_name">Name</th>
+          <th data-i18n="z2m_col_friendly">Friendly name</th>
+          <th data-i18n="col_type">Type</th>
+          <th data-i18n="col_actions">Actions</th>
+        </tr></thead>
+        <tbody id="z2mDeviceBody"><tr><td colspan="4" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 </div>
 
@@ -373,6 +516,66 @@ var L = {
     gree_import_btn:'Import selected',
     gree_imported:'Imported',
     gree_no_selection:'Select at least one device.',
+    // Philips Hue tab
+    tab_hue:'Philips Hue',
+    hue_help:'Add Philips Hue lights via the standard Hue REST API. Works with real Hue Bridges and Hue-compatible emulators (SDS, diyHue, etc.). Enter the API host URL and a token (username). Light IDs are visible via GET /api/<token>/lights.',
+    hue_lbl_api_host:'API host',
+    hue_lbl_token:'Token / username',
+    hue_lbl_light_id:'Light ID',
+    hue_lbl_device_name:'Device name',
+    hue_lbl_location:'Room (optional)',
+    hue_discover:'Discover lights',
+    hue_discovering:'Scanning…',
+    hue_found:'lights found',
+    hue_no_found:'No lights found on this bridge.',
+    hue_import_btn:'Import selected',
+    hue_imported:'Imported',
+    hue_no_selection:'Select at least one light.',
+    hue_col_select:'Import',
+    hue_col_id:'ID',
+    hue_col_type:'Type',
+    hue_col_manufacturer:'Manufacturer',
+    hue_col_on:'State',
+    hue_devices_label:'Imported Hue devices',
+    hue_no_devices:'No Hue devices yet — discover and import above.',
+    hue_fill_required:'API host and token are required.',
+    // ESPHome tab
+    tab_esphome:'ESPHome',
+    esp_help:'Connect ESPHome devices over the LAN via the native API. Enter the device IP (port 6053 by default). The driver will auto-discover all entities on the device when it connects.',
+    esp_lbl_ip:'Device IP',
+    esp_lbl_port:'Port',
+    esp_lbl_device_name:'Device name',
+    esp_lbl_entity_type:'Entity type',
+    esp_lbl_password:'API password (optional)',
+    esp_lbl_encryption_key:'Encryption key (optional)',
+    esp_lbl_location:'Room (optional)',
+    esp_add:'Add device',
+    esp_add_ok:'ESPHome device added',
+    esp_devices_label:'ESPHome devices',
+    esp_col_ip:'IP',
+    esp_no_devices:'No ESPHome devices yet — add one above.',
+    esp_fill_required:'Device IP and name are required.',
+    // Zigbee2MQTT tab
+    tab_z2m:'Zigbee2MQTT',
+    z2m_help:'Discover and import devices from a running Zigbee2MQTT instance. Enter the MQTT broker address and click "Discover" to scan zigbee2mqtt/bridge/devices.',
+    z2m_lbl_mqtt_host:'MQTT broker host',
+    z2m_lbl_mqtt_port:'MQTT port',
+    z2m_lbl_base_topic:'Base topic',
+    z2m_discover:'Discover',
+    z2m_discovering:'Scanning…',
+    z2m_found:'devices found',
+    z2m_no_found:'No Zigbee2MQTT devices found. Check that Z2M is running and MQTT broker is reachable.',
+    z2m_import_btn:'Import selected',
+    z2m_imported:'Imported',
+    z2m_no_selection:'Select at least one device.',
+    z2m_col_select:'Import',
+    z2m_col_friendly:'Friendly name',
+    z2m_col_ieee:'IEEE address',
+    z2m_col_model:'Model',
+    z2m_col_type:'Type',
+    z2m_devices_label:'Imported Zigbee2MQTT devices',
+    z2m_no_devices:'No Zigbee2MQTT devices yet — discover and import above.',
+    z2m_fill_required:'MQTT host is required.',
   },
   uk: {
     title:'Керування пристроями',
@@ -456,6 +659,66 @@ var L = {
     gree_import_btn:'Імпортувати вибрані',
     gree_imported:'Імпортовано',
     gree_no_selection:'Виберіть хоча б один пристрій.',
+    // Philips Hue tab
+    tab_hue:'Philips Hue',
+    hue_help:'Додайте Philips Hue лампи через стандартний Hue REST API. Працює з справжніми Hue Bridge та Hue-сумісними емуляторами (SDS, diyHue тощо). Введіть URL API хоста та токен (username). ID ламп доступні через GET /api/<token>/lights.',
+    hue_lbl_api_host:'API хост',
+    hue_lbl_token:'Токен / username',
+    hue_lbl_light_id:'ID лампи',
+    hue_lbl_device_name:'Назва пристрою',
+    hue_lbl_location:'Кімната (необов\'язково)',
+    hue_discover:'Знайти лампи',
+    hue_discovering:'Сканування…',
+    hue_found:'ламп знайдено',
+    hue_no_found:'На цьому bridge ламп не знайдено.',
+    hue_import_btn:'Імпортувати вибрані',
+    hue_imported:'Імпортовано',
+    hue_no_selection:'Виберіть хоча б одну лампу.',
+    hue_col_select:'Імпорт',
+    hue_col_id:'ID',
+    hue_col_type:'Тип',
+    hue_col_manufacturer:'Виробник',
+    hue_col_on:'Стан',
+    hue_devices_label:'Імпортовані Hue пристрої',
+    hue_no_devices:'Поки немає Hue пристроїв — знайдіть та імпортуйте вище.',
+    hue_fill_required:'API хост та токен обов\'язкові.',
+    // ESPHome tab
+    tab_esphome:'ESPHome',
+    esp_help:'Підключення ESPHome пристроїв через LAN по нативному API. Введіть IP пристрою (порт 6053 за замовчуванням). Драйвер автоматично виявить усі сутності при з\'єднанні.',
+    esp_lbl_ip:'IP пристрою',
+    esp_lbl_port:'Порт',
+    esp_lbl_device_name:'Назва пристрою',
+    esp_lbl_entity_type:'Тип сутності',
+    esp_lbl_password:'API пароль (необов\'язково)',
+    esp_lbl_encryption_key:'Ключ шифрування (необов\'язково)',
+    esp_lbl_location:'Кімната (необов\'язково)',
+    esp_add:'Додати пристрій',
+    esp_add_ok:'ESPHome пристрій додано',
+    esp_devices_label:'ESPHome пристрої',
+    esp_col_ip:'IP',
+    esp_no_devices:'Поки немає ESPHome пристроїв — додайте перший вище.',
+    esp_fill_required:'IP пристрою та назва обов\'язкові.',
+    // Zigbee2MQTT tab
+    tab_z2m:'Zigbee2MQTT',
+    z2m_help:'Виявлення та імпорт пристроїв із запущеного Zigbee2MQTT. Введіть адресу MQTT-брокера та натисніть "Знайти" для сканування zigbee2mqtt/bridge/devices.',
+    z2m_lbl_mqtt_host:'Хост MQTT-брокера',
+    z2m_lbl_mqtt_port:'Порт MQTT',
+    z2m_lbl_base_topic:'Base topic',
+    z2m_discover:'Знайти',
+    z2m_discovering:'Сканування…',
+    z2m_found:'пристроїв знайдено',
+    z2m_no_found:'Zigbee2MQTT пристроїв не знайдено. Перевірте що Z2M запущено та MQTT-брокер доступний.',
+    z2m_import_btn:'Імпортувати вибрані',
+    z2m_imported:'Імпортовано',
+    z2m_no_selection:'Виберіть хоча б один пристрій.',
+    z2m_col_select:'Імпорт',
+    z2m_col_friendly:'Friendly name',
+    z2m_col_ieee:'IEEE адреса',
+    z2m_col_model:'Модель',
+    z2m_col_type:'Тип',
+    z2m_devices_label:'Імпортовані Zigbee2MQTT пристрої',
+    z2m_no_devices:'Поки немає Zigbee2MQTT пристроїв — знайдіть та імпортуйте вище.',
+    z2m_fill_required:'Хост MQTT обов\'язковий.',
   }
 };
 function t(k){return (L[LANG]||L.en)[k]||k;}
@@ -508,6 +771,9 @@ document.querySelectorAll('.tab').forEach(function(b){
     if(b.getAttribute('data-tab')==='gree') $('greeResults').innerHTML='';
     if(b.getAttribute('data-tab')==='providers') loadProviders();
     if(b.getAttribute('data-tab')==='matter') loadMatterDevices();
+    if(b.getAttribute('data-tab')==='hue') loadHueDevices();
+    if(b.getAttribute('data-tab')==='esphome') loadEspDevices();
+    if(b.getAttribute('data-tab')==='z2m') loadZ2mDevices();
   };
 });
 
@@ -943,6 +1209,245 @@ window.matterRemove = function(nodeId){
   api('/matter/remove/'+nodeId,{method:'POST'}).then(function(){
     toast(t('deleted'));
     loadMatterDevices();
+  }).catch(function(e){toast(e.message,true);});
+};
+
+// ── Philips Hue tab ─────────────────────────────────────────────────────
+function loadHueDevices(){
+  var tb = $('hueDeviceBody');
+  tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
+  api('/devices').then(function(res){
+    var rows = (res.devices||[]).filter(function(d){return d.protocol==='philips_hue';});
+    if(rows.length===0){
+      tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('hue_no_devices'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(d){
+      var m = (d.meta && d.meta.philips_hue) || {};
+      return '<tr>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td><code>'+esc(m.api_host||m.bridge_ip||'?')+'</code></td>'+
+        '<td><code>'+esc(String(m.light_id||'?'))+'</code></td>'+
+        '<td><button class="btn btn-ghost" onclick="delDevice(\''+d.device_id+'\',loadHueDevices)">'+esc(t('btn_del'))+'</button></td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){
+    tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(e.message)+'</td></tr>';
+  });
+}
+
+$('hueDiscoverBtn').onclick = function(){
+  var host = ($('hueApiHost').value||'').trim().replace(/\/+$/,'');
+  var token = ($('hueToken').value||'').trim();
+  if(!host || !token){toast(t('hue_fill_required'),true);return;}
+  var btn = this; btn.disabled = true;
+  $('hueDiscoverSpinner').classList.remove('hidden');
+  $('hueDiscoverResults').innerHTML = '';
+  api('/hue/discover',{method:'POST',body:{api_host:host,token:token}}).then(function(res){
+    var devs = res.devices||[];
+    if(devs.length===0){$('hueDiscoverResults').innerHTML='<div class="muted">'+esc(t('hue_no_found'))+'</div>';return;}
+    $('hueDiscoverResults').innerHTML =
+      '<div class="label-sm mb8">'+esc(devs.length+' '+t('hue_found'))+'</div>'+
+      '<table><thead><tr>'+
+        '<th>'+esc(t('hue_col_select'))+'</th>'+
+        '<th>'+esc(t('hue_col_id'))+'</th>'+
+        '<th>'+esc(t('col_name'))+'</th>'+
+        '<th>'+esc(t('hue_col_type'))+'</th>'+
+        '<th>'+esc(t('hue_col_manufacturer'))+'</th>'+
+        '<th>'+esc(t('hue_col_on'))+'</th>'+
+      '</tr></thead><tbody>'+
+      devs.map(function(d){
+        return '<tr>'+
+          '<td><input type="checkbox" checked data-lid="'+esc(String(d.light_id))+'"></td>'+
+          '<td><code>'+esc(String(d.light_id))+'</code></td>'+
+          '<td><input value="'+esc(d.name)+'" class="hue-name" style="width:100%"></td>'+
+          '<td>'+esc(d.type||'')+'</td>'+
+          '<td>'+esc(d.manufacturer||'')+'</td>'+
+          '<td>'+(d.on?'🟢':'⚫')+'</td>'+
+        '</tr>';
+      }).join('')+
+      '</tbody></table>'+
+      '<button class="btn btn-green mt8" onclick="hueImportSelected()">'+esc(t('hue_import_btn'))+'</button>';
+  }).catch(function(e){
+    $('hueDiscoverResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+    toast(e.message,true);
+  }).finally(function(){ btn.disabled=false; $('hueDiscoverSpinner').classList.add('hidden'); });
+};
+
+window.hueImportSelected = function(){
+  var host = ($('hueApiHost').value||'').trim().replace(/\/+$/,'');
+  var token = ($('hueToken').value||'').trim();
+  var rows = $('hueDiscoverResults').querySelectorAll('tbody tr');
+  var picks = [];
+  rows.forEach(function(tr){
+    var cb = tr.querySelector('input[type="checkbox"]');
+    if(cb && cb.checked){
+      picks.push({
+        light_id: cb.getAttribute('data-lid'),
+        name: (tr.querySelector('.hue-name')||{}).value||'',
+      });
+    }
+  });
+  if(picks.length===0){toast(t('hue_no_selection'),true);return;}
+  api('/hue/import',{method:'POST',body:{api_host:host,token:token,devices:picks}}).then(function(r){
+    toast(t('hue_imported')+': '+(r.created||[]).length);
+    $('hueDiscoverResults').innerHTML='';
+    loadHueDevices();
+  }).catch(function(e){toast(e.message,true);});
+};
+
+$('hueRefreshBtn').onclick = loadHueDevices;
+
+// ── ESPHome tab ─────────────────────────────────────────────────────────
+function loadEspDevices(){
+  var tb = $('espDeviceBody');
+  tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
+  api('/devices').then(function(res){
+    var rows = (res.devices||[]).filter(function(d){return d.protocol==='esphome';});
+    if(rows.length===0){
+      tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('esp_no_devices'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(d){
+      var m = (d.meta && d.meta.esphome) || {};
+      return '<tr>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td><code>'+esc(m.ip||'?')+':'+esc(String(m.port||6053))+'</code></td>'+
+        '<td>'+esc(d.entity_type||'?')+'</td>'+
+        '<td><button class="btn btn-ghost" onclick="delDevice(\''+d.device_id+'\',loadEspDevices)">'+esc(t('btn_del'))+'</button></td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){
+    tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(e.message)+'</td></tr>';
+  });
+}
+
+$('espAddBtn').onclick = function(){
+  var ip = ($('espIp').value||'').trim();
+  var port = parseInt($('espPort').value||'6053',10);
+  var name = ($('espDeviceName').value||'').trim();
+  var etype = $('espEntityType').value;
+  var pw = ($('espPassword').value||'').trim() || null;
+  var ek = ($('espEncKey').value||'').trim() || null;
+  var loc = ($('espLocation').value||'').trim() || null;
+  if(!ip || !name){toast(t('esp_fill_required'),true);return;}
+  var btn = this; btn.disabled = true;
+  var caps = (etype==='sensor') ? ['read'] : ['on','off'];
+  if(etype==='light') caps.push('brightness');
+  var meta = { esphome:{ ip: ip, port: port } };
+  if(pw) meta.esphome.password = pw;
+  if(ek) meta.esphome.encryption_key = ek;
+  api('/devices',{method:'POST',body:{
+    name: name, entity_type: etype, protocol:'esphome',
+    capabilities: caps, location: loc, meta: meta
+  }}).then(function(){
+    toast(t('esp_add_ok'));
+    $('espDeviceName').value=''; $('espIp').value='';
+    $('espPassword').value=''; $('espEncKey').value='';
+    $('espAddResult').innerHTML='';
+    loadEspDevices();
+  }).catch(function(e){
+    $('espAddResult').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+    toast(e.message,true);
+  }).finally(function(){ btn.disabled=false; });
+};
+$('espRefreshBtn').onclick = loadEspDevices;
+
+// ── Zigbee2MQTT tab ─────────────────────────────────────────────────────
+function loadZ2mDevices(){
+  var tb = $('z2mDeviceBody');
+  tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
+  api('/devices').then(function(res){
+    var rows = (res.devices||[]).filter(function(d){return d.protocol==='zigbee2mqtt';});
+    if(rows.length===0){
+      tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('z2m_no_devices'))+'</td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(d){
+      var m = (d.meta && d.meta.zigbee2mqtt) || {};
+      return '<tr>'+
+        '<td>'+esc(d.name)+'</td>'+
+        '<td><code>'+esc(m.friendly_name||'?')+'</code></td>'+
+        '<td>'+esc(d.entity_type||'?')+'</td>'+
+        '<td><button class="btn btn-ghost" onclick="delDevice(\''+d.device_id+'\',loadZ2mDevices)">'+esc(t('btn_del'))+'</button></td>'+
+      '</tr>';
+    }).join('');
+  }).catch(function(e){
+    tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(e.message)+'</td></tr>';
+  });
+}
+
+$('z2mDiscoverBtn').onclick = function(){
+  var host = ($('z2mMqttHost').value||'').trim();
+  var port = parseInt($('z2mMqttPort').value||'1883',10);
+  if(!host){toast(t('z2m_fill_required'),true);return;}
+  var btn = this; btn.disabled = true;
+  $('z2mDiscoverSpinner').classList.remove('hidden');
+  $('z2mDiscoverResults').innerHTML = '';
+  api('/z2m/discover',{method:'POST',body:{mqtt_host:host,mqtt_port:port}}).then(function(res){
+    var devs = res.devices||[];
+    if(devs.length===0){$('z2mDiscoverResults').innerHTML='<div class="muted">'+esc(t('z2m_no_found'))+'</div>';return;}
+    $('z2mDiscoverResults').innerHTML =
+      '<div class="label-sm mb8">'+esc(devs.length+' '+t('z2m_found'))+'</div>'+
+      '<table><thead><tr>'+
+        '<th>'+esc(t('z2m_col_select'))+'</th>'+
+        '<th>'+esc(t('z2m_col_friendly'))+'</th>'+
+        '<th>'+esc(t('col_name'))+'</th>'+
+        '<th>'+esc(t('z2m_col_type'))+'</th>'+
+        '<th>'+esc(t('z2m_col_model'))+'</th>'+
+        '<th>'+esc(t('z2m_col_ieee'))+'</th>'+
+      '</tr></thead><tbody>'+
+      devs.map(function(d){
+        return '<tr>'+
+          '<td><input type="checkbox" checked data-fn="'+esc(d.friendly_name)+'" data-ieee="'+esc(d.ieee_address||'')+'" data-etype="'+esc(d.entity_type||'sensor')+'"></td>'+
+          '<td><code>'+esc(d.friendly_name)+'</code></td>'+
+          '<td><input value="'+esc(d.friendly_name)+'" class="z2m-name" style="width:100%"></td>'+
+          '<td>'+esc(d.entity_type||'')+'</td>'+
+          '<td>'+esc(d.model||'')+'</td>'+
+          '<td><code>'+esc(d.ieee_address||'')+'</code></td>'+
+        '</tr>';
+      }).join('')+
+      '</tbody></table>'+
+      '<button class="btn btn-green mt8" onclick="z2mImportSelected()">'+esc(t('z2m_import_btn'))+'</button>';
+  }).catch(function(e){
+    $('z2mDiscoverResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+    toast(e.message,true);
+  }).finally(function(){ btn.disabled=false; $('z2mDiscoverSpinner').classList.add('hidden'); });
+};
+
+window.z2mImportSelected = function(){
+  var host = ($('z2mMqttHost').value||'').trim();
+  var port = parseInt($('z2mMqttPort').value||'1883',10);
+  var btopic = ($('z2mBaseTopic').value||'').trim() || 'zigbee2mqtt';
+  var rows = $('z2mDiscoverResults').querySelectorAll('tbody tr');
+  var picks = [];
+  rows.forEach(function(tr){
+    var cb = tr.querySelector('input[type="checkbox"]');
+    if(cb && cb.checked){
+      picks.push({
+        friendly_name: cb.getAttribute('data-fn'),
+        ieee_address: cb.getAttribute('data-ieee')||'',
+        name: (tr.querySelector('.z2m-name')||{}).value||'',
+        entity_type: cb.getAttribute('data-etype')||'sensor',
+      });
+    }
+  });
+  if(picks.length===0){toast(t('z2m_no_selection'),true);return;}
+  api('/z2m/import',{method:'POST',body:{mqtt_host:host,mqtt_port:port,base_topic:btopic,devices:picks}}).then(function(r){
+    toast(t('z2m_imported')+': '+(r.created||[]).length);
+    $('z2mDiscoverResults').innerHTML='';
+    loadZ2mDevices();
+  }).catch(function(e){toast(e.message,true);});
+};
+
+$('z2mRefreshBtn').onclick = loadZ2mDevices;
+
+// Shared helper: delete a device and reload a tab-specific list
+window.delDevice = function(deviceId, reloadFn){
+  if(!confirm(t('confirm_del'))) return;
+  api('/devices/'+deviceId,{method:'DELETE'}).then(function(){
+    toast(t('deleted'));
+    if(reloadFn) reloadFn();
   }).catch(function(e){toast(e.message,true);});
 };
 
