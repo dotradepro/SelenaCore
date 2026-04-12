@@ -1015,10 +1015,7 @@ class VoiceCoreModule(SystemModule):
                 return
 
             # ── Dispatch system-module intents ──
-            _is_system_handled = (
-                result.source == "system_module"
-                or (result.source in ("llm", "cloud") and self._is_system_module_intent(result.intent))
-            )
+            _is_system_handled = (result.source == "system_module")
             if _is_system_handled:
                 # No intermediate ack — the module will publish voice.speak
                 # with an action_context after the driver call, and
@@ -1044,10 +1041,13 @@ class VoiceCoreModule(SystemModule):
                     })
             else:
                 # Classifier-only lanes: unknown / chat / any intent not
-                # owned by a system module. Speech is composed locally by
-                # format_action_context → deterministic fallback phrase.
-                from system_modules.voice_core.action_phrasing import format_action_context
-                tts_text_en = format_action_context(result.intent, {})
+                # owned by a system module.
+                if result.source == "assistant" and result.response:
+                    # LLM gave a freeform answer — use it directly.
+                    tts_text_en = result.response
+                else:
+                    from system_modules.voice_core.action_phrasing import format_action_context
+                    tts_text_en = format_action_context(result.intent, {})
                 tts_text = await self._to_tts_lang(tts_text_en)
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
                 tts_text = _pp(tts_text, tts_lang)
@@ -1962,15 +1962,9 @@ class VoiceCoreModule(SystemModule):
                     "raw_llm": result.raw_llm,
                 })
 
-            # LLM/Cloud intents that map to system modules are handled by the
-            # module itself via EventBus (voice.intent → module.handle → module.speak).
-            # Must include both "llm" and "cloud" sources, otherwise the test
-            # endpoint speaks result.response while the module ALSO speaks via
-            # speak_action() — causing double TTS playback.
-            _sys_handled = (
-                result.source == "system_module"
-                or (result.source in ("llm", "cloud") and svc._is_system_module_intent(result.intent))
-            )
+            # System-module intents are handled by the module itself via
+            # EventBus (voice.intent → module.handle → module.speak).
+            _sys_handled = (result.source == "system_module")
             if req.speak and _sys_handled:
                 svc._system_speak_done.clear()
                 try:
@@ -1980,11 +1974,14 @@ class VoiceCoreModule(SystemModule):
                     pass
             elif req.speak:
                 # Classifier-only lanes (unknown / chat / non-system intents):
-                # compose the spoken reply locally via format_action_context,
-                # then run it through OutputTranslator + TTSPreprocessor + Piper.
-                from system_modules.voice_core.action_phrasing import format_action_context
+                # compose the spoken reply locally, then run it through
+                # OutputTranslator + TTSPreprocessor + Piper.
                 from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
-                tts_text_en = format_action_context(result.intent, {})
+                if result.source == "assistant" and result.response:
+                    tts_text_en = result.response
+                else:
+                    from system_modules.voice_core.action_phrasing import format_action_context
+                    tts_text_en = format_action_context(result.intent, {})
                 tts_text = await svc._to_tts_lang(tts_text_en)
                 tts_text = preprocess_for_tts(tts_text, tts_lang)
                 await svc.publish("voice.response", {"text": tts_text, "query": text})

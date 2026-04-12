@@ -263,38 +263,15 @@ async def _trace_one_case(
         "error": llm_error,
     }
 
-    # ── Step 7: Parser (with built-in sanitizer) ──
-    sanity_text = (
-        f"{user_text}\n{native_text}" if user_text != native_text else user_text
-    )
-    parsed = router._parse_llm_response(
-        tel["response"], source="llm", utter_text=sanity_text,
-        allowed_intents=allowed,
-    )
-    got_intent = parsed.intent if parsed else None
-    got_params = parsed.params if parsed else None
-    trace["step7_parsed"] = {
-        "intent": got_intent,
-        "params": got_params,
-    }
-
-    # ── Step 8: Verdict ──
-    exp_intent = expected.get("intent", "")
-    intent_ok = exp_intent == got_intent
-    exp_params = expected.get("params") or {}
-    params_ok = True
-    for k, v in exp_params.items():
-        if str((got_params or {}).get(k, "")).lower() != str(v).lower():
-            params_ok = False
-            break
-    trace["step8_verdict"] = {
-        "expected_intent": exp_intent,
-        "got_intent": got_intent,
-        "expected_params": exp_params,
-        "got_params": got_params,
-        "intent_ok": intent_ok,
-        "params_ok": params_ok,
-        "pass": intent_ok and params_ok,
+    # ── Step 7: Verdict ──
+    # NOTE: the old Step 7 (parser + sanitizer) was removed together with
+    # the LLM classification pipeline. The raw LLM response is still
+    # captured in step6_ollama for diagnostics, but there is no JSON
+    # parsing step anymore — the LLM is used as a freeform assistant now.
+    raw_response = (tel.get("response") or "").strip()
+    trace["step7_verdict"] = {
+        "raw_response": raw_response[:200] if raw_response else None,
+        "llm_error": llm_error,
     }
     return trace
 
@@ -383,29 +360,11 @@ def _render_trace_section(index: int, total: int, trace: dict) -> str:
         lines.append("  raw:         <empty>")
     lines.append("")
 
-    # Step 7
-    t7 = trace["step7_parsed"]
-    lines.append("STEP 7. Parser + sanitizer → IntentResult")
-    lines.append(f"  intent:      {t7['intent']}")
-    lines.append(f"  params:      {t7['params']}")
-    lines.append("")
-
-    # Step 8
-    t8 = trace["step8_verdict"]
-    mark = "PASS" if t8["pass"] else "FAIL"
-    lines.append(f"STEP 8. Verdict: {mark}")
-    lines.append(
-        f"  expected: intent={t8['expected_intent']}  "
-        f"params={t8['expected_params']}"
-    )
-    lines.append(
-        f"  got:      intent={t8['got_intent']}  "
-        f"params={t8['got_params']}"
-    )
-    if not t8["intent_ok"]:
-        lines.append("  ✗ intent mismatch")
-    if not t8["params_ok"]:
-        lines.append("  ✗ params mismatch")
+    # Step 7 (was parser + verdict; now just raw response info)
+    t7 = trace["step7_verdict"]
+    lines.append("STEP 7. Raw LLM response (classification pipeline removed)")
+    lines.append(f"  response:    {t7.get('raw_response', '<none>')}")
+    lines.append(f"  error:       {t7.get('llm_error', '<none>')}")
     lines.append("")
     return "\n".join(lines)
 
@@ -544,15 +503,13 @@ async def main() -> None:
 
         # Run the full corpus with traces
         traces: list[dict] = []
-        pass_count = 0
         for i, case in enumerate(corpus, 1):
             print(f"  [{i}/{len(corpus)}] {case['text'][:55]}")
             trace = await _trace_one_case(
                 case, args.model, system_prompt, client, llm_fn=llm_fn,
             )
             traces.append(trace)
-            if trace["step8_verdict"]["pass"]:
-                pass_count += 1
+        pass_count = len(traces)  # no verdict step — all traces captured
 
         # Restore original model and unload (Ollama path only).
         if not args.cloud:
@@ -616,8 +573,7 @@ async def main() -> None:
     )
     lines.append(f"Corpus:         {len(corpus)} cases")
     lines.append(f"System prompt:  {len(system_prompt)} chars (from DB key 'system')")
-    lines.append(f"Accuracy:       {pass_count}/{len(corpus)}  "
-                 f"({pass_count/len(corpus)*100:.1f}%)")
+    lines.append(f"Cases traced:   {len(traces)}/{len(corpus)}")
     lines.append(f"Latency:        avg={avg_ms} ms  p50={p50_ms} ms  p95={p95_ms} ms")
     lines.append(f"Throughput:     avg={avg_tok_s} tok/s")
     lines.append(f"Devices in DB:  {len(devices)}")
@@ -628,16 +584,18 @@ async def main() -> None:
         )
     lines.append("")
 
-    # Pass/fail summary
-    lines.append("Per-case verdicts")
+    # Per-case summary (raw LLM responses, no classification verdict)
+    lines.append("Per-case raw LLM responses")
     lines.append("-" * 74)
     for i, t in enumerate(traces, 1):
-        v = t["step8_verdict"]
-        mark = "PASS" if v["pass"] else "FAIL"
+        v7 = t["step7_verdict"]
+        raw = (v7.get("raw_response") or "<empty>")[:50]
+        err = v7.get("llm_error") or ""
+        label = f"err={err}" if err else raw
         lines.append(
-            f"  {i:3d}. [{t['lang']}] {mark}  "
+            f"  {i:3d}. [{t['lang']}] "
             f"{t['native_text'][:40]!r:42s}  "
-            f"got={v['got_intent']}  exp={v['expected_intent']}"
+            f"{label}"
         )
     lines.append("")
 
@@ -675,7 +633,7 @@ async def main() -> None:
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print()
-    print(f"Pass: {pass_count}/{len(corpus)}  ({pass_count/len(corpus)*100:.1f}%)")
+    print(f"Traced: {len(traces)}/{len(corpus)}")
     print(f"Report: {txt_path}")
     print(f"JSON:   {json_path}")
 

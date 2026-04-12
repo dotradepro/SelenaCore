@@ -24,9 +24,7 @@ InputTranslator, so the filter and the prompt work in English only.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass
@@ -42,7 +40,7 @@ class IntentResult:
     intent: str
     response: str
     action: dict[str, Any] | None
-    source: str          # "fast_matcher" | "system_module" | "module_bus" | "embedding" | "llm" | "cloud" | "cache" | "fallback"
+    source: str          # "system_module" | "module_bus" | "embedding" | "assistant" | "fallback"
     latency_ms: int
     lang: str = "en"
     user_id: str | None = None
@@ -189,7 +187,7 @@ def _normalize_en(text: str) -> str:
 
 
 class IntentRouter:
-    """Intent router: Module Bus → Embedding → Local LLM → Cloud LLM (no cache)."""
+    """Intent router: Module Bus → Embedding → Assistant LLM → Fallback."""
 
     def __init__(self) -> None:
         self._live_log_fn: Any = None  # callback for live monitor logging
@@ -218,18 +216,21 @@ class IntentRouter:
         native_text: str | None = None,
         trace: bool = False,
     ) -> IntentResult | tuple[IntentResult, list[dict[str, Any]]]:
-        """Route user text: Module Bus → Embedding → Local LLM → Cloud LLM.
+        """Route user text: Module Bus → Embedding → Assistant LLM → Fallback.
+
+        Tier 0: Module Bus — WebSocket user module intents
+        Tier 1: Embedding — sentence-transformers cosine, ~50 ms
+        Tier 2: Assistant — freeform LLM reply for unknown intents (no catalog)
+        Fallback: deterministic "I did not understand" phrase
 
         Args:
             text: English form of the utterance (post-Argos).
             lang: STT-detected language code.
             tts_lang: TTS output language. Defaults to ``lang``.
             native_text: The original utterance BEFORE Argos. When set,
-                the catalog filter and param sanitizer consider tokens
-                from BOTH ``text`` and ``native_text``, so an Argos
-                misfire on the source verb (e.g. "вимкни" → "turn") no
-                longer breaks classification. Defaults to ``text`` when
-                there was no translation step.
+                the catalog filter considers tokens from BOTH ``text``
+                and ``native_text``. Defaults to ``text`` when there
+                was no translation step.
 
         Returns IntentResult (or (IntentResult, trace_steps) when trace=True).
         """
@@ -365,77 +366,44 @@ class IntentRouter:
             await self._publish_event(emb_result, raw_text=text, lang=lang)
             return (emb_result, steps) if trace else emb_result
 
-        # ── Tier 2: Local LLM (single call) ──
-        llm_result = None
-        llm_error = None
+        # ── Tier 2: Freeform LLM assistant ──
+        # Instead of classifying, ask the LLM to respond conversationally.
+        # Uses native_text (pre-translation) so the LLM answers in the
+        # user's language naturally.
+        assistant_result = None
+        assistant_error = None
         try:
-            llm_result = await self._local_llm_classify(
-                text, lang, tts_lang=tts_lang, native_text=native_text,
+            assistant_result = await self._ask_as_assistant(
+                native_text or text,
             )
         except asyncio.TimeoutError:
-            llm_error = "timeout"
-            logger.warning("Local LLM timeout for: %s", text[:50])
+            assistant_error = "timeout"
+            logger.warning("Assistant LLM timeout for: %s", text[:50])
         except Exception as exc:
-            llm_error = str(exc)
-            logger.warning("Local LLM error: %s", exc)
+            assistant_error = str(exc)
+            logger.warning("Assistant LLM error: %s", exc)
 
         if trace:
             steps.append({
-                "tier": "2", "name": "Local LLM",
-                "status": "hit" if llm_result else ("error" if llm_error else "skip"),
+                "tier": "2", "name": "Assistant LLM",
+                "status": "hit" if assistant_result else (
+                    "error" if assistant_error else "skip"
+                ),
                 "ms": _elapsed(),
-                "detail": llm_result.intent if llm_result else llm_error,
+                "detail": (assistant_result.response[:60] if assistant_result
+                           else assistant_error),
             })
 
-        if llm_result is not None and llm_result.intent != "unknown":
-            llm_result.latency_ms = _elapsed()
-            llm_result.lang = lang
-            llm_result.user_id = user_id
-            llm_result = await self._resolve_entity_ref(llm_result)
-            llm_result = await self._disambiguate_device(llm_result, tts_lang)
-            await self._publish_event(llm_result, raw_text=text, lang=lang)
-            return (llm_result, steps) if trace else llm_result
+        if assistant_result is not None:
+            assistant_result.latency_ms = _elapsed()
+            assistant_result.lang = lang
+            assistant_result.user_id = user_id
+            await self._publish_event(
+                assistant_result, raw_text=text, lang=lang,
+            )
+            return (assistant_result, steps) if trace else assistant_result
 
-        # ── Tier 3: Cloud LLM (if configured) ──
-        cloud_result = None
-        cloud_error = None
-        cloud_cfg = self._get_cloud_config()
-        if cloud_cfg:
-            try:
-                cloud_result = await self._cloud_llm_classify(
-                    text, lang, cloud_cfg, tts_lang=tts_lang, native_text=native_text,
-                )
-            except asyncio.TimeoutError:
-                cloud_error = "timeout"
-            except Exception as exc:
-                cloud_error = str(exc)
-                logger.warning("Cloud LLM error: %s", exc)
-
-            if trace:
-                steps.append({
-                    "tier": "3", "name": "Cloud LLM",
-                    "status": "hit" if cloud_result else ("error" if cloud_error else "skip"),
-                    "ms": _elapsed(),
-                    "detail": cloud_result.intent if cloud_result else cloud_error,
-                })
-
-            if cloud_result is not None and cloud_result.intent != "unknown":
-                cloud_result.latency_ms = _elapsed()
-                cloud_result.lang = lang
-                cloud_result.user_id = user_id
-                cloud_result = await self._resolve_entity_ref(cloud_result)
-                cloud_result = await self._disambiguate_device(cloud_result, tts_lang)
-                await self._publish_event(cloud_result, raw_text=text, lang=lang)
-                return (cloud_result, steps) if trace else cloud_result
-        elif trace:
-            steps.append({
-                "tier": "3", "name": "Cloud LLM",
-                "status": "skip",
-                "ms": _elapsed(),
-                "detail": "not configured",
-            })
-
-        # ── Fallback: classifier found nothing, LLM timed out, etc. ──
+        # ── Fallback: embedding low-confidence, assistant unavailable ──
         # No hardcoded English text — VoiceCore / format_action_context()
         # will turn ``intent="unknown"`` into the deterministic fallback
         # phrase ("I did not understand that command.") and OutputTranslator
@@ -560,9 +528,9 @@ class IntentRouter:
                 result.intent, result.runner_up,
             )
             return None
-        # Final hallucination guard mirroring _parse_llm_response. The
-        # classifier picks from `candidates` which came from `allowed`,
-        # so this should never trip — kept for parity.
+        # Final hallucination guard. The classifier picks from `candidates`
+        # which came from `allowed`, so this should never trip — kept as a
+        # safety net.
         if result.intent != "unknown" and result.intent not in allowed:
             logger.warning(
                 "embedding: intent %r not in allowed set %s — falling through",
@@ -583,177 +551,13 @@ class IntentRouter:
             ),
         )
 
-    # ── Local LLM (single call) ────────────────────────────────────────
-
-    async def _local_llm_classify(
-        self,
-        text: str,
-        lang: str,
-        *,
-        tts_lang: str | None = None,
-        native_text: str | None = None,
-    ) -> IntentResult | None:
-        """Single LLM call via core.llm.llm_call(): returns intent JSON.
-
-        ``text`` is the post-Argos English form, ``native_text`` is the
-        original utterance (may equal ``text`` for English speakers).
-        Both forms feed the bilingual filter and post-classification
-        sanitizer so Argos glitches cannot drop information.
-        """
-        from core.llm import llm_call
-
-        native_text = native_text or text
-        catalog, allowed = await self._build_filtered_catalog(
-            text, native_text=native_text,
-        )
-
-        # Text is already English — send directly, no language wrapping.
-        # 8k context gives headroom for the enriched catalog (intent
-        # descriptions, per-device names, radio station list).
-        # max_tokens=256: the JSON response is small (~100 tokens); capping
-        # tight cuts generation time dramatically on 3B models (qwen2.5,
-        # phi3:mini) without truncating real answers.
-        raw = await llm_call(
-            text,
-            prompt_key="intent",
-            extra_context=catalog,
-            temperature=0.1,
-            max_tokens=256,
-            timeout=30.0,
-            num_ctx=8192,
-        )
-
-        if not raw:
-            return None
-
-        # Sanitizer checks BOTH the Argos-translated form AND the
-        # original utterance, so values spoken natively survive even if
-        # the English form dropped them.
-        sanity_text = f"{text}\n{native_text}" if native_text != text else text
-        return self._parse_llm_response(
-            raw, source="llm", utter_text=sanity_text, allowed_intents=allowed,
-        )
-
-    # ── Cloud LLM ──────────────────────────────────────────────────────
-
-    def _get_cloud_config(self) -> dict | None:
-        """Check whether a cloud LLM provider is configured.
-
-        Returns a truthy dict if cloud is available, None otherwise.
-        llm_call() handles the actual provider dispatch internally.
-        """
-        try:
-            from core.config_writer import read_config
-            config = read_config()
-            ai_cfg = config.get("ai", {}).get("conversation", {})
-
-            # Check new ai.conversation.cloud config
-            cloud_cfg = ai_cfg.get("cloud", {})
-            url = cloud_cfg.get("url", "")
-            key = cloud_cfg.get("key") or os.environ.get("GROQ_API_KEY", "")
-            model = cloud_cfg.get("model", "")
-            if url and key and model:
-                return {"url": url, "key": key, "model": model}
-
-            # Fallback: check legacy voice.providers for cloud
-            voice_cfg = config.get("voice", {})
-            provider = voice_cfg.get("llm_provider", "")
-            if provider not in ("ollama", ""):
-                providers_cfg = voice_cfg.get("providers", {})
-                p_cfg = providers_cfg.get(provider, {})
-                api_key = p_cfg.get("api_key", "")
-                p_model = p_cfg.get("model", "")
-                if api_key and p_model:
-                    return {"provider": provider, "key": api_key, "model": p_model}
-        except Exception:
-            pass
-        return None
-
-    async def _cloud_llm_classify(
-        self,
-        text: str,
-        lang: str,
-        cloud_cfg: dict,
-        *,
-        tts_lang: str | None = None,
-        native_text: str | None = None,
-    ) -> IntentResult | None:
-        """Cloud LLM classification via core.llm.llm_call()."""
-        from core.llm import llm_call
-
-        native_text = native_text or text
-        catalog, allowed = await self._build_filtered_catalog(
-            text, native_text=native_text,
-        )
-
-        raw = await llm_call(
-            text,
-            prompt_key="intent",
-            extra_context=catalog,
-            temperature=0.1,
-            max_tokens=256,
-            timeout=15.0,
-            num_ctx=8192,
-        )
-
-        if not raw:
-            return None
-
-        sanity_text = f"{text}\n{native_text}" if native_text != text else text
-        return self._parse_llm_response(
-            raw, source="cloud", utter_text=sanity_text, allowed_intents=allowed,
-        )
-
     # ── Prompt building (per-request word-overlap filter) ─────────────
-
-    # Static instructions appended to the user-editable identity. Describes
-    # the JSON contract and the allowed params. Kept tight on purpose —
-    # small models are better classifiers than multi-shot imitators.
-    #
-    # IMPORTANT: do NOT remove the Examples block.
     # Tested 2026-04-11 on qwen2.5:1.5b + Helsinki, 40-case trace bench:
     #   * Full prompt with 4 examples:                32/40 (baseline)
     #   * Slimmed prompt, no examples, no template:   24/40 (-8 cases)
     #   * Slim prompt + bare format line `{...}`:     29/40 (-3 cases)
     #   * Baseline + namespace hint + AC synonym:     35/40 (+3 cases)
     # Removing the examples drops qwen 1.5b sharply because the 4
-    # examples act as a structural anchor for form imitation —
-    # without them small models flatten params, omit the intent
-    # field, or hallucinate Home-Assistant-style dotted entity IDs
-    # like `light.office`, `lock.front_door`. The namespace hint and
-    # entity synonyms below are supplements, not replacements.
-    # If you want to tune this header, run run_trace_bench.py before
-    # AND after every change to qwen 1.5b + Helsinki and check the
-    # raw responses for these failure modes.
-    _SCHEMA_HEADER = (
-        "Reply with ONE JSON object, no prose, no markdown, no code fences:\n"
-        '{"intent":"<namespace.action>","params":{"entity":"...","location":"..."}}\n\n'
-        "Rules:\n"
-        "- Pick the intent name EXACTLY from the Intents list below.\n"
-        "- Use \"unknown\" if nothing in the list fits the command.\n"
-        "- Do NOT invent intent names. Do NOT add a \"response\" field.\n"
-        "- Namespaces: device.* = hardware, clock.* = timers/alarms, media.* = playback.\n"
-        "- Include a param ONLY if the user literally said it. If the user\n"
-        "  did not name a device/station/number, OMIT that key. Never copy\n"
-        "  placeholder values from the schema above.\n"
-        "- An empty params object {} is fine. Prefer omitting fields over\n"
-        "  guessing them. NEVER fabricate entity, location, station, genre,\n"
-        "  or value just because the schema lists those fields.\n\n"
-        "Examples (output shape only — pick intents from your list):\n"
-        '  "pause the music"      -> {"intent":"media.pause"}\n'
-        '  "enable privacy mode"  -> {"intent":"privacy_on"}\n'
-        '  "turn on the kitchen light" -> {"intent":"device.on","params":{"entity":"light","location":"kitchen"}}\n'
-        '  "set fan speed to high"     -> {"intent":"device.set_fan_speed","params":{"value":"high"}}\n\n'
-        "Params:\n"
-        "- entity: device TYPE when the user said one "
-        "(light, outlet, air_conditioner/\"air conditioning\", lock, thermostat, fan, humidifier, ...)\n"
-        "- location: room name from the catalog when the user said a room\n"
-        "- value: the exact word or number the user said for a setting "
-        "(e.g. 22, high, low, cool, auto)\n"
-        "- name_en: exact catalog device name ONLY when the user said that exact name\n"
-        "- station / genre: ONLY for media intents when the user named a station or genre\n"
-    )
-
     def invalidate_catalog_cache(self) -> None:
         """No-op. Catalog is built per-request from live DB state."""
         return
@@ -773,7 +577,7 @@ class IntentRouter:
         if native_text is None:
             native_text = user_text
         tokens = set(_tokenize(user_text)) | set(_tokenize(native_text))
-        parts: list[str] = [self._SCHEMA_HEADER]
+        parts: list[str] = []
 
         # ── Intents via description + verb word overlap ──
         matched_intents: list[tuple[str, str]] = []
@@ -941,225 +745,65 @@ class IntentRouter:
             logger.debug("DB filtered catalog load failed: %s", exc)
             return ""
 
-    # ── Response parsing ───────────────────────────────────────────────
+    # ── Freeform LLM assistant (replaces classification tiers) ────────
 
-    # Fields the LLM likes to hallucinate into when a schema slot exists
-    # but the user said nothing about it. They go through the stricter
-    # substring check below. Intentionally generic — no language-specific
-    # rules, no number-word lists. If the value literally appears in the
-    # original utterance (NFKC-normalised, case-insensitive), we keep
-    # it; otherwise it's a fabrication.
-    _SANITIZE_KEYS = ("name_en", "station", "genre", "value")
+    _ASSISTANT_SYSTEM_PROMPT = (
+        "You are {name}, a smart-home voice assistant. "
+        "The user said something that does not match any known device "
+        "command. Reply in ONE short sentence (up to 20 words). "
+        "Be helpful and friendly. Answer in the same language the user "
+        "spoke. Do NOT attempt to control devices. Do NOT output JSON."
+    )
 
-    # Literal placeholder strings models tend to copy from the schema
-    # example block when they have nothing real to put in a slot. Always
-    # dropped from non-_SANITIZE_KEYS keys (entity, location). For
-    # _SANITIZE_KEYS keys we still allow them through if they literally
-    # appear in the utterance — protects pathological-but-valid inputs
-    # like "set mode to none".
-    _PLACEHOLDER_VALUES = frozenset({
-        "...", "…", "null", "none", "n/a",
-        "<value>", "<entity>", "<location>",
-    })
+    async def _ask_as_assistant(self, native_text: str) -> IntentResult | None:
+        """Call the LLM as a freeform assistant for unrecognised commands.
 
-    @staticmethod
-    def _in_utterance(value: Any, utter: str) -> bool:
-        """True if ``value`` appears as a substring in ``utter``.
-
-        NFKC + case-fold on both sides. Language-agnostic: works for
-        any script the user's Vosk/Argos pair produces.
+        Returns an IntentResult with ``source="assistant"`` and the LLM's
+        natural-language reply in ``response``, or ``None`` on failure
+        (timeout, empty response, disabled) so the caller falls through
+        to the deterministic fallback.
         """
-        if value in (None, "", "null"):
-            return False
-        import unicodedata
-        v = unicodedata.normalize("NFKC", str(value)).strip().lower()
-        if not v:
-            return False
-        u = unicodedata.normalize("NFKC", utter or "").lower()
-        return v in u
+        if not bool(get_value("intent", "llm_assistant_enabled", True)):
+            return None
 
-    def _sanitize_params(
-        self, params: dict[str, Any], utter_text: str,
-    ) -> dict[str, Any]:
-        """Drop params that cannot be justified from the utterance.
+        from core.llm import llm_call
 
-        Universal rule: ``entity`` and ``location`` pass through (the
-        LLM often canonicalises a room or device type and that is
-        allowed). Everything else in ``_SANITIZE_KEYS`` must either
-        (a) appear literally as a substring in the original utterance,
-        or (b) for ``value`` specifically, be a number whose digits
-        appear in the utterance.
-        """
-        clean: dict[str, Any] = {}
-        digit_only_utter = bool(re.search(r"\d", utter_text or ""))
-        for key, raw_val in params.items():
-            if raw_val in (None, "", "null"):
-                continue
-            val_str = str(raw_val).strip()
-            if not val_str or val_str.lower() == "null":
-                continue
-
-            if val_str.lower() in self._PLACEHOLDER_VALUES:
-                if key in self._SANITIZE_KEYS and self._in_utterance(
-                    val_str, utter_text,
-                ):
-                    pass  # user literally said this word — keep it
-                else:
-                    logger.debug(
-                        "dropped placeholder %s=%r (utter=%r)",
-                        key, raw_val, utter_text,
-                    )
-                    continue
-
-            if key in self._SANITIZE_KEYS:
-                if key == "value":
-                    # Numeric values need at least one digit in the source
-                    # (any language) OR a spelled-out form that literally
-                    # appears in the utterance.
-                    is_digit_value = bool(re.search(r"\d", val_str))
-                    if is_digit_value and digit_only_utter:
-                        pass  # keep
-                    elif self._in_utterance(val_str, utter_text):
-                        pass  # keep
-                    else:
-                        logger.debug(
-                            "dropped fabricated value=%r (utter=%r)",
-                            raw_val, utter_text,
-                        )
-                        continue
-                else:
-                    if not self._in_utterance(val_str, utter_text):
-                        logger.debug(
-                            "dropped fabricated %s=%r (utter=%r)",
-                            key, raw_val, utter_text,
-                        )
-                        continue
-            clean[key] = raw_val
-        return clean
-
-    def _parse_llm_response(
-        self,
-        raw: str,
-        source: str = "llm",
-        utter_text: str = "",
-        allowed_intents: set[str] | None = None,
-    ) -> IntentResult | None:
-        """Parse the classifier JSON into an IntentResult.
-
-        The contract is strict: the LLM must return a JSON object with
-        ``intent`` + optional ``params``. Any ``response`` key it tries to
-        sneak in is silently dropped — the spoken reply is composed later
-        by :func:`format_action_context`. Parse errors / empty output
-        degrade to ``intent="unknown"`` so the caller always gets a
-        well-formed :class:`IntentResult`.
-        """
-        raw_debug = raw
-        cleaned = (raw or "").strip()
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-            cleaned = re.sub(r"\s*```$", "", cleaned)
-
-        start_idx = cleaned.find("{")
-        if start_idx == -1:
-            return IntentResult(
-                intent="unknown", response="", action=None,
-                source=source, latency_ms=0, raw_llm=raw_debug,
-            )
-
-        # Extract the FIRST balanced JSON object from start_idx. Some cloud
-        # providers (Gemini observed) emit a valid object followed by
-        # garbage like '\n":"living room"}}\n"}}'. The old approach of
-        # rfind('}') swept up all that junk and crashed json.loads. A
-        # depth-counting walk that respects string literals + escapes
-        # gives us exactly the first complete object.
-        end_idx = -1
-        depth = 0
-        in_str = False
-        esc = False
-        for i in range(start_idx, len(cleaned)):
-            ch = cleaned[i]
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-                continue
-            if ch == '"':
-                in_str = True
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    end_idx = i
-                    break
-        if end_idx == -1:
-            return IntentResult(
-                intent="unknown", response="", action=None,
-                source=source, latency_ms=0, raw_llm=raw_debug,
-            )
-
+        name = "Selena"
         try:
-            data = json.loads(cleaned[start_idx:end_idx + 1])
-        except json.JSONDecodeError:
-            return IntentResult(
-                intent="unknown", response="", action=None,
-                source=source, latency_ms=0, raw_llm=raw_debug,
-            )
+            from core.llm import _get_assistant_name
+            name = _get_assistant_name()
+        except Exception:
+            pass
 
-        intent_name = (data.get("intent") or "").strip()
-        params = data.get("params") or {}
+        system = self._ASSISTANT_SYSTEM_PROMPT.replace("{name}", name)
 
-        # Legacy top-level entity/location shim: some models still emit
-        # these at the root instead of under params. Fold them in silently.
-        entity = data.get("entity")
-        location = data.get("location")
-        if entity and entity != "null":
-            params.setdefault("entity", entity)
-        if location and location != "null":
-            params.setdefault("location", location)
+        reply = await llm_call(
+            native_text,
+            system=system,
+            temperature=0.7,
+            max_tokens=100,
+            timeout=10.0,
+            num_ctx=2048,
+        )
 
-        # "chat" is a leftover from older prompts; collapse it to unknown
-        # so the deterministic fallback speech fires.
-        if not intent_name or intent_name == "chat":
-            intent_name = "unknown"
-
-        # Strict per-catalog hallucination guard. The LLM saw a filtered
-        # catalog of intents relevant to this utterance; anything outside
-        # that set is a fabrication. Drop both the intent name AND any
-        # params it carried — unknown with leftover params is worse than
-        # nothing for downstream consumers.
-        if (
-            allowed_intents is not None
-            and intent_name != "unknown"
-            and intent_name not in allowed_intents
-        ):
-            logger.debug(
-                "LLM hallucinated intent %r not in catalog (%d allowed) → unknown",
-                intent_name, len(allowed_intents),
-            )
-            intent_name = "unknown"
-            params = {}
-
-        # Sanity-check params against the original utterance so the LLM
-        # can't invent device names, stations, genres, or numeric values.
-        # Substring-based — language-agnostic.
-        params = self._sanitize_params(params, utter_text)
+        if not reply:
+            return None
 
         return IntentResult(
-            intent=intent_name, response="", action=None,
-            source=source, latency_ms=0, params=params,
-            raw_llm=raw_debug,
+            intent="unknown",
+            response=reply,
+            action=None,
+            source="assistant",
+            latency_ms=0,
+            raw_llm=reply,
         )
 
     def refresh_system_prompt(self) -> None:
         """Invalidate the cached intent catalog.
 
         Called from ``core.api.helpers.on_entity_changed`` whenever a
-        registry row (device/radio/scene) changes, so the next LLM call
-        rebuilds the catalog from fresh DB state.
+        registry row (device/radio/scene) changes, so the next
+        embedding classify call rebuilds the catalog from fresh DB state.
         """
         self.invalidate_catalog_cache()
 

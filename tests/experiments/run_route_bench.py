@@ -2,16 +2,16 @@
 """
 tests/experiments/run_route_bench.py — production-path benchmark.
 
-Unlike run_trace_bench.py (which calls IntentRouter._local_llm_classify
-directly to test the LLM tier in isolation) and run_embedding_bench.py
-(which calls EmbeddingIntentClassifier directly), this bench drives
-the FULL IntentRouter.route() chain:
+Unlike run_trace_bench.py (which traces individual pipeline steps in
+isolation) and run_embedding_bench.py (which calls
+EmbeddingIntentClassifier directly), this bench drives the FULL
+IntentRouter.route() chain:
 
-    Module Bus  →  Embedding (Tier 1)  →  Local LLM (Tier 2)  →  Cloud LLM (Tier 3)
+    Module Bus  →  Embedding (Tier 1)  →  Assistant LLM (Tier 2)  →  Fallback
 
 Each case is reported with the tier that actually produced the result
 (source field on IntentResult), so you can see how often the embedding
-short-circuits the LLM and how often it falls through.
+short-circuits the assistant and how often it falls through.
 
 Run inside the selena-core container:
 

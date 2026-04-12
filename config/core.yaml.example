@@ -118,6 +118,12 @@ intent:
   # the top-2 are too close to trust the embedding pick alone, fall
   # through to LLM for disambiguation.
   embedding_margin_threshold: 0.05
+  # When true, unrecognised commands are forwarded to the LLM for a
+  # freeform conversational reply instead of the static "I did not
+  # understand" fallback. Ollama is available on all devices (Pi and
+  # Jetson). Disable to save LLM resources (embedding-only mode with
+  # deterministic fallback).
+  llm_assistant_enabled: true
 
 translation:
   enabled: false
