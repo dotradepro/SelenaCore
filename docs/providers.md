@@ -32,10 +32,12 @@ Pre-installed and always available.
 
 Not pre-installed. Install from the UI when you need them.
 
-| Provider      | Protocol             | Package | Notes               |
-|---------------|----------------------|---------|---------------------|
-| `philips_hue` | Hue Bridge LAN API   | `phue`  | Requires bridge IP  |
-| `esphome`     | Native asyncio API   | `aioesphomeapi` | Push-based      |
+| Provider       | Protocol             | Package                        | Entity types            | Notes                                      |
+|----------------|----------------------|--------------------------------|-------------------------|--------------------------------------------|
+| `philips_hue`  | Hue Bridge LAN API   | `phue`                         | light                   | Poll-based (3 s), bridge button-press required on first pairing |
+| `esphome`      | ESPHome native API   | `aioesphomeapi`                | switch, light, sensor, outlet | Push-based, auto-discovers entities on connect |
+| `zigbee2mqtt`  | Zigbee2MQTT MQTT bridge | *(none — uses protocol_bridge)* | light, switch, sensor   | Requires running Z2M instance + MQTT broker |
+| `matter`       | Matter / Thread      | `python-matter-server[client]` | light, switch, outlet, sensor, lock, thermostat | Requires matter-server sidecar container   |
 
 More providers can be added over time without changing the core.
 
@@ -70,8 +72,10 @@ Each provider has its own import flow. The most common ones:
 - **Tuya local:** scan the LAN — devices that respond to the Tuya discovery beacon are listed for import.
 - **Tuya cloud:** sign in via the Tuya Sharing SDK QR flow.
 - **Gree / Pular:** UDP broadcast scan on the local subnet.
-- **Philips Hue:** auto-discover the bridge, press the link button, import lights and groups.
-- **ESPHome:** point the import flow at an mDNS-discovered host or paste the device address.
+- **Philips Hue:** enter bridge IP, press the physical link button on the bridge, then add lights by ID.
+- **ESPHome:** enter device IP (port 6053 by default); the driver auto-discovers all entities on connect.
+- **Zigbee2MQTT:** add devices with their Z2M `friendly_name`; state is relayed through `protocol_bridge`.
+- **Matter:** enter the setup code from the device; the matter-server sidecar commissions and manages it.
 
 When a device is imported, `device-control` publishes `device.registered` with an enriched payload (`entity_type`, `location`, `capabilities`). Three modules listen and react automatically:
 
@@ -85,16 +89,29 @@ You don't have to wire any of this manually.
 
 ## Building your own provider
 
-A provider is a Python package that exports a class implementing `DeviceDriver`:
+A provider is a Python package that exports a class implementing `DeviceDriver` (`system_modules/device_control/drivers/base.py`):
 
 ```python
-class DeviceDriver:
-    async def connect(self) -> None: ...
-    async def disconnect(self) -> None: ...
-    async def send_command(self, device_id: str, command: dict) -> dict: ...
-    async def get_state(self, device_id: str) -> dict: ...
-    async def discover(self) -> list[dict]: ...
+class DeviceDriver(ABC):
+    protocol: str = ""
+
+    def __init__(self, device_id: str, meta: dict[str, Any]) -> None: ...
+
+    async def connect(self) -> dict[str, Any]:        # open connection, return initial state
+    async def disconnect(self) -> None:                 # close resources (idempotent)
+    async def set_state(self, state: dict) -> None:     # apply partial state update
+    async def get_state(self) -> dict[str, Any]:        # return current state snapshot
+    def stream_events(self) -> AsyncGenerator[dict]:    # push loop (yields state diffs)
+    def consume_metering(self) -> dict | None:          # optional power reading
 ```
+
+Three driver patterns exist in the codebase:
+
+| Pattern | Example | When to use |
+|---------|---------|-------------|
+| **EventBus delegation** | `mqtt_bridge`, `zigbee2mqtt` | Protocol handled by another module (e.g. `protocol_bridge`) |
+| **Poll + diff** | `gree`, `philips_hue` | Device doesn't push; poll every N seconds, yield on change |
+| **Push + queue** | `matter`, `esphome` | Library provides a push callback; route into `asyncio.Queue` |
 
 Register it in `system_modules/device_control/providers/catalog.py` (for built-ins) or ship it as a pip-installable package referenced from a custom catalog entry.
 
