@@ -74,6 +74,74 @@ def _tokenize(text: str) -> list[str]:
     return _TOKEN_RE.findall(norm)
 
 
+_COMMAND_VERBS = frozenset({
+    "turn", "switch", "set", "lock", "unlock", "open", "close",
+    "play", "pause", "stop", "enable", "disable", "start",
+    "make", "put", "activate", "deactivate",
+})
+
+
+def _extract_command_segment(text: str) -> str:
+    """Extract the command-carrying clause from a long phrase.
+
+    Voice utterances often wrap the actual command in context:
+
+      "I just got home and it is really cold, turn on the AC"
+      "Turn off the kettle in the kitchen and it's already boiling"
+
+    Sentence embedding averages ALL tokens, so context noise
+    dilutes the intent signal. This helper splits on conjunctions
+    and picks the clause that starts with a command verb.
+
+    Short queries (<=8 words) pass through unchanged.
+
+    Selection logic (not "always last"):
+      1. Split on conjunctions / commas.
+      2. Find the FIRST clause whose first word is a command verb.
+      3. If no clause has a command verb → return the first clause
+         (commands more often lead than trail in voice).
+    """
+    words = text.split()
+    if len(words) <= 8:
+        return text
+
+    segments = re.split(
+        r"\b(?:and|but|so|because|since|as|while)\b|[,;]",
+        text, flags=re.IGNORECASE,
+    )
+    segments = [
+        s.strip() for s in segments
+        if s
+        and len(s.strip().split()) >= 2
+        and not re.match(
+            r"^(?:and|but|so|because|since|as|while)$",
+            s.strip(), re.IGNORECASE,
+        )
+    ]
+
+    if not segments:
+        segments = [text]
+
+    # Find the clause with a command verb in the first 4 words.
+    # Covers "can you TURN on", "please SET the temperature",
+    # "could you LOCK the door" where the verb isn't word #1.
+    for seg in segments:
+        seg_words = seg.split()
+        head = seg_words[:4]
+        if any(w.lower().rstrip("'s") in _COMMAND_VERBS for w in head):
+            return seg
+
+    # No conjunction-split clause has a verb in its head.
+    # Last resort: scan the raw word list for a mid-sentence
+    # command verb and take everything from it onward. Catches
+    # "I'm cold TURN on the AC for heating" → "turn on the AC..."
+    for i, w in enumerate(words):
+        if w.lower().rstrip("'s") in _COMMAND_VERBS:
+            return " ".join(words[i:])
+
+    return segments[0]
+
+
 def _parse_catalog_to_candidates(catalog_text: str) -> list[dict[str, str]]:
     """Pull intent rows out of the prompt catalog block.
 
@@ -276,12 +344,24 @@ class IntentRouter:
                     "detail": emb_result.intent if emb_result else emb_error,
                 })
 
-        if emb_result is not None and emb_result.intent != "unknown":
+        # Accept any embedding result — including confident "unknown".
+        #
+        # _embedding_classify already filtered by score + margin
+        # thresholds. If it returns a result (not None), the
+        # classification is trustworthy. Letting "unknown" fall
+        # through to the LLM tier is WORSE: the LLM on Jetson
+        # overrides correct unknowns with wrong intents like
+        # `presence.who_home` for "who are you". On Pi the LLM
+        # timed out → accidental correct fallback. Trusting
+        # embedding for unknown gives consistent results on
+        # both platforms.
+        if emb_result is not None:
             emb_result.latency_ms = _elapsed()
             emb_result.lang = lang
             emb_result.user_id = user_id
-            emb_result = await self._resolve_entity_ref(emb_result)
-            emb_result = await self._disambiguate_device(emb_result, tts_lang)
+            if emb_result.intent != "unknown":
+                emb_result = await self._resolve_entity_ref(emb_result)
+                emb_result = await self._disambiguate_device(emb_result, tts_lang)
             await self._publish_event(emb_result, raw_text=text, lang=lang)
             return (emb_result, steps) if trace else emb_result
 
@@ -451,7 +531,13 @@ class IntentRouter:
         if not candidates:
             return None
 
-        result = emb.classify(text, candidates)
+        # For long phrases (>8 words), extract the command-carrying
+        # segment so context noise ("I just got home and it is cold")
+        # doesn't dilute the embedding signal. Short phrases pass
+        # through unchanged. The catalog filter still sees the FULL
+        # text (all tokens contribute to candidate selection).
+        query_for_embed = _extract_command_segment(text)
+        result = emb.classify(query_for_embed, candidates)
 
         score_threshold = float(
             get_value("intent", "embedding_score_threshold", 0.30) or 0.30
@@ -533,7 +619,7 @@ class IntentRouter:
             extra_context=catalog,
             temperature=0.1,
             max_tokens=256,
-            timeout=10.0,
+            timeout=30.0,
             num_ctx=8192,
         )
 

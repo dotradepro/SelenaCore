@@ -119,6 +119,10 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     "device.unlock": [
         "unlock the front door",
         "unlock the door",
+        # Noisy bench: "open the front door" was hitting device.lock
+        "open the front door",
+        "open the door",
+        "open the door for me",
     ],
     "clock.set_timer": [
         "set a timer for ten minutes",
@@ -158,6 +162,11 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "what weather outside.",
         # Argos artifact for robustness:
         "what a weather.",
+        # Noisy bench: indirect weather questions
+        "is it raining",
+        "is it raining outside",
+        "is it cold outside",
+        "is it warm outside",
     ],
     "weather.temperature": [
         "what is the current temperature outside",
@@ -171,6 +180,11 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "enable privacy mode",
         # Helsinki outputs:
         "turn on the privacy mode.",
+        # Noisy bench: "stop listening" alone shifted centroid too
+        # far from positive commands like "увімкни режим приватності".
+        # Keep only the longer, more specific forms.
+        "stop listening to me",
+        "don't listen to me",
     ],
     "privacy_off": [
         "disable privacy mode",
@@ -236,6 +250,48 @@ GENRE_KEYWORDS: list[str] = [
     "electronic", "country", "folk", "metal",
 ]
 
+# Word-to-number mapping for STT output where Vosk or Helsinki
+# produces spelled-out numbers ("twenty two") instead of digits.
+# Sorted longest-first at lookup time so "twenty two" matches
+# before "twenty".
+WORD_NUMBERS: dict[str, int] = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+    "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+    "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19, "twenty": 20,
+    "twenty one": 21, "twenty two": 22, "twenty three": 23,
+    "twenty four": 24, "twenty five": 25, "twenty six": 26,
+    "twenty seven": 27, "twenty eight": 28, "twenty nine": 29,
+    "thirty": 30,
+}
+
+_WORD_NUMBERS_SORTED = sorted(
+    WORD_NUMBERS.items(), key=lambda x: -len(x[0]),
+)
+
+
+def _extract_numeric_value(text: str) -> str | None:
+    """Extract the first numeric value from text — digit or word form.
+
+    Digit regex runs FIRST because it's unambiguous ("22" is always
+    a number). Word-number lookup runs second with word-boundary
+    guards so "one" inside "air conditioner" doesn't match.
+    """
+    import re
+
+    q = text.lower()
+    # Prefer digit form — always unambiguous.
+    nums = re.findall(r"\b(\d+)\b", q)
+    if nums:
+        return nums[0]
+    # Fallback to word-number with word boundaries.
+    for phrase, num in _WORD_NUMBERS_SORTED:
+        pattern = r"\b" + re.escape(phrase) + r"\b"
+        if re.search(pattern, q):
+            return str(num)
+    return None
+
 
 def extract_params(query_en: str, intent: str) -> dict[str, Any]:
     """Lexicon-based param extraction over Helsinki English output."""
@@ -259,15 +315,16 @@ def extract_params(query_en: str, intent: str) -> dict[str, Any]:
             params["location"] = room
             break
 
-    # Value — only relevant for set_* intents
+    # Value — only relevant for set_* intents. Handles both digit
+    # ("22") and word-number ("twenty two") forms from Vosk/Helsinki.
     if intent in (
         "device.set_mode",
         "device.set_fan_speed",
         "device.set_temperature",
     ):
-        nums = re.findall(r"\b(\d+)\b", q)
-        if nums:
-            params["value"] = nums[0]
+        num_val = _extract_numeric_value(q)
+        if num_val:
+            params["value"] = num_val
         else:
             for v in VALUE_KEYWORDS:
                 if v in q:
