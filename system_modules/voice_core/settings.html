@@ -402,13 +402,7 @@
         <div class="flex gap8 mb8">
             <input type="text" id="voskCatalogSearch" style="flex:1;font-size:12px" data-placeholder-i18n="vosk_search_placeholder">
             <select id="voskCatalogLang" style="font-size:12px;width:auto">
-                <option value="">All</option>
-                <option value="en">English</option>
-                <option value="uk">Ukrainian</option>
-                <option value="ru">Russian</option>
-                <option value="de">German</option>
-                <option value="fr">French</option>
-                <option value="es">Spanish</option>
+                <option value="" data-i18n="all_languages"></option>
             </select>
         </div>
         <div id="voskCatalogList" style="max-height:300px;overflow-y:auto"></div>
@@ -678,6 +672,11 @@
             <select id="piperQualityFilter"><option value="" data-i18n="all_qualities"></option></select>
         </div>
         <div id="piperCatalogList" class="catalog-list"></div>
+        <div id="piperPagination" class="flex gap8 mt8 hidden" style="justify-content:center;align-items:center">
+            <button id="piperCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
+            <span id="piperCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
+            <button id="piperCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
+        </div>
     </div>
 </div>
 
@@ -1852,6 +1851,20 @@
     function renderVoskCatalog(res) {
         var list = $('voskCatalogList');
         if (!list) return;
+        // Populate language dropdown dynamically from API facets
+        if (res.languages && res.languages.length) {
+            var sel = $('voskCatalogLang');
+            if (sel) {
+                var cur = sel.value;
+                var opts = '<option value="">' + t('all_languages') + '</option>';
+                res.languages.forEach(function(l) {
+                    opts += '<option value="' + l.code + '"' +
+                        (l.code === cur ? ' selected' : '') + '>' +
+                        (l.label || l.code) + ' (' + l.count + ')</option>';
+                });
+                sel.innerHTML = opts;
+            }
+        }
         if (!res.models || !res.models.length) {
             list.innerHTML = '<div class="label-xs" style="padding:12px;text-align:center">No models found</div>';
             return;
@@ -2269,46 +2282,66 @@
         }
     };
 
+    state.piperCatalogPage = 1;
+
     async function loadPiperCatalog() {
         $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
+        var lang = $('piperLangFilter') ? $('piperLangFilter').value : '';
+        var quality = $('piperQualityFilter') ? $('piperQualityFilter').value : '';
+        var q = $('piperSearch') ? $('piperSearch').value : '';
         try {
-            var res = await api('/setup/tts/catalog');
+            var res = await api('/setup/tts/catalog?lang=' + encodeURIComponent(lang) +
+                '&quality=' + encodeURIComponent(quality) +
+                '&q=' + encodeURIComponent(q) +
+                '&page=' + state.piperCatalogPage + '&per_page=20');
             state.piperCatalog = res.voices || [];
-            renderPiperCatalog();
+            renderPiperCatalog(res);
         } catch(e) { $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>'; }
     }
 
-    function renderPiperCatalog() {
+    function renderPiperCatalog(res) {
+        // Populate language dropdown from API facets (full catalog, not just current page)
+        if (res && res.languages && res.languages.length) {
+            var sel = $('piperLangFilter');
+            if (sel) {
+                var curLang = sel.value;
+                var langOpts = '<option value="">' + t('all_languages') + '</option>';
+                res.languages.forEach(function(l) {
+                    langOpts += '<option value="' + l.code + '"' +
+                        (l.code === curLang ? ' selected' : '') + '>' +
+                        (l.label || l.code) + ' (' + l.count + ')</option>';
+                });
+                sel.innerHTML = langOpts;
+            }
+        }
+        // Populate quality dropdown
+        if (res && res.qualities && res.qualities.length) {
+            var qsel = $('piperQualityFilter');
+            if (qsel) {
+                var curQ = qsel.value;
+                var qualOpts = '<option value="">' + t('all_qualities') + '</option>';
+                res.qualities.forEach(function(q) {
+                    qualOpts += '<option value="' + q + '"' + (q === curQ ? ' selected' : '') + '>' + q + '</option>';
+                });
+                qsel.innerHTML = qualOpts;
+            }
+        }
+
         var installedIds = {};
         state.piperVoices.forEach(function(v) { installedIds[v.id] = true; });
-        var search = ($('piperSearch').value || '').toLowerCase();
-        var lang = $('piperLangFilter').value;
-        var quality = $('piperQualityFilter').value;
 
-        var langs = {}, quals = {};
-        state.piperCatalog.forEach(function(v) { if (v.language) langs[v.language] = true; if (v.quality) quals[v.quality] = true; });
-        var langOpts = '<option value="">' + t('all_languages') + '</option>';
-        Object.keys(langs).sort().forEach(function(l) { langOpts += '<option value="' + l + '"' + (l === lang ? ' selected' : '') + '>' + l + '</option>'; });
-        $('piperLangFilter').innerHTML = langOpts;
-        var qualOpts = '<option value="">' + t('all_qualities') + '</option>';
-        Object.keys(quals).sort().forEach(function(q) { qualOpts += '<option value="' + q + '"' + (q === quality ? ' selected' : '') + '>' + q + '</option>'; });
-        $('piperQualityFilter').innerHTML = qualOpts;
-
-        var filtered = state.piperCatalog.filter(function(v) {
-            if (installedIds[v.id]) return false;
-            if (lang && v.language !== lang) return false;
-            if (quality && v.quality !== quality) return false;
-            if (search && !v.id.toLowerCase().includes(search) && !(v.name || '').toLowerCase().includes(search)) return false;
-            return true;
+        var voices = state.piperCatalog.filter(function(v) {
+            return !installedIds[v.id];
         });
 
-        if (filtered.length === 0) {
+        if (voices.length === 0) {
             $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>';
+            $('piperPagination').classList.add('hidden');
             return;
         }
 
-        $('piperCatalogList').innerHTML = filtered.map(function(v) {
-            var meta = (v.language_name || v.language || '') +
+        $('piperCatalogList').innerHTML = voices.map(function(v) {
+            var meta = (v.lang_label || v.lang || '') +
                 (v.country ? ' (' + v.country + ')' : '') +
                 (v.quality ? ' &middot; ' + v.quality : '') +
                 (v.size_bytes ? ' &middot; ' + formatSize(v.size_bytes) : '');
@@ -2318,11 +2351,24 @@
                 '<button class="btn btn-secondary" onclick="window._piperDownload(\'' + v.id + '\',this)">' + t('download') + '</button>' +
                 '</div>';
         }).join('');
+
+        // Pagination
+        if (res && res.pages > 1) {
+            $('piperPagination').classList.remove('hidden');
+            $('piperCatalogPage').textContent = res.page + '/' + res.pages;
+            $('piperCatalogPrev').disabled = res.page <= 1;
+            $('piperCatalogNext').disabled = res.page >= res.pages;
+        } else {
+            $('piperPagination').classList.add('hidden');
+        }
     }
 
-    $('piperSearch').oninput = renderPiperCatalog;
-    $('piperLangFilter').onchange = renderPiperCatalog;
-    $('piperQualityFilter').onchange = renderPiperCatalog;
+    var _piperSearchTimer;
+    $('piperSearch').oninput = function() { clearTimeout(_piperSearchTimer); _piperSearchTimer = setTimeout(function(){ state.piperCatalogPage = 1; loadPiperCatalog(); }, 300); };
+    $('piperLangFilter').onchange = function() { state.piperCatalogPage = 1; loadPiperCatalog(); };
+    $('piperQualityFilter').onchange = function() { state.piperCatalogPage = 1; loadPiperCatalog(); };
+    if ($('piperCatalogPrev')) $('piperCatalogPrev').onclick = function() { if (state.piperCatalogPage > 1) { state.piperCatalogPage--; loadPiperCatalog(); } };
+    if ($('piperCatalogNext')) $('piperCatalogNext').onclick = function() { state.piperCatalogPage++; loadPiperCatalog(); };
 
     window._piperDownload = async function(id, btn) {
         btn.disabled = true;

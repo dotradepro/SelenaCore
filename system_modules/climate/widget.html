@@ -15,8 +15,8 @@
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
-.wrap{padding:8px;display:flex;flex-direction:column;gap:4px;height:100vh;overflow-y:auto;min-width:0}
-.wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:auto;min-height:0}
+.wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0}
+.wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
 /* Compact mode: NO room headers (the dashboard tile is too narrow to
    waste a row on group titles). Modal mode keeps grouped layout
    because it has more horizontal room. */
@@ -436,17 +436,19 @@ function load(){
     }
     keys.sort();
     var html = '';
+    var compactTotal = 0;
+    var COMPACT_MAX = 2;
     keys.forEach(function(roomKey){
       var devs = rooms[roomKey] || [];
       var label = roomLabel(roomKey);
       html += '<div class="room"><div class="room-title">'+esc(label)+'</div>';
       if(IS_MODAL){
-        // fullscreen modal: each device gets a full-control card
         devs.forEach(function(d){ html += renderFullCard(d); });
       } else {
-        // dashboard: compact rows
         html += '<div class="list">';
-        devs.forEach(function(d){ html += renderRow(d); });
+        devs.forEach(function(d){
+          if(compactTotal < COMPACT_MAX){ html += renderRow(d); compactTotal++; }
+        });
         html += '</div>';
       }
       html += '</div>';

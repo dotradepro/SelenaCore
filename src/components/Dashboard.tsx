@@ -829,7 +829,7 @@ export default function Dashboard() {
               maxHeight: '92vh',
               background: 'var(--sf)',
               borderRadius: 20,
-              overflow: 'hidden',
+              overflow: 'auto',
               boxShadow: '0 40px 120px rgba(0,0,0,.65)',
               display: 'flex',
               flexDirection: 'column',
@@ -840,7 +840,7 @@ export default function Dashboard() {
               top: '4%', left: '5%', right: '5%', bottom: '4%',
               background: 'var(--sf)',
               borderRadius: 20,
-              overflow: 'hidden',
+              overflow: 'auto',
               boxShadow: '0 40px 120px rgba(0,0,0,.65)',
               display: 'flex',
               flexDirection: 'column',
@@ -861,7 +861,6 @@ export default function Dashboard() {
               <div style={panelStyle}>
                 <iframe
                   src={`/api/ui/modules/${modalMod}/widget?modal=1`}
-                  scrolling="no"
                   title="Widget source picker"
                   style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}
                 />

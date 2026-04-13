@@ -97,8 +97,13 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
   <div id="tab-devices" class="tab-pane">
     <div class="card">
       <div class="flex gap8 mb12" style="justify-content:space-between;align-items:center">
-        <div class="label-sm" data-i18n="dev_count_label">Registered devices</div>
+        <div class="label-sm"><span data-i18n="dev_count_label">Registered devices</span> <span id="devTotalCount" style="opacity:.6"></span></div>
         <button id="refreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
+      </div>
+      <div class="flex gap8 mb8" style="flex-wrap:wrap">
+        <input type="text" id="devFilterName" style="flex:1;min-width:140px;font-size:12px" data-placeholder-i18n="filter_search">
+        <select id="devFilterType" style="font-size:12px;width:auto"><option value="" data-i18n="filter_all_types"></option></select>
+        <select id="devFilterLocation" style="font-size:12px;width:auto"><option value="" data-i18n="filter_all_locations"></option></select>
       </div>
       <table id="devicesTable">
         <thead><tr>
@@ -111,6 +116,11 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
         </tr></thead>
         <tbody id="devicesBody"><tr><td colspan="6" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
       </table>
+      <div id="devPagination" class="flex gap8 mt8 hidden" style="justify-content:center;align-items:center">
+        <button id="devPrevBtn" class="btn btn-ghost" disabled>&larr;</button>
+        <span id="devPageInfo" style="font-size:12px;line-height:30px">1/1</span>
+        <button id="devNextBtn" class="btn btn-ghost" disabled>&rarr;</button>
+      </div>
     </div>
   </div>
 
@@ -576,6 +586,11 @@ var L = {
     z2m_devices_label:'Imported Zigbee2MQTT devices',
     z2m_no_devices:'No Zigbee2MQTT devices yet — discover and import above.',
     z2m_fill_required:'MQTT host is required.',
+    filter_search:'Search by name…',
+    filter_all_types:'All types',
+    filter_all_locations:'All locations',
+    page_label:'Page',
+    page_of:'of',
   },
   uk: {
     title:'Керування пристроями',
@@ -719,12 +734,20 @@ var L = {
     z2m_devices_label:'Імпортовані Zigbee2MQTT пристрої',
     z2m_no_devices:'Поки немає Zigbee2MQTT пристроїв — знайдіть та імпортуйте вище.',
     z2m_fill_required:'Хост MQTT обов\'язковий.',
+    filter_search:'Пошук за назвою…',
+    filter_all_types:'Всі типи',
+    filter_all_locations:'Всі кімнати',
+    page_label:'Сторінка',
+    page_of:'з',
   }
 };
 function t(k){return (L[LANG]||L.en)[k]||k;}
 function applyLang(){
   document.querySelectorAll('[data-i18n]').forEach(function(el){
     el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-placeholder-i18n]').forEach(function(el){
+    el.placeholder = t(el.getAttribute('data-placeholder-i18n'));
   });
 }
 window.addEventListener('message',function(e){
@@ -778,35 +801,117 @@ document.querySelectorAll('.tab').forEach(function(b){
 });
 
 // ── Devices tab ──────────────────────────────────────────────────────────
+var _allDevices = [];
+var _devPage = 1;
+var _devPerPage = 20;
+var _devRetries = 0;
+
 function loadDevices(){
   api('/devices').then(function(res){
-    var rows = (res.devices||[]);
-    var tb = $('devicesBody');
-    if(rows.length===0){
-      tb.innerHTML='<tr><td colspan="6" class="muted">'+esc(t('no_devices'))+'</td></tr>';
-      return;
+    _devRetries = 0;
+    _allDevices = (res.devices||[]);
+    _devPage = 1;
+    populateDevFilters();
+    renderDevices();
+  }).catch(function(e){
+    if (_devRetries < 3) {
+      _devRetries++;
+      setTimeout(loadDevices, _devRetries * 500);
+    } else {
+      _devRetries = 0;
+      toast(e.message, true);
     }
-    tb.innerHTML = rows.map(function(d){
-      var on = d.state && d.state.on;
-      var stateBadge = (on===true) ? '<span class="badge badge-on">ON</span>' :
-                       (on===false) ? '<span class="badge badge-off">OFF</span>' :
-                       '<span class="badge badge-mut">?</span>';
-      return '<tr>'+
-        '<td>'+esc(d.name)+'</td>'+
-        '<td>'+esc(d.entity_type||'—')+'</td>'+
-        '<td>'+esc(d.location||'—')+'</td>'+
-        '<td><span class="badge badge-pr">'+esc(d.protocol)+'</span></td>'+
-        '<td>'+stateBadge+'</td>'+
-        '<td>'+
-          '<button class="btn btn-blue" onclick="testDev(\''+d.device_id+'\')">'+esc(t('btn_test'))+'</button> '+
-          '<button class="btn btn-ghost" onclick="editDev(\''+d.device_id+'\')">'+esc(t('btn_edit'))+'</button> '+
-          '<button class="btn btn-red" onclick="delDev(\''+d.device_id+'\')">'+esc(t('btn_del'))+'</button>'+
-        '</td>'+
-      '</tr>';
-    }).join('');
-  }).catch(function(e){toast(e.message,true);});
+  });
 }
+
+function populateDevFilters(){
+  var types = {}, locations = {};
+  _allDevices.forEach(function(d){
+    if(d.entity_type) types[d.entity_type] = true;
+    if(d.location) locations[d.location] = true;
+  });
+  var selType = $('devFilterType');
+  var selLoc = $('devFilterLocation');
+  var curType = selType ? selType.value : '';
+  var curLoc = selLoc ? selLoc.value : '';
+  if(selType){
+    var opts = '<option value="">' + t('filter_all_types') + '</option>';
+    Object.keys(types).sort().forEach(function(tp){
+      opts += '<option value="'+tp+'"'+(tp===curType?' selected':'')+'>'+esc(tp)+'</option>';
+    });
+    selType.innerHTML = opts;
+  }
+  if(selLoc){
+    var opts2 = '<option value="">' + t('filter_all_locations') + '</option>';
+    Object.keys(locations).sort().forEach(function(loc){
+      opts2 += '<option value="'+esc(loc)+'"'+(loc===curLoc?' selected':'')+'>'+esc(loc)+'</option>';
+    });
+    selLoc.innerHTML = opts2;
+  }
+}
+
+function renderDevices(){
+  var nameQ = ($('devFilterName') ? $('devFilterName').value : '').toLowerCase();
+  var typeQ = $('devFilterType') ? $('devFilterType').value : '';
+  var locQ = $('devFilterLocation') ? $('devFilterLocation').value : '';
+  var filtered = _allDevices.filter(function(d){
+    if(nameQ && (d.name||'').toLowerCase().indexOf(nameQ) < 0) return false;
+    if(typeQ && d.entity_type !== typeQ) return false;
+    if(locQ && d.location !== locQ) return false;
+    return true;
+  });
+
+  var totalCount = $('devTotalCount');
+  if(totalCount) totalCount.textContent = '(' + filtered.length + ')';
+
+  var tb = $('devicesBody');
+  if(filtered.length === 0){
+    tb.innerHTML = '<tr><td colspan="6" class="muted">' + esc(t('no_devices')) + '</td></tr>';
+    hide('devPagination');
+    return;
+  }
+
+  var totalPages = Math.ceil(filtered.length / _devPerPage);
+  if(_devPage > totalPages) _devPage = totalPages;
+  if(_devPage < 1) _devPage = 1;
+  var start = (_devPage - 1) * _devPerPage;
+  var pageRows = filtered.slice(start, start + _devPerPage);
+
+  tb.innerHTML = pageRows.map(function(d){
+    var on = d.state && d.state.on;
+    var stateBadge = (on===true) ? '<span class="badge badge-on">ON</span>' :
+                     (on===false) ? '<span class="badge badge-off">OFF</span>' :
+                     '<span class="badge badge-mut">?</span>';
+    return '<tr>'+
+      '<td>'+esc(d.name)+'</td>'+
+      '<td>'+esc(d.entity_type||'—')+'</td>'+
+      '<td>'+esc(d.location||'—')+'</td>'+
+      '<td><span class="badge badge-pr">'+esc(d.protocol)+'</span></td>'+
+      '<td>'+stateBadge+'</td>'+
+      '<td>'+
+        '<button class="btn btn-blue" onclick="testDev(\''+d.device_id+'\')">'+esc(t('btn_test'))+'</button> '+
+        '<button class="btn btn-ghost" onclick="editDev(\''+d.device_id+'\')">'+esc(t('btn_edit'))+'</button> '+
+        '<button class="btn btn-red" onclick="delDev(\''+d.device_id+'\')">'+esc(t('btn_del'))+'</button>'+
+      '</td>'+
+    '</tr>';
+  }).join('');
+
+  if(totalPages > 1){
+    show('devPagination');
+    $('devPageInfo').textContent = _devPage + '/' + totalPages;
+    $('devPrevBtn').disabled = _devPage <= 1;
+    $('devNextBtn').disabled = _devPage >= totalPages;
+  } else {
+    hide('devPagination');
+  }
+}
+
 $('refreshBtn').onclick = loadDevices;
+if($('devFilterName')) $('devFilterName').oninput = function(){ _devPage = 1; renderDevices(); };
+if($('devFilterType')) $('devFilterType').onchange = function(){ _devPage = 1; renderDevices(); };
+if($('devFilterLocation')) $('devFilterLocation').onchange = function(){ _devPage = 1; renderDevices(); };
+if($('devPrevBtn')) $('devPrevBtn').onclick = function(){ if(_devPage > 1){ _devPage--; renderDevices(); } };
+if($('devNextBtn')) $('devNextBtn').onclick = function(){ _devPage++; renderDevices(); };
 window.testDev = function(id){
   api('/devices/'+id+'/test',{method:'POST'}).then(function(){toast(t('test_ok'));loadDevices();}).catch(function(e){toast(t('test_fail')+': '+e.message,true);});
 };
@@ -1452,8 +1557,15 @@ window.delDevice = function(deviceId, reloadFn){
 };
 
 // ── boot ─────────────────────────────────────────────────────────────────
-applyLang();
-loadDevices();
+function boot(){
+  applyLang();
+  loadDevices();
+}
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 </script>
 <script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
