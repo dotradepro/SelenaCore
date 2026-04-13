@@ -918,6 +918,12 @@
         body.modal .rf-name {
             font-size: 13px
         }
+
+        /* ── Wallpaper: keep overlay & toast opaque ── */
+        html.has-wallpaper .overlay { background: rgba(11,12,16,.92) }
+        html.has-wallpaper.light .overlay { background: rgba(239,240,245,.92) }
+        html.has-wallpaper .toast { background: rgba(20,21,30,.85); backdrop-filter: blur(8px) }
+        html.has-wallpaper.light .toast { background: rgba(255,255,255,.85); backdrop-filter: blur(8px) }
     </style>
 </head>
 
