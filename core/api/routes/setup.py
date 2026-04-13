@@ -1834,6 +1834,14 @@ async def start_provision() -> dict[str, Any]:
     if not (piper_dir / f"{tts_voice}.onnx").exists():
         tasks.append({"id": "download_tts", "label": "download_tts", "status": "pending", "voice": tts_voice})
 
+    # Check if embedding model (all-MiniLM-L6-v2 ONNX) needs downloading
+    _emb_dir = Path(get_nested(
+        "intent.embedding_model_dir",
+        "/var/lib/selena/models/embedding/all-MiniLM-L6-v2",
+    ))
+    if not (_emb_dir / "model.onnx").is_file():
+        tasks.append({"id": "download_embedding", "label": "download_embedding", "status": "pending"})
+
     # Check if LLM model needs downloading
     if llm_model:
         tasks.append({"id": "download_llm", "label": "download_llm", "status": "pending", "model": llm_model})
@@ -1872,6 +1880,8 @@ async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) 
                     await _provision_download_stt(stt_model, task)
                 elif task["id"] == "download_tts":
                     await _provision_download_tts(tts_voice, task)
+                elif task["id"] == "download_embedding":
+                    await _provision_download_embedding(task)
                 elif task["id"] == "download_llm":
                     await _provision_download_llm(llm_model or "", task)
                 elif task["id"] == "install_native_services":
@@ -2074,6 +2084,62 @@ async def _provision_download_stt(model_id: str, task: dict[str, Any] | None = N
             logger.info("STT provider activated with model %s (lang=%s)", model_id, lang)
     except Exception as exc:
         logger.warning("STT provider activation failed (non-fatal): %s", exc)
+
+
+async def _provision_download_embedding(task: dict[str, Any] | None = None) -> None:
+    """Download ONNX embedding model (all-MiniLM-L6-v2) from HuggingFace.
+
+    Two files: model.onnx (~22 MB) + tokenizer.json (~700 KB).
+    Pinned to a known-good revision to avoid silent breakage.
+    """
+    import httpx
+
+    model_dir = Path(get_nested(
+        "intent.embedding_model_dir",
+        "/var/lib/selena/models/embedding/all-MiniLM-L6-v2",
+    ))
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pinned revision for reproducibility.
+    _REV = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
+    _BASE = f"https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/{_REV}"
+    files = {
+        "model.onnx": f"{_BASE}/onnx/model.onnx",
+        "tokenizer.json": f"{_BASE}/tokenizer.json",
+    }
+
+    downloaded_bytes = 0
+    total_bytes = 0
+    if task is not None:
+        task["progress"] = {"downloaded_bytes": 0, "total_bytes": 0}
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
+        # Probe total size
+        if task is not None:
+            for fname, url in files.items():
+                if (model_dir / fname).is_file():
+                    continue
+                try:
+                    head = await client.head(url, follow_redirects=True)
+                    total_bytes += int(head.headers.get("content-length", 0))
+                except Exception:
+                    pass
+            task["progress"]["total_bytes"] = total_bytes
+
+        for fname, url in files.items():
+            dest = model_dir / fname
+            if dest.is_file():
+                continue
+            async with client.stream("GET", url, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(dest, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        f.write(chunk)
+                        if task is not None:
+                            downloaded_bytes += len(chunk)
+                            task["progress"]["downloaded_bytes"] = downloaded_bytes
+
+    logger.info("Embedding model downloaded to %s", model_dir)
 
 
 def _copy_local_piper_voice(voice_id: str, dest_dir: Path) -> bool:

@@ -8,7 +8,7 @@ step with an EmbeddingIntentClassifier:
     native utterance
       → InputTranslator.to_english (Helsinki for non-EN, pass-through for EN)
       → IntentRouter._build_filtered_catalog (token filter, gives 3-15 candidates)
-      → EmbeddingIntentClassifier.classify (sentence-transformers cosine)
+      → EmbeddingIntentClassifier.classify (ONNX Runtime cosine)
       → hallucination guard against `allowed` set
       → verdict against expected intent + params
 
@@ -18,8 +18,9 @@ files which are mounted there:
     docker compose exec -T core python3 \\
         /opt/selena-core/tests/experiments/run_embedding_bench.py
 
-Requires sentence-transformers:
-    docker exec selena-core pip install sentence-transformers --break-system-packages
+Requires ONNX embedding model at intent.embedding_model_dir
+(default: /var/lib/selena/models/embedding/all-MiniLM-L6-v2).
+Dependencies: onnxruntime, tokenizers, numpy (all in requirements.txt).
 """
 from __future__ import annotations
 

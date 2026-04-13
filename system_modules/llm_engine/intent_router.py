@@ -437,9 +437,9 @@ class IntentRouter:
             emb.warmup()
 
     def _ensure_embedding(self):
-        """Lazy-load the embedding classifier (heavy: ~80 MB RAM, 26 s
-        first-call cold start). Voice-core warms it up on boot via
-        ``warmup()``; this is the safety net for any other entry point.
+        """Lazy-load the embedding classifier (~30 MB RAM via ONNX Runtime).
+        Voice-core warms it up on boot via ``warmup()``; this is the
+        safety net for any other entry point.
         """
         if self._embedding is not None:
             return self._embedding
@@ -448,9 +448,9 @@ class IntentRouter:
                 EmbeddingIntentClassifier,
             )
             self._embedding = EmbeddingIntentClassifier()
-        except ImportError as exc:
+        except (ImportError, FileNotFoundError, OSError) as exc:
             logger.warning(
-                "Embedding classifier import failed (%s) — Tier 1 disabled, "
+                "Embedding classifier init failed (%s) — Tier 1 disabled, "
                 "falling through to LLM.", exc,
             )
             self._embedding = False  # sentinel: never try again

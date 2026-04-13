@@ -31,7 +31,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git config --system --add safe.directory /opt/selena-core
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# argostranslate → stanza → torch → nvidia-*  pulls ~2 GB of PyTorch
+# + CUDA packages that are never used (stanza is not imported anywhere,
+# Helsinki translator uses only ctranslate2 + sentencepiece from argos).
+# Strip them after install to save ~1.5 GB image + RAM.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y torch stanza triton \
+       nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
+       nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand \
+       nvidia-cusolver nvidia-cusparse nvidia-cusparselt-cu13 \
+       nvidia-nccl-cu13 nvidia-nvjitlink nvidia-nvshmem-cu13 nvidia-nvtx \
+       cuda-toolkit cuda-bindings cuda-pathfinder 2>/dev/null; true
 
 # Whisper STT runs natively on host (whisper-server or faster-whisper)
 # Piper TTS runs natively on host via piper-server.py

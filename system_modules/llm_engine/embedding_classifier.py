@@ -26,10 +26,10 @@ the classifier robust to whatever Helsinki produces.
 Production rationale
 --------------------
 Trace bench on qwen 1.5b + Helsinki: 35/40 (87.5%), p50 2548 ms.
-Embedding bench (sentence-transformers/all-MiniLM-L6-v2) on the same
+Embedding bench (all-MiniLM-L6-v2 via ONNX Runtime) on the same
 40-case corpus: 39/40 (97.5%), classify-only p50 41 ms — both more
 accurate AND ~60× faster than the local LLM. The model is 22 MB on
-disk and ~80 MB in RAM, vs ~1 GB for qwen 1.5b.
+disk and ~30 MB in RAM (ONNX Runtime), vs ~1 GB for qwen 1.5b.
 
 After integration into IntentRouter.route() with LLM fallback for
 low-margin cases: 40/40 (100%), end-to-end p50 111 ms (~23× faster
@@ -44,6 +44,17 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_MODEL_DIR = "/var/lib/selena/models/embedding/all-MiniLM-L6-v2"
+
+
+def _get_embedding_model_dir() -> str:
+    """Read the ONNX embedding model directory from config."""
+    try:
+        from core.config_writer import get_nested
+        return str(get_nested("intent.embedding_model_dir", _DEFAULT_MODEL_DIR))
+    except Exception:
+        return _DEFAULT_MODEL_DIR
 
 
 # ── Intent anchors ──────────────────────────────────────────────────
@@ -367,7 +378,9 @@ class EmbeddingIntentClassifier:
     rarely change between requests.
     """
 
-    MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+    # Display name only — the actual weights are loaded from the ONNX
+    # export configured via intent.embedding_model_dir in core.yaml.
+    MODEL_NAME = "all-MiniLM-L6-v2"
     UNKNOWN_THRESHOLD = 0.30   # max cosine below this → force unknown
     MARGIN_THRESHOLD = 0.05    # winner − runner_up below this → log low confidence
 
@@ -383,9 +396,9 @@ class EmbeddingIntentClassifier:
         if self._model is not None:
             return
 
-        from sentence_transformers import SentenceTransformer
+        from system_modules.llm_engine.onnx_embedder import OnnxMiniLMEmbedder
 
-        self._model = SentenceTransformer(self.MODEL_NAME)
+        self._model = OnnxMiniLMEmbedder(_get_embedding_model_dir())
 
         # Pre-compute mean anchor embedding for every known intent.
         for intent_name, anchors in INTENT_ANCHORS.items():

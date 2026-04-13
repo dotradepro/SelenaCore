@@ -104,10 +104,10 @@ wizard:
   current_step: null
 
 intent:
-  # Tier 1 of IntentRouter.route(): sentence-transformers cosine over
+  # Tier 1 of IntentRouter.route(): ONNX Runtime cosine classifier over
   # the per-utterance filtered catalog. Confident hits short-circuit
-  # the Local LLM tier (~60× faster, ~22 MB model footprint vs ~1 GB
-  # for qwen 1.5b). Falls through to LLM when score or margin is too
+  # the Local LLM tier (~60× faster, ~30 MB footprint vs ~1 GB for
+  # qwen 1.5b). Falls through to LLM when score or margin is too
   # low to trust. See system_modules/llm_engine/embedding_classifier.py.
   embedding_enabled: true
   # Cosine score threshold below which we fall through to LLM. Tuned
@@ -118,6 +118,10 @@ intent:
   # the top-2 are too close to trust the embedding pick alone, fall
   # through to LLM for disambiguation.
   embedding_margin_threshold: 0.05
+  # Directory containing the ONNX embedding model (all-MiniLM-L6-v2).
+  # Must contain model.onnx + tokenizer.json. Downloaded automatically
+  # during provisioning if not present on disk.
+  embedding_model_dir: "/var/lib/selena/models/embedding/all-MiniLM-L6-v2"
   # When true, unrecognised commands are forwarded to the LLM for a
   # freeform conversational reply instead of the static "I did not
   # understand" fallback. Ollama is available on all devices (Pi and
