@@ -1487,7 +1487,8 @@ async def create_theme(body: ThemeCreateRequest) -> dict[str, Any]:
     }
     data["themes"].append(theme)
     _save_themes(data)
-    broadcast_event("themes_changed")
+    from core.api.sync_manager import get_sync_manager
+    await get_sync_manager().publish("themes_changed", {})
     return theme
 
 
@@ -1517,10 +1518,11 @@ async def update_theme(theme_id: str, body: ThemeUpdateRequest) -> dict[str, Any
 
     _save_themes(data)
     # If this is the active theme, broadcast update
+    from core.api.sync_manager import get_sync_manager
     if data.get("active") == theme_id:
-        broadcast_event("theme_vars_changed")
+        await get_sync_manager().publish("theme_vars_changed", {})
     else:
-        broadcast_event("themes_changed")
+        await get_sync_manager().publish("themes_changed", {})
     return theme
 
 
@@ -1535,13 +1537,14 @@ async def delete_theme(theme_id: str) -> Response:
 
     data["themes"] = [t for t in data["themes"] if t["id"] != theme_id]
     # If deleted theme was active, revert to default
+    from core.api.sync_manager import get_sync_manager
     if data.get("active") == theme_id:
         data["active"] = "default"
         _save_themes(data)
-        broadcast_event("theme_vars_changed")
+        await get_sync_manager().publish("theme_vars_changed", {})
     else:
         _save_themes(data)
-        broadcast_event("themes_changed")
+        await get_sync_manager().publish("themes_changed", {})
     return Response(status_code=204)
 
 
@@ -1554,7 +1557,8 @@ async def activate_theme(body: ThemeActivateRequest) -> dict[str, str]:
 
     data["active"] = body.id
     _save_themes(data)
-    broadcast_event("theme_vars_changed")
+    from core.api.sync_manager import get_sync_manager
+    await get_sync_manager().publish("theme_vars_changed", {})
     return {"active": body.id}
 
 
@@ -1602,7 +1606,8 @@ async def activate_wallpaper(body: WallpaperActivateRequest) -> dict[str, Any]:
     data["wallpaper_blur"] = max(0, min(20, body.blur))
     data["wallpaper_opacity"] = max(0.05, min(0.5, body.opacity))
     _save_themes(data)
-    broadcast_event("theme_vars_changed")
+    from core.api.sync_manager import get_sync_manager
+    await get_sync_manager().publish("theme_vars_changed", {})
     return {
         "wallpaper": data["wallpaper"],
         "wallpaper_blur": data["wallpaper_blur"],
