@@ -305,6 +305,13 @@ class DeviceControlModule(SystemModule):
                 })
                 return
 
+            # Enrich base state with capability-matched params (color,
+            # brightness, colour_temp) — only keys the device actually
+            # supports in its current state are merged.
+            target_state = self._enrich_state_from_params(
+                target_state, params, device,
+            )
+
             try:
                 drv = await self._get_or_create_driver(device["device_id"])
                 await drv.set_state(target_state)
@@ -472,6 +479,46 @@ class DeviceControlModule(SystemModule):
             return {"fan_speed": raw}
 
         return None
+
+    @staticmethod
+    def _enrich_state_from_params(
+        base_state: dict, params: dict, device: dict,
+    ) -> dict[str, Any]:
+        """Enrich state dict with capability-matched params.
+
+        If the voice command included color / brightness / color_temp AND
+        the resolved device supports them (indicated by keys already
+        present in its ``state``), merge them into the outgoing state.
+        Capabilities that the device doesn't have are silently ignored,
+        so the same voice params work across heterogeneous devices.
+        """
+        state = dict(base_state)
+        device_state = device.get("state") or {}
+
+        # Brightness: percentage (0-100 from extract_params) → 0-254
+        if "brightness" in params and "brightness" in device_state:
+            try:
+                pct = float(params["brightness"])
+                state["brightness"] = min(254, max(0, int(pct * 254 / 100)))
+            except (TypeError, ValueError):
+                pass
+
+        # Color: name → hue + saturation (only if device has hue key)
+        if "color" in params and "hue" in device_state:
+            from system_modules.llm_engine.embedding_classifier import COLOR_TO_HS
+            hs = COLOR_TO_HS.get(params["color"])
+            if hs:
+                state["hue"] = hs[0]
+                state["saturation"] = hs[1]
+
+        # Color temperature: kelvin value from extract_params
+        if "color_temp" in params and "colour_temp" in device_state:
+            try:
+                state["colour_temp"] = int(params["color_temp"])
+            except (TypeError, ValueError):
+                pass
+
+        return state
 
     # ── Device resolution ────────────────────────────────────────────────
 
@@ -795,12 +842,20 @@ class DeviceControlModule(SystemModule):
     _OWNED_INTENT_META: dict[str, dict] = {
         INTENT_ON: dict(
             noun_class="DEVICE", verb="on", priority=100,
-            description="Turn a device on (light, switch, AC, ...)",
+            description=(
+                "Turn a device on (light, switch, AC, curtain, vacuum). "
+                "Also: start, run, launch, activate, open curtains, "
+                "bright, brighter, dim, darker, dark, make, "
+                "brightness, color, change, put, maximum, minimum."
+            ),
             entity_types=None,  # any type — core decides nothing
         ),
         INTENT_OFF: dict(
             noun_class="DEVICE", verb="off", priority=100,
-            description="Turn a device off",
+            description=(
+                "Turn a device off. Also: stop, put out, extinguish, "
+                "close curtains, shut, deactivate."
+            ),
             entity_types=None,
         ),
         INTENT_SET_TEMPERATURE: dict(
@@ -810,7 +865,11 @@ class DeviceControlModule(SystemModule):
         ),
         INTENT_SET_MODE: dict(
             noun_class="CLIMATE", verb="set", priority=100,
-            description="Set the operating mode (cool/heat/dry/fan/auto) of an air conditioner",
+            description=(
+                "Set the operating mode (cool/heat/dry/fan/auto) of an "
+                "air conditioner. Also: switch to heating, cooling, "
+                "draining, heaters."
+            ),
             entity_types=["air_conditioner", "thermostat"],
         ),
         INTENT_SET_FAN_SPEED: dict(
@@ -840,7 +899,8 @@ class DeviceControlModule(SystemModule):
             noun_class="DEVICE", verb="unlock", priority=100,
             description=(
                 "Unlock a smart lock — release the lock, allow entry. "
-                "Opposite of device.lock. Use for 'unlock', 'open lock'."
+                "Opposite of device.lock. Use for 'unlock', 'open lock', "
+                "'open the door'."
             ),
             entity_types=["lock", "door_lock"],
         ),

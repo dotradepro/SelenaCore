@@ -534,6 +534,34 @@ class IntentRouter:
             )
             return None
 
+        # ── Post-processing: context-aware disambiguation ──
+        # "Turn on the air conditioning" hits set_mode because "air
+        # conditioning" is semantically close to mode-setting. But if
+        # the query is a simple on/off imperative WITHOUT a mode value,
+        # reclassify to device.on / device.off.
+        q_low = query_for_embed.lower()
+        _ON_VERBS = ("turn on", "switch on", "enable", "power on",
+                     "start", "activate", "run")
+        _OFF_VERBS = ("turn off", "switch off", "disable", "power off",
+                      "stop", "deactivate", "put out", "extinguish",
+                      "you can turn off", "could you turn off")
+        if result.intent in (
+            "device.set_mode", "device.set_temperature",
+            "device.set_fan_speed", "device.query_temperature",
+        ):
+            has_mode_param = bool(result.params.get("value"))
+            is_on = any(q_low.startswith(v) or f" {v}" in q_low
+                        for v in _ON_VERBS)
+            is_off = any(q_low.startswith(v) or f" {v}" in q_low
+                         for v in _OFF_VERBS)
+            if not has_mode_param and (is_on or is_off):
+                new_intent = "device.off" if is_off else "device.on"
+                logger.debug(
+                    "embedding post-proc: %s → %s (imperative verb, "
+                    "no mode param)", result.intent, new_intent,
+                )
+                result.intent = new_intent
+
         return IntentResult(
             intent=result.intent,
             response="",

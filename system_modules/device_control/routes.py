@@ -647,16 +647,17 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             # Translate location → meta.location_en for voice patterns. The
             # display field (device.location) keeps the user's original
             # language so the UI shows what they typed.
+            from system_modules.llm_engine.intent_router import _normalize_en
             loc_en: str | None = None
             if location:
                 if location.isascii():
-                    loc_en = location.lower()
+                    loc_en = _normalize_en(location)
                 else:
                     try:
                         translated_loc = await translate_to_en(location)
                     except Exception:
                         translated_loc = ""
-                    loc_en = (translated_loc or "").strip().lower() or None
+                    loc_en = _normalize_en(translated_loc or "") or None
             meta: dict[str, Any] = {
                 "gree": {
                     "ip": ip,
@@ -666,7 +667,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "key": None,
                     "brand": "gree",
                 },
-                "name_en": (name_en or "").strip().lower() or None,
+                "name_en": _normalize_en(name_en or "") or None,
                 "location_en": loc_en,
             }
             for k in ("name_en", "location_en"):
@@ -743,6 +744,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
     async def hue_import(body: HueImportBody) -> dict[str, Any]:
         """Bulk-create Device rows from a Hue discovery result."""
         from core.registry.models import Device
+        from system_modules.llm_engine.intent_router import _normalize_en
 
         created: list[dict[str, Any]] = []
         for entry in body.devices:
@@ -756,10 +758,10 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             loc_en: str | None = None
             if location:
                 if location.isascii():
-                    loc_en = location.lower()
+                    loc_en = _normalize_en(location)
                 else:
                     try:
-                        loc_en = (await translate_to_en(location)).strip().lower() or None
+                        loc_en = _normalize_en(await translate_to_en(location)) or None
                     except Exception:
                         loc_en = None
             meta: dict[str, Any] = {
@@ -768,7 +770,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "token": body.token,
                     "light_id": int(lid) if str(lid).isdigit() else lid,
                 },
-                "name_en": (name_en or "").strip().lower() or None,
+                "name_en": _normalize_en(name_en or "") or None,
                 "location_en": loc_en,
             }
             for k in ("name_en", "location_en"):
@@ -911,13 +913,14 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 name_en = await translate_to_en(display)
             except Exception:
                 name_en = display
+            from system_modules.llm_engine.intent_router import _normalize_en
             loc_en: str | None = None
             if location:
                 if location.isascii():
-                    loc_en = location.lower()
+                    loc_en = _normalize_en(location)
                 else:
                     try:
-                        loc_en = (await translate_to_en(location)).strip().lower() or None
+                        loc_en = _normalize_en(await translate_to_en(location)) or None
                     except Exception:
                         loc_en = None
             caps = ["read"] if etype == "sensor" else ["on", "off"]
@@ -929,7 +932,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "ieee_address": entry.ieee_address or None,
                     "base_topic": body.base_topic,
                 },
-                "name_en": (name_en or "").strip().lower() or None,
+                "name_en": _normalize_en(name_en or "") or None,
                 "location_en": loc_en,
             }
             for k in ("name_en", "location_en"):
@@ -1190,6 +1193,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 name_en = await translate_to_en(raw_name)
             except Exception:
                 name_en = raw_name
+            from system_modules.llm_engine.intent_router import _normalize_en
             meta: dict[str, Any] = {
                 "tuya": {
                     "device_id": cd["id"],
@@ -1202,7 +1206,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                     "category": cd.get("category", ""),
                     "product_name": cd.get("product_name", ""),
                 },
-                "name_en": (name_en or "").strip().lower() or None,
+                "name_en": _normalize_en(name_en or "") or None,
             }
             # Drop None so we don't store 'null' in JSON.
             if meta["name_en"] is None:

@@ -77,37 +77,119 @@ def _get_embedding_model_dir() -> str:
 # fall apart on production translations.
 INTENT_ANCHORS: dict[str, list[str]] = {
     "device.on": [
+        # Core on commands
         "turn on the light",
+        "turn on the lamp",
         "turn on the air conditioner",
+        "turn on the air conditioning",
         "turn on the humidifier in the bedroom",
+        "turn on the camera",
+        "turn on the vacuum cleaner",
+        "turn on the thermometer in the garage",
+        "turn on the motion sensor",
+        "turn on the speaker",
+        "turn on the thermostat",
+        "enable the thermostat",
+        "switch on the thermostat",
+        "turn on the AC",
+        "power on the air conditioning",
+        "start the air conditioner",
+        "switch on the air conditioner",
+        "switch on the air conditioning",
+        # Vacuum: "run" / "start"
+        "run the robot vacuum cleaner",
+        "start the vacuum cleaner",
+        # Covers (curtains/blinds) → device.on = open
+        "open the curtains in the bedroom",
+        "open the curtains",
+        "open the blinds",
+        "raise the blinds",
+        "turn the curtains on in the bedroom",
+        "turn on the curtains in the bedroom",
+        # Brightness + color (enriched device.on)
+        "turn on the lamp with orange light",
+        "set the light to blue",
+        "dim the bedroom light",
+        "make the light brighter",
+        "make a brighter lamp in the living room",
+        "put the brightness of the lamp to maximum",
+        "put the tape brightness at 50",
+        "change the color to red",
+        "make it dark in the office",
+        # Helsinki artifact: "постав теплий колір" → declarative form
+        "the color of the lamp is warm",
         # Helsinki outputs:
         "turn on the air conditioning in the living room.",
-        "put the light in the living room.",
+        "turn on the air conditioning.",
+        # NOTE: removed "put the light..." — "put" collides with
+        # "put out the light" in device.off, causing "загаси" to hit on.
         "turn the light in the living room.",
         "turn on the humidifier in your bedroom.",
+        "turn the tape on.",
+        "turn the tape on in your office.",
+        "turn the camera on at the entrance.",
+        "turn the thermostat on.",
+        "turn on the socket in the kitchen.",
+        "run the robot vacuum cleaner.",
+        "open the curtains in your bedroom.",
     ],
     "device.off": [
+        # Core off commands
         "turn off the light",
+        "turn off the lamp",
         "turn off the light in the living room",
         "turn off the air conditioner",
+        "turn off the air conditioning",
         "turn off the kettle in the kitchen",
+        "turn off the thermostat in the bedroom",
+        # Covers (curtains/blinds) → device.off = close
+        "close the curtains",
+        "close the curtains in the bedroom",
+        "close the blinds",
+        "lower the blinds",
+        "shut the blinds",
         # Helsinki outputs:
         "turn off the air conditioning.",
+        "turn off the air conditioner.",
         "turn off the lights in the living room.",
         "turn off the light in the living room.",
         "turn off the kettle in the kitchen.",
+        # Helsinki: "загаси" → "put out"
+        "put out the light.",
+        "put out the light",
+        "put out all the lights",
+        "turn the light out",
+        "extinguish the light",
+        "extinguish the lights",
+        # Helsinki: modal verbs (можеш вимкнути)
+        "you can turn off the air conditioner.",
+        "you can turn off the air conditioning.",
+        "could you turn off the air conditioner.",
+        # Helsinki: "закрий штори"
+        "close the curtains.",
     ],
     "device.set_temperature": [
         "set the air conditioner to 22 degrees",
         "set temperature to 20",
         # Helsinki outputs:
         "set the air conditioning to 22 degrees.",
+        "set twenty-two degrees.",
     ],
     "device.set_mode": [
-        "set cool mode on the air conditioner",
+        # NOTE: do NOT include "air conditioner" / "thermostat" here —
+        # those device words pull the centroid toward on/off AC commands
+        # and cause "turn on the AC" to classify as set_mode.
+        "set cool mode",
         "set heating mode",
+        "set dry mode",
+        "switch to heating",
+        "switch to cooling",
+        "switch to cool mode",
+        "switch to heat mode",
         # Helsinki outputs:
         "set the cooling mode.",
+        "set the draining mode.",
+        "switch to heaters.",
     ],
     "device.set_fan_speed": [
         "set the fan speed to high",
@@ -116,24 +198,30 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "set fan speed to high.",
     ],
     "device.query_temperature": [
+        # NOTE: keep anchors question-shaped ("what is...") to avoid
+        # pulling imperative commands ("turn on the thermometer") here.
         "what is the temperature in the living room",
         "what is the temperature",
+        "what is the current temperature",
+        "how warm is it in the bedroom",
         # Helsinki outputs:
         "what is the temperature in the living room?",
+        "what is the temperature on the air conditioner?",
     ],
     "device.lock": [
         "lock the front door",
         "lock the door",
+        "close the lock",
         # Helsinki outputs (Helsinki tc-big-zle-en sometimes uses "shut"):
         "shut the front door.",
     ],
     "device.unlock": [
         "unlock the front door",
         "unlock the door",
-        # Noisy bench: "open the front door" was hitting device.lock
+        "unlock the lock",
+        "open the lock",
         "open the front door",
         "open the door",
-        "open the door for me",
     ],
     "clock.set_timer": [
         "set a timer for ten minutes",
@@ -214,8 +302,6 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "xyzzy plover quux",
         "tell me a joke",
         "tell me the joke.",
-        "open the curtains",
-        "open the blinds.",
         "who are you",
         "who are you.",
     ],
@@ -230,31 +316,131 @@ INTENT_ANCHORS: dict[str, list[str]] = {
 # produces a non-canonical phrase.
 
 ENTITY_MAP: dict[str, str] = {
-    # Standard EN
+    # ── Lights (HA: on_off_domains + expansion_rules.light) ──
     "light": "light",
     "lights": "light",
+    "lighting": "light",
+    "lamp": "light",
+    "lamps": "light",
+    "tape": "light",          # Helsinki: стрічка → tape
+    "led tape": "light",      # Helsinki: світлодіодна стрічка → LED tape
+    "strip": "light",
+    "led strip": "light",
+    # ── Climate ──
     "air conditioner": "air_conditioner",
-    "fan": "fan",
-    "lock": "lock",
-    "thermostat": "thermostat",
-    "humidifier": "humidifier",
-    "kettle": "kettle",
-    "outlet": "outlet",
-    # Helsinki / Argos artifacts
     "air conditioning": "air_conditioner",
     "conditioner": "air_conditioner",
+    "heaters": "air_conditioner",  # Helsinki: обігрів → heaters
+    "heater": "air_conditioner",
+    "thermostat": "thermostat",
+    "radiator": "radiator",
+    # ── Fans (HA: on_off_domains) ──
+    "fan": "fan",
+    "fans": "fan",
+    # ── Switches / outlets ──
+    "switch": "switch",
+    "switches": "switch",
+    "outlet": "outlet",
+    "socket": "outlet",
+    "plug": "outlet",
+    # ── Locks (HA: expansion_rules.lockable) ──
+    "lock": "lock",
+    "door lock": "door_lock",
+    "door": "door_lock",      # Helsinki: двері → door (lock/unlock context)
+    "gate": "gate",
+    "shutter": "shutter",
+    # ── Covers (HA: cover_classes) ──
+    "curtains": "curtain",
+    "curtain": "curtain",
+    "blinds": "curtain",
+    "blind": "curtain",
+    "awning": "curtain",
+    "shade": "curtain",
+    "shades": "curtain",
+    "window": "window",
+    # ── Sensors ──
+    "thermometer": "sensor",
+    "sensor": "sensor",
+    "motion sensor": "sensor",
+    "door sensor": "sensor",
+    # ── Vacuum (HA: HassVacuumStart) ──
+    "vacuum cleaner": "vacuum",
+    "vacuum": "vacuum",
+    "robot vacuum": "vacuum",
+    # ── Camera ──
+    "camera": "camera",
+    # ── Speaker / media ──
+    "speaker": "speaker",
+    "column": "speaker",       # Helsinki: колонка → column
+    # ── Misc ──
+    "humidifier": "humidifier",
+    "kettle": "kettle",
     "clutch": "humidifier",   # Argos quirk for зволожувач
 }
 
 ROOM_KEYWORDS: list[str] = [
+    # Standard rooms
     "living room", "bedroom", "kitchen", "bathroom",
-    "hallway", "office", "garage",
+    "hallway", "office", "garage", "balcony",
+    "entrance", "corridor", "cabinet", "nightstand",
+    # HA expansion_rules.home synonyms
+    "nursery", "dining room", "laundry", "attic", "basement",
+    "pantry", "porch", "terrace", "lobby", "closet",
 ]
 
 VALUE_KEYWORDS: list[str] = [
+    # Fan / mode keywords
     "high", "low", "medium", "auto",
+    # Climate modes
     "cool", "heat", "dry", "eco", "turbo",
+    # Helsinki translation artifacts
+    "cooling", "heating", "draining",
+    # HA brightness_level names
+    "maximum", "minimum",
 ]
+
+# Helsinki translation artifacts for mode values.
+_VALUE_NORMALIZE: dict[str, str] = {
+    "cooling": "cool",
+    "heating": "heat",
+    "draining": "dry",
+    "heaters": "heat",
+    "maximum": "max",
+    "minimum": "min",
+}
+
+# ── Colors (from HA color list) ──
+COLOR_KEYWORDS: list[str] = [
+    "white", "black", "red", "orange", "yellow",
+    "green", "blue", "purple", "brown", "pink", "turquoise",
+]
+
+# Color name → (hue_0-65535, saturation_0-254) for Hue/Z2M API.
+# Used by device-control _enrich_state_from_params() to translate
+# voice color params into driver-ready hue+saturation values.
+COLOR_TO_HS: dict[str, tuple[int, int]] = {
+    "red":       (0,     254),
+    "orange":    (7281,  254),
+    "yellow":    (10922, 254),
+    "green":     (21845, 254),
+    "blue":      (43690, 254),
+    "purple":    (49151, 254),
+    "pink":      (56173, 200),
+    "turquoise": (32768, 254),
+    "white":     (0,     0),     # saturation=0 → white
+    "black":     (0,     0),     # effectively off
+    "brown":     (5461,  200),
+}
+
+# ── Color temperature names (from HA color_temperature_names) ──
+COLOR_TEMP_MAP: dict[str, int] = {
+    "candle light": 1900,
+    "warm white": 2700,
+    "warm": 2700,
+    "cold white": 4000,
+    "cool white": 4000,
+    "daylight": 6500,
+}
 
 GENRE_KEYWORDS: list[str] = [
     "jazz", "rock", "classical", "pop", "blues",
@@ -288,6 +474,9 @@ def _extract_numeric_value(text: str) -> str | None:
     Digit regex runs FIRST because it's unambiguous ("22" is always
     a number). Word-number lookup runs second with word-boundary
     guards so "one" inside "air conditioner" doesn't match.
+
+    Helsinki sometimes produces hyphenated forms ("twenty-two") so
+    we normalise hyphens to spaces before the word-number scan.
     """
     import re
 
@@ -296,19 +485,37 @@ def _extract_numeric_value(text: str) -> str | None:
     nums = re.findall(r"\b(\d+)\b", q)
     if nums:
         return nums[0]
+    # Normalise hyphens so "twenty-two" matches "twenty two".
+    q_norm = q.replace("-", " ")
     # Fallback to word-number with word boundaries.
     for phrase, num in _WORD_NUMBERS_SORTED:
         pattern = r"\b" + re.escape(phrase) + r"\b"
-        if re.search(pattern, q):
+        if re.search(pattern, q_norm):
             return str(num)
     return None
+
+
+# Skip words from HA + Helsinki modal verbs.
+# Stripped before param extraction so "can you turn off" → "turn off".
+_SKIP_PHRASES: tuple[str, ...] = (
+    "please", "can you", "could you", "would you",
+    "for me", "i'd like to", "i'd like", "i want to", "i want",
+    "you can",  # Helsinki: "можеш" → "you can"
+)
+
+
+def _strip_skip_phrases(text: str) -> str:
+    s = text
+    for phrase in _SKIP_PHRASES:
+        s = s.replace(phrase, " ")
+    return " ".join(s.split())
 
 
 def extract_params(query_en: str, intent: str) -> dict[str, Any]:
     """Lexicon-based param extraction over Helsinki English output."""
     import re
 
-    q = query_en.lower()
+    q = _strip_skip_phrases(query_en.lower())
     params: dict[str, Any] = {}
 
     # Entity — longest substring match wins so "air conditioning"
@@ -320,11 +527,13 @@ def extract_params(query_en: str, intent: str) -> dict[str, Any]:
     if matched:
         params["entity"] = matched
 
-    # Location
+    # Location — longest match wins so "living room" beats "room"
+    best_room, best_room_len = None, 0
     for room in ROOM_KEYWORDS:
-        if room in q:
-            params["location"] = room
-            break
+        if room in q and len(room) > best_room_len:
+            best_room, best_room_len = room, len(room)
+    if best_room:
+        params["location"] = best_room
 
     # Value — only relevant for set_* intents. Handles both digit
     # ("22") and word-number ("twenty two") forms from Vosk/Helsinki.
@@ -339,8 +548,40 @@ def extract_params(query_en: str, intent: str) -> dict[str, Any]:
         else:
             for v in VALUE_KEYWORDS:
                 if v in q:
-                    params["value"] = v
+                    # Normalize Helsinki artifacts: "draining"→"dry", etc.
+                    params["value"] = _VALUE_NORMALIZE.get(v, v)
                     break
+
+    # Color — extracted for any device intent, applied by enrichment
+    # if the resolved device supports hue/saturation.
+    for c in COLOR_KEYWORDS:
+        if c in q:
+            params["color"] = c
+            break
+
+    # Color temperature — "warm white", "daylight", etc.
+    for ct_name, ct_val in COLOR_TEMP_MAP.items():
+        if ct_name in q:
+            params["color_temp"] = ct_val
+            break
+
+    # Brightness — extracted for any device intent, applied by
+    # enrichment if the resolved device has brightness in state.
+    # "set brightness to 50", "make brighter", "dim the light"
+    if any(kw in q for kw in ("bright", "dim", "brightness")):
+        bri_val = _extract_numeric_value(q)
+        if bri_val:
+            params["brightness"] = bri_val
+        elif any(kw in q for kw in ("maximum", "max", "brightest", "full")):
+            params["brightness"] = "100"
+        elif any(kw in q for kw in ("minimum", "min", "dimmest")):
+            params["brightness"] = "1"
+        elif "dim" in q:
+            params["brightness"] = "25"
+        elif "bright" in q:
+            params["brightness"] = "75"
+        elif "half" in q:
+            params["brightness"] = "50"
 
     # Genre — only for media.play_genre
     if intent == "media.play_genre":

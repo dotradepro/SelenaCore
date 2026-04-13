@@ -1,0 +1,70 @@
+{"text":"увімкни лампу у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"включи лампу у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"вмикни світло у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}}}
+{"text":"вимкни лампу у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"off","expected":{"intent":"device.off","params":{"entity":"light","location":"living room"}}}
+{"text":"виключи світло у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"off","expected":{"intent":"device.off","params":{"entity":"light","location":"living room"}}}
+{"text":"увімкни лампу в кабінеті","lang":"uk","device_ref":"лампа (кабінет)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"office"}}}
+{"text":"вимкни лампу в кабінеті","lang":"uk","device_ref":"лампа (кабінет)","category":"off","expected":{"intent":"device.off","params":{"entity":"light","location":"office"}}}
+{"text":"включи лампу","lang":"uk","device_ref":"лампа (ambiguity test)","category":"on","expected":{"intent":"device.on","params":{"entity":"light"}},"notes":"two devices named lamp — disambiguation expected"}
+{"text":"увімкни стрічку в кабінеті","lang":"uk","device_ref":"LIFX стрічка (кабінет)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"office"}}}
+{"text":"вимкни стрічку в кабінеті","lang":"uk","device_ref":"LIFX стрічка (кабінет)","category":"off","expected":{"intent":"device.off","params":{"entity":"light","location":"office"}}}
+{"text":"включи світлодіодну стрічку","lang":"uk","device_ref":"LIFX стрічка (кабінет)","category":"on","expected":{"intent":"device.on","params":{"entity":"light"}}}
+{"text":"увімкни колонку у вітальні","lang":"uk","device_ref":"Колонка (вітальня)","category":"on","expected":{"intent":"device.on","params":{"location":"living room"}}}
+{"text":"вимкни колонку у вітальні","lang":"uk","device_ref":"Колонка (вітальня)","category":"off","expected":{"intent":"device.off","params":{"location":"living room"}}}
+{"text":"увімкни колонку на кухні","lang":"uk","device_ref":"Розумна колонка (кухня)","category":"on","expected":{"intent":"device.on","params":{"location":"kitchen"}}}
+{"text":"вимкни розумну колонку на кухні","lang":"uk","device_ref":"Розумна колонка (кухня)","category":"off","expected":{"intent":"device.off","params":{"location":"kitchen"}}}
+{"text":"увімкни кондиціонер","lang":"uk","device_ref":"Кондиціонер","category":"on","expected":{"intent":"device.on","params":{"entity":"air_conditioner"}}}
+{"text":"вимкни кондиціонер","lang":"uk","device_ref":"Кондиціонер","category":"off","expected":{"intent":"device.off","params":{"entity":"air_conditioner"}}}
+{"text":"встанови кондиціонер на 22 градуси","lang":"uk","device_ref":"Кондиціонер","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"22"}}}
+{"text":"встанови температуру 24 градуси","lang":"uk","device_ref":"Кондиціонер","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"24"}}}
+{"text":"постав кондиціонер на 18 градусів","lang":"uk","device_ref":"Кондиціонер","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"18"}}}
+{"text":"встанови режим охолодження","lang":"uk","device_ref":"Кондиціонер","category":"mode","expected":{"intent":"device.set_mode","params":{"value":"cool"}}}
+{"text":"переключи на обігрів","lang":"uk","device_ref":"Кондиціонер","category":"mode","expected":{"intent":"device.set_mode","params":{"value":"heat"}}}
+{"text":"встанови режим осушення","lang":"uk","device_ref":"Кондиціонер","category":"mode","expected":{"intent":"device.set_mode","params":{"value":"dry"}}}
+{"text":"встанови швидкість вентилятора на високу","lang":"uk","device_ref":"Кондиціонер","category":"fan_speed","expected":{"intent":"device.set_fan_speed","params":{"value":"high"}}}
+{"text":"яка температура на кондиціонері","lang":"uk","device_ref":"Кондиціонер","category":"query","expected":{"intent":"device.query_temperature"}}
+{"text":"увімкни термостат","lang":"uk","device_ref":"Термостат (спальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"thermostat"}}}
+{"text":"вимкни термостат у спальні","lang":"uk","device_ref":"Термостат (спальня)","category":"off","expected":{"intent":"device.off","params":{"entity":"thermostat","location":"bedroom"}}}
+{"text":"встанови термостат на 21 градус","lang":"uk","device_ref":"Термостат (спальня)","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"21"}}}
+{"text":"встанови температуру в спальні на 20","lang":"uk","device_ref":"Термостат (спальня)","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"20","location":"bedroom"}}}
+{"text":"яка температура у спальні","lang":"uk","device_ref":"Термостат (спальня)","category":"query","expected":{"intent":"device.query_temperature","params":{"location":"bedroom"}}}
+{"text":"замкни вхідні двері","lang":"uk","device_ref":"Замок (вхід)","category":"lock","expected":{"intent":"device.lock","params":{"entity":"lock"}}}
+{"text":"закрий замок на вхідних дверях","lang":"uk","device_ref":"Замок (вхід)","category":"lock","expected":{"intent":"device.lock","params":{"entity":"lock"}}}
+{"text":"замкни двері","lang":"uk","device_ref":"Замок (вхід)","category":"lock","expected":{"intent":"device.lock","params":{"entity":"lock"}}}
+{"text":"відімкни вхідні двері","lang":"uk","device_ref":"Замок (вхід)","category":"unlock","expected":{"intent":"device.unlock","params":{"entity":"door_lock"}}}
+{"text":"відкрий замок","lang":"uk","device_ref":"Замок (вхід)","category":"unlock","expected":{"intent":"device.unlock","params":{"entity":"lock"}}}
+{"text":"увімкни камеру біля входу","lang":"uk","device_ref":"Камера (вхід)","category":"on","expected":{"intent":"device.on"},"notes":"camera not in ENTITY_MAP"}
+{"text":"вимкни камеру","lang":"uk","device_ref":"Камера (вхід)","category":"off","expected":{"intent":"device.off"},"notes":"camera not in ENTITY_MAP"}
+{"text":"увімкни розетку на балконі","lang":"uk","device_ref":"Shelly розетка (балкон)","category":"on","expected":{"intent":"device.on","params":{"entity":"outlet","location":"balcony"}},"notes":"balcony not in ROOM_KEYWORDS"}
+{"text":"вимкни розетку на балконі","lang":"uk","device_ref":"Shelly розетка (балкон)","category":"off","expected":{"intent":"device.off","params":{"entity":"outlet","location":"balcony"}},"notes":"balcony not in ROOM_KEYWORDS"}
+{"text":"увімкни розетку на кухні","lang":"uk","device_ref":"Розетка (кухня)","category":"on","expected":{"intent":"device.on","params":{"entity":"outlet","location":"kitchen"}}}
+{"text":"вимкни розетку на кухні","lang":"uk","device_ref":"Розетка (кухня)","category":"off","expected":{"intent":"device.off","params":{"entity":"outlet","location":"kitchen"}}}
+{"text":"увімкни штори у спальні","lang":"uk","device_ref":"Штори (спальня)","category":"on","expected":{"intent":"device.on","params":{"location":"bedroom"}},"notes":"curtain entity not in ENTITY_MAP"}
+{"text":"вимкни штори в спальні","lang":"uk","device_ref":"Штори (спальня)","category":"off","expected":{"intent":"device.off","params":{"location":"bedroom"}},"notes":"curtain entity not in ENTITY_MAP"}
+{"text":"відкрий штори в спальні","lang":"uk","device_ref":"Штори (спальня)","category":"on","expected":{"intent":"device.on","params":{"location":"bedroom"}},"notes":"open curtains — may hit unknown anchors"}
+{"text":"закрий штори","lang":"uk","device_ref":"Штори (спальня)","category":"off","expected":{"intent":"device.off"},"notes":"close curtains — no curtain intent"}
+{"text":"увімкни лампу на тумбочці","lang":"uk","device_ref":"Xiaomi лампа (спальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"bedroom"}}}
+{"text":"вимкни сяомі лампу","lang":"uk","device_ref":"Xiaomi лампа (спальня)","category":"off","expected":{"intent":"device.off","params":{"entity":"light"}}}
+{"text":"увімкни пилосос","lang":"uk","device_ref":"Пилосос Roborock","category":"on","expected":{"intent":"device.on"},"notes":"vacuum not in ENTITY_MAP"}
+{"text":"запусти робот пилосос","lang":"uk","device_ref":"Пилосос Roborock","category":"on","expected":{"intent":"device.on"},"notes":"vacuum not in ENTITY_MAP"}
+{"text":"вимкни пилосос","lang":"uk","device_ref":"Пилосос Roborock","category":"off","expected":{"intent":"device.off"},"notes":"vacuum not in ENTITY_MAP"}
+{"text":"увімкни датчик руху","lang":"uk","device_ref":"Датчик руху (коридор)","category":"on","expected":{"intent":"device.on"},"notes":"sensor entity not in ENTITY_MAP, corridor not in ROOM_KEYWORDS"}
+{"text":"вимкни датчик руху в коридорі","lang":"uk","device_ref":"Датчик руху (коридор)","category":"off","expected":{"intent":"device.off"},"notes":"corridor not in ROOM_KEYWORDS"}
+{"text":"увімкни термометр в гаражі","lang":"uk","device_ref":"WiFi термометр (гараж)","category":"on","expected":{"intent":"device.on","params":{"location":"garage"}}}
+{"text":"зроби яскравіше лампу у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"brightness","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}},"notes":"brightness via enrichment — device.on + brightness param"}
+{"text":"постав яскравість стрічки на 50","lang":"uk","device_ref":"LIFX стрічка (кабінет)","category":"brightness","expected":{"intent":"device.on","params":{"brightness":"50"}},"notes":"brightness via enrichment"}
+{"text":"зроби темніше в кабінеті","lang":"uk","device_ref":"лампа (кабінет)","category":"brightness","expected":{"intent":"device.on","params":{"location":"office"}},"notes":"dim via enrichment"}
+{"text":"постав яскравість лампи на максимум","lang":"uk","device_ref":"Лампа (вітальня)","category":"brightness","expected":{"intent":"device.on","params":{"entity":"light"}},"notes":"max brightness via enrichment"}
+{"text":"зміни колір стрічки на червоний","lang":"uk","device_ref":"LIFX стрічка (кабінет)","category":"color","expected":{"intent":"device.on","params":{"color":"red"}},"notes":"color via enrichment — device.on + color param"}
+{"text":"постав теплий колір лампи","lang":"uk","device_ref":"Xiaomi лампа (спальня)","category":"color","expected":{"intent":"device.on","params":{"entity":"light"}},"notes":"warm color temp via enrichment"}
+{"text":"будь ласка увімкни світло у вітальні","lang":"uk","device_ref":"Лампа (вітальня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"living room"}},"notes":"polite form stress test"}
+{"text":"можеш вимкнути кондиціонер","lang":"uk","device_ref":"Кондиціонер","category":"off","expected":{"intent":"device.off","params":{"entity":"air_conditioner"}},"notes":"modal verb stress test"}
+{"text":"вруби світло","lang":"uk","device_ref":"any light","category":"on","expected":{"intent":"device.on","params":{"entity":"light"}},"notes":"slang for turn on"}
+{"text":"загаси світло","lang":"uk","device_ref":"any light","category":"off","expected":{"intent":"device.off","params":{"entity":"light"}},"notes":"slang for turn off"}
+{"text":"поставь двадцять два градуси","lang":"uk","device_ref":"Кондиціонер","category":"temperature","expected":{"intent":"device.set_temperature","params":{"value":"22"}},"notes":"word-number in Ukrainian"}
+{"text":"вимкни все світло","lang":"uk","device_ref":"all lights","category":"off","expected":{"intent":"device.off","params":{"entity":"light"}},"notes":"all lights — may need special handling"}
+{"text":"увімкни світло на кухні","lang":"uk","device_ref":"Кабінет (Вітальня) or Розетка (Кухня)","category":"on","expected":{"intent":"device.on","params":{"entity":"light","location":"kitchen"}}}
+{"text":"увімкни кабінет","lang":"uk","device_ref":"Кабінет (Вітальня)","category":"on","expected":{"intent":"device.on"}}
+{"text":"розкажи анекдот","lang":"uk","device_ref":"none","category":"unknown","expected":{"intent":"unknown"}}
+{"text":"хто ти","lang":"uk","device_ref":"none","category":"unknown","expected":{"intent":"unknown"}}
+{"text":"абракадабра","lang":"uk","device_ref":"none","category":"unknown","expected":{"intent":"unknown"}}
