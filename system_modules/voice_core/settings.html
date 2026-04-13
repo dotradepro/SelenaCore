@@ -109,10 +109,10 @@
             white-space: nowrap;
         }
         .btn:disabled { opacity: .4; cursor: not-allowed; }
-        .btn-green { background: #059669; color: #fff; }
-        .btn-green:hover:not(:disabled) { background: #10b981; }
-        .btn-blue { background: #2563eb; color: #fff; }
-        .btn-blue:hover:not(:disabled) { background: #3b82f6; }
+        .btn-green { background: var(--gr); color: #fff; }
+        .btn-green:hover:not(:disabled) { opacity: .85; }
+        .btn-blue { background: var(--ac); color: #fff; }
+        .btn-blue:hover:not(:disabled) { opacity: .85; }
         .btn-red { background: rgba(224, 84, 84, .15); color: var(--rd); }
         .btn-red:hover:not(:disabled) { background: rgba(224, 84, 84, .25); }
         .btn-amber { background: rgba(245, 169, 58, .15); color: var(--am); }
@@ -121,8 +121,8 @@
         .btn-ghost:hover:not(:disabled) { color: var(--tx); }
         .btn-secondary { background: var(--sf3); color: var(--tx); border: 1px solid var(--b2); }
         .btn-secondary:hover:not(:disabled) { background: var(--sf2); }
-        .btn-purple { background: #7c3aed; color: #fff; }
-        .btn-purple:hover:not(:disabled) { background: #8b5cf6; }
+        .btn-purple { background: var(--pu, #7c3aed); color: #fff; }
+        .btn-purple:hover:not(:disabled) { opacity: .85; }
         .btn-link { background: none; border: none; color: var(--ac); cursor: pointer; font-size: 12px; padding: 0; }
         .btn-link:hover { opacity: .8; }
 
@@ -198,7 +198,7 @@
             transition: .15s;
         }
         .provider-tab:hover { color: var(--tx); }
-        .provider-tab.active { background: #2563eb; color: #fff; }
+        .provider-tab.active { background: var(--ac); color: #fff; }
 
         /* ── Settings tabs ── */
         .settings-tabs {
@@ -272,7 +272,7 @@
             top: 12px;
             right: 12px;
             background: var(--gr);
-            color: #0B0C10;
+            color: var(--bg);
             padding: 8px 16px;
             border-radius: 8px;
             font-size: 13px;
@@ -305,7 +305,7 @@
         }
         .stt-step.active { color: var(--ac); font-weight: 500; }
         .stt-step.done { color: var(--gr); }
-        .stt-step.error { color: #ef4444; }
+        .stt-step.error { color: var(--rd); }
         .stt-step-icon {
             width: 16px; height: 16px; display: flex; align-items: center; justify-content: center;
             flex-shrink: 0; font-size: 12px;
@@ -782,7 +782,7 @@
             <span class="label-sm" data-i18n="translation_enable"></span>
         </label>
         <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_enable_desc"></div>
-        <div class="label-xs mt4" style="opacity:.85;color:#d08d3a" data-i18n="translation_offline_warning"></div>
+        <div class="label-xs mt4" style="opacity:.85;color:var(--am)" data-i18n="translation_offline_warning"></div>
     </div>
     <div class="card-inner mb12">
         <label class="flex gap8" style="align-items:center;cursor:pointer">

@@ -160,6 +160,48 @@ function broadcastThemeToIframes() {
   });
 }
 
+// ── Custom Themes + Wallpapers ────────────────────────────────────────────────
+
+export interface CustomTheme {
+  id: string;
+  name: { en: string; uk: string };
+  builtIn: boolean;
+  dark: Record<string, string>;
+  light: Record<string, string>;
+}
+
+export interface WallpaperInfo {
+  id: string;
+  filename: string;
+  url: string;
+}
+
+function applyCustomThemeCSS(theme: CustomTheme | null) {
+  const existing = document.getElementById('selena-custom-theme');
+  if (!theme || theme.id === 'default') {
+    existing?.remove();
+    return;
+  }
+  const style = existing ?? Object.assign(document.createElement('style'), { id: 'selena-custom-theme' });
+  const darkProps = Object.entries(theme.dark).map(([k, v]) => `--${k}:${v}`).join(';');
+  const lightProps = Object.entries(theme.light).map(([k, v]) => `--${k}:${v}`).join(';');
+  let css = '';
+  if (darkProps) css += `:root{${darkProps}}`;
+  if (lightProps) css += `:root.light{${lightProps}}`;
+  style.textContent = css;
+  if (!existing) document.head.appendChild(style);
+}
+
+function applyWallpaperClass(hasWallpaper: boolean) {
+  document.documentElement.classList.toggle('has-wallpaper', hasWallpaper);
+}
+
+function broadcastThemeVarsToIframes() {
+  document.querySelectorAll('iframe').forEach(f => {
+    try { f.contentWindow?.postMessage({ type: 'theme_vars_changed' }, '*'); } catch (_) { /* cross-origin */ }
+  });
+}
+
 export interface AuthUser {
   name: string;
   role: string;
@@ -218,6 +260,23 @@ interface AppState {
   lastServerContact: number;
   toast: Toast | null;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+
+  // Custom Themes
+  customThemes: CustomTheme[];
+  activeThemeId: string;
+  fetchThemes: () => Promise<void>;
+  activateTheme: (id: string) => Promise<void>;
+  createTheme: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<CustomTheme | null>;
+  updateTheme: (id: string, name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<void>;
+  deleteTheme: (id: string) => Promise<void>;
+
+  // Wallpapers
+  wallpapers: WallpaperInfo[];
+  activeWallpaper: string | null;
+  wallpaperBlur: number;
+  wallpaperOpacity: number;
+  fetchWallpapers: () => Promise<void>;
+  setWallpaper: (filename: string | null, blur?: number, opacity?: number) => Promise<void>;
 }
 
 // ── Request optimizations ─────────────────────────────────────────────────────
@@ -796,6 +855,10 @@ export const useStore = create<AppState>((set, get) => ({
           });
         }
 
+      // ── Theme/wallpaper events ──
+      } else if (eventType === 'theme_vars_changed' || eventType === 'themes_changed') {
+        get().fetchThemes();
+
       // ── Device events ──
       } else if (eventType === 'device.state_changed') {
         const deviceId = payload.device_id as string | undefined;
@@ -958,6 +1021,121 @@ export const useStore = create<AppState>((set, get) => ({
   showToast: (message, type = 'success') => {
     set({ toast: { message, type } });
     setTimeout(() => set({ toast: null }), 2500);
+  },
+
+  // ── Custom Themes ──────────────────────────────────────────────────────────
+  customThemes: [],
+  activeThemeId: 'default',
+  fetchThemes: async () => {
+    try {
+      const data = await apiFetch('/api/ui/themes') as {
+        active: string;
+        wallpaper: string | null;
+        wallpaper_blur: number;
+        wallpaper_opacity: number;
+        themes: CustomTheme[];
+      };
+      set({
+        customThemes: data.themes ?? [],
+        activeThemeId: data.active ?? 'default',
+        activeWallpaper: data.wallpaper ?? null,
+        wallpaperBlur: data.wallpaper_blur ?? 0,
+        wallpaperOpacity: data.wallpaper_opacity ?? 0.15,
+      });
+      const active = (data.themes ?? []).find(t => t.id === data.active) ?? null;
+      applyCustomThemeCSS(active);
+      applyWallpaperClass(!!data.wallpaper);
+      broadcastThemeVarsToIframes();
+    } catch (e) {
+      console.error('fetchThemes failed', e);
+    }
+  },
+  activateTheme: async (id) => {
+    try {
+      await fetch('/api/ui/themes/active', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      set({ activeThemeId: id });
+      const theme = get().customThemes.find(t => t.id === id) ?? null;
+      applyCustomThemeCSS(theme);
+      broadcastThemeVarsToIframes();
+    } catch (e) {
+      console.error('activateTheme failed', e);
+    }
+  },
+  createTheme: async (name, dark, light) => {
+    try {
+      const res = await fetch('/api/ui/themes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, dark, light }),
+      });
+      if (!res.ok) return null;
+      const theme = await res.json() as CustomTheme;
+      set(s => ({ customThemes: [...s.customThemes, theme] }));
+      return theme;
+    } catch (e) {
+      console.error('createTheme failed', e);
+      return null;
+    }
+  },
+  updateTheme: async (id, name, dark, light) => {
+    try {
+      const res = await fetch(`/api/ui/themes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, dark, light }),
+      });
+      if (!res.ok) return;
+      const updated = await res.json() as CustomTheme;
+      set(s => ({ customThemes: s.customThemes.map(t => t.id === id ? updated : t) }));
+      if (get().activeThemeId === id) applyCustomThemeCSS(updated);
+    } catch (e) {
+      console.error('updateTheme failed', e);
+    }
+  },
+  deleteTheme: async (id) => {
+    try {
+      await fetch(`/api/ui/themes/${id}`, { method: 'DELETE' });
+      set(s => ({ customThemes: s.customThemes.filter(t => t.id !== id) }));
+      if (get().activeThemeId === id) {
+        set({ activeThemeId: 'default' });
+        applyCustomThemeCSS(null);
+        broadcastThemeVarsToIframes();
+      }
+    } catch (e) {
+      console.error('deleteTheme failed', e);
+    }
+  },
+
+  // ── Wallpapers ─────────────────────────────────────────────────────────────
+  wallpapers: [],
+  activeWallpaper: null,
+  wallpaperBlur: 0,
+  wallpaperOpacity: 0.15,
+  fetchWallpapers: async () => {
+    try {
+      const data = await apiFetch('/api/ui/wallpapers') as WallpaperInfo[];
+      set({ wallpapers: data ?? [] });
+    } catch (e) {
+      console.error('fetchWallpapers failed', e);
+    }
+  },
+  setWallpaper: async (filename, blur = 0, opacity = 0.15) => {
+    set({ activeWallpaper: filename, wallpaperBlur: blur, wallpaperOpacity: opacity });
+    applyWallpaperClass(!!filename);
+    broadcastThemeVarsToIframes();
+    try {
+      await fetch('/api/ui/wallpapers/active', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallpaper: filename, blur, opacity }),
+      });
+    } catch (e) {
+      console.error('setWallpaper failed', e);
+    }
   },
 }));
 

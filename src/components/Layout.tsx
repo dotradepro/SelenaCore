@@ -167,8 +167,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     color: 'var(--ac)',
   };
 
+  const activeWallpaper = useStore(s => s.activeWallpaper);
+  const wallpaperOpacity = useStore(s => s.wallpaperOpacity);
+  const wallpaperBlur = useStore(s => s.wallpaperBlur);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
+
+      {/* ═══ Wallpaper layer ═══ */}
+      {activeWallpaper && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 0,
+          backgroundImage: `url(/api/ui/wallpapers/${activeWallpaper})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          opacity: wallpaperOpacity,
+          filter: wallpaperBlur > 0 ? `blur(${wallpaperBlur}px)` : undefined,
+          pointerEvents: 'none',
+        }} />
+      )}
 
       {/* ═══════════ TOPBAR ═══════════ */}
       <div style={{
@@ -281,7 +298,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* minHeight: 0 is required so the flex child can actually shrink and
           let nested scroll containers (Settings, Modules, ModuleDetail) work
           instead of being pushed beyond the viewport. */}
-      <main style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+      <main style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
         {children}
       </main>
 

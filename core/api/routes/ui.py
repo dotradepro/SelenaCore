@@ -1344,3 +1344,267 @@ async def ui_setup_qr() -> dict[str, Any]:
             "size": 0,
             "ssid": "Selena-Setup",
         }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Custom Themes + Wallpapers
+# ══════════════════════════════════════════════════════════════════════════════
+
+from fastapi.responses import FileResponse
+from core.utils.theme_utils import generate_override_css, validate_theme_colors
+
+_DATA_DIR = Path(os.environ.get("CORE_DATA_DIR", "/var/lib/selena"))
+_THEMES_PATH = _DATA_DIR / "custom_themes.json"
+_WALLPAPERS_DIR = Path(__file__).resolve().parents[2] / "assets" / "wallpapers"
+
+_ALLOWED_IMG_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+
+# ── Ocean built-in theme ─────────────────────────────────────────────────────
+
+_OCEAN_DARK = {
+    "bg": "#0a1628", "sf": "#0f1f36", "sf2": "#142842", "sf3": "#1a3350",
+    "b": "rgba(100,180,255,0.12)", "b2": "rgba(100,180,255,0.20)",
+    "tx": "#e0eaf5", "tx2": "#8bacc8", "tx3": "#5a7d9a",
+    "ac": "#38bdf8", "gr": "#2dd4a8", "am": "#fbbf24", "rd": "#f87171",
+    "pu": "#a78bfa", "tl": "#22d3ee",
+}
+_OCEAN_LIGHT = {
+    "bg": "#e8f4f8", "sf": "#f0f9ff", "sf2": "#e0f2fe", "sf3": "#bae6fd",
+    "b": "rgba(0,80,150,0.13)", "b2": "rgba(0,80,150,0.22)",
+    "tx": "#0c4a6e", "tx2": "#0369a1", "tx3": "#7c9db5",
+    "ac": "#0284c7", "gr": "#059669", "am": "#d97706", "rd": "#dc2626",
+    "pu": "#7c3aed", "tl": "#0891b2",
+}
+
+_DEFAULT_THEMES_DATA: dict[str, Any] = {
+    "active": "default",
+    "wallpaper": None,
+    "wallpaper_blur": 0,
+    "wallpaper_opacity": 0.15,
+    "themes": [
+        {"id": "default", "name": {"en": "System Default", "uk": "Системна"}, "builtIn": True, "dark": {}, "light": {}},
+        {"id": "ocean", "name": {"en": "Ocean", "uk": "Океан"}, "builtIn": True, "dark": _OCEAN_DARK, "light": _OCEAN_LIGHT},
+    ],
+}
+
+# ── In-memory cache ──────────────────────────────────────────────────────────
+
+_themes_cache: dict[str, Any] | None = None
+
+
+def _load_themes() -> dict[str, Any]:
+    global _themes_cache
+    if _themes_cache is not None:
+        return _themes_cache
+    try:
+        if _THEMES_PATH.exists():
+            data = json.loads(_THEMES_PATH.read_text())
+            _themes_cache = data
+            return data
+    except Exception as exc:
+        logger.warning("Failed to read custom_themes.json: %s", exc)
+    _themes_cache = json.loads(json.dumps(_DEFAULT_THEMES_DATA))
+    _save_themes(_themes_cache)
+    return _themes_cache
+
+
+def _save_themes(data: dict[str, Any]) -> None:
+    global _themes_cache
+    _themes_cache = data
+    try:
+        _THEMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _THEMES_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception as exc:
+        logger.warning("Failed to save custom_themes.json: %s", exc)
+
+
+def _slug(name: str) -> str:
+    """Generate a slug from a display name."""
+    import re as _re
+    s = _re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return s or "theme"
+
+
+# ── Theme CRUD ───────────────────────────────────────────────────────────────
+
+class ThemeCreateRequest(BaseModel):
+    name: dict[str, str]  # {"en": "...", "uk": "..."}
+    dark: dict[str, str] = {}
+    light: dict[str, str] = {}
+
+
+class ThemeUpdateRequest(BaseModel):
+    name: dict[str, str] | None = None
+    dark: dict[str, str] | None = None
+    light: dict[str, str] | None = None
+
+
+class ThemeActivateRequest(BaseModel):
+    id: str
+
+
+class WallpaperActivateRequest(BaseModel):
+    wallpaper: str | None = None
+    blur: float = 0
+    opacity: float = 0.15
+
+
+@router.get("/themes")
+async def list_themes() -> dict[str, Any]:
+    data = _load_themes()
+    return {
+        "active": data.get("active", "default"),
+        "wallpaper": data.get("wallpaper"),
+        "wallpaper_blur": data.get("wallpaper_blur", 0),
+        "wallpaper_opacity": data.get("wallpaper_opacity", 0.15),
+        "themes": data.get("themes", []),
+    }
+
+
+@router.post("/themes", status_code=201)
+async def create_theme(body: ThemeCreateRequest) -> dict[str, Any]:
+    errors = validate_theme_colors(body.dark, body.light)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+
+    data = _load_themes()
+    theme_id = _slug(body.name.get("en", "") or body.name.get("uk", ""))
+
+    # Ensure unique id
+    existing_ids = {t["id"] for t in data["themes"]}
+    base_id = theme_id
+    counter = 2
+    while theme_id in existing_ids:
+        theme_id = f"{base_id}-{counter}"
+        counter += 1
+
+    theme = {
+        "id": theme_id,
+        "name": body.name,
+        "builtIn": False,
+        "dark": body.dark,
+        "light": body.light,
+    }
+    data["themes"].append(theme)
+    _save_themes(data)
+    broadcast_event("themes_changed")
+    return theme
+
+
+@router.put("/themes/{theme_id}")
+async def update_theme(theme_id: str, body: ThemeUpdateRequest) -> dict[str, Any]:
+    data = _load_themes()
+    theme = next((t for t in data["themes"] if t["id"] == theme_id), None)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Theme not found")
+    if theme.get("builtIn"):
+        raise HTTPException(status_code=403, detail="Cannot edit built-in theme")
+
+    if body.dark is not None or body.light is not None:
+        errors = validate_theme_colors(
+            body.dark if body.dark is not None else theme["dark"],
+            body.light if body.light is not None else theme["light"],
+        )
+        if errors:
+            raise HTTPException(status_code=422, detail=errors)
+
+    if body.name is not None:
+        theme["name"] = body.name
+    if body.dark is not None:
+        theme["dark"] = body.dark
+    if body.light is not None:
+        theme["light"] = body.light
+
+    _save_themes(data)
+    # If this is the active theme, broadcast update
+    if data.get("active") == theme_id:
+        broadcast_event("theme_vars_changed")
+    else:
+        broadcast_event("themes_changed")
+    return theme
+
+
+@router.delete("/themes/{theme_id}", status_code=204)
+async def delete_theme(theme_id: str) -> Response:
+    data = _load_themes()
+    theme = next((t for t in data["themes"] if t["id"] == theme_id), None)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Theme not found")
+    if theme.get("builtIn"):
+        raise HTTPException(status_code=403, detail="Cannot delete built-in theme")
+
+    data["themes"] = [t for t in data["themes"] if t["id"] != theme_id]
+    # If deleted theme was active, revert to default
+    if data.get("active") == theme_id:
+        data["active"] = "default"
+        _save_themes(data)
+        broadcast_event("theme_vars_changed")
+    else:
+        _save_themes(data)
+        broadcast_event("themes_changed")
+    return Response(status_code=204)
+
+
+@router.patch("/themes/active")
+async def activate_theme(body: ThemeActivateRequest) -> dict[str, str]:
+    data = _load_themes()
+    theme = next((t for t in data["themes"] if t["id"] == body.id), None)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Theme not found")
+
+    data["active"] = body.id
+    _save_themes(data)
+    broadcast_event("theme_vars_changed")
+    return {"active": body.id}
+
+
+# ── Wallpaper API ────────────────────────────────────────────────────────────
+
+@router.get("/wallpapers")
+async def list_wallpapers() -> list[dict[str, str]]:
+    if not _WALLPAPERS_DIR.is_dir():
+        return []
+    result = []
+    for f in sorted(_WALLPAPERS_DIR.iterdir()):
+        if f.suffix.lower() in _ALLOWED_IMG_EXT and f.is_file():
+            result.append({
+                "id": f.stem,
+                "filename": f.name,
+                "url": f"/api/ui/wallpapers/{f.name}",
+            })
+    return result
+
+
+@router.get("/wallpapers/{filename}")
+async def get_wallpaper(filename: str) -> FileResponse:
+    # Path traversal protection
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    path = _WALLPAPERS_DIR / filename
+    if not path.is_file() or path.suffix.lower() not in _ALLOWED_IMG_EXT:
+        raise HTTPException(status_code=404, detail="Wallpaper not found")
+
+    return FileResponse(path, media_type=f"image/{path.suffix.lstrip('.').replace('jpg', 'jpeg')}")
+
+
+@router.patch("/wallpapers/active")
+async def activate_wallpaper(body: WallpaperActivateRequest) -> dict[str, Any]:
+    data = _load_themes()
+
+    # Validate wallpaper exists (if not null)
+    if body.wallpaper is not None:
+        wp_path = _WALLPAPERS_DIR / body.wallpaper
+        if not wp_path.is_file() or wp_path.suffix.lower() not in _ALLOWED_IMG_EXT:
+            raise HTTPException(status_code=404, detail="Wallpaper not found")
+
+    data["wallpaper"] = body.wallpaper
+    data["wallpaper_blur"] = max(0, min(20, body.blur))
+    data["wallpaper_opacity"] = max(0.05, min(0.5, body.opacity))
+    _save_themes(data)
+    broadcast_event("theme_vars_changed")
+    return {
+        "wallpaper": data["wallpaper"],
+        "wallpaper_blur": data["wallpaper_blur"],
+        "wallpaper_opacity": data["wallpaper_opacity"],
+    }

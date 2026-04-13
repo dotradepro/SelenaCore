@@ -53,6 +53,22 @@ html.light {
   --shadow-lg: 0 4px 16px rgba(0,0,0,.1), 0 0 0 1px rgba(0,0,0,.06);
 }
 
+/* =====================================================
+   WALLPAPER — widget transparency when bg image active
+   ===================================================== */
+:root {
+  --ws-bg: var(--sf);
+  --ws-blur: none;
+}
+html.has-wallpaper {
+  --ws-bg: rgba(20, 21, 30, .55);
+  --ws-blur: blur(16px);
+}
+html.has-wallpaper.light {
+  --ws-bg: rgba(255, 255, 255, .45);
+  --ws-blur: blur(16px);
+}
+
 html,
 body,
 #root {
@@ -309,7 +325,9 @@ body,
 
 /* ── Widget shell (kernel) ── */
 .ws {
-  background: var(--sf);
+  background: var(--ws-bg);
+  backdrop-filter: var(--ws-blur);
+  -webkit-backdrop-filter: var(--ws-blur);
   border: 1px solid var(--b);
   border-radius: var(--r);
   overflow: hidden;

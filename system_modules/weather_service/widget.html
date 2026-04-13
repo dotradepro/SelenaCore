@@ -34,6 +34,10 @@
                 linear-gradient(90deg, var(--b) 1px, transparent 1px);
             background-size: 32px 32px;
         }
+        html.has-wallpaper body {
+            background: transparent;
+            background-image: none;
+        }
 
         /* Root fills 100% of whatever size the iframe has */
         .root {
@@ -178,12 +182,12 @@
         }
 
         .tmax {
-            color: #e8b840;
+            color: var(--am);
             font-weight: 600;
         }
 
         .tmin {
-            color: #6aa8d8;
+            color: var(--ac);
         }
 
         .tsep {
@@ -193,7 +197,7 @@
 
         .fday-prec {
             font-size: 0.68rem;
-            color: #4878a0;
+            color: var(--tx3);
         }
 
         /* ── Bottom: feels-like + timestamp ── */

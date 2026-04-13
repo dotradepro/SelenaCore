@@ -21,11 +21,15 @@ export default function App() {
   const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
   const connectSyncStream = useStore((state) => state.connectSyncStream);
   const initThemeListener = useStore((state) => state.initThemeListener);
+  const fetchThemes = useStore((state) => state.fetchThemes);
+  const fetchWallpapers = useStore((state) => state.fetchWallpapers);
 
   useEffect(() => {
     fetchWizardStatus();
     fetchWizardRequirements();
-  }, [fetchWizardStatus, fetchWizardRequirements]);
+    fetchThemes();
+    fetchWallpapers();
+  }, [fetchWizardStatus, fetchWizardRequirements, fetchThemes, fetchWallpapers]);
 
   // Poll wizard status while not configured — covers the case where the
   // wizard was completed in another browser/tab (e.g. PC browser while

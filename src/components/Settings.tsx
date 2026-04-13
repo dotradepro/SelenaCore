@@ -94,15 +94,184 @@ export default function Settings() {
 //  Appearance Settings                                                //
 // ================================================================ //
 
-import type { ThemeMode } from '../store/useStore';
+import type { ThemeMode, CustomTheme, WallpaperInfo } from '../store/useStore';
+
+/* ── Swatch row — shows 5 key colors from a theme variant ── */
+function ThemeSwatches({ colors }: { colors: Record<string, string> }) {
+  const keys = ['bg', 'ac', 'gr', 'am', 'rd'];
+  // Resolve: if the theme has the key use it, otherwise fall back to computed CSS var
+  const resolve = (k: string) => colors[k] || getComputedStyle(document.documentElement).getPropertyValue(`--${k}`).trim() || '#888';
+  return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+      {keys.map(k => (
+        <div key={k} style={{ width: 16, height: 16, borderRadius: '50%', background: resolve(k), border: '1px solid rgba(128,128,128,.3)' }} />
+      ))}
+    </div>
+  );
+}
+
+/* ── Default CSS variable values (for "Copy from default" button) ── */
+const DEFAULT_DARK: Record<string, string> = {
+  bg: '#0B0C10', sf: '#14151E', sf2: '#1B1C27', sf3: '#242532',
+  b: 'rgba(255,255,255,.12)', b2: 'rgba(255,255,255,.20)',
+  tx: '#EDEEF5', tx2: '#A0A5BE', tx3: '#6B7194',
+  ac: '#5A96FF', gr: '#34D693', am: '#F5A93A', rd: '#E05454', pu: '#9B6EF4', tl: '#2AB4C4',
+};
+const DEFAULT_LIGHT: Record<string, string> = {
+  bg: '#EFF0F5', sf: '#FFFFFF', sf2: '#F4F5F9', sf3: '#E8E9F0',
+  b: 'rgba(0,0,0,.13)', b2: 'rgba(0,0,0,.22)',
+  tx: '#1A1C24', tx2: '#4A4F68', tx3: '#7C8198',
+  ac: '#3B7AE8', gr: '#1FAF75', am: '#DB8F1C', rd: '#C94040', pu: '#7C52D8', tl: '#1E9AA8',
+};
+
+const VAR_GROUPS: { label: string; vars: string[] }[] = [
+  { label: 'Backgrounds', vars: ['bg', 'sf', 'sf2', 'sf3'] },
+  { label: 'Text', vars: ['tx', 'tx2', 'tx3'] },
+  { label: 'Accents', vars: ['ac', 'gr', 'am', 'rd', 'pu', 'tl'] },
+];
+
+const VAR_LABELS: Record<string, string> = {
+  bg: 'varBg', sf: 'varSf', sf2: 'varSf2', sf3: 'varSf3',
+  b: 'varB', b2: 'varB2',
+  tx: 'varTx', tx2: 'varTx2', tx3: 'varTx3',
+  ac: 'varAc', gr: 'varGr', am: 'varAm', rd: 'varRd', pu: 'varPu', tl: 'varTl',
+};
+
+/* ── hex <-> input helpers ── */
+function isHex(v: string) { return /^#[0-9a-fA-F]{3,8}$/.test(v); }
+
+/* ── Theme Editor Modal ── */
+function ThemeEditorModal({ theme, onSave, onClose }: {
+  theme: CustomTheme | null; // null = create new
+  onSave: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [nameEn, setNameEn] = useState(theme?.name?.en || '');
+  const [nameUk, setNameUk] = useState(theme?.name?.uk || '');
+  const [dark, setDark] = useState<Record<string, string>>({ ...DEFAULT_DARK, ...(theme?.dark || {}) });
+  const [light, setLight] = useState<Record<string, string>>({ ...DEFAULT_LIGHT, ...(theme?.light || {}) });
+
+  const setVar = (variant: 'dark' | 'light', key: string, val: string) => {
+    if (variant === 'dark') setDark(prev => ({ ...prev, [key]: val }));
+    else setLight(prev => ({ ...prev, [key]: val }));
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 16, padding: 24,
+        maxWidth: 680, width: '100%', maxHeight: '85vh', overflowY: 'auto', color: 'var(--tx)',
+      }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+          {theme ? t('settings.editTheme') : t('settings.createTheme')}
+        </h3>
+
+        {/* Name inputs */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameEn')}</label>
+            <input value={nameEn} onChange={e => setNameEn(e.target.value)} placeholder="My Theme"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameUk')}</label>
+            <input value={nameUk} onChange={e => setNameUk(e.target.value)} placeholder="Моя тема"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
+          </div>
+        </div>
+
+        {/* Copy from default */}
+        <button onClick={() => { setDark({ ...DEFAULT_DARK }); setLight({ ...DEFAULT_LIGHT }); }}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx2)', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>
+          {t('settings.copyFromDefault')}
+        </button>
+
+        {/* Color editor — two columns */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          {(['dark', 'light'] as const).map(variant => (
+            <div key={variant}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--tx)' }}>
+                {variant === 'dark' ? t('settings.darkVariant') : t('settings.lightVariant')}
+              </h4>
+              <ThemeSwatches colors={variant === 'dark' ? dark : light} />
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {VAR_GROUPS.map(group => (
+                  <div key={group.label}>
+                    <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 8, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>{group.label}</div>
+                    {group.vars.map(v => {
+                      const val = (variant === 'dark' ? dark : light)[v] || '';
+                      const hex = isHex(val);
+                      return (
+                        <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, color: 'var(--tx2)', width: 70, flexShrink: 0 }}>{t(`settings.${VAR_LABELS[v]}`)}</span>
+                          {hex && (
+                            <input type="color" value={val.length === 4 ? `#${val[1]}${val[1]}${val[2]}${val[2]}${val[3]}${val[3]}` : val}
+                              onChange={e => setVar(variant, v, e.target.value)}
+                              style={{ width: 24, height: 24, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                          )}
+                          <input value={val} onChange={e => setVar(variant, v, e.target.value)}
+                            style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 11, fontFamily: 'var(--font-mono, monospace)' }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+          <button onClick={onClose}
+            style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', cursor: 'pointer', fontSize: 13 }}>
+            Cancel
+          </button>
+          <button onClick={() => {
+            if (!nameEn.trim()) return;
+            onSave({ en: nameEn.trim(), uk: nameUk.trim() || nameEn.trim() }, dark, light);
+          }}
+            style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--ac)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+            {theme ? t('settings.themeUpdated').replace(/\.$/, '') : t('settings.themeCreated').replace(/\.$/, '')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AppearanceSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language as 'en' | 'uk';
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const selectedLanguage = useStore(s => s.selectedLanguage);
   const setSelectedLanguage = useStore(s => s.setSelectedLanguage);
   const showToast = useStore(s => s.showToast);
+
+  // Custom themes
+  const customThemes = useStore(s => s.customThemes);
+  const activeThemeId = useStore(s => s.activeThemeId);
+  const activateTheme = useStore(s => s.activateTheme);
+  const createTheme = useStore(s => s.createTheme);
+  const updateTheme = useStore(s => s.updateTheme);
+  const deleteTheme = useStore(s => s.deleteTheme);
+
+  // Wallpapers
+  const wallpapers = useStore(s => s.wallpapers);
+  const activeWallpaper = useStore(s => s.activeWallpaper);
+  const wallpaperBlur = useStore(s => s.wallpaperBlur);
+  const wallpaperOpacity = useStore(s => s.wallpaperOpacity);
+  const setWallpaper = useStore(s => s.setWallpaper);
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingTheme, setEditingTheme] = useState<CustomTheme | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const themeOptions: { value: ThemeMode; label: string; desc: string; icon: string }[] = [
     { value: 'auto', label: t('settings.themeAuto'), desc: t('settings.themeAutoDesc'), icon: '🖥️' },
@@ -115,6 +284,8 @@ function AppearanceSettings() {
     { code: 'uk', label: 'Українська', flag: '🇺🇦' },
   ];
 
+  const themeName = (th: CustomTheme) => th.name?.[lang] || th.name?.en || th.id;
+
   return (
     <div className="space-y-8">
       <div>
@@ -122,9 +293,138 @@ function AppearanceSettings() {
         <p style={{ fontSize: 13, color: 'var(--tx2)' }}>{t('settings.appearanceDesc')}</p>
       </div>
 
-      {/* Theme selector */}
+      {/* ═══ Color Theme picker ═══ */}
       <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
-        <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.theme')}</h4>
+        <h4 style={{ fontWeight: 500, marginBottom: 4, color: 'var(--tx)' }}>{t('settings.colorTheme')}</h4>
+        <p style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 14 }}>{t('settings.colorThemeDesc')}</p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {customThemes.map(th => {
+            const isActive = activeThemeId === th.id;
+            return (
+              <div key={th.id} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => { activateTheme(th.id); showToast(t('settings.themeActivated')); }}
+                  style={{
+                    padding: '12px 16px', borderRadius: 10,
+                    border: `2px solid ${isActive ? 'var(--ac)' : 'var(--b)'}`,
+                    background: isActive ? 'rgba(79,140,247,.08)' : 'var(--sf2)',
+                    cursor: 'pointer', minWidth: 100, textAlign: 'center', transition: 'all .15s',
+                  }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 600, color: isActive ? 'var(--ac)' : 'var(--tx)', display: 'block' }}>
+                    {themeName(th)}
+                  </span>
+                  <ThemeSwatches colors={th.dark} />
+                </button>
+                {/* Edit / Delete for custom (non-builtIn) themes */}
+                {!th.builtIn && (
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4, justifyContent: 'center' }}>
+                    <button onClick={() => { setEditingTheme(th); setEditorOpen(true); }}
+                      style={{ fontSize: 11, color: 'var(--tx3)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      {t('settings.editTheme')}
+                    </button>
+                    <button onClick={() => {
+                      if (confirm(t('settings.deleteThemeConfirm'))) {
+                        deleteTheme(th.id);
+                        showToast(t('settings.themeDeleted'));
+                      }
+                    }}
+                      style={{ fontSize: 11, color: 'var(--rd)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      {t('settings.deleteTheme')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {/* + Create button */}
+          <button
+            onClick={() => { setEditingTheme(null); setEditorOpen(true); }}
+            style={{
+              padding: '12px 16px', borderRadius: 10,
+              border: '2px dashed var(--b)', background: 'none',
+              cursor: 'pointer', minWidth: 80, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', gap: 4, transition: 'all .15s',
+            }}
+          >
+            <span style={{ fontSize: 22, color: 'var(--tx3)' }}>+</span>
+            <span style={{ fontSize: 11, color: 'var(--tx3)' }}>{t('settings.createTheme')}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ Wallpaper picker ═══ */}
+      <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
+        <h4 style={{ fontWeight: 500, marginBottom: 4, color: 'var(--tx)' }}>{t('settings.wallpaper')}</h4>
+        <p style={{ fontSize: 12, color: 'var(--tx3)', marginBottom: 14 }}>{t('settings.wallpaperDesc')}</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 8, marginBottom: 14 }}>
+          {/* None option */}
+          <button
+            onClick={() => setWallpaper(null)}
+            style={{
+              aspectRatio: '16/9', borderRadius: 8,
+              border: `2px solid ${!activeWallpaper ? 'var(--ac)' : 'var(--b)'}`,
+              background: !activeWallpaper ? 'rgba(79,140,247,.08)' : 'var(--sf2)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 11, color: 'var(--tx3)', transition: 'all .15s',
+            }}
+          >
+            {t('settings.wallpaperNone')}
+          </button>
+          {/* Wallpaper thumbnails */}
+          {wallpapers.map((wp: WallpaperInfo) => {
+            const isActive = activeWallpaper === wp.filename;
+            return (
+              <button
+                key={wp.id}
+                onClick={() => setWallpaper(wp.filename, wallpaperBlur, wallpaperOpacity)}
+                style={{
+                  aspectRatio: '16/9', borderRadius: 8,
+                  border: `2px solid ${isActive ? 'var(--ac)' : 'var(--b)'}`,
+                  background: `url(${wp.url}) center/cover no-repeat`,
+                  cursor: 'pointer', transition: 'all .15s',
+                }}
+                title={wp.filename}
+              />
+            );
+          })}
+        </div>
+        {/* Opacity + Blur sliders */}
+        {activeWallpaper && (
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <label style={{ fontSize: 12, color: 'var(--tx2)', display: 'block', marginBottom: 4 }}>
+                {t('settings.wallpaperOpacity')}: {Math.round(wallpaperOpacity * 100)}%
+              </label>
+              <input type="range" min="5" max="50" value={Math.round(wallpaperOpacity * 100)}
+                onChange={e => {
+                  const val = Number(e.target.value) / 100;
+                  useStore.setState({ wallpaperOpacity: val });
+                  if (debounceRef.current) clearTimeout(debounceRef.current);
+                  debounceRef.current = setTimeout(() => setWallpaper(activeWallpaper, wallpaperBlur, val), 300);
+                }}
+                style={{ width: '100%', accentColor: 'var(--ac)' }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 140 }}>
+              <label style={{ fontSize: 12, color: 'var(--tx2)', display: 'block', marginBottom: 4 }}>
+                {t('settings.wallpaperBlur')}: {wallpaperBlur}px
+              </label>
+              <input type="range" min="0" max="20" value={wallpaperBlur}
+                onChange={e => {
+                  const val = Number(e.target.value);
+                  useStore.setState({ wallpaperBlur: val });
+                  if (debounceRef.current) clearTimeout(debounceRef.current);
+                  debounceRef.current = setTimeout(() => setWallpaper(activeWallpaper, val, wallpaperOpacity), 300);
+                }}
+                style={{ width: '100%', accentColor: 'var(--ac)' }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ═══ Mode selector (dark/light/auto) ═══ */}
+      <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
+        <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.mode')}</h4>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           {themeOptions.map(opt => {
             const isActive = theme === opt.value;
@@ -151,16 +451,16 @@ function AppearanceSettings() {
         </div>
       </div>
 
-      {/* Language selector */}
+      {/* ═══ Language selector ═══ */}
       <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
         <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.language')}</h4>
         <div style={{ display: 'flex', gap: 12 }}>
-          {languages.map(lang => {
-            const isActive = selectedLanguage === lang.code;
+          {languages.map(l => {
+            const isActive = selectedLanguage === l.code;
             return (
               <button
-                key={lang.code}
-                onClick={() => { setSelectedLanguage(lang.code); showToast(t('settings.languageChanged')); }}
+                key={l.code}
+                onClick={() => { setSelectedLanguage(l.code); showToast(t('settings.languageChanged')); }}
                 style={{
                   padding: '12px 24px',
                   borderRadius: 10,
@@ -171,13 +471,35 @@ function AppearanceSettings() {
                   transition: 'all .15s',
                 }}
               >
-                <span style={{ fontSize: 22 }}>{lang.flag}</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: isActive ? 'var(--ac)' : 'var(--tx)' }}>{lang.label}</span>
+                <span style={{ fontSize: 22 }}>{l.flag}</span>
+                <span style={{ fontSize: 13, fontWeight: 500, color: isActive ? 'var(--ac)' : 'var(--tx)' }}>{l.label}</span>
               </button>
             );
           })}
         </div>
       </div>
+
+      {/* ═══ Theme Editor Modal ═══ */}
+      {editorOpen && (
+        <ThemeEditorModal
+          theme={editingTheme}
+          onClose={() => { setEditorOpen(false); setEditingTheme(null); }}
+          onSave={async (name, dark, light) => {
+            if (editingTheme) {
+              await updateTheme(editingTheme.id, name, dark, light);
+              showToast(t('settings.themeUpdated'));
+            } else {
+              const created = await createTheme(name, dark, light);
+              if (created) {
+                showToast(t('settings.themeCreated'));
+                activateTheme(created.id);
+              }
+            }
+            setEditorOpen(false);
+            setEditingTheme(null);
+          }}
+        />
+      )}
     </div>
   );
 }
