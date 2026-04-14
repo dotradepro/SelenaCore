@@ -334,6 +334,58 @@
         .wake-preset + .wake-preset {
             border-top: 1px solid var(--b);
         }
+
+        /* ── Toggle switch (replaces plain checkboxes) ─────────────── */
+        .toggle-switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            user-select: none;
+            cursor: pointer;
+        }
+        .toggle-switch input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+        .toggle-track {
+            position: relative;
+            width: 34px;
+            height: 18px;
+            background: var(--sf2);
+            border: 1px solid var(--b);
+            border-radius: 999px;
+            transition: background 0.15s ease;
+            flex-shrink: 0;
+        }
+        .toggle-thumb {
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            width: 14px;
+            height: 14px;
+            background: var(--tx3);
+            border-radius: 50%;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+        .toggle-switch input[type="checkbox"]:checked + .toggle-track {
+            background: var(--ac);
+            border-color: var(--ac);
+        }
+        .toggle-switch input[type="checkbox"]:checked + .toggle-track .toggle-thumb {
+            transform: translateX(16px);
+            background: #fff;
+        }
+        .toggle-switch.disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .toggle-switch.disabled .toggle-track {
+            background: var(--sf2);
+        }
     </style>
 </head>
 
@@ -602,10 +654,13 @@
                 <input type="range" id="priSpeaker" min="0" max="0" step="1" value="0">
                 <div class="label-xs" id="priSpeakerNames" style="color:var(--tx3)"></div>
             </div>
-            <div class="flex gap8 mt8">
-                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                    <input type="checkbox" id="primaryCuda"> GPU (CUDA)
+            <div class="flex gap8 mt8" style="align-items:center">
+                <label class="toggle-switch" id="primaryCudaLabel" title="">
+                    <input type="checkbox" id="primaryCuda">
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                    <span class="toggle-label" data-i18n="tts_gpu"></span>
                 </label>
+                <span id="primaryCudaStatus" class="label-xs" style="color:var(--tx3)"></span>
                 <input type="text" id="priTestText" style="flex:1;font-size:11px" placeholder="Test text...">
                 <button id="priTestBtn" class="btn btn-blue" style="font-size:11px">Test</button>
             </div>
@@ -1296,6 +1351,11 @@
             voices_delete: 'Delete',
             voices_none_installed: 'No voices installed yet — upload one or pick from the catalog below.',
             voices_confirm_delete: 'Delete voice',
+            tts_gpu: 'Use GPU (Piper)',
+            tts_gpu_unavailable: 'GPU not detected',
+            tts_gpu_on: 'running on GPU',
+            tts_gpu_off: 'running on CPU',
+            tts_gpu_switching: 'switching…',
             tab_test: 'Test Console',
             prompts_tab_desc: 'This is the user-editable identity shell: name, tone, high-level rules. Keep it short (100-500 chars). Everything structural — JSON schema, filtered intents, matching devices — is assembled on every voice command and appended automatically. The LLM is a pure classifier; spoken replies are composed in code.',
             prompts_unified_label: 'System prompt (English only)',
@@ -1529,6 +1589,11 @@
             voices_delete: 'Видалити',
             voices_none_installed: 'Ще немає голосів — завантаж вручну або обери з каталогу нижче.',
             voices_confirm_delete: 'Видалити голос',
+            tts_gpu: 'Використати GPU (Piper)',
+            tts_gpu_unavailable: 'GPU не доступний',
+            tts_gpu_on: 'працює на GPU',
+            tts_gpu_off: 'працює на CPU',
+            tts_gpu_switching: 'перемикання…',
             patterns_title: 'Зареєстрованi патерни',
             patterns_desc: 'Англiйськi regex патерни для розпiзнавання голосових команд (усi патерни тiльки англiйською)',
             patterns_search: 'Шукати патерни...',
@@ -3569,7 +3634,8 @@
         // Primary specific
         $('primaryAccelBadge').textContent = dv.primary.cuda ? 'GPU' : 'CPU';
         $('primaryAccelBadge').className = 'badge ' + (dv.primary.cuda ? 'badge-ok' : 'badge-ac');
-        $('primaryCuda').checked = !!dv.primary.cuda;
+        // Live Piper device state drives the switch — see refreshGpuSwitch().
+        refreshGpuSwitch();
 
         // Populate primary voice select
         if (state.piperVoices && state.piperVoices.length > 0) {
@@ -3616,7 +3682,8 @@
             primary: {
                 voice: $('primaryVoiceSelect').value,
                 lang: (($('primaryVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'uk',
-                cuda: $('primaryCuda').checked,
+                // GPU/CPU is driven by the live /tts/device switch — don't
+                // double-write it here; user's click already persisted the value.
                 settings: collectSettings('primary'),
             }
         };
@@ -3650,6 +3717,62 @@
     }
     setupTestBtn('priTestBtn', 'priTestText', 'primaryVoiceSelect', 'primary');
     // Fallback/mix test buttons removed — single-voice setup.
+
+    // ── Piper GPU switch ──────────────────────────────────────────────
+    state.piperDevice = { device: 'cpu', cuda_available: false, reachable: false };
+
+    async function refreshGpuSwitch() {
+        var labelEl = $('primaryCudaLabel');
+        var cb = $('primaryCuda');
+        var status = $('primaryCudaStatus');
+        if (!labelEl || !cb || !status) return;
+        try {
+            var res = await api('/setup/tts/device');
+            state.piperDevice = res;
+        } catch (e) {
+            state.piperDevice = { device: 'cpu', cuda_available: false, reachable: false };
+        }
+        var r = state.piperDevice;
+        var isGpu = r.device === 'gpu';
+        cb.checked = isGpu;
+        if (!r.reachable || !r.cuda_available) {
+            cb.disabled = true;
+            labelEl.classList.add('disabled');
+            status.textContent = r.reachable
+                ? '(' + t('tts_gpu_unavailable') + ')'
+                : '';
+        } else {
+            cb.disabled = false;
+            labelEl.classList.remove('disabled');
+            status.textContent = isGpu ? t('tts_gpu_on') : t('tts_gpu_off');
+        }
+    }
+
+    if ($('primaryCuda')) {
+        $('primaryCuda').addEventListener('change', async function() {
+            var cb = this;
+            var status = $('primaryCudaStatus');
+            var want = cb.checked ? 'gpu' : 'cpu';
+            cb.disabled = true;
+            if (status) status.textContent = t('tts_gpu_switching');
+            try {
+                var res = await postJson('/setup/tts/device', { mode: want });
+                state.piperDevice = {
+                    device: res.device,
+                    cuda_available: !!res.cuda_available,
+                    reachable: true,
+                };
+                // Keep the accel badge in sync with the real device.
+                if ($('primaryAccelBadge')) {
+                    $('primaryAccelBadge').textContent = (res.device === 'gpu') ? 'GPU' : 'CPU';
+                    $('primaryAccelBadge').className = 'badge ' + (res.device === 'gpu' ? 'badge-ok' : 'badge-ac');
+                }
+            } catch (e) {
+                showToast('Error: ' + (e.message || 'failed'), 'error');
+            }
+            refreshGpuSwitch();
+        });
+    }
 
     // ══════════════════════════════════════════════════════════════
     //  LIVE STT TERMINAL + AUDIO DEBUG

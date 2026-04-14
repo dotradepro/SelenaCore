@@ -674,6 +674,62 @@ TTS_DEFAULTS = {
 }
 
 
+@router.get("/tts/device")
+async def tts_device_status() -> dict[str, Any]:
+    """Report Piper's current device (cpu/gpu) and CUDA availability.
+
+    UI polls this on the Voices tab open. Response:
+      {device: "gpu"|"cpu", mode: str, cuda_available: bool}
+    When Piper is unreachable, returns cuda_available=false so the UI
+    greys the switch instead of crashing.
+    """
+    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    try:
+        async with httpx.AsyncClient(timeout=3) as client:
+            resp = await client.get(f"{gpu_url}/health")
+            data = resp.json() if resp.status_code == 200 else {}
+    except Exception as exc:
+        logger.warning("Piper /health unreachable: %s", exc)
+        return {"device": "cpu", "mode": "auto", "cuda_available": False, "reachable": False}
+    return {
+        "device": data.get("device", "cpu"),
+        "mode": data.get("device", "cpu"),
+        "cuda_available": bool(data.get("cuda_available", False)),
+        "reachable": True,
+    }
+
+
+@router.post("/tts/device")
+async def tts_device_set(req: dict[str, Any]) -> dict[str, Any]:
+    """Switch Piper's runtime device at POST /device on the native server."""
+    mode = str(req.get("mode") or req.get("device") or "auto")
+    if mode not in ("auto", "cpu", "gpu"):
+        raise HTTPException(400, "mode must be auto|cpu|gpu")
+    gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{gpu_url}/device", json={"device": mode})
+    except Exception as exc:
+        raise HTTPException(502, f"Piper unreachable: {exc}")
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Piper returned {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    # Persist the user's intent to config so the UI reflects it on
+    # reload. Systemd restart persistence is out of scope — mode
+    # resets to --device auto on host reboot, which is fine because
+    # auto picks GPU when cuda_available.
+    try:
+        tts_cfg = read_config().get("voice", {}).get("tts", {}) or {}
+        primary = dict(tts_cfg.get("primary", {}))
+        primary["cuda"] = (data.get("device") == "gpu")
+        primary["device_mode"] = mode
+        tts_cfg["primary"] = primary
+        update_config("voice", "tts", tts_cfg)
+    except Exception as exc:
+        logger.warning("Failed to persist device_mode to config: %s", exc)
+    return data
+
+
 @router.get("/tts/dual-status")
 async def tts_status() -> dict[str, Any]:
     """Get single-voice TTS status (primary only).

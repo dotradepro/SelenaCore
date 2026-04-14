@@ -233,6 +233,49 @@ async def handle_health(request: web.Request) -> web.Response:
     })
 
 
+async def handle_device(request: web.Request) -> web.Response:
+    """POST /device — switch runtime device: {"device": "auto"|"cpu"|"gpu"}.
+
+    Clears the voice cache so subsequent /synthesize calls reload the
+    default voice on the new device. First call after a switch pays a
+    one-shot load penalty (~1-2 sec per voice).
+    """
+    global USE_CUDA, DEVICE_MODE
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    mode = str(body.get("device", "auto"))
+    if mode not in ("auto", "cpu", "gpu"):
+        return web.json_response({"error": "device must be auto|cpu|gpu"}, status=400)
+    new_cuda = _resolve_device(mode)
+    if new_cuda == USE_CUDA and mode == DEVICE_MODE:
+        return web.json_response({
+            "status": "noop",
+            "device": "gpu" if USE_CUDA else "cpu",
+            "mode": DEVICE_MODE,
+            "cuda_available": _detect_cuda(),
+        })
+    with _voices_lock:
+        _voices.clear()
+    USE_CUDA = new_cuda
+    DEVICE_MODE = mode
+    logger.info("Runtime device switch: mode=%s use_cuda=%s", mode, USE_CUDA)
+    # Warm the default voice so the next /synthesize call doesn't pay
+    # the load penalty on its critical path.
+    if DEFAULT_VOICE:
+        try:
+            _get_voice(DEFAULT_VOICE)
+        except Exception as exc:
+            logger.warning("Warmup failed after device switch: %s", exc)
+    return web.json_response({
+        "status": "ok",
+        "device": "gpu" if USE_CUDA else "cpu",
+        "mode": DEVICE_MODE,
+        "cuda_available": _detect_cuda(),
+    })
+
+
 async def handle_voices(request: web.Request) -> web.Response:
     """GET /voices — list installed voice models."""
     models_path = Path(MODELS_DIR)
@@ -279,6 +322,7 @@ def main():
     app.router.add_post("/synthesize", handle_synthesize)
     app.router.add_post("/synthesize/raw", handle_synthesize_raw)
     app.router.add_get("/health", handle_health)
+    app.router.add_post("/device", handle_device)
     app.router.add_get("/voices", handle_voices)
 
     web.run_app(app, host=args.host, port=args.port, print=logger.info)
