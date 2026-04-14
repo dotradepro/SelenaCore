@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -523,15 +523,10 @@ async def tts_test(req: SttTtsTestRequest) -> dict[str, Any]:
     if not clean:
         raise HTTPException(status_code=422, detail="empty after sanitize")
 
-    # Load per-voice settings based on which voice is being tested
+    # Single-voice setup: always use primary settings.
     config = read_config()
     tts_cfg = config.get("voice", {}).get("tts", {})
-    pri_voice = tts_cfg.get("primary", {}).get("voice", "")
-    fb_voice = tts_cfg.get("fallback", {}).get("voice", "")
-    if voice == fb_voice:
-        voice_settings = tts_cfg.get("fallback", {}).get("settings", {})
-    else:
-        voice_settings = tts_cfg.get("primary", {}).get("settings", {})
+    voice_settings = tts_cfg.get("primary", {}).get("settings", {})
     settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
 
     t0 = _time.monotonic()
@@ -680,14 +675,16 @@ TTS_DEFAULTS = {
 
 
 @router.get("/tts/dual-status")
-async def tts_dual_status() -> dict[str, Any]:
-    """Get dual-voice TTS status: primary + fallback voice info."""
-    config = read_config()
+async def tts_status() -> dict[str, Any]:
+    """Get single-voice TTS status (primary only).
 
-    # New tts config format
+    Endpoint path keeps the legacy ``dual-status`` name for UI
+    compatibility; the response carries only ``primary`` now — no
+    fallback voice is loaded or saved anymore.
+    """
+    config = read_config()
     tts_cfg = config.get("voice", {}).get("tts", {})
 
-    # Backward compat: old format → new
     if not tts_cfg:
         tts_cfg = {
             "primary": {
@@ -696,40 +693,29 @@ async def tts_dual_status() -> dict[str, Any]:
                 "cuda": False,
                 "settings": config.get("voice", {}).get("tts_settings", TTS_DEFAULTS),
             },
-            "fallback": {
-                "voice": config.get("voice", {}).get("tts_fallback_voice", "en_US-ryan-low"),
-                "lang": "en",
-                "cuda": False,
-                "settings": TTS_DEFAULTS.copy(),
-            },
         }
 
-    result: dict[str, Any] = {"primary": {}, "fallback": {}}
+    role_cfg = tts_cfg.get("primary", {})
+    voice_id = role_cfg.get("voice", "")
+    lang = role_cfg.get("lang", "uk")
+    cuda = role_cfg.get("cuda", False)
+    settings = {**TTS_DEFAULTS, **role_cfg.get("settings", {})}
 
-    for role in ("primary", "fallback"):
-        role_cfg = tts_cfg.get(role, {})
-        voice_id = role_cfg.get("voice", "")
-        lang = role_cfg.get("lang", "en" if role == "fallback" else "uk")
-        cuda = role_cfg.get("cuda", False)
-        settings = {**TTS_DEFAULTS, **role_cfg.get("settings", {})}
+    model_exists = (PIPER_MODELS_DIR / f"{voice_id}.onnx").exists() if voice_id else False
+    num_speakers = 1
+    sample_rate = 22050
+    if voice_id:
+        json_file = PIPER_MODELS_DIR / f"{voice_id}.onnx.json"
+        if json_file.exists():
+            try:
+                model_cfg = json.loads(json_file.read_text())
+                num_speakers = model_cfg.get("num_speakers", 1)
+                sample_rate = model_cfg.get("audio", {}).get("sample_rate", 22050)
+            except Exception:
+                pass
 
-        # Check if model file exists
-        model_exists = (PIPER_MODELS_DIR / f"{voice_id}.onnx").exists() if voice_id else False
-
-        # Read model info
-        num_speakers = 1
-        sample_rate = 22050
-        if voice_id:
-            json_file = PIPER_MODELS_DIR / f"{voice_id}.onnx.json"
-            if json_file.exists():
-                try:
-                    model_cfg = json.loads(json_file.read_text())
-                    num_speakers = model_cfg.get("num_speakers", 1)
-                    sample_rate = model_cfg.get("audio", {}).get("sample_rate", 22050)
-                except Exception:
-                    pass
-
-        result[role] = {
+    return {
+        "primary": {
             "voice": voice_id,
             "lang": lang,
             "cuda": cuda,
@@ -737,47 +723,41 @@ async def tts_dual_status() -> dict[str, Any]:
             "num_speakers": num_speakers,
             "sample_rate": sample_rate,
             "settings": settings,
-        }
-
-    return result
+        },
+    }
 
 
 @router.post("/tts/dual-config")
-async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
-    """Save dual-voice TTS config (primary + fallback)."""
-    tts_cfg: dict[str, Any] = {}
+async def tts_config_save(req: dict[str, Any]) -> dict[str, Any]:
+    """Save single-voice TTS config (primary only).
 
-    for role in ("primary", "fallback"):
-        if role not in req:
-            continue
-        role_data = req[role]
-        role_cfg: dict[str, Any] = {}
-        if "voice" in role_data:
-            role_cfg["voice"] = str(role_data["voice"])
-        if "lang" in role_data:
-            role_cfg["lang"] = str(role_data["lang"])
-        if "cuda" in role_data:
-            role_cfg["cuda"] = bool(role_data["cuda"])
-        if "settings" in role_data:
-            s = role_data["settings"]
-            role_cfg["settings"] = {
-                "length_scale": round(max(0.1, min(3.0, float(s.get("length_scale", 1.0)))), 2),
-                "noise_scale": round(max(0.0, min(1.0, float(s.get("noise_scale", 0.667)))), 3),
-                "noise_w_scale": round(max(0.0, min(1.0, float(s.get("noise_w_scale", 0.8)))), 3),
-                "volume": round(max(0.1, min(3.0, float(s.get("volume", 1.0)))), 2),
-                "speaker": int(s.get("speaker", 0)),
-            }
-        tts_cfg[role] = role_cfg
+    Endpoint path keeps the legacy ``dual-config`` name for UI
+    compatibility; any ``fallback`` key in the request body is ignored.
+    """
+    primary = req.get("primary") or {}
+    role_cfg: dict[str, Any] = {}
+    if "voice" in primary:
+        role_cfg["voice"] = str(primary["voice"])
+    if "lang" in primary:
+        role_cfg["lang"] = str(primary["lang"])
+    if "cuda" in primary:
+        role_cfg["cuda"] = bool(primary["cuda"])
+    if "settings" in primary:
+        s = primary["settings"]
+        role_cfg["settings"] = {
+            "length_scale": round(max(0.1, min(3.0, float(s.get("length_scale", 1.0)))), 2),
+            "noise_scale": round(max(0.0, min(1.0, float(s.get("noise_scale", 0.667)))), 3),
+            "noise_w_scale": round(max(0.0, min(1.0, float(s.get("noise_w_scale", 0.8)))), 3),
+            "volume": round(max(0.1, min(3.0, float(s.get("volume", 1.0)))), 2),
+            "speaker": int(s.get("speaker", 0)),
+        }
 
-    # Detect if primary TTS language changed
     old_cfg = read_config().get("voice", {}).get("tts", {})
     old_lang = old_cfg.get("primary", {}).get("lang", "")
-    new_lang = tts_cfg.get("primary", {}).get("lang", old_lang)
+    new_lang = role_cfg.get("lang", old_lang)
 
-    update_config("voice", "tts", tts_cfg)
+    update_config("voice", "tts", {"primary": role_cfg})
 
-    # If TTS language changed → flush LLM caches (prompts stay in English,
-    # InputTranslator/OutputTranslator handle language conversion)
     if new_lang and old_lang and new_lang != old_lang:
         logger.info("TTS language changed: %s → %s, flushing caches", old_lang, new_lang)
         _flush_llm_caches()
@@ -785,75 +765,64 @@ async def tts_dual_config_save(req: dict[str, Any]) -> dict[str, Any]:
     return {"status": "ok"}
 
 
-@router.post("/tts/test-mix")
-async def tts_test_mix() -> dict[str, Any]:
-    """Test dual-voice TTS with mixed language text — synthesize + play each segment."""
-    import time as _time
+@router.post("/tts/upload")
+async def tts_upload(
+    model: UploadFile = File(...),
+    config: UploadFile = File(...),
+) -> dict[str, Any]:
+    """Upload a Piper voice pair (.onnx + .onnx.json) to voice.tts.models_dir."""
+    import json as _json
+    import os as _os
 
-    config = read_config()
-    tts_cfg = config.get("voice", {}).get("tts", {})
-    primary_lang = tts_cfg.get("primary", {}).get("lang", "uk")
-    primary_voice = tts_cfg.get("primary", {}).get("voice", get_value("voice", "tts_voice", "uk_UA-ukrainian_tts-medium"))
-    fallback_voice = tts_cfg.get("fallback", {}).get("voice", get_value("voice", "tts_fallback_voice", "en_US-amy-low"))
+    MAX_MODEL = 500 * 1024 * 1024
+    MAX_CONFIG = 1 * 1024 * 1024
 
-    test_texts = {
-        "uk": "Привіт, я Селена. WiFi підключено. Status online.",
-        "en": "Hello, I am Selena. Testing voice switching.",
-    }
-    test_text = test_texts.get(primary_lang, test_texts["en"])
+    m_name = _os.path.basename(model.filename or "")
+    c_name = _os.path.basename(config.filename or "")
 
+    if not m_name.endswith(".onnx"):
+        raise HTTPException(400, "model file must end in .onnx")
+    if not c_name.endswith(".onnx.json"):
+        raise HTTPException(400, "config file must end in .onnx.json")
+    voice_id = m_name[:-len(".onnx")]
+    config_stem = c_name[:-len(".onnx.json")]
+    if voice_id != config_stem or not voice_id:
+        raise HTTPException(400, "model/config stems must match")
+
+    models_dir = PIPER_MODELS_DIR
+    models_dir.mkdir(parents=True, exist_ok=True)
+    models_real = _os.path.realpath(models_dir)
+    onnx_path = models_dir / f"{voice_id}.onnx"
+    json_path = models_dir / f"{voice_id}.onnx.json"
+    for p in (onnx_path, json_path):
+        if not _os.path.realpath(p).startswith(models_real + _os.sep):
+            raise HTTPException(400, "invalid path")
+    if onnx_path.exists():
+        raise HTTPException(409, f"voice '{voice_id}' already exists — delete it first")
+
+    model_bytes = await model.read()
+    config_bytes = await config.read()
+    if len(model_bytes) > MAX_MODEL:
+        raise HTTPException(413, "model file too large (max 500 MB)")
+    if len(config_bytes) > MAX_CONFIG:
+        raise HTTPException(413, "config file too large (max 1 MB)")
     try:
-        from system_modules.voice_core.tts import sanitize_for_tts
-        from system_modules.voice_core.tts_preprocessor import split_by_language
-
-        clean = sanitize_for_tts(test_text)
-        segments = split_by_language(clean, primary_lang)
-        segment_info = [{"text": s.text, "lang": s.lang} for s in segments]
-
-        # Resolve output device
-        device = get_value("voice", "audio_force_output", "") or "default"
-        gpu_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
-        loop = asyncio.get_event_loop()
-        t0 = _time.monotonic()
-
-        # Load per-voice settings
-        pri_settings = tts_cfg.get("primary", {}).get("settings", {})
-        fb_settings = tts_cfg.get("fallback", {}).get("settings", {})
-
-        # Synthesize and play each segment with the correct voice + settings
-        for seg in segments:
-            is_fallback = seg.lang == "en"
-            voice = fallback_voice if is_fallback else primary_voice
-            s = fb_settings if is_fallback else pri_settings
-            try:
-                async with httpx.AsyncClient(timeout=30) as client:
-                    resp = await client.post(f"{gpu_url}/synthesize/raw", json={
-                        "text": seg.text, "voice": voice,
-                        "length_scale": s.get("length_scale", 1.0),
-                        "noise_scale": s.get("noise_scale", 0.667),
-                        "noise_w_scale": s.get("noise_w_scale", 0.8),
-                        "speaker": s.get("speaker", 0),
-                        "volume": s.get("volume", 1.0),
-                    })
-                    if resp.status_code == 200 and resp.content:
-                        sample_rate = int(resp.headers.get("X-Audio-Rate", "22050"))
-                        await loop.run_in_executor(
-                            None, _aplay_raw_pcm, resp.content, device, sample_rate,
-                        )
-            except Exception as exc:
-                logger.warning("Test-mix segment failed (%s): %s", seg.lang, exc)
-
-        total_ms = int((_time.monotonic() - t0) * 1000)
-
-        return {
-            "status": "ok",
-            "test_text": test_text,
-            "segments": segment_info,
-            "primary_lang": primary_lang,
-            "total_ms": total_ms,
-        }
+        cfg_json = _json.loads(config_bytes.decode("utf-8"))
     except Exception as exc:
-        return {"status": "error", "error": str(exc)}
+        raise HTTPException(400, f"config json invalid: {exc}")
+
+    onnx_path.write_bytes(model_bytes)
+    json_path.write_bytes(config_bytes)
+
+    language = ""
+    try:
+        language = (cfg_json.get("language") or {}).get("code") or ""
+        if not language:
+            language = cfg_json.get("espeak", {}).get("voice", "") or ""
+    except Exception:
+        pass
+
+    return {"status": "ok", "voice": voice_id, "language": language}
 
 
 @router.get("/tts/settings")

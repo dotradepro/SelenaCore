@@ -916,18 +916,8 @@ class VoiceCoreModule(SystemModule):
         return result
 
     def _get_tts_for_lang(self, stt_lang: str) -> tuple:
-        """Select TTS engine and response language based on STT-detected language.
-
-        Returns (tts_engine, tts_lang):
-          - Default: primary TTS voice + primary lang (always the main voice)
-          - Fallback to EN voice ONLY when STT explicitly detects English
-            AND primary TTS is NOT English
-        """
-        # Always prefer primary TTS voice for the main response language
-        if not self._tts_fallback_lang or stt_lang != self._tts_fallback_lang:
-            return self._tts, self._tts_primary_lang
-        # STT detected the fallback language (e.g. English) explicitly
-        return self._tts_fallback, self._tts_fallback_lang
+        """Return (tts_engine, tts_lang). Single-voice setup — always primary."""
+        return self._tts, self._tts_primary_lang
 
     @staticmethod
     def _is_system_module_intent(intent: str) -> bool:
@@ -1233,9 +1223,9 @@ class VoiceCoreModule(SystemModule):
     async def _stream_speak(self, text: str, voice_override: str | None = None) -> None:
         """TTS playback: fetch raw PCM from native Piper server → aplay.
 
-        Piper TTS runs natively on the host as piper-tts.service (GPU-accelerated).
-        The container has no piper binary — all synthesis goes through HTTP.
-        voice_override: use specific voice (e.g. EN fallback) instead of config default.
+        Piper TTS runs natively on the host as piper-tts.service.
+        Single-voice setup — always the primary voice from config, unless
+        the caller passes an explicit voice_override.
         """
         from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
@@ -1246,31 +1236,24 @@ class VoiceCoreModule(SystemModule):
         # Force lowercase — Piper VITS models garble uppercase letters
         clean = clean.lower()
 
-        # Select voice + settings: override > auto-detect from text language
-        import re as _re
-        is_primary = bool(_re.search(r'[А-Яа-яІіЇїЄєҐґЁё]', text))
-
         if voice_override:
             voice = voice_override
         else:
             try:
                 from core.config_writer import read_config
                 cfg = read_config()
-                tts_cfg = cfg.get("voice", {}).get("tts", {})
-                if is_primary:
-                    voice = tts_cfg.get("primary", {}).get("voice", "") or self._tts.voice
-                else:
-                    voice = tts_cfg.get("fallback", {}).get("voice", "") or self._tts.voice
+                voice = (cfg.get("voice", {}).get("tts", {})
+                         .get("primary", {}).get("voice", "")
+                         or (self._tts.voice if self._tts else ""))
             except Exception:
                 voice = self._tts.voice if self._tts else ""
 
-        # Load per-voice settings from config
+        # Load primary-voice settings from config
         try:
             from core.config_writer import read_config
             cfg = read_config()
-            tts_cfg = cfg.get("voice", {}).get("tts", {})
-            role = "primary" if is_primary else "fallback"
-            voice_settings = tts_cfg.get(role, {}).get("settings", {})
+            voice_settings = (cfg.get("voice", {}).get("tts", {})
+                              .get("primary", {}).get("settings", {}))
             settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
         except Exception:
             settings = _load_tts_settings()
@@ -1537,13 +1520,11 @@ class VoiceCoreModule(SystemModule):
 
         self._stt = None  # legacy field, kept for API compat
 
-        # Dual TTS: load primary + fallback PiperVoice via new TTSEngine
+        # TTS: single-voice setup — load primary PiperVoice via TTSEngine.
         from system_modules.voice_core.tts import get_tts_engine
         tts_engine = get_tts_engine()
         primary_voice = self._config.get("tts_voice", "uk_UA-ukrainian_tts-medium")
-        fallback_voice = self._config.get("tts_fallback_voice", "en_US-ryan-low")
 
-        # Check for new tts config format (voice.tts.primary/fallback)
         tts_cfg = {}
         try:
             from core.config_writer import read_config
@@ -1551,34 +1532,27 @@ class VoiceCoreModule(SystemModule):
             tts_cfg = cfg.get("voice", {}).get("tts", {})
             if tts_cfg:
                 primary_voice = tts_cfg.get("primary", {}).get("voice", primary_voice)
-                fallback_voice = tts_cfg.get("fallback", {}).get("voice", fallback_voice)
                 primary_cuda = tts_cfg.get("primary", {}).get("cuda", False)
-                fallback_cuda = tts_cfg.get("fallback", {}).get("cuda", False)
             else:
                 primary_cuda = False
-                fallback_cuda = False
         except Exception:
             primary_cuda = False
-            fallback_cuda = False
 
         tts_engine.load_voices(
             primary=primary_voice,
-            fallback=fallback_voice,
+            fallback="",
             primary_cuda=primary_cuda,
-            fallback_cuda=fallback_cuda,
+            fallback_cuda=False,
         )
         self._tts = tts_engine
-        self._tts_fallback = tts_engine  # same engine, dual voice inside
-        # Languages ONLY from Piper config (voice.tts.primary.lang / fallback.lang)
-        # No hardcoded defaults — everything from config
+        # Primary language from config; fall back to parsing the voice name.
         self._tts_primary_lang = tts_cfg.get("primary", {}).get("lang", "") if tts_cfg else ""
         if not self._tts_primary_lang:
-            # Extract from voice name: "uk_UA-model" → "uk"
-            self._tts_primary_lang = primary_voice.split("_")[0] if "_" in primary_voice else primary_voice.split("-")[0]
-        self._tts_fallback_lang = tts_cfg.get("fallback", {}).get("lang", "") if tts_cfg else ""
-        if not self._tts_fallback_lang:
-            self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else fallback_voice.split("-")[0]
-        logger.info("TTS languages: primary=%s, fallback=%s (from config)", self._tts_primary_lang, self._tts_fallback_lang)
+            self._tts_primary_lang = (
+                primary_voice.split("_")[0] if "_" in primary_voice
+                else primary_voice.split("-")[0]
+            )
+        logger.info("TTS primary voice: %s (lang=%s)", primary_voice, self._tts_primary_lang)
 
         # Pipeline language: translation.active_lang > voice.tts.primary.lang
         # > system.language > "en". Single source of truth for all three

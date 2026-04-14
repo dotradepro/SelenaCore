@@ -619,8 +619,8 @@
             </div>
         </div>
 
-        <!-- ── Fallback Voice ── -->
-        <div class="card-inner mb12" id="fallbackVoiceCard">
+        <!-- ── Fallback Voice (removed — single-voice setup) ── -->
+        <div class="hidden" id="fallbackVoiceCard">
             <div class="row mb8">
                 <div>
                     <div class="flex gap8">
@@ -658,7 +658,7 @@
         <!-- ── Save + Mix Test ── -->
         <div class="flex gap8 mb8">
             <button id="dualSaveBtn" class="btn btn-green" data-i18n="save"></button>
-            <button id="dualTestBtn" class="btn btn-blue" data-i18n="tts_test_mix"></button>
+            <button id="dualTestBtn" class="btn btn-blue hidden" data-i18n="tts_test_mix"></button>
         </div>
         <div id="dualTestResult" class="hidden label-xs mono mb8" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
     </div>
@@ -3345,7 +3345,10 @@
 
     function renderDualVoice() {
         var dv = state.dualVoice;
-        if (!dv.primary || !dv.fallback) return;
+        if (!dv.primary) return;
+        // Single-voice setup — fallback removed. Keep dv.fallback as an
+        // empty object so legacy helpers below don't crash.
+        dv.fallback = dv.fallback || {};
 
         // Helper: apply settings to sliders
         function applyRole(role, prefix) {
@@ -3376,22 +3379,22 @@
         }
 
         applyRole('primary', 'primary');
-        applyRole('fallback', 'fallback');
+        // Fallback card is hidden — skip applyRole('fallback', ...)
 
         // Primary specific
         $('primaryAccelBadge').textContent = dv.primary.cuda ? 'GPU' : 'CPU';
         $('primaryAccelBadge').className = 'badge ' + (dv.primary.cuda ? 'badge-ok' : 'badge-ac');
         $('primaryCuda').checked = !!dv.primary.cuda;
 
-        // Populate voice selects
+        // Populate primary voice select
         if (state.piperVoices && state.piperVoices.length > 0) {
-            ['primaryVoiceSelect', 'fallbackVoiceSelect'].forEach(function(selId) {
-                var sel = $(selId);
-                var current = selId === 'primaryVoiceSelect' ? dv.primary.voice : dv.fallback.voice;
+            var sel = $('primaryVoiceSelect');
+            if (sel) {
+                var current = dv.primary.voice;
                 sel.innerHTML = state.piperVoices.map(function(v) {
                     return '<option value="' + v.id + '"' + (v.id === current ? ' selected' : '') + '>' + v.id + '</option>';
                 }).join('');
-            });
+            }
         }
     }
 
@@ -3422,7 +3425,7 @@
         };
     }
 
-    // Save dual config
+    // Save primary config (single-voice setup — no fallback)
     $('dualSaveBtn').onclick = async function() {
         var cfg = {
             primary: {
@@ -3430,12 +3433,6 @@
                 lang: (($('primaryVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'uk',
                 cuda: $('primaryCuda').checked,
                 settings: collectSettings('primary'),
-            },
-            fallback: {
-                voice: $('fallbackVoiceSelect').value,
-                lang: (($('fallbackVoiceSelect').value || '').split('-')[0] || '').split('_')[0] || 'en',
-                cuda: false,
-                settings: collectSettings('fallback'),
             }
         };
         try {
@@ -3467,28 +3464,7 @@
         };
     }
     setupTestBtn('priTestBtn', 'priTestText', 'primaryVoiceSelect', 'primary');
-    setupTestBtn('fbTestBtn', 'fbTestText', 'fallbackVoiceSelect', 'fallback');
-
-    // Test mixed voice
-    $('dualTestBtn').onclick = async function() {
-        var btn = $('dualTestBtn');
-        btn.disabled = true;
-        try {
-            var res = await postJson('/setup/tts/test-mix', {});
-            var resultEl = $('dualTestResult');
-            if (res.status === 'ok') {
-                var segs = (res.segments || []).map(function(s) {
-                    return '<span style="color:' + (s.lang === 'en' ? 'var(--ac)' : 'var(--gr)') + '">[' + s.lang + '] ' + s.text + '</span>';
-                }).join(' ');
-                resultEl.innerHTML = segs + ' <span style="color:var(--tx3)">(' + res.total_ms + 'ms)</span>';
-                show('dualTestResult');
-            } else {
-                resultEl.textContent = res.error || 'Error';
-                show('dualTestResult');
-            }
-        } catch(e) { /* ignore */ }
-        btn.disabled = false;
-    };
+    // Fallback/mix test buttons removed — single-voice setup.
 
     // ══════════════════════════════════════════════════════════════
     //  LIVE STT TERMINAL + AUDIO DEBUG
