@@ -15,9 +15,24 @@ set -euo pipefail
 UI_URL="${SELENA_UI_URL:-http://localhost}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="${COMPOSE_FILE:-${SCRIPT_DIR}/../docker-compose.yml}"
-LOG="${SELENA_LOG_DIR:-/var/log/selena}/display.log"
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"; }
+# Resolve a writable log file. Prefer $SELENA_LOG_DIR/display.log but fall
+# back to a per-user /tmp file if the service user (from install.sh:
+# SUDO_USER, typically the human operator) lacks write access — without
+# this fallback `tee -a` fails and `set -e` kills the kiosk loop before
+# it ever launches cage.
+_candidate_log="${SELENA_LOG_DIR:-/var/log/selena}/display.log"
+mkdir -p "$(dirname "$_candidate_log")" 2>/dev/null || true
+if { : >> "$_candidate_log"; } 2>/dev/null; then
+    LOG="$_candidate_log"
+else
+    LOG="/tmp/selena-display-$(id -u).log"
+    : >> "$LOG" 2>/dev/null || LOG="/dev/null"
+fi
+
+# `|| true` so a late log-dir permission change during the run doesn't
+# abort the service — stdout still reaches journald regardless.
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG" 2>/dev/null || true; }
 
 # ── Wait for core container ─────────────────────────────────────────────
 wait_for_core() {

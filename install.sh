@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # SelenaCore — universal capability-based bootstrap installer.
 #
-# One command for any Debian/Ubuntu-family device — Raspberry Pi 4/5,
-# NVIDIA Jetson Orin, x86 laptop, or headless cloud VM. The script
-# auto-detects OS, architecture, GPU, audio, display and bluetooth
-# capabilities and installs only what is actually needed for that host.
+# One command for any modern systemd-based Linux — Raspberry Pi 4/5,
+# NVIDIA Jetson Orin, x86 laptop, Fedora/RHEL desktop, Arch workstation,
+# openSUSE, or headless cloud VM. The script auto-detects package manager
+# (apt/dnf/pacman/zypper), OS, architecture, GPU, audio, display and
+# bluetooth capabilities and installs only what is actually needed for
+# that host.
+#
+# Tested on: Jetson L4T (apt), Raspberry Pi OS (apt), Debian 12, Ubuntu
+# 22.04/24.04. Fedora/Arch/openSUSE branches are best-effort — please
+# report issues at https://github.com/dotradepro/SelenaCore/issues.
 #
 # After it finishes you get a URL to a browser-based wizard that
 # completes the installation (model downloads, voices, LLM, admin user,
@@ -16,12 +22,15 @@
 #   sudo ./install.sh
 #
 # Optional flags:
-#   --skip-deps        Skip apt-get package installation
+#   --skip-deps        Skip package-manager install of host packages
 #   --no-docker        Don't start docker compose (assume external manager)
 #   --build-frontend   Install Node.js and re-run vite build (default: skip,
 #                      use the committed bundle in system_modules/ui_core/static)
 #   --dry-run          Print the planned actions and exit without changes
 #   --no-build         (compatibility alias for --build-frontend off, ignored)
+#   --kiosk-user=NAME  Operator user that owns selena-display.service and
+#                      piper-tts.service. Defaults to $SUDO_USER. Pass
+#                      explicitly when installing over SSH as root.
 #
 # NOTE: deliberately NOT using `set -E`. With -E the ERR trap inherits into
 # every function, so commands handled with `|| true` or `if ! ...; then` still
@@ -41,6 +50,10 @@ DRY_RUN=false
 BUILD_FRONTEND=false
 SKIP_DEPS=false
 SKIP_DOCKER=false
+# Kiosk/Piper services bind to a human operator. Default = $SUDO_USER (the
+# person who ran `sudo ./install.sh`). Override with --kiosk-user=NAME when
+# installing over SSH as root without sudo.
+KIOSK_USER=""
 
 # Colors
 RED='\033[0;31m'
@@ -120,6 +133,78 @@ install_apt() {
     return 0
 }
 
+# ── Package-manager abstraction ────────────────────────────────────
+#
+# The installer supports four package managers: apt (Debian/Ubuntu/Pi/Jetson),
+# dnf (Fedora/RHEL/Rocky/Alma), pacman (Arch/Manjaro), zypper (openSUSE).
+# The `apt` branch is the tested, canonical path — other branches are
+# best-effort and exist so users on those distros can get a working
+# install without patching the script by hand. The wrapper keeps the
+# existing install_apt() path byte-compatible with the pre-multidistro
+# behavior when PKG=apt.
+
+PKG="apt"  # default; detect_pkg_manager overrides
+
+detect_pkg_manager() {
+    if   command -v apt-get >/dev/null 2>&1; then PKG=apt
+    elif command -v dnf     >/dev/null 2>&1; then PKG=dnf
+    elif command -v pacman  >/dev/null 2>&1; then PKG=pacman
+    elif command -v zypper  >/dev/null 2>&1; then PKG=zypper
+    else
+        err "No supported package manager found (apt/dnf/pacman/zypper)."
+        err "SelenaCore install.sh supports Debian/Ubuntu/Fedora/Arch/openSUSE."
+        exit 1
+    fi
+}
+
+pkg_update() {
+    case "$PKG" in
+        apt)    apt_update ;;
+        dnf)    $DRY_RUN && { echo "    [dry-run] dnf makecache"; return 0; }
+                dnf -y makecache 2>/dev/null || warn "dnf makecache reported errors (continuing)" ;;
+        pacman) $DRY_RUN && { echo "    [dry-run] pacman -Sy"; return 0; }
+                pacman -Sy --noconfirm 2>/dev/null || warn "pacman -Sy reported errors (continuing)" ;;
+        zypper) $DRY_RUN && { echo "    [dry-run] zypper refresh"; return 0; }
+                zypper --non-interactive refresh 2>/dev/null || warn "zypper refresh reported errors (continuing)" ;;
+    esac
+    return 0
+}
+
+# pkg_install receives ONE package name per pkg-manager, positionally:
+#   pkg_install <apt> <dnf> <pacman> <zypper>
+# Empty string ("") means "not available on this distro — skip silently".
+pkg_install() {
+    local apt_name="${1:-}" dnf_name="${2:-}" pac_name="${3:-}" zyp_name="${4:-}"
+    local name=""
+    case "$PKG" in
+        apt)    name="$apt_name" ;;
+        dnf)    name="$dnf_name" ;;
+        pacman) name="$pac_name" ;;
+        zypper) name="$zyp_name" ;;
+    esac
+    [ -z "$name" ] && return 0
+    if $DRY_RUN; then
+        echo "    [dry-run] $PKG install $name"
+        return 0
+    fi
+    case "$PKG" in
+        apt)    DEBIAN_FRONTEND=noninteractive apt-get install -y $APT_QUIET $name 2>/dev/null || \
+                    warn "  ✗ $name (apt) — skipped" ;;
+        dnf)    dnf install -y $name 2>/dev/null || warn "  ✗ $name (dnf) — skipped" ;;
+        pacman) pacman -S --needed --noconfirm $name 2>/dev/null || warn "  ✗ $name (pacman) — skipped" ;;
+        zypper) zypper --non-interactive install -y $name 2>/dev/null || warn "  ✗ $name (zypper) — skipped" ;;
+    esac
+    return 0
+}
+
+# Batch variant: accepts a flat list of apt-style names, skips cleanly on
+# non-apt managers (which need explicit per-PKG mapping via pkg_install).
+# Used by the apt-specific fallbacks below — not for new cross-PKG code.
+pkg_install_apt_only() {
+    [ "$PKG" = "apt" ] || { warn "pkg_install_apt_only called on $PKG — no-op"; return 0; }
+    install_apt "$@"
+}
+
 # ── Phase 1: Environment detection ─────────────────────────────────
 
 detect_environment() {
@@ -137,16 +222,25 @@ detect_environment() {
     OS_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
     OS_VERSION_ID="${VERSION_ID:-}"
 
-    # Reject non-Debian-family distros up front
+    # Package manager — drives every install_* call below.
+    detect_pkg_manager
+
+    # Debian-family gets the full tested path; other distros run the
+    # best-effort branches and surface a warning so users know what to
+    # expect.
     if ! echo "$OS_LIKE $OS_ID" | grep -qiE 'debian|ubuntu'; then
-        err "$OS_ID is not in the Debian/Ubuntu family. This installer supports"
-        err "Debian, Ubuntu, Raspberry Pi OS, Pop!_OS, Linux Mint, Kali, JetPack."
-        err "For other distros, see docs/deployment.md."
-        exit 1
+        warn "$OS_ID is outside the tested Debian/Ubuntu family."
+        warn "Using PKG=$PKG branch (best-effort, community-supported)."
+        warn "Report issues at https://github.com/dotradepro/SelenaCore/issues"
     fi
 
     # Architecture
     ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
+    # Normalize arch for non-Debian (uname -m returns x86_64/aarch64/armv7l)
+    case "$ARCH" in
+        x86_64)  ARCH=amd64 ;;
+        aarch64) ARCH=arm64 ;;
+    esac
 
     # Hardware identification
     HW_MODEL=""
@@ -331,36 +425,89 @@ BASE_PACKAGES=(
 )
 
 install_host_packages() {
-    title "Installing host packages"
-    apt_update
-    install_apt "${BASE_PACKAGES[@]}"
+    title "Installing host packages (PKG=$PKG)"
+    pkg_update
+
+    if [ "$PKG" = "apt" ]; then
+        # Canonical, tested path — unchanged behavior for Debian/Ubuntu/Pi/Jetson.
+        install_apt "${BASE_PACKAGES[@]}"
+
+        if $HAS_AUDIO; then
+            log "Audio detected — installing pulseaudio/alsa utilities"
+            install_apt pulseaudio-utils alsa-utils
+        else
+            log "No audio devices — skipping pulseaudio/alsa"
+        fi
+
+        if $HAS_BT; then
+            log "Bluetooth detected — installing bluez"
+            install_apt bluez bluez-tools
+        fi
+
+        if $HAS_DISPLAY && ! $HEADLESS; then
+            # cage / cog / wtype / seatd are only in jammy/noble/bookworm/trixie
+            # repos. Older releases (focal, bullseye) don't ship them, so we skip
+            # quietly instead of producing "Unable to locate package" errors.
+            local kiosk_supported=true
+            case "$OS_CODENAME" in
+                focal|bullseye|buster|xenial|stretch) kiosk_supported=false ;;
+            esac
+            if $kiosk_supported; then
+                log "Display detected — installing kiosk helpers (cage, cog, wtype, seatd)"
+                install_apt cage cog wtype seatd
+            else
+                log "Display detected, but $OS_ID $OS_CODENAME does not ship cage/cog/wtype/seatd — skipping kiosk helpers (selena-display.service won't be installed)"
+            fi
+        else
+            log "No display — skipping kiosk helpers"
+        fi
+        return 0
+    fi
+
+    # Non-apt: best-effort parallel table. Columns: apt dnf pacman zypper.
+    log "Installing base packages via $PKG (best-effort, non-Debian path)"
+    pkg_install ca-certificates       ca-certificates       ca-certificates       ca-certificates
+    pkg_install curl                  curl                  curl                  curl
+    pkg_install wget                  wget                  wget                  wget
+    pkg_install git                   git                   git                   git
+    pkg_install jq                    jq                    jq                    jq
+    pkg_install unzip                 unzip                 unzip                 unzip
+    pkg_install zstd                  zstd                  zstd                  zstd
+    pkg_install fonts-noto-color-emoji google-noto-emoji-fonts noto-fonts-emoji   noto-coloremoji-fonts
+    pkg_install iw                    iw                    iw                    iw
+    pkg_install wireless-tools        wireless-tools        wireless_tools        wireless-tools
+    pkg_install python3               python3               python                python3
+    pkg_install python3-venv          ""                    ""                    ""
+    pkg_install python3-pip           python3-pip           python-pip            python3-pip
+    pkg_install python3-yaml          python3-pyyaml        python-yaml           python3-PyYAML
+    pkg_install ffmpeg                ffmpeg                ffmpeg                ffmpeg
+    pkg_install libsndfile1           libsndfile            libsndfile            libsndfile1
+    pkg_install arp-scan              arp-scan              arp-scan              arp-scan
+    pkg_install arping                iputils               iputils               iputils
+    pkg_install iproute2              iproute               iproute2              iproute2
+    pkg_install net-tools             net-tools             net-tools             net-tools
+    pkg_install network-manager       NetworkManager        networkmanager        NetworkManager
+    pkg_install sqlite3               sqlite                sqlite                sqlite3
+    # Build toolchain (for pyaudio / piper-tts wheels compile)
+    pkg_install build-essential       "@development-tools"  base-devel            "-t pattern devel_basis"
 
     if $HAS_AUDIO; then
         log "Audio detected — installing pulseaudio/alsa utilities"
-        install_apt pulseaudio-utils alsa-utils
-    else
-        log "No audio devices — skipping pulseaudio/alsa"
+        pkg_install pulseaudio-utils  pulseaudio-utils      pulseaudio-alsa       pulseaudio-utils
+        pkg_install alsa-utils        alsa-utils            alsa-utils            alsa-utils
     fi
 
     if $HAS_BT; then
         log "Bluetooth detected — installing bluez"
-        install_apt bluez bluez-tools
+        pkg_install bluez             bluez                 bluez                 bluez
+        pkg_install bluez-tools       bluez-tools           bluez-utils           bluez-tools
     fi
 
     if $HAS_DISPLAY && ! $HEADLESS; then
-        # cage / cog / wtype / seatd are only in jammy/noble/bookworm/trixie
-        # repos. Older releases (focal, bullseye) don't ship them, so we skip
-        # quietly instead of producing "Unable to locate package" errors.
-        local kiosk_supported=true
-        case "$OS_CODENAME" in
-            focal|bullseye|buster|xenial|stretch) kiosk_supported=false ;;
-        esac
-        if $kiosk_supported; then
-            log "Display detected — installing kiosk helpers (cage, cog, wtype, seatd)"
-            install_apt cage cog wtype seatd
-        else
-            log "Display detected, but $OS_ID $OS_CODENAME does not ship cage/cog/wtype/seatd — skipping kiosk helpers (selena-display.service won't be installed)"
-        fi
+        log "Display detected — installing kiosk helpers (cage, wtype)"
+        pkg_install cage              cage                  cage                  cage
+        pkg_install wtype             wtype                 wtype                 wtype
+        # cog/seatd skipped on non-apt — wizard degrades gracefully.
     else
         log "No display — skipping kiosk helpers"
     fi
@@ -638,22 +785,47 @@ install_docker() {
         warn "Jetson without Docker is unusual — proceeding via apt"
     fi
 
-    # 3. Official Docker repo
-    local repo_id="$OS_ID"
-    case "$OS_ID" in
-        raspbian)            repo_id=debian ;;
-        pop|linuxmint|kali)  repo_id=ubuntu ;;
-    esac
-    local key_url="https://download.docker.com/linux/$repo_id/gpg"
-    local repo_url="https://download.docker.com/linux/$repo_id"
+    # 3. Install path per package manager
+    case "$PKG" in
+        apt)
+            # Official Docker apt repo — canonical, tested path.
+            local repo_id="$OS_ID"
+            case "$OS_ID" in
+                raspbian)            repo_id=debian ;;
+                pop|linuxmint|kali)  repo_id=ubuntu ;;
+            esac
+            local key_url="https://download.docker.com/linux/$repo_id/gpg"
+            local repo_url="https://download.docker.com/linux/$repo_id"
 
-    log "Installing Docker via official repo ($repo_id $OS_CODENAME)"
-    if _install_docker_official "$repo_id" "$key_url" "$repo_url"; then
-        log "Docker installed via official repo"
-    else
-        warn "Official Docker repo failed — falling back to distro packages"
-        _install_docker_distro_fallback
-    fi
+            log "Installing Docker via official repo ($repo_id $OS_CODENAME)"
+            if _install_docker_official "$repo_id" "$key_url" "$repo_url"; then
+                log "Docker installed via official repo"
+            else
+                warn "Official Docker repo failed — falling back to distro packages"
+                _install_docker_distro_fallback
+            fi
+            ;;
+        dnf|zypper)
+            # get.docker.com handles Fedora/RHEL/CentOS/SUSE distro detection
+            # internally and configures docker-ce repo + dnf/zypper packages.
+            log "Installing Docker via https://get.docker.com (handles $PKG automatically)"
+            if $DRY_RUN; then
+                echo "    [dry-run] curl -fsSL https://get.docker.com | sh"
+            else
+                if ! curl -fsSL https://get.docker.com | sh; then
+                    warn "get.docker.com installer failed — trying distro package 'docker'"
+                    pkg_install docker docker docker docker
+                fi
+            fi
+            ;;
+        pacman)
+            # Arch isn't covered by get.docker.com; use the distro package.
+            log "Installing Docker via pacman (Arch/Manjaro)"
+            pkg_install "" "" docker ""
+            pkg_install "" "" docker-buildx ""
+            pkg_install "" "" docker-compose ""
+            ;;
+    esac
 
     run systemctl enable --now docker 2>/dev/null || \
         warn "Could not enable docker via systemctl (no systemd?). Start it manually."
@@ -705,22 +877,58 @@ install_nvidia_container_toolkit() {
         log "nvidia-container-toolkit already installed"
         return 0
     fi
-    log "Installing nvidia-container-toolkit"
-    if ! $DRY_RUN; then
-        local distribution
-        distribution="$(. /etc/os-release; echo "${ID}${VERSION_ID}")"
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-            | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
-        curl -fsSL "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" \
-            | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-            > /etc/apt/sources.list.d/nvidia-container-toolkit.list 2>/dev/null || \
-            warn "NVIDIA toolkit repo not available for $distribution — skipping"
-    fi
-    apt_update
-    install_apt nvidia-container-toolkit || {
-        warn "nvidia-container-toolkit install failed — GPU passthrough may not work"
-        return 0
-    }
+    log "Installing nvidia-container-toolkit (PKG=$PKG)"
+
+    case "$PKG" in
+        apt)
+            if ! $DRY_RUN; then
+                local distribution
+                distribution="$(. /etc/os-release; echo "${ID}${VERSION_ID}")"
+                curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+                    | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg 2>/dev/null || true
+                curl -fsSL "https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list" \
+                    | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+                    > /etc/apt/sources.list.d/nvidia-container-toolkit.list 2>/dev/null || \
+                    warn "NVIDIA toolkit repo not available for $distribution — skipping"
+            fi
+            apt_update
+            install_apt nvidia-container-toolkit || {
+                warn "nvidia-container-toolkit install failed — GPU passthrough may not work"
+                return 0
+            }
+            ;;
+        dnf)
+            if ! $DRY_RUN; then
+                curl -fsSL https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo \
+                    | tee /etc/yum.repos.d/nvidia-container-toolkit.repo >/dev/null || \
+                    { warn "Could not fetch NVIDIA toolkit repo — skipping"; return 0; }
+            fi
+            pkg_update
+            pkg_install "" nvidia-container-toolkit "" "" || {
+                warn "nvidia-container-toolkit install failed — GPU passthrough may not work"
+                return 0
+            }
+            ;;
+        pacman)
+            # AUR-free path: the package is in community on Arch.
+            pkg_install "" "" nvidia-container-toolkit "" || {
+                warn "nvidia-container-toolkit install failed on Arch — check community repo"
+                return 0
+            }
+            ;;
+        zypper)
+            if ! $DRY_RUN; then
+                zypper --non-interactive addrepo -f \
+                    https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo 2>/dev/null || true
+                zypper --non-interactive --gpg-auto-import-keys refresh 2>/dev/null || true
+            fi
+            pkg_install "" "" "" nvidia-container-toolkit || {
+                warn "nvidia-container-toolkit install failed — GPU passthrough may not work"
+                return 0
+            }
+            ;;
+    esac
+
     if ! $DRY_RUN; then
         nvidia-ctk runtime configure --runtime=docker 2>/dev/null || true
         systemctl restart docker 2>/dev/null || true
@@ -989,6 +1197,107 @@ start_docker_stack() {
     log "Core is healthy"
 }
 
+# ── Kiosk auto-enable (if HDMI connected at install time) ─────────
+#
+# Historically selena-display.service was generated + enabled only by
+# the wizard's "install_native_services" step, which meant users on a
+# Pi with HDMI connected would not see the kiosk appear automatically
+# after install.sh — they'd have to open the wizard on another device
+# first. This function mirrors the kiosk block from
+# scripts/install-systemd.sh and enables it immediately if a display
+# is detected at install time. Safe no-op if no display or no cage.
+
+enable_kiosk_if_display() {
+    $HAS_DISPLAY || return 0
+    if ! command -v cage >/dev/null 2>&1; then
+        log "Kiosk: 'cage' binary not available — skipping selena-display.service"
+        return 0
+    fi
+    local start_script="$INSTALL_DIR/scripts/start-display.sh"
+    if [ ! -f "$start_script" ]; then
+        log "Kiosk: $start_script not found — skipping"
+        return 0
+    fi
+    if [ ! -d /etc/systemd/system ] || ! command -v systemctl >/dev/null 2>&1; then
+        log "Kiosk: systemd not available — skipping"
+        return 0
+    fi
+    # Pick the operator user. Priority: explicit --kiosk-user flag → $SUDO_USER
+    # → reject root (cage needs a login seat; root usually has none).
+    local target_user="${KIOSK_USER:-${SUDO_USER:-}}"
+    if [ -z "$target_user" ] || [ "$target_user" = "root" ]; then
+        warn "Cannot bind kiosk to 'root' (cage needs a login seat, root has none on most systems)."
+        warn "  Re-run from an operator user's session:   sudo ./install.sh"
+        warn "  Or pass an explicit user:                 sudo ./install.sh --kiosk-user=alice"
+        warn "Skipping selena-display.service setup for now."
+        return 0
+    fi
+    if ! id "$target_user" >/dev/null 2>&1; then
+        warn "Kiosk target user '$target_user' does not exist — skipping selena-display.service"
+        return 0
+    fi
+
+    title "Enabling kiosk display (selena-display.service, user=$target_user)"
+    run chmod +x "$start_script"
+    local target_uid
+    target_uid="$(id -u "$target_user" 2>/dev/null || echo 0)"
+
+    if $DRY_RUN; then
+        echo "    [dry-run] would generate /etc/systemd/system/selena-display.service (user=$target_user)"
+        echo "    [dry-run] systemctl enable --now selena-display.service"
+        return 0
+    fi
+
+    # Kiosk runs as the human operator (SUDO_USER), not as selena system user,
+    # so it needs:
+    #   1. write access to $LOG_DIR (for start-display.sh tee logging);
+    #   2. membership in `docker` group so `docker compose ps core` works
+    #      inside wait_for_core() — otherwise the kiosk loop spins forever
+    #      waiting for a container it cannot see.
+    if getent group "$SELENA_USER" >/dev/null 2>&1 && [ "$target_user" != "$SELENA_USER" ]; then
+        usermod -aG "$SELENA_USER" "$target_user" 2>/dev/null || true
+    fi
+    if getent group docker >/dev/null 2>&1; then
+        usermod -aG docker "$target_user" 2>/dev/null || true
+    fi
+    chmod 0775 "$LOG_DIR" 2>/dev/null || true
+
+    cat > /etc/systemd/system/selena-display.service <<EOF
+[Unit]
+Description=SelenaCore Kiosk Display
+After=network.target docker.service seatd.service
+Requires=docker.service
+Wants=seatd.service
+
+[Service]
+Type=simple
+User=$target_user
+ExecStart=$start_script
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+Environment=COMPOSE_FILE=$INSTALL_DIR/docker-compose.yml
+Environment=SELENA_UI_URL=http://localhost
+Environment=SELENA_LOG_DIR=/var/log/selena
+Environment=WLR_BACKENDS=drm,libinput
+Environment=WLR_NO_HARDWARE_CURSORS=1
+Environment=LIBSEAT_BACKEND=seatd
+Environment=XDG_RUNTIME_DIR=/run/user/$target_uid
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=selena-display
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload 2>/dev/null || true
+    if systemctl enable --now selena-display.service 2>/dev/null; then
+        log "Kiosk enabled — HDMI display should show the wizard UI within ~10 seconds"
+    else
+        warn "systemctl enable selena-display.service failed — check 'journalctl -u selena-display'"
+    fi
+}
+
 # ── Systemd unit staging (NOT enabled — wizard does that) ──────────
 
 stage_systemd_units() {
@@ -1077,6 +1386,8 @@ main() {
             --build-frontend)   BUILD_FRONTEND=true; shift ;;
             --no-build)         BUILD_FRONTEND=false; shift ;;
             --dry-run)          DRY_RUN=true; shift ;;
+            --kiosk-user=*)     KIOSK_USER="${1#*=}"; shift ;;
+            --kiosk-user)       KIOSK_USER="$2"; shift 2 ;;
             -h|--help)
                 grep -E '^# ' "$0" | sed 's/^# //'
                 exit 0 ;;
@@ -1106,6 +1417,7 @@ main() {
     fi
 
     stage_systemd_units
+    enable_kiosk_if_display
     print_banner
 
     if $DRY_RUN; then

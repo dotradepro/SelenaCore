@@ -45,10 +45,28 @@ async def health() -> dict[str, Any]:
     }
 
 
+def _detect_hdmi_connected() -> bool:
+    """True if any /sys/class/drm connector reports status=connected.
+
+    Works from inside the docker container because /sys is mounted by
+    default. Matches install.sh HAS_DISPLAY detection.
+    """
+    from pathlib import Path
+    try:
+        for status_path in Path("/sys/class/drm").glob("*/status"):
+            try:
+                if status_path.read_text().strip() == "connected":
+                    return True
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 @router.get("/system/info")
 async def system_info() -> dict[str, Any]:
     import platform
-    import shutil
 
     from core.config import get_yaml_config
     yaml_cfg = get_yaml_config()
@@ -62,6 +80,15 @@ async def system_info() -> dict[str, Any]:
     except Exception:
         ram_total_mb = 0
 
+    # Display / HDMI detection — delegates to ui_core module so both
+    # the install.sh detection and the runtime API agree.
+    display_mode = "headless"
+    try:
+        from system_modules.ui_core.display import detect_display_mode
+        display_mode = detect_display_mode()
+    except Exception as exc:
+        logger.debug("display mode detection failed: %s", exc)
+
     from core.version import VERSION
     return {
         "initialized": system_cfg.get("initialized", False),
@@ -70,12 +97,12 @@ async def system_info() -> dict[str, Any]:
         "hardware": {
             "model": platform.node(),
             "ram_total_mb": ram_total_mb,
-            "has_hdmi": False,   # full detection in ui_core
+            "has_hdmi": _detect_hdmi_connected(),
             "has_camera": False,
         },
         "audio": {
             "inputs": [],   # filled by voice_core
             "outputs": [],
         },
-        "display_mode": "headless",  # full detection in ui_core
+        "display_mode": display_mode,
     }

@@ -31,12 +31,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git config --system --add safe.directory /opt/selena-core
 
 COPY requirements.txt .
-# argostranslate → stanza → torch → nvidia-*  pulls ~2 GB of PyTorch
-# + CUDA packages that are never used (stanza is not imported anywhere,
-# Helsinki translator uses only ctranslate2 + sentencepiece from argos).
-# Strip them after install to save ~1.5 GB image + RAM.
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip uninstall -y torch stanza triton \
+# argostranslate transitively requires stanza → torch → nvidia-* which
+# would pull ~2 GB of PyTorch + CUDA wheels on EVERY docker build. Ruinous
+# on Raspberry Pi and Jetson (even Jetson's native CUDA is already on the
+# host — the container doesn't need its own copy). Our translation path
+# (core/translation/local_translator.py + helsinki_translator.py) only
+# uses argostranslate's ctranslate2 + sentencepiece primitives — stanza
+# is never imported anywhere.
+#
+# Fix: install argostranslate with --no-deps and hand-pick its real
+# runtime deps. Skips the entire stanza/torch/CUDA chain (~1.8 GB saved).
+RUN pip install --no-cache-dir --no-deps "argostranslate>=1.9.0" \
+    && pip install --no-cache-dir \
+        sentencepiece \
+        ctranslate2 \
+        sacremoses
+
+# Main install — pip sees argostranslate already satisfied, skips it.
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Defensive belt-and-braces: if a future requirements.txt bump smuggles in
+# a torch dep, strip it so the image stays lean. No-op on clean builds.
+RUN pip uninstall -y torch stanza triton \
        nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
        nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand \
        nvidia-cusolver nvidia-cusparse nvidia-cusparselt-cu13 \

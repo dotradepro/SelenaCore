@@ -20,6 +20,16 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Non-systemd guard: tolerate Alpine/OpenRC and similar by no-oping cleanly
+# instead of erroring out. The wizard surfaces this in the task log so users
+# know native services won't be installed and points at docs/deploy-native.md.
+if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /etc/systemd/system ]; then
+    echo "[ ] systemctl not available — skipping native service install."
+    echo "    This host is not systemd-based. See docs/deploy-native.md"
+    echo "    for manual instructions on OpenRC, runit, or other init systems."
+    exit 0
+fi
+
 REPO_DIR="${SELENA_INSTALL_DIR:-/opt/selena-core}"
 SYSTEMD_DIR="/etc/systemd/system"
 

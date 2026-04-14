@@ -34,12 +34,15 @@ tokenizers>=0.15.0
 # Vosk STT (Vosk model files live under /var/lib/selena/models/vosk)
 vosk>=0.3.45
 
-# Local translation (Argos Translate — offline, ~50-100 MB per language pair)
-# Packages downloaded on demand via Settings → Translation tab.
-# argostranslate pulls in ctranslate2 + sentencepiece transitively; the
-# Helsinki engine (core.translation.helsinki_translator) reuses both
-# directly with pre-converted opus-mt models — no extra pip packages.
-argostranslate>=1.9.0
+# Local translation (Argos Translate — offline, ~50-100 MB per language pair).
+# argostranslate is installed SEPARATELY in Dockerfile.core with --no-deps
+# because its declared deps (stanza, spacy, minisbd) transitively pull
+# ~2 GB of PyTorch + CUDA wheels that we never use. The Helsinki translator
+# only touches argostranslate's ctranslate2 + sentencepiece primitives.
+# For local dev OUTSIDE Docker install argostranslate manually:
+#     pip install --no-deps "argostranslate>=1.9.0"
+#     pip install sentencepiece ctranslate2 sacremoses
+# argostranslate>=1.9.0   # DO NOT re-add — see note above
 
 # Smart device drivers (used by system_modules/device_control)
 tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persistent socket)
