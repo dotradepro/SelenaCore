@@ -143,6 +143,16 @@ class OutputTranslator:
             return text
         if target_lang == "en":
             return text
+        # Language-agnostic guard: refuse to run en→<lang> on input that
+        # isn't predominantly Latin letters. en→<lang> on non-Latin text
+        # fabricates output (observed with Gemini replying in UK →
+        # Argos invents a different UK string). Works for any target
+        # script (fr/de stay Latin → pass through; ru/uk/zh/ar pass
+        # through when input is already that script).
+        latin = sum(1 for c in text if c.isalpha() and "a" <= c.lower() <= "z")
+        other = sum(1 for c in text if c.isalpha()) - latin
+        if other > latin:
+            return text
         if not _ensure_argos():
             return text
         try:

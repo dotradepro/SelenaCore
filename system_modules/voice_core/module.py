@@ -60,6 +60,37 @@ class SynthesizeRequest(BaseModel):
     voice: str | None = None
 
 
+def _resolve_active_lang() -> str:
+    """Pipeline source/target language, resolved from config only.
+
+    Priority per docs/translation.md:
+      translation.active_lang  →  voice.tts.primary.lang
+      →  system.language  →  "en".
+
+    Never runs script/word heuristics — a configured Ukrainian setup
+    stays Ukrainian even for phrases the old char-ratio detector
+    mis-labels as Bulgarian ("хто", "що").
+    """
+    try:
+        from core.config_writer import read_config
+        cfg = read_config()
+        lang = (cfg.get("translation", {}) or {}).get("active_lang")
+        if lang:
+            return lang
+        lang = (
+            (cfg.get("voice", {}) or {}).get("tts", {})
+            .get("primary", {}).get("lang")
+        )
+        if lang:
+            return lang
+        lang = (cfg.get("system", {}) or {}).get("language")
+        if lang:
+            return lang
+    except Exception:
+        pass
+    return "en"
+
+
 def _detect_text_lang(text: str, primary_lang: str = "") -> str:
     """Detect language from text using Unicode script + word heuristics.
 
@@ -323,7 +354,8 @@ class VoiceCoreModule(SystemModule):
         TTS language.
         """
         try:
-            text = "Yes?"
+            from system_modules.voice_core.wake_acks import pick_wake_ack
+            text = pick_wake_ack()
             text = await self._to_tts_lang(text)
             from system_modules.voice_core.tts import sanitize_for_tts
             from system_modules.voice_core.tts_preprocessor import preprocess_for_tts
@@ -1015,7 +1047,7 @@ class VoiceCoreModule(SystemModule):
                 return
 
             # ── Dispatch system-module intents ──
-            _is_system_handled = (result.source == "system_module")
+            _is_system_handled = self._is_system_module_intent(result.intent)
             if _is_system_handled:
                 # No intermediate ack — the module will publish voice.speak
                 # with an action_context after the driver call, and
@@ -1548,8 +1580,10 @@ class VoiceCoreModule(SystemModule):
             self._tts_fallback_lang = fallback_voice.split("_")[0] if "_" in fallback_voice else fallback_voice.split("-")[0]
         logger.info("TTS languages: primary=%s, fallback=%s (from config)", self._tts_primary_lang, self._tts_fallback_lang)
 
-        # Set default lang from primary TTS voice (Vosk uses per-language models)
-        self._lang = self._tts_primary_lang
+        # Pipeline language: translation.active_lang > voice.tts.primary.lang
+        # > system.language > "en". Single source of truth for all three
+        # pipeline paths (voice STT, test-command HTTP, /llm/chat).
+        self._lang = _resolve_active_lang() or self._tts_primary_lang
 
         self._speaker_id = get_speaker_id()
         self._voice_history = get_voice_history()
@@ -1898,7 +1932,10 @@ class VoiceCoreModule(SystemModule):
             if req.lang:
                 lang = req.lang
             else:
-                lang = _detect_text_lang(text, svc._tts_primary_lang)
+                # Trust configured pipeline language (same source of
+                # truth as voice path + /llm/chat). Character heuristics
+                # false-positive on short Slavic words (e.g. "хто" → bg).
+                lang = _resolve_active_lang()
             _tts_engine, tts_lang = svc._get_tts_for_lang(lang)
 
             # Keep native utterance alongside the Argos translation so the
@@ -1965,7 +2002,7 @@ class VoiceCoreModule(SystemModule):
 
             # System-module intents are handled by the module itself via
             # EventBus (voice.intent → module.handle → module.speak).
-            _sys_handled = (result.source == "system_module")
+            _sys_handled = svc._is_system_module_intent(result.intent)
             if req.speak and _sys_handled:
                 svc._system_speak_done.clear()
                 try:

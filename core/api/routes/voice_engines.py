@@ -451,13 +451,29 @@ async def llm_chat(req: LlmChatRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Text is empty")
 
     from core.llm import llm_call, _get_provider, _call_provider
+    from core.config_writer import get_value as _cfg_get
 
     provider, provider_cfg = _get_provider()
     is_local = provider == "ollama"
     _, response_lang, _ = _get_prompt_context()
 
+    # Per docs/translation.md: core operates in English. Translate any
+    # non-English input to English before sending to the LLM, then
+    # translate the English reply back. Without this the LLM mirrors
+    # the user's language and the en→target Argos pass on already-Cyrillic
+    # output produces garbage.
+    text_in = req.text
+    if _cfg_get("translation", "enabled", False):
+        from core.translation.local_translator import get_input_translator
+        from system_modules.voice_core.module import _resolve_active_lang
+        in_lang = _resolve_active_lang()
+        if in_lang != "en":
+            inp = get_input_translator()
+            if inp.is_available():
+                text_in = inp.to_english(text_in, in_lang) or text_in
+
     # Language tag for local models — reinforces system prompt for small models
-    user_msg = f"[{response_lang}] {req.text}" if is_local else req.text
+    user_msg = f"[{response_lang}] {text_in}" if is_local else text_in
 
     # Resolve model name for response metadata
     config = read_config()

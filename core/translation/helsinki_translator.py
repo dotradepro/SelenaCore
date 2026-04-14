@@ -279,6 +279,12 @@ class HelsinkiOutputTranslator(_BaseHelsinki):
             return text
         if target_lang == "en":
             return text
+        # Language-agnostic guard: input must be predominantly Latin
+        # letters to be treated as English. Mirrors the Argos backend.
+        latin = sum(1 for c in text if c.isalpha() and "a" <= c.lower() <= "z")
+        other = sum(1 for c in text if c.isalpha()) - latin
+        if other > latin:
+            return text
 
         # Multi-target tc-big-en-zle (and friends) need a language
         # token piece prepended to the encoded source. Single-pair
