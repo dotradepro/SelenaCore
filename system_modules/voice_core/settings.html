@@ -350,7 +350,7 @@
     <button class="settings-tab" data-tab="translate" data-i18n="tab_translate"></button>
     <button class="settings-tab" data-tab="prompts" data-i18n="tab_prompts"></button>
     <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
-    <button class="settings-tab" data-tab="patterns" data-i18n="tab_patterns"></button>
+    <button class="settings-tab" data-tab="patterns" data-i18n="tab_voices"></button>
     <button class="settings-tab" data-tab="test" data-i18n="tab_test"></button>
 </div>
 
@@ -555,27 +555,19 @@
     <button id="wakeWordSaveBtn" class="btn btn-green" data-i18n="save"></button>
 </div>
 
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  PIPER — Dual Voice TTS                                           -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="card" id="piperCard">
-    <div class="row">
-        <div>
-            <span class="section-title" data-i18n="tts_title"></span>
-            <div class="section-sub">Piper TTS — Dual Voice</div>
-        </div>
-        <span id="piperStatus" class="badge badge-off"></span>
+<!-- PIPER TTS moved to the Voices tab (see #tabPatterns).
+     Kept as a hidden shell so legacy JS refs (#piperCard, #piperStatus,
+     #piperActions, #piperProgress, #dualVoiceSection) still resolve. -->
+<div class="hidden" id="piperCard">
+    <span id="piperStatus" class="badge badge-off"></span>
+    <div id="piperActions"></div>
+    <div id="piperProgress" class="hidden">
+        <div id="piperProgressText"></div>
     </div>
+</div>
 
-    <!-- Engine actions -->
-    <div class="flex gap8 mb12 wrap" id="piperActions"></div>
-    <div id="piperProgress" class="hidden mb12">
-        <div class="label-xs mono truncate" id="piperProgressText"></div>
-        <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
-    </div>
-
-    <!-- ── Primary Voice ── -->
-    <div id="dualVoiceSection">
+<!-- Dual voice block relocated by JS into #voicesSlotSettings on load. -->
+<div id="dualVoiceSection">
         <div class="card-inner mb12" id="primaryVoiceCard">
             <div class="row mb8">
                 <div>
@@ -896,48 +888,63 @@
 </div><!-- /tabIntents -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Patterns (Voice Commands)                                   -->
+<!--  TAB: Voices (Piper TTS — installed voices, upload, settings)     -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabPatterns">
+
+<!-- Installed voices list -->
 <div class="card">
     <div class="mb12">
         <div class="flex gap8">
-            <span class="section-title" data-i18n="patterns_title"></span>
-            <span class="badge badge-ac" id="patternsCountBadge">0</span>
+            <span class="section-title" data-i18n="voices_installed_title"></span>
+            <span class="badge badge-ac" id="voicesInstalledCount">0</span>
         </div>
-        <div class="section-sub" data-i18n="patterns_desc"></div>
+        <div class="section-sub" data-i18n="voices_installed_desc"></div>
     </div>
-    <div class="flex gap8 mb12">
-        <input type="text" id="patternsSearch" style="flex:1" data-placeholder-i18n="patterns_search">
-        <select id="patternsModuleFilter" style="min-width:120px">
-            <option value="" data-i18n="patterns_all_modules"></option>
-        </select>
-        <select id="patternsSourceFilter" style="min-width:100px">
-            <option value="" data-i18n="patterns_all_sources"></option>
-        </select>
-    </div>
-    <div style="overflow-x:auto">
-        <table class="intent-table" id="patternsTable">
-            <thead>
-                <tr>
-                    <th data-i18n="patterns_col_module">Module</th>
-                    <th data-i18n="patterns_col_intent">Intent</th>
-                    <th data-i18n="patterns_col_pattern">Pattern</th>
-                    <th data-i18n="patterns_col_source">Source</th>
-                </tr>
-            </thead>
-            <tbody id="patternsBody"></tbody>
-        </table>
-    </div>
-    <div class="flex gap8 mt8" style="justify-content:space-between;align-items:center">
-        <span id="patternsPageInfo" style="color:var(--tx3);font-size:11px"></span>
-        <div class="flex gap8">
-            <button class="btn btn-ghost" id="patternsPrev" style="font-size:11px" disabled>&larr; Prev</button>
-            <button class="btn btn-ghost" id="patternsNext" style="font-size:11px" disabled>Next &rarr;</button>
-        </div>
-    </div>
+    <div id="voicesInstalledList" class="catalog-list"></div>
 </div>
-</div><!-- /tabPatterns -->
+
+<!-- Upload new voice -->
+<div class="card">
+    <div class="mb12">
+        <div class="section-title" data-i18n="voices_upload_title"></div>
+        <div class="section-sub" data-i18n="voices_upload_desc"></div>
+    </div>
+    <div class="flex gap8 wrap mb8">
+        <label class="btn btn-ghost" style="font-size:12px;cursor:pointer">
+            <span data-i18n="voices_choose_onnx"></span>
+            <input type="file" id="voiceUploadOnnx" accept=".onnx" style="display:none">
+            <span id="voiceUploadOnnxName" class="label-xs mono" style="margin-left:6px;color:var(--tx3)">—</span>
+        </label>
+        <label class="btn btn-ghost" style="font-size:12px;cursor:pointer">
+            <span data-i18n="voices_choose_json"></span>
+            <input type="file" id="voiceUploadJson" accept=".json" style="display:none">
+            <span id="voiceUploadJsonName" class="label-xs mono" style="margin-left:6px;color:var(--tx3)">—</span>
+        </label>
+        <button id="voiceUploadBtn" class="btn btn-green" data-i18n="voices_upload_btn" disabled></button>
+    </div>
+    <div id="voiceUploadStatus" class="label-xs mono hidden" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
+</div>
+
+<!-- Slot: existing #dualVoiceSection gets relocated here by JS -->
+<div class="card" id="voicesSettingsCard">
+    <div class="mb12">
+        <div class="section-title" data-i18n="voices_settings_title"></div>
+        <div class="section-sub" data-i18n="voices_settings_desc"></div>
+    </div>
+    <div id="voicesSlotSettings"></div>
+</div>
+
+<!-- Slot: HF catalog relocated here by JS -->
+<div class="card" id="voicesCatalogCard">
+    <div class="mb12">
+        <div class="section-title" data-i18n="voices_catalog_title"></div>
+        <div class="section-sub" data-i18n="voices_catalog_desc"></div>
+    </div>
+    <div id="voicesSlotCatalog"></div>
+</div>
+
+</div><!-- /tabPatterns (Voices) -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  TAB: Test Console                                                -->
@@ -1270,15 +1277,26 @@
             tab_prompts: 'Prompts',
             tab_intents: 'Intents',
             tab_patterns: 'Patterns',
-            patterns_title: 'Registered Patterns',
-            patterns_desc: 'English regex patterns used for voice command matching (all patterns are English-only)',
-            patterns_search: 'Search patterns...',
-            patterns_all_modules: 'All modules',
-            patterns_all_sources: 'All sources',
-            patterns_col_module: 'Module',
-            patterns_col_intent: 'Intent',
-            patterns_col_pattern: 'Pattern',
-            patterns_col_source: 'Source',
+            tab_voices: 'Voices',
+            voices_installed_title: 'Installed voices',
+            voices_installed_desc: 'Piper voice models found on disk. Activate switches the primary voice; Delete removes the .onnx + .onnx.json pair.',
+            voices_upload_title: 'Upload a voice manually',
+            voices_upload_desc: 'Drop a Piper voice pair: the .onnx weights and the paired .onnx.json config. File stems must match.',
+            voices_upload_btn: 'Upload',
+            voices_choose_onnx: 'Choose .onnx',
+            voices_choose_json: 'Choose .onnx.json',
+            voices_upload_in_progress: 'Uploading...',
+            voices_upload_ok: 'Uploaded',
+            voices_upload_fail: 'Upload failed',
+            voices_settings_title: 'Primary voice settings',
+            voices_settings_desc: 'Speed, intonation, phoneme variance, volume and test for the active voice.',
+            voices_catalog_title: 'Voice catalog',
+            voices_catalog_desc: 'Browse and download Piper voices from the Hugging Face catalog.',
+            voices_activate: 'Activate',
+            voices_active: 'Active',
+            voices_delete: 'Delete',
+            voices_none_installed: 'No voices installed yet — upload one or pick from the catalog below.',
+            voices_confirm_delete: 'Delete voice',
             tab_test: 'Test Console',
             prompts_tab_desc: 'This is the user-editable identity shell: name, tone, high-level rules. Keep it short (100-500 chars). Everything structural — JSON schema, filtered intents, matching devices — is assembled on every voice command and appended automatically. The LLM is a pure classifier; spoken replies are composed in code.',
             prompts_unified_label: 'System prompt (English only)',
@@ -1492,6 +1510,26 @@
             tab_prompts: 'Промпти',
             tab_intents: 'Iнтенти',
             tab_patterns: 'Патерни',
+            tab_voices: 'Голоси',
+            voices_installed_title: 'Встановлені голоси',
+            voices_installed_desc: 'Моделі Piper, знайдені на диску. «Активувати» — зміна основного голосу; «Видалити» — прибирає пару .onnx + .onnx.json.',
+            voices_upload_title: 'Завантажити голос вручну',
+            voices_upload_desc: 'Файли Piper: .onnx (ваги) + парний .onnx.json (конфіг). Імена без розширень мають збігатися.',
+            voices_upload_btn: 'Завантажити',
+            voices_choose_onnx: 'Обрати .onnx',
+            voices_choose_json: 'Обрати .onnx.json',
+            voices_upload_in_progress: 'Завантаження...',
+            voices_upload_ok: 'Завантажено',
+            voices_upload_fail: 'Помилка завантаження',
+            voices_settings_title: 'Налаштування основного голосу',
+            voices_settings_desc: 'Швидкість, інтонація, варіативність фонем, гучність і тестування активного голосу.',
+            voices_catalog_title: 'Каталог голосів',
+            voices_catalog_desc: 'Огляд і завантаження голосів Piper з каталогу Hugging Face.',
+            voices_activate: 'Активувати',
+            voices_active: 'Активний',
+            voices_delete: 'Видалити',
+            voices_none_installed: 'Ще немає голосів — завантаж вручну або обери з каталогу нижче.',
+            voices_confirm_delete: 'Видалити голос',
             patterns_title: 'Зареєстрованi патерни',
             patterns_desc: 'Англiйськi regex патерни для розпiзнавання голосових команд (усi патерни тiльки англiйською)',
             patterns_search: 'Шукати патерни...',
@@ -3022,7 +3060,7 @@
             if (btn.getAttribute('data-tab') === 'translate' && !state.translateLoaded) loadTranslateCatalog();
             if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadPromptsReadonly();
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
-            if (btn.getAttribute('data-tab') === 'patterns' && !state.patternsLoaded) loadPatterns();
+            if (btn.getAttribute('data-tab') === 'patterns') loadVoicesTab();
         });
     });
 
@@ -3104,6 +3142,154 @@
 
     // ══════════════════════════════════════════════════════════════
     //  Patterns
+    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
+    //  Voices tab (Piper installed list + upload + relocation)
+    // ══════════════════════════════════════════════════════════════
+    state.voicesRelocated = false;
+
+    function relocatePiperBlocks() {
+        if (state.voicesRelocated) return;
+        var section = $('dualVoiceSection');
+        var catToggle = $('piperCatalogToggle');
+        var cat = $('piperCatalog');
+        var slotSettings = $('voicesSlotSettings');
+        var slotCatalog = $('voicesSlotCatalog');
+        if (slotSettings && section) slotSettings.appendChild(section);
+        if (slotCatalog && catToggle) slotCatalog.appendChild(catToggle);
+        if (slotCatalog && cat) slotCatalog.appendChild(cat);
+        state.voicesRelocated = true;
+    }
+
+    async function loadInstalledVoices() {
+        var listEl = $('voicesInstalledList');
+        if (!listEl) return;
+        listEl.innerHTML = '<div class="label-xs" style="color:var(--tx3)">...</div>';
+        try {
+            var res = await api('/setup/tts/voices');
+            var voices = res.voices || [];
+            var activeId = res.active || '';
+            $('voicesInstalledCount').textContent = voices.length;
+            if (!voices.length) {
+                listEl.innerHTML = '<div class="label-xs" style="color:var(--tx3)">' +
+                    t('voices_none_installed') + '</div>';
+                return;
+            }
+            listEl.innerHTML = voices.map(function(v) {
+                var isActive = v.id === activeId;
+                var activeBtn = isActive
+                    ? '<button class="btn btn-green" disabled style="font-size:11px">' +
+                        t('voices_active') + '</button>'
+                    : '<button class="btn btn-blue voices-activate-btn" data-voice="' +
+                        v.id + '" style="font-size:11px">' + t('voices_activate') +
+                        '</button>';
+                var delBtn = isActive
+                    ? ''
+                    : '<button class="btn btn-ghost voices-delete-btn" data-voice="' +
+                        v.id + '" style="font-size:11px">' + t('voices_delete') +
+                        '</button>';
+                var lang = v.language || v.id.split('_')[0] || '';
+                var size = v.size_mb ? (v.size_mb.toFixed(1) + ' MB') : '';
+                return '<div class="catalog-row" style="display:flex;gap:8px;' +
+                    'align-items:center;padding:6px 0;border-bottom:1px solid var(--b)">' +
+                    '<div style="flex:1">' +
+                    '<div class="mono" style="font-size:12px">' + v.id + '</div>' +
+                    '<div class="label-xs" style="color:var(--tx3)">' + lang +
+                    ' · ' + size + '</div>' +
+                    '</div>' + activeBtn + delBtn + '</div>';
+            }).join('');
+            listEl.querySelectorAll('.voices-activate-btn').forEach(function(btn) {
+                btn.onclick = function() { activateVoice(btn.getAttribute('data-voice')); };
+            });
+            listEl.querySelectorAll('.voices-delete-btn').forEach(function(btn) {
+                btn.onclick = function() { deleteVoice(btn.getAttribute('data-voice')); };
+            });
+        } catch (e) {
+            listEl.innerHTML = '<div class="label-xs" style="color:var(--rd)">' +
+                (e.message || 'error') + '</div>';
+        }
+    }
+
+    async function activateVoice(voiceId) {
+        try {
+            var lang = (voiceId.split('-')[0] || '').split('_')[0] || 'en';
+            await postJson('/setup/tts/dual-config', {
+                primary: { voice: voiceId, lang: lang },
+            });
+            showToast(t('saved'), 'ok');
+            await loadInstalledVoices();
+            if (typeof loadDualVoiceStatus === 'function') await loadDualVoiceStatus();
+        } catch (e) {
+            showToast('Error: ' + (e.message || 'failed'), 'error');
+        }
+    }
+
+    async function deleteVoice(voiceId) {
+        if (!confirm(t('voices_confirm_delete') + ': ' + voiceId + '?')) return;
+        try {
+            await postJson('/setup/tts/delete', { voice: voiceId });
+            await loadInstalledVoices();
+        } catch (e) {
+            showToast('Error: ' + (e.message || 'failed'), 'error');
+        }
+    }
+
+    function wireVoiceUpload() {
+        var onnxInput = $('voiceUploadOnnx');
+        var jsonInput = $('voiceUploadJson');
+        var btn = $('voiceUploadBtn');
+        var statusEl = $('voiceUploadStatus');
+        if (!onnxInput || !jsonInput || !btn) return;
+        if (btn._wired) return;
+        btn._wired = true;
+
+        function refresh() {
+            var o = onnxInput.files && onnxInput.files[0];
+            var j = jsonInput.files && jsonInput.files[0];
+            $('voiceUploadOnnxName').textContent = o ? o.name : '—';
+            $('voiceUploadJsonName').textContent = j ? j.name : '—';
+            btn.disabled = !(o && j);
+        }
+        onnxInput.onchange = refresh;
+        jsonInput.onchange = refresh;
+        btn.onclick = async function() {
+            var o = onnxInput.files && onnxInput.files[0];
+            var j = jsonInput.files && jsonInput.files[0];
+            if (!o || !j) return;
+            var fd = new FormData();
+            fd.append('model', o);
+            fd.append('config', j);
+            btn.disabled = true;
+            statusEl.classList.remove('hidden');
+            statusEl.textContent = t('voices_upload_in_progress');
+            try {
+                var resp = await fetch('/api/ui/setup/tts/upload', {
+                    method: 'POST', body: fd,
+                });
+                var data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+                statusEl.textContent = t('voices_upload_ok') + ': ' + data.voice;
+                onnxInput.value = '';
+                jsonInput.value = '';
+                refresh();
+                await loadInstalledVoices();
+            } catch (e) {
+                statusEl.textContent = t('voices_upload_fail') + ': ' + (e.message || e);
+            } finally {
+                btn.disabled = !(onnxInput.files[0] && jsonInput.files[0]);
+            }
+        };
+    }
+
+    async function loadVoicesTab() {
+        relocatePiperBlocks();
+        wireVoiceUpload();
+        await loadInstalledVoices();
+        if (typeof loadDualVoiceStatus === 'function') await loadDualVoiceStatus();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Legacy Patterns table (unused — tab repurposed as Voices)
     // ══════════════════════════════════════════════════════════════
     state.patterns = [];
     state.patternsLoaded = false;
