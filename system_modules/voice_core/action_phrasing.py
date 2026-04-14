@@ -252,10 +252,23 @@ def _fmt_weather(ctx: dict[str, Any]) -> str:
         days = ctx.get("days") or []
         if not days:
             return "I don't have a forecast right now."
-        summary = ", ".join(
-            f"{d.get('label', 'day')}: {d.get('temp', '?')} degrees" for d in days[:3]
-        )
-        return f"Forecast — {summary}."
+        labels = ("tomorrow", "day after tomorrow", "in 3 days")
+        parts: list[str] = []
+        for i, d in enumerate(days[:3]):
+            label = labels[i] if i < len(labels) else f"day {i + 1}"
+            hi = d.get("temp_max")
+            lo = d.get("temp_min")
+            cond = d.get("condition")
+            if hi is not None and lo is not None:
+                piece = f"{label}: {hi} to {lo} degrees"
+            elif hi is not None:
+                piece = f"{label}: {hi} degrees"
+            else:
+                piece = label
+            if cond:
+                piece += f", {cond}"
+            parts.append(piece)
+        return "Forecast — " + "; ".join(parts) + "."
     temp = ctx.get("temperature")
     cond = ctx.get("condition") or ctx.get("summary")
     if temp is not None and cond:
