@@ -1261,6 +1261,16 @@ enable_kiosk_if_display() {
         usermod -aG docker "$target_user" 2>/dev/null || true
     fi
     chmod 0775 "$LOG_DIR" 2>/dev/null || true
+    # systemd-logind creates /run/user/$UID only while the user has an
+    # active login session. A background kiosk service outlives SSH
+    # logouts, so enable-linger tells logind to keep the runtime dir
+    # around permanently. Without this cage fails with:
+    #     mkdir: cannot create directory '/run/user/1000': Permission denied
+    # on every restart once the operator's SSH session closes.
+    if command -v loginctl >/dev/null 2>&1; then
+        loginctl enable-linger "$target_user" 2>/dev/null || \
+            warn "loginctl enable-linger $target_user failed — kiosk may die when session closes"
+    fi
 
     cat > /etc/systemd/system/selena-display.service <<EOF
 [Unit]
