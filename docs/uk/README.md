@@ -28,6 +28,17 @@
 
 ---
 
+## 📺 Відеоогляд
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=wgLH4JTtVDo">
+    <img src="https://img.youtube.com/vi/wgLH4JTtVDo/maxresdefault.jpg" alt="SelenaCore — відеоогляд" width="70%"/>
+  </a>
+</p>
+<p align="center"><sub>▶ <a href="https://www.youtube.com/watch?v=wgLH4JTtVDo">Дивитися на YouTube</a> — 5-хвилинний огляд: встановлення, голосовий стек, переклад, дашборд.</sub></p>
+
+---
+
 ## Чому SelenaCore?
 
 - **100% офлайн** — голосовий асистент, автоматизації, керування пристроями працюють на вашому залізі. Інтернет — опціонально.
