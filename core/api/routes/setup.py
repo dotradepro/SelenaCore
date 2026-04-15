@@ -2261,12 +2261,20 @@ async def _provision_install_native_services() -> None:
 
 
 async def _provision_finalize() -> None:
-    """Mark wizard as completed in config."""
+    """Mark wizard as completed in config and fan out the completion
+    event to every open /wizard/events subscriber so the kiosk (cog/WPE
+    WebKit) flips to the dashboard within ~200 ms of the last
+    provisioning task landing."""
     update_many([
         ("wizard", "completed", True),
         ("wizard", "provisioned", True),
         ("system", "initialized", True),
     ])
+    try:
+        from core.api.routes.ui import _broadcast_wizard_event
+        _broadcast_wizard_event("completed")
+    except Exception as exc:
+        logger.debug("wizard-events broadcast failed: %s", exc)
     await asyncio.sleep(0.5)
 
 

@@ -421,7 +421,7 @@ const uk = {
 
         // ── Wizard ──
         wizard: {
-            coreTitle: 'SmartHome LK Core',
+            coreTitle: 'SelenaCore',
             initialSetup: 'Початкове налаштування системи',
 
             // Steps

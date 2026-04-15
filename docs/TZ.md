@@ -1,4 +1,4 @@
-# SmartHome LK Core — Technical Specification v0.3-beta
+# SelenaCore — Technical Specification v0.3-beta
 **Date:** 2026-03-20 | **License:** Open Source (MIT) | **Status:** DRAFT
 
 ---
@@ -27,7 +27,7 @@
 
 ## 1. Introduction and Concept
 
-SmartHome LK Core is an open source (MIT) local smart home hub. It is installed on a Raspberry Pi 4/5 or any SBC running Linux. No subscription is required for basic operation. It integrates with the SmartHome LK platform for cloud features, module marketplace, and remote management.
+SelenaCore is an open source (MIT) local smart home hub. It is installed on a Raspberry Pi 4/5 or any SBC running Linux. No subscription is required for basic operation. It integrates with the SmartHome LK platform for cloud features, module marketplace, and remote management.
 
 ### 1.1 Three Fundamental Principles
 

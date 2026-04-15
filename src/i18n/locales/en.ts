@@ -421,7 +421,7 @@ const en = {
 
         // ── Wizard ──
         wizard: {
-            coreTitle: 'SmartHome LK Core',
+            coreTitle: 'SelenaCore',
             initialSetup: 'Initial system setup',
 
             // Steps

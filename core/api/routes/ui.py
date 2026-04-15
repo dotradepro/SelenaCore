@@ -1209,17 +1209,12 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     current_idx = step_names.index(step_name)
     next_step = step_names[current_idx + 1] if current_idx + 1 < len(step_names) else None
 
-    # If all steps done, mark wizard as completed
-    all_required_done = all(
-        sn in _wizard_steps_state
-        for sn, sd in WIZARD_STEPS.items()
-        if sd["required"]
-    )
-
-    if next_step is None or all_required_done:
-        # Single write path — flips core.yaml wizard.completed=true and
-        # broadcasts the SSE event. No in-memory mirror.
-        _persist_wizard_completed()
+    # Intermediate steps do NOT mark the wizard completed. The final flip
+    # happens in setup.py::_provision_finalize after the download/install
+    # pipeline succeeds — that's the last screen the user watches before
+    # the dashboard appears. Marking completed earlier (on admin_user or
+    # on step 10=import) pulled the kiosk onto the dashboard while the
+    # operator was still watching the provisioning progress.
 
     result = {
         "step": step_name,

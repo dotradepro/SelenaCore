@@ -1,5 +1,5 @@
 [Unit]
-Description=SelenaCore — SmartHome LK Core API
+Description=SelenaCore — SelenaCore API
 After=network.target docker.service
 Requires=docker.service
 
