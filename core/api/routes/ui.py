@@ -1043,19 +1043,34 @@ async def ui_module_proxy(name: str, path: str, request: Request) -> Response:
 
 # ---------- Wizard ----------
 
-# In-memory wizard state (persisted to core.yaml on completion)
-_wizard_state: dict[str, Any] = {
-    "completed": False,
-    "steps": {},
-}
+# ── Wizard state — single source of truth ───────────────────────────
+#
+# Canonical value of "is the wizard done" lives in core.yaml under
+# `wizard.completed`. No in-memory mirror of that flag. Every read goes
+# through `read_config()` which opens the file afresh — consistent with
+# /api/v1/system/info and the wizard/events SSE handler.
+#
+# Per-step progress (which steps have been submitted in the current
+# session so /wizard/requirements can return a progress breakdown) is
+# in-memory only because it's ephemeral UX data — step data itself
+# persists into core.yaml through _apply_wizard_step on each submit.
+_wizard_steps_state: dict[str, dict[str, Any]] = {}
+
+
+def _wizard_is_completed() -> bool:
+    """Return the authoritative wizard-completed flag from core.yaml."""
+    try:
+        return bool(read_config().get("wizard", {}).get("completed", False))
+    except Exception:
+        return False
 
 
 def _init_wizard_state() -> None:
-    """Load wizard state from core.yaml if available."""
-    yaml_cfg = get_yaml_config()
-    wizard_cfg = yaml_cfg.get("wizard", {})
-    _wizard_state["completed"] = wizard_cfg.get("completed", False)
-    _wizard_state["steps"] = wizard_cfg.get("steps", {})
+    """Backwards-compat shim — wizard completed flag no longer cached."""
+    # Kept as a no-op so core.main's lifespan can still call it without
+    # needing code changes elsewhere. If we ever reintroduce a
+    # step-progress persistence, this is where it'd hydrate.
+    return None
 
 
 # Define wizard steps with their required/optional status
@@ -1073,20 +1088,82 @@ WIZARD_STEPS = {
 }
 
 
+# ── Wizard completion SSE push ──────────────────────────────────────
+# Kiosk (cog / WPE WebKit) throttles background timers aggressively,
+# which makes polling /wizard/status unreliable: the kiosk could miss
+# the wizard_completed flip for minutes. A dedicated server-sent event
+# stream pushes the `completed` event the moment the wizard finishes on
+# ANY device (PC browser, phone, etc.) so the kiosk flips to the
+# dashboard within ~200 ms.
+_wizard_event_subscribers: "list[asyncio.Queue[dict[str, Any]]]" = []
+
+
+def _broadcast_wizard_event(event_type: str, data: dict[str, Any] | None = None) -> None:
+    """Fan out an event to every open /wizard/events subscriber."""
+    msg = {"type": event_type, "data": data or {}}
+    for q in list(_wizard_event_subscribers):
+        try:
+            q.put_nowait(msg)
+        except asyncio.QueueFull:
+            # Queue is size=0 by default (unbounded) so this shouldn't happen,
+            # but swallow defensively.
+            pass
+
+
+@router.get("/wizard/events")
+async def ui_wizard_events() -> StreamingResponse:
+    """Server-sent-events stream: pushes `completed` once wizard is done.
+
+    Connects under `!isConfigured`, disconnects on the `completed`
+    event or when the client goes away. Keepalive every 15s so middle
+    boxes don't close the TCP flow.
+    """
+    async def _stream():
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        _wizard_event_subscribers.append(queue)
+        try:
+            # If the wizard is ALREADY completed (e.g. subscriber arrived
+            # late, or reloads after completion), emit the event once
+            # right away and close — idempotent for clients.
+            if _wizard_is_completed():
+                yield "event: completed\ndata: {}\n\n"
+                return
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    payload = json.dumps(msg.get("data") or {})
+                    yield f"event: {msg['type']}\ndata: {payload}\n\n"
+                    if msg["type"] == "completed":
+                        return
+                except asyncio.TimeoutError:
+                    # SSE comment for keepalive — ignored by EventSource
+                    yield ": keepalive\n\n"
+        finally:
+            try:
+                _wizard_event_subscribers.remove(queue)
+            except ValueError:
+                pass
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
 @router.get("/wizard/status")
 async def ui_wizard_status() -> dict[str, Any]:
-    yaml_cfg = read_config()
-    wizard_cfg = yaml_cfg.get("wizard", {})
-    completed = wizard_cfg.get("completed", False) or _wizard_state["completed"]
-    return {"completed": completed}
+    return {"completed": _wizard_is_completed()}
 
 
 @router.get("/wizard/requirements")
 async def ui_wizard_requirements() -> dict[str, Any]:
-    yaml_cfg = read_config()
-    wizard_cfg = yaml_cfg.get("wizard", {})
-    completed = wizard_cfg.get("completed", False) or _wizard_state["completed"]
-    done_steps = _wizard_state.get("steps", {})
+    completed = _wizard_is_completed()
+    done_steps = _wizard_steps_state
 
     steps: dict[str, Any] = {}
     for step_name, step_def in WIZARD_STEPS.items():
@@ -1124,7 +1201,7 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
     extra = await _apply_wizard_step(step_name, body.data)
 
     # Mark step as done only after successful application
-    _wizard_state["steps"][step_name] = body.data
+    _wizard_steps_state[step_name] = body.data
     logger.info("Wizard step completed: %s", step_name)
 
     # Determine next step
@@ -1134,14 +1211,14 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
 
     # If all steps done, mark wizard as completed
     all_required_done = all(
-        sn in _wizard_state["steps"]
+        sn in _wizard_steps_state
         for sn, sd in WIZARD_STEPS.items()
         if sd["required"]
     )
 
     if next_step is None or all_required_done:
-        _wizard_state["completed"] = True
-        # Persist to core.yaml
+        # Single write path — flips core.yaml wizard.completed=true and
+        # broadcasts the SSE event. No in-memory mirror.
         _persist_wizard_completed()
 
     result = {
@@ -1155,7 +1232,7 @@ async def ui_wizard_step(body: WizardStepRequest) -> dict[str, Any]:
 
 
 def _persist_wizard_completed() -> None:
-    """Write wizard_completed=true to core.yaml."""
+    """Flip core.yaml `wizard.completed=true` and broadcast SSE."""
     try:
         config = read_config()
         config.setdefault("wizard", {})["completed"] = True
@@ -1163,13 +1240,13 @@ def _persist_wizard_completed() -> None:
         logger.info("Wizard completed, persisted to config")
     except Exception as exc:
         logger.error("Failed to persist wizard state: %s", exc)
+    _broadcast_wizard_event("completed")
 
 
 @router.post("/wizard/reset")
 async def ui_wizard_reset() -> dict[str, Any]:
     """Reset wizard state — allows re-running the initial setup."""
-    _wizard_state["completed"] = False
-    _wizard_state["steps"] = {}
+    _wizard_steps_state.clear()
     try:
         config = read_config()
         config["wizard"] = {"completed": False}

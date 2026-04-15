@@ -31,29 +31,25 @@ export default function App() {
     fetchWallpapers();
   }, [fetchWizardStatus, fetchWizardRequirements, fetchThemes, fetchWallpapers]);
 
-  // While the wizard is being filled out we DO NOTHING in the background:
-  //   no polling, no WebSocket sync, no wizardLoading flips.
-  // Any background churn caused Wizard to unmount/remount, wiping the
-  // user's selections mid-configuration. The wizard is a self-contained
-  // form — until the user clicks "Finish" there is nothing to sync.
-  //
-  // Cross-tab handoff (wizard completed in another browser / on the
-  // kiosk display while the operator finishes on a laptop) is handled
-  // by a single cheap poll every 30s that reads BOTH /wizard/status
-  // (drives `isConfigured`) and /wizard/requirements (drives
-  // `canProceed`). App.tsx renders the Dashboard only when
-  // `isConfigured && canProceed`; without refreshing requirements in
-  // the poll, the kiosk stayed on the wizard screen after it was
-  // completed elsewhere because canProceed remained stale from mount.
-  // Neither of these fetches touches `wizardLoading`, so no spinner
-  // flash and no remount.
+  // Cross-device wizard handoff (e.g. operator finishes the wizard on a
+  // laptop while the kiosk display is still showing the wizard) is
+  // delivered via SSE at `/api/ui/wizard/events` instead of polling.
+  // Cog/WPE WebKit throttles background timers aggressively and a 30s
+  // poll routinely misses the flip for minutes; the SSE push lands in
+  // ~200 ms regardless of focus state. Connect only while not yet
+  // configured and auto-close on the first `completed` event.
   useEffect(() => {
     if (isConfigured) return;
-    const id = setInterval(() => {
+    const es = new EventSource('/api/ui/wizard/events');
+    es.addEventListener('completed', () => {
+      // Re-fetch both endpoints so the dashboard gate (isConfigured &&
+      // canProceed) flips together — skipping requirements kept the
+      // kiosk on the wizard page after a PC-side completion.
       fetchWizardStatus();
       fetchWizardRequirements();
-    }, 30_000);
-    return () => clearInterval(id);
+      es.close();
+    });
+    return () => es.close();
   }, [isConfigured, fetchWizardStatus, fetchWizardRequirements]);
 
   // Apply theme and listen for system preference changes
@@ -81,8 +77,15 @@ export default function App() {
     );
   }
 
-  const canProceed = wizardRequirements?.can_proceed ?? false;
-  const shouldBlock = !isConfigured || !canProceed;
+  // Dashboard appears when the wizard is completed on the backend,
+  // period. `canProceed` is for progress-within-wizard UX, not a
+  // dashboard gate. Previously we gated on BOTH (`!isConfigured ||
+  // !canProceed`), which meant a kiosk that finished /wizard/status
+  // BEFORE /wizard/requirements resolved rendered the wizard component
+  // and the Wizard's persisted-step localStorage froze it on the last
+  // seen step — even when requirements eventually arrived. Single
+  // source of truth = `isConfigured`.
+  const shouldBlock = !isConfigured;
 
   if (shouldBlock) {
     if (setupStage === 'wizard') {

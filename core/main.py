@@ -265,6 +265,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     sync_bridge = get_sync_bridge()
     sync_bridge.start(bus, get_sync_manager())
 
+    # Sync in-memory wizard state with the persisted core.yaml so that a
+    # container restart after wizard completion doesn't resurrect a
+    # half-empty _wizard_state that would mislead /wizard/requirements.
+    try:
+        from core.api.routes.ui import _init_wizard_state
+        _init_wizard_state()
+    except Exception as exc:
+        logger.warning("Could not initialise wizard state from config: %s", exc)
+
     # Publish startup event
     from core.version import VERSION
     await bus.publish(

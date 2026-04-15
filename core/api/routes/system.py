@@ -107,8 +107,12 @@ def _detect_hdmi_connected() -> bool:
 async def system_info() -> dict[str, Any]:
     import platform
 
-    from core.config import get_yaml_config
-    yaml_cfg = get_yaml_config()
+    # read_config() re-reads core.yaml every call; get_yaml_config()
+    # caches, so wizard completion writes on disk weren't visible here
+    # until container restart. ui.py/wizard/status uses read_config too —
+    # keep them in sync.
+    from core.config_writer import read_config
+    yaml_cfg = read_config()
     system_cfg = yaml_cfg.get("system", {})
     wizard_cfg = yaml_cfg.get("wizard", {})
 
