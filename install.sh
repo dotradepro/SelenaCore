@@ -1261,6 +1261,19 @@ enable_kiosk_if_display() {
         usermod -aG docker "$target_user" 2>/dev/null || true
     fi
     chmod 0775 "$LOG_DIR" 2>/dev/null || true
+
+    # Wipe cog / WPE WebKit cache + storage for the kiosk user. Without
+    # this, a fresh re-install still renders the previous session's
+    # wizard state (localStorage survives a backend wipe because cog
+    # keeps its data under the operator's $HOME, not under
+    # /var/lib/selena).
+    local tu_home
+    tu_home="$(getent passwd "$target_user" | cut -d: -f6 2>/dev/null)"
+    if [ -n "$tu_home" ]; then
+        rm -rf "$tu_home/.cache/wpe" "$tu_home/.local/share/wpe" \
+               "$tu_home/.cache/cog" "$tu_home/.local/share/cog" \
+               2>/dev/null || true
+    fi
     # systemd-logind creates /run/user/$UID only while the user has an
     # active login session. A background kiosk service outlives SSH
     # logouts, so enable-linger tells logind to keep the runtime dir
@@ -1309,6 +1322,33 @@ EOF
 }
 
 # ── Systemd unit staging (NOT enabled — wizard does that) ──────────
+
+# ── Native systemd units (piper-tts.service + selena-display stage) ───
+#
+# Delegates to scripts/install-systemd.sh so the wizard's
+# `install_native_services` step and install.sh share one implementation.
+# After this call piper-tts.service is active on :5100 and the
+# /api/ui/setup/tts/test endpoint stops returning 503, even before the
+# user opens the wizard.
+
+install_native_systemd_units() {
+    local helper="$INSTALL_DIR/scripts/install-systemd.sh"
+    [ -f "$helper" ] || return 0
+    if ! command -v systemctl >/dev/null 2>&1; then
+        log "systemctl not found — skipping native unit install"
+        return 0
+    fi
+    title "Installing native systemd units (piper-tts.service, ...)"
+    if $DRY_RUN; then
+        echo "    [dry-run] bash $helper"
+        return 0
+    fi
+    if bash "$helper" 2>&1 | sed 's/^/    /'; then
+        log "Native units installed (wizard's install_native_services step will no-op)"
+    else
+        warn "install-systemd.sh reported errors — piper-tts may be missing"
+    fi
+}
 
 stage_systemd_units() {
     title "Staging systemd units (not enabled)"
@@ -1427,6 +1467,7 @@ main() {
     fi
 
     stage_systemd_units
+    install_native_systemd_units
     enable_kiosk_if_display
     print_banner
 

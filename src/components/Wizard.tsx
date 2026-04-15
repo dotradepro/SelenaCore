@@ -212,6 +212,39 @@ export default function Wizard() {
     } catch {}
   }, [formData]);
 
+  // Fresh-install detection. The backend writes a UUID at install time
+  // into $CORE_DATA_DIR/.install-id and exposes it via /api/v1/system/info
+  // → `install_id`. We cache that value in localStorage. A mismatch means
+  // the server was re-installed under a browser / kiosk WebKit that still
+  // holds the previous operator's wizard progress; clear it all so the
+  // user sees a clean language-select instead of the last step.
+  const INSTALL_ID_KEY = 'selena-install-id';
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await fetch('/api/v1/system/info');
+        if (!resp.ok) return;
+        const info = await resp.json();
+        const backendId = String(info?.install_id || '');
+        if (!backendId) return;
+        const cachedId = localStorage.getItem(INSTALL_ID_KEY);
+        if (cachedId && cachedId !== backendId) {
+          // Stale progress from a previous install.
+          localStorage.removeItem(WIZARD_STEP_KEY);
+          localStorage.removeItem(WIZARD_FORM_KEY);
+          localStorage.removeItem('selena-setup-stage');
+          localStorage.setItem(INSTALL_ID_KEY, backendId);
+          if (!cancelled) window.location.reload();
+          return;
+        }
+        if (!cachedId) localStorage.setItem(INSTALL_ID_KEY, backendId);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Step 8: QR phone registration state
   const [phoneQrImage, setPhoneQrImage] = useState<string | null>(null);
   const [phoneQrSessionId, setPhoneQrSessionId] = useState<string | null>(null);

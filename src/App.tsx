@@ -37,17 +37,24 @@ export default function App() {
   // user's selections mid-configuration. The wizard is a self-contained
   // form — until the user clicks "Finish" there is nothing to sync.
   //
-  // Cross-tab handoff (wizard completed in another browser) is handled
-  // by a single cheap poll every 30s that ONLY reads /api/ui/wizard/status
-  // and only flips isConfigured → true; it never touches wizardLoading,
-  // so no spinner flash and no remount.
+  // Cross-tab handoff (wizard completed in another browser / on the
+  // kiosk display while the operator finishes on a laptop) is handled
+  // by a single cheap poll every 30s that reads BOTH /wizard/status
+  // (drives `isConfigured`) and /wizard/requirements (drives
+  // `canProceed`). App.tsx renders the Dashboard only when
+  // `isConfigured && canProceed`; without refreshing requirements in
+  // the poll, the kiosk stayed on the wizard screen after it was
+  // completed elsewhere because canProceed remained stale from mount.
+  // Neither of these fetches touches `wizardLoading`, so no spinner
+  // flash and no remount.
   useEffect(() => {
     if (isConfigured) return;
     const id = setInterval(() => {
       fetchWizardStatus();
+      fetchWizardRequirements();
     }, 30_000);
     return () => clearInterval(id);
-  }, [isConfigured, fetchWizardStatus]);
+  }, [isConfigured, fetchWizardStatus, fetchWizardRequirements]);
 
   // Apply theme and listen for system preference changes
   useEffect(() => {
