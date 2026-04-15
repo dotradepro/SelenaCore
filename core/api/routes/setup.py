@@ -15,6 +15,7 @@ No module_token auth — localhost only, protected by iptables.
 from __future__ import annotations
 
 import asyncio
+import time
 import logging
 import os
 import re
@@ -1216,7 +1217,7 @@ async def tts_catalog(
     """
     if page < 1:
         page = 1
-    per_page = max(1, min(per_page, 100))
+    per_page = max(1, min(per_page, 2000))  # Piper has ~150 voices; wizard pulls whole catalog in one shot
 
     voices = await _load_piper_catalog()
     if voices is None:
@@ -1842,6 +1843,25 @@ async def start_provision() -> dict[str, Any]:
     if not (_emb_dir / "model.onnx").is_file():
         tasks.append({"id": "download_embedding", "label": "download_embedding", "status": "pending"})
 
+    # Install Argos translate pair for the system language (XX↔en) if the
+    # user picked a non-English system language. Both directions are needed
+    # so the LLM bridge can translate input AND output. Skipped if English
+    # or if the pair is already installed.
+    sys_lang = (config.get("system", {}).get("language") or "").strip().lower()
+    if sys_lang and sys_lang != "en":
+        try:
+            import argostranslate.package as _pkg
+            _installed = {(p.from_code, p.to_code) for p in _pkg.get_installed_packages()}
+            if (sys_lang, "en") not in _installed or ("en", sys_lang) not in _installed:
+                tasks.append({
+                    "id": "download_translate",
+                    "label": "download_translate",
+                    "status": "pending",
+                    "lang": sys_lang,
+                })
+        except Exception as exc:
+            logger.debug("Argos install-check skipped: %s", exc)
+
     # Check if LLM model needs downloading
     if llm_model:
         tasks.append({"id": "download_llm", "label": "download_llm", "status": "pending", "model": llm_model})
@@ -1882,6 +1902,8 @@ async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) 
                     await _provision_download_tts(tts_voice, task)
                 elif task["id"] == "download_embedding":
                     await _provision_download_embedding(task)
+                elif task["id"] == "download_translate":
+                    await _provision_download_translate(task)
                 elif task["id"] == "download_llm":
                     await _provision_download_llm(llm_model or "", task)
                 elif task["id"] == "install_native_services":
@@ -2173,6 +2195,36 @@ def _copy_local_piper_voice(voice_id: str, dest_dir: Path) -> bool:
                 shutil.copy2(json_file, dest_dir / json_file.name)
             return True
     return False
+
+
+async def _provision_download_translate(task: dict[str, Any]) -> None:
+    """Install both Argos translate directions (XX→en and en→XX) for the
+    system language picked in the wizard. Polls the existing downloader's
+    state machine so progress shows up via /translate/download/status.
+    """
+    from core.translation.downloader import install_pair, get_download_status
+    lang = task.get("lang") or ""
+    if not lang or lang == "en":
+        task["status"] = "done"
+        return
+    # install_pair runs uk→en then en→uk serially; total ≈ 2 min on Pi.
+    asyncio.create_task(install_pair(lang))
+    deadline = time.time() + 300  # 5 min hard cap
+    while time.time() < deadline:
+        await asyncio.sleep(2)
+        st = get_download_status()
+        if st.get("error"):
+            raise RuntimeError(f"Argos download failed: {st['error']}")
+        task["progress"] = st.get("progress", 0)
+        task["package"] = st.get("package", "")
+        # install_pair sequences two install_package calls; we consider
+        # ourselves done only when BOTH directions are on disk.
+        if not st.get("active"):
+            import argostranslate.package as _pkg
+            installed = {(p.from_code, p.to_code) for p in _pkg.get_installed_packages()}
+            if (lang, "en") in installed and ("en", lang) in installed:
+                return
+    raise RuntimeError("Argos download timed out after 5 min")
 
 
 async def _provision_install_native_services() -> None:

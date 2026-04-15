@@ -54,11 +54,13 @@ install_unit() {
 install_unit "$REPO_DIR/smarthome-core.service"
 install_unit "$REPO_DIR/smarthome-agent.service"
 
-# Piper GPU server (only if user picked GPU TTS in the wizard).
-# The service file uses __USER__ / __HOME__ / __SELENA_DIR__ / __PYTHON__
-# placeholders that must be substituted before install.
-if grep -qE 'cuda:\s*true' "$REPO_DIR/config/core.yaml" 2>/dev/null; then
-    if [ -f "$REPO_DIR/scripts/piper-tts.service" ]; then
+# Piper TTS server — install whenever a piper-tts Python interpreter is
+# available, regardless of CUDA. Historically this was gated on
+# `cuda: true` in core.yaml, but piper runs fine on CPU (just slower),
+# and without the service /api/ui/setup/tts/test returns 503 because the
+# backend only talks to localhost:5100.
+if [ -f "$REPO_DIR/scripts/piper-tts.service" ]; then
+    if true; then
         PIPER_USER="${SELENA_PIPER_USER:-${SUDO_USER:-root}}"
         PIPER_HOME="$(getent passwd "$PIPER_USER" | cut -d: -f6)"
         [ -z "$PIPER_HOME" ] && PIPER_HOME="/root"

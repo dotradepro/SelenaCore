@@ -42,17 +42,27 @@ COPY requirements.txt .
 # Fix: install argostranslate with --no-deps and hand-pick its real
 # runtime deps. Skips the entire stanza/torch/CUDA chain (~1.8 GB saved).
 RUN pip install --no-cache-dir --no-deps "argostranslate>=1.9.0" \
+    && pip install --no-cache-dir --no-deps "stanza==1.10.1" \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch \
     && pip install --no-cache-dir \
         sentencepiece \
         ctranslate2 \
-        sacremoses
+        sacremoses \
+        emoji \
+        protobuf \
+        networkx \
+        minisbd \
+        onnxruntime \
+        "numpy>=1.22.2"
 
 # Main install — pip sees argostranslate already satisfied, skips it.
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Defensive belt-and-braces: if a future requirements.txt bump smuggles in
 # a torch dep, strip it so the image stays lean. No-op on clean builds.
-RUN pip uninstall -y torch stanza triton \
+# torch (CPU-only) is KEPT — stanza/argostranslate import-chain requires
+# it, and the CPU wheel is ~200 MB vs the 1.5 GB CUDA variant.
+RUN pip uninstall -y triton \
        nvidia-cublas nvidia-cuda-cupti nvidia-cuda-nvrtc nvidia-cuda-runtime \
        nvidia-cudnn-cu13 nvidia-cufft nvidia-cufile nvidia-curand \
        nvidia-cusolver nvidia-cusparse nvidia-cusparselt-cu13 \

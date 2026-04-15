@@ -227,7 +227,7 @@ const en = {
             llmActive: 'Active',
 
             // STT / TTS
-            sttModel: 'STT Model (Whisper)',
+            sttModel: 'STT Model (Vosk)',
             ttsVoice: 'TTS Voice (Piper)',
             installed: 'Installed',
             notInstalled: 'Not installed',
@@ -482,8 +482,8 @@ const en = {
             timezoneSelected: 'Selected',
 
             // Step 5 - STT
-            sttTitle: 'Speech Recognition (Whisper)',
-            sttDesc: 'Whisper STT supports 99 languages with automatic language detection. Select a model size below.',
+            sttTitle: 'Speech Recognition (Vosk)',
+            sttDesc: 'Vosk STT runs fully offline on any device. Pick a model matching your language.',
             sttSmallUk: 'Ukrainian — compact, fast',
             sttSmallRu: 'Russian — compact, fast',
             sttSmallEn: 'English — compact, fast',
@@ -568,7 +568,10 @@ const en = {
             provTask_apply_config: 'Applying configuration',
             provTask_download_stt: 'Downloading speech recognition model',
             provTask_download_tts: 'Downloading voice model',
+            provTask_download_embedding: 'Downloading embedding model',
+            provTask_download_translate: 'Installing offline translator (Argos)',
             provTask_download_llm: 'Downloading language model',
+            provTask_install_native_services: 'Installing native services',
             provTask_finalize: 'Finalizing setup',
         },
 

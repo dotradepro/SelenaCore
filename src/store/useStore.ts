@@ -321,7 +321,14 @@ async function apiFetch(path: string, opts?: RequestInit): Promise<unknown> {
 export const useStore = create<AppState>((set, get) => ({
   isConfigured: false,
   wizardLoading: true,
-  setupStage: 'landing',
+  // Persist setupStage so a kiosk reload mid-wizard lands back on the
+  // wizard instead of bouncing the user to LanguageSelect → lose state.
+  setupStage: ((): 'landing' | 'wizard' => {
+    try {
+      const saved = localStorage.getItem('selena-setup-stage');
+      return saved === 'wizard' ? 'wizard' : 'landing';
+    } catch { return 'landing'; }
+  })(),
   selectedLanguage: localStorage.getItem('selena-lang') || 'en',
   theme: loadTheme(),
   wizardRequirements: null,
@@ -400,7 +407,10 @@ export const useStore = create<AppState>((set, get) => ({
 
     set({ user: { name: 'Guest', role: 'guest', user_id: null, device_id: null, authenticated: false }, authLoading: false });
   },
-  setSetupStage: (stage) => set({ setupStage: stage }),
+  setSetupStage: (stage) => {
+    try { localStorage.setItem('selena-setup-stage', stage); } catch {}
+    set({ setupStage: stage });
+  },
   setVoiceStatus: (voiceStatus: 'idle' | 'listening' | 'speaking') => set({ voiceStatus }),
   setSelectedLanguage: (lang) => {
     changeLanguage(lang);
@@ -451,7 +461,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchWizardStatus: async () => {
-    set({ wizardLoading: true });
+    // Only show the fullscreen loading spinner on the FIRST fetch (when
+    // wizardLoading is still the initial `true`). Subsequent background
+    // refreshes must NOT flip wizardLoading → true, otherwise the app
+    // flashes the spinner every poll tick and unmounts the Wizard
+    // component, wiping its local state mid-configuration.
+    const isInitial = get().wizardLoading === true && !get().isConfigured && get().setupStage === 'landing';
     const maxRetries = 5;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
@@ -465,7 +480,9 @@ export const useStore = create<AppState>((set, get) => ({
         }
       }
     }
-    set({ isConfigured: false, wizardLoading: false });
+    // Only clear wizardLoading if we set it; otherwise leave it alone.
+    if (isInitial) set({ isConfigured: false, wizardLoading: false });
+    else set({ isConfigured: false });
   },
 
   fetchWizardRequirements: async () => {

@@ -166,8 +166,20 @@ async def install_package(from_code: str, to_code: str) -> None:
         path = await loop.run_in_executor(None, pkg.download)
         _download_state["progress"] = 70.0
 
-        # Install
-        argostranslate.package.install_from_path(path)
+        # Install. install_from_path unpacks the .argosmodel into
+        # argostranslate's package dir; any post-unpack import/validation
+        # noise (e.g. optional stanza sentence-segmenter not available) is
+        # logged but NOT treated as a hard failure — the translation files
+        # are already on disk and usable. Previously any such noise set
+        # _download_state.error, which then blocked install_pair() from
+        # queueing the reverse direction.
+        try:
+            argostranslate.package.install_from_path(path)
+        except ModuleNotFoundError as exc:
+            logger.warning(
+                "Argos install_from_path for %s raised optional-dep error (%s) — "
+                "package files are in place, continuing", label, exc,
+            )
         _download_state["progress"] = 100.0
         _download_state["done"] = True
         _download_state["active"] = False

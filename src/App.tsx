@@ -31,17 +31,23 @@ export default function App() {
     fetchWallpapers();
   }, [fetchWizardStatus, fetchWizardRequirements, fetchThemes, fetchWallpapers]);
 
-  // Poll wizard status while not configured — covers the case where the
-  // wizard was completed in another browser/tab (e.g. PC browser while
-  // the kiosk device screen still shows the wizard).
+  // While the wizard is being filled out we DO NOTHING in the background:
+  //   no polling, no WebSocket sync, no wizardLoading flips.
+  // Any background churn caused Wizard to unmount/remount, wiping the
+  // user's selections mid-configuration. The wizard is a self-contained
+  // form — until the user clicks "Finish" there is nothing to sync.
+  //
+  // Cross-tab handoff (wizard completed in another browser) is handled
+  // by a single cheap poll every 30s that ONLY reads /api/ui/wizard/status
+  // and only flips isConfigured → true; it never touches wizardLoading,
+  // so no spinner flash and no remount.
   useEffect(() => {
     if (isConfigured) return;
     const id = setInterval(() => {
       fetchWizardStatus();
-      fetchWizardRequirements();
-    }, 10_000);
+    }, 30_000);
     return () => clearInterval(id);
-  }, [isConfigured, fetchWizardStatus, fetchWizardRequirements]);
+  }, [isConfigured, fetchWizardStatus]);
 
   // Apply theme and listen for system preference changes
   useEffect(() => {
@@ -49,11 +55,14 @@ export default function App() {
     return cleanup;
   }, [initThemeListener]);
 
-  // Connect real-time sync stream (layout + module state) once on mount
+  // Connect real-time sync stream (layout + module state) ONLY after the
+  // wizard is done. During setup there's nothing to sync and every `hello`
+  // payload was clobbering local UI state.
   useEffect(() => {
+    if (!isConfigured) return;
     const disconnect = connectSyncStream();
     return disconnect;
-  }, [connectSyncStream]);
+  }, [isConfigured, connectSyncStream]);
 
   if (wizardLoading) {
     return (

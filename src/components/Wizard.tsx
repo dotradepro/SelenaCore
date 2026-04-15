@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
@@ -92,7 +92,26 @@ export default function Wizard() {
   const { t } = useTranslation();
   const selectedLanguage = useStore((state) => state.selectedLanguage);
   const setSelectedLanguage = useStore((state) => state.setSelectedLanguage);
-  const [step, setStep] = useState(1);
+  // Persist wizard step across page reloads (kiosk watchdog in
+  // useConnectionHealth.ts force-reloads the page when WS is stale for 60s;
+  // without persistence the wizard restarts from step 1 mid-install and
+  // re-asks language/wifi even though the backend already stored them).
+  const WIZARD_STEP_KEY = 'selena-wizard-step';
+  const [step, setStepRaw] = useState<number>(() => {
+    try {
+      const saved = parseInt(localStorage.getItem(WIZARD_STEP_KEY) || '', 10);
+      return Number.isFinite(saved) && saved >= 1 ? saved : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const setStep = (value: number | ((prev: number) => number)) => {
+    setStepRaw((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value;
+      try { localStorage.setItem(WIZARD_STEP_KEY, String(next)); } catch {}
+      return next;
+    });
+  };
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setConfigured = useStore((state) => state.setConfigured);
@@ -125,20 +144,22 @@ export default function Wizard() {
   const [tzSearch, setTzSearch] = useState('');
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
-  // Online STT (Vosk) catalog state
-  const [sttCatalog, setSttCatalog] = useState<any[]>([]);
+  // Online STT (Vosk) catalog state. Raw catalog is fetched ONCE per step
+  // entry; filtering/pagination happens client-side on sttRaw, derived into
+  // sttCatalog via useMemo below. This removes the "refreshing on every
+  // filter click" behaviour where picking a language triggered a fresh
+  // network round-trip and hid the list mid-selection.
+  const [sttRaw, setSttRaw] = useState<any[]>([]);
   const [sttLanguages, setSttLanguages] = useState<{ code: string; label: string; count: number }[]>([]);
   const [sttFilter, setSttFilter] = useState({ lang: '', quality: '', q: '', page: 1, per_page: 20 });
-  const [sttPagination, setSttPagination] = useState({ total: 0, pages: 1 });
   const [sttLoading, setSttLoading] = useState(false);
   const [sttError, setSttError] = useState<string | null>(null);
 
-  // Online TTS (Piper) catalog state
-  const [ttsCatalog, setTtsCatalog] = useState<any[]>([]);
+  // Online TTS (Piper) catalog state — same single-fetch pattern.
+  const [ttsRaw, setTtsRaw] = useState<any[]>([]);
   const [ttsLanguages, setTtsLanguages] = useState<{ code: string; label: string; count: number }[]>([]);
   const [ttsQualities, setTtsQualities] = useState<string[]>(['x_low', 'low', 'medium', 'high']);
   const [ttsFilter, setTtsFilter] = useState({ lang: '', quality: '', q: '', page: 1, per_page: 20 });
-  const [ttsPagination, setTtsPagination] = useState({ total: 0, pages: 1 });
   const [ttsLoading, setTtsLoading] = useState(false);
   const [ttsError, setTtsError] = useState<string | null>(null);
 
@@ -153,20 +174,43 @@ export default function Wizard() {
   const [provisionTotal, setProvisionTotal] = useState(0);
   const provisionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [formData, setFormData] = useState<FormData>({
-    lang: selectedLanguage,
-    wifi: '',
-    wifiPassword: '',
-    name: t('wizard.defaultHomeName'),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
-    stt: 'small',
-    tts: 'uk_UA-ukrainian_tts-medium',
-    username: 'admin',
-    pin: '',
-    kiosk_name: t('wizard.kioskDefaultName'),
-    platformHash: '',
-    importSource: '',
+  // Persist formData across page reloads AND component re-mounts. Any
+  // transient re-mount (e.g. wizardRequirements hiccup flipping App.tsx's
+  // canProceed) would otherwise zap every selection the user made.
+  const WIZARD_FORM_KEY = 'selena-wizard-formdata';
+  const [formData, setFormData] = useState<FormData>(() => {
+    const defaults: FormData = {
+      lang: selectedLanguage,
+      wifi: '',
+      wifiPassword: '',
+      name: t('wizard.defaultHomeName'),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
+      stt: 'small',
+      tts: 'uk_UA-ukrainian_tts-medium',
+      username: 'admin',
+      pin: '',
+      kiosk_name: t('wizard.kioskDefaultName'),
+      platformHash: '',
+      importSource: '',
+    };
+    try {
+      const saved = localStorage.getItem(WIZARD_FORM_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return { ...defaults, ...parsed, wifiPassword: '', pin: '' }; // never persist secrets
+      }
+    } catch {}
+    return defaults;
   });
+
+  // Write-through every change (debounced via React batching).
+  useEffect(() => {
+    try {
+      // Strip secrets before persisting.
+      const safe = { ...formData, wifiPassword: undefined, pin: undefined };
+      localStorage.setItem(WIZARD_FORM_KEY, JSON.stringify(safe));
+    } catch {}
+  }, [formData]);
 
   // Step 8: QR phone registration state
   const [phoneQrImage, setPhoneQrImage] = useState<string | null>(null);
@@ -439,58 +483,74 @@ export default function Wizard() {
     setSttLoading(true);
     setSttError(null);
     try {
-      const params = new URLSearchParams();
-      if (sttFilter.lang) params.set('lang', sttFilter.lang);
-      if (sttFilter.quality) params.set('quality', sttFilter.quality);
-      if (sttFilter.q) params.set('q', sttFilter.q);
-      params.set('page', String(sttFilter.page));
-      params.set('per_page', String(sttFilter.per_page));
-      const res = await fetch('/api/ui/vosk/catalog?' + params.toString());
+      // Ask the backend for the ENTIRE catalog up-front (per_page=1000).
+      // Upstream Vosk has <100 models total, so the payload is small
+      // (~30 KB) and we filter/paginate it locally afterwards.
+      const res = await fetch('/api/ui/vosk/catalog?per_page=1000');
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail || `HTTP ${res.status}`);
       }
       const data = await res.json();
       const raw = Array.isArray(data.models) ? data.models : [];
-      setSttCatalog(raw);
-      setSttPagination({ total: data.total || 0, pages: data.pages || 1 });
+      setSttRaw(raw);
       if (Array.isArray(data.languages) && data.languages.length) {
         setSttLanguages(data.languages);
       }
-      // Auto-select on first load if nothing chosen yet
       if (!formData.stt || formData.stt === 'small') {
         const active = raw.find((m: any) => m.active);
         const pick = active || raw[0];
         if (pick) setFormData(prev => ({ ...prev, stt: pick.name }));
       }
     } catch (e: any) {
-      setSttCatalog([]);
-      setSttPagination({ total: 0, pages: 1 });
+      setSttRaw([]);
       setSttError(e?.message || 'Catalog unreachable');
     } finally {
       setSttLoading(false);
     }
   };
 
+  // Client-side filter + pagination of the raw catalog. Runs on every
+  // sttFilter change without any network round-trip, so the language
+  // dropdown reacts instantly.
+  const sttCatalog = useMemo(() => {
+    const q = sttFilter.q.trim().toLowerCase();
+    const filtered = sttRaw.filter((m: any) => {
+      if (sttFilter.lang && (m.lang || '').toLowerCase() !== sttFilter.lang.toLowerCase()) return false;
+      if (sttFilter.quality && (m.type || m.quality || '') !== sttFilter.quality) return false;
+      if (q && !(String(m.name || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
+    const start = (sttFilter.page - 1) * sttFilter.per_page;
+    return filtered.slice(start, start + sttFilter.per_page);
+  }, [sttRaw, sttFilter]);
+
+  const sttPagination = useMemo(() => {
+    const q = sttFilter.q.trim().toLowerCase();
+    const total = sttRaw.filter((m: any) => {
+      if (sttFilter.lang && (m.lang || '').toLowerCase() !== sttFilter.lang.toLowerCase()) return false;
+      if (sttFilter.quality && (m.type || m.quality || '') !== sttFilter.quality) return false;
+      if (q && !(String(m.name || '').toLowerCase().includes(q))) return false;
+      return true;
+    }).length;
+    return { total, pages: Math.max(1, Math.ceil(total / sttFilter.per_page)) };
+  }, [sttRaw, sttFilter]);
+
   const fetchTtsCatalog = async () => {
     setTtsLoading(true);
     setTtsError(null);
     try {
-      const params = new URLSearchParams();
-      if (ttsFilter.lang) params.set('lang', ttsFilter.lang);
-      if (ttsFilter.quality) params.set('quality', ttsFilter.quality);
-      if (ttsFilter.q) params.set('q', ttsFilter.q);
-      params.set('page', String(ttsFilter.page));
-      params.set('per_page', String(ttsFilter.per_page));
-      const res = await fetch('/api/ui/setup/tts/catalog?' + params.toString());
+      // Entire Piper voices.json in one shot (per_page=1000). Backend
+      // already caches it 14 days, so after the first wizard run this is
+      // a trivial local read.
+      const res = await fetch('/api/ui/setup/tts/catalog?per_page=1000');
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail || `HTTP ${res.status}`);
       }
       const data = await res.json();
       const raw = Array.isArray(data.voices) ? data.voices : [];
-      setTtsCatalog(raw);
-      setTtsPagination({ total: data.total || 0, pages: data.pages || 1 });
+      setTtsRaw(raw);
       if (Array.isArray(data.languages) && data.languages.length) {
         setTtsLanguages(data.languages);
       }
@@ -503,24 +563,46 @@ export default function Wizard() {
         if (pick) setFormData(prev => ({ ...prev, tts: pick.id }));
       }
     } catch (e: any) {
-      setTtsCatalog([]);
-      setTtsPagination({ total: 0, pages: 1 });
+      setTtsRaw([]);
       setTtsError(e?.message || 'Catalog unreachable');
     } finally {
       setTtsLoading(false);
     }
   };
 
-  // Re-fetch when filters change while the user is on the relevant step
+  const _ttsFiltered = useMemo(() => {
+    const q = ttsFilter.q.trim().toLowerCase();
+    return ttsRaw.filter((v: any) => {
+      if (ttsFilter.lang && (v.lang || '').toLowerCase() !== ttsFilter.lang.toLowerCase()) return false;
+      if (ttsFilter.quality && (v.quality || '') !== ttsFilter.quality) return false;
+      if (q && !(String(v.name || v.id || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [ttsRaw, ttsFilter]);
+
+  const ttsCatalog = useMemo(() => {
+    const start = (ttsFilter.page - 1) * ttsFilter.per_page;
+    return _ttsFiltered.slice(start, start + ttsFilter.per_page);
+  }, [_ttsFiltered, ttsFilter.page, ttsFilter.per_page]);
+
+  const ttsPagination = useMemo(() => ({
+    total: _ttsFiltered.length,
+    pages: Math.max(1, Math.ceil(_ttsFiltered.length / ttsFilter.per_page)),
+  }), [_ttsFiltered.length, ttsFilter.per_page]);
+
+  // Fetch each catalog ONCE when the user enters the step. Filters and
+  // pagination are applied client-side via useMemo, so changing language
+  // no longer triggers a network round-trip and the dropdown stays
+  // responsive on slow Pi networks.
   useEffect(() => {
-    if (step === 5) fetchSttCatalog();
+    if (step === 5 && sttRaw.length === 0 && !sttLoading) fetchSttCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, sttFilter.lang, sttFilter.quality, sttFilter.q, sttFilter.page, sttFilter.per_page]);
+  }, [step]);
 
   useEffect(() => {
-    if (step === 6) fetchTtsCatalog();
+    if (step === 6 && ttsRaw.length === 0 && !ttsLoading) fetchTtsCatalog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, ttsFilter.lang, ttsFilter.quality, ttsFilter.q, ttsFilter.page, ttsFilter.per_page]);
+  }, [step]);
 
   const connectWifi = async () => {
     if (!formData.wifi) return;
@@ -735,8 +817,24 @@ export default function Wizard() {
         {provisioning ? (
           <div className="min-h-[70vh] flex items-center justify-center">
             <ProvisionProgress
-              onDone={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
-              onSkip={async () => { await fetchWizardStatus(); await fetchWizardRequirements(); }}
+              onDone={async () => {
+                try {
+                  localStorage.removeItem(WIZARD_STEP_KEY);
+                  localStorage.removeItem(WIZARD_FORM_KEY);
+                  localStorage.removeItem('selena-setup-stage');
+                } catch {}
+                await fetchWizardStatus();
+                await fetchWizardRequirements();
+              }}
+              onSkip={async () => {
+                try {
+                  localStorage.removeItem(WIZARD_STEP_KEY);
+                  localStorage.removeItem(WIZARD_FORM_KEY);
+                  localStorage.removeItem('selena-setup-stage');
+                } catch {}
+                await fetchWizardStatus();
+                await fetchWizardRequirements();
+              }}
             />
           </div>
         ) : (

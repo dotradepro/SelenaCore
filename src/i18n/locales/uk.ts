@@ -227,7 +227,7 @@ const uk = {
             llmActive: 'Активно',
 
             // STT / TTS
-            sttModel: 'Модель STT (Whisper)',
+            sttModel: 'Модель STT (Vosk)',
             ttsVoice: 'Голос TTS (Piper)',
             installed: 'Встановлено',
             notInstalled: 'Не встановлено',
@@ -482,8 +482,8 @@ const uk = {
             timezoneSelected: 'Обрано',
 
             // Step 5 - STT
-            sttTitle: 'Розпізнавання мовлення (Whisper)',
-            sttDesc: 'Whisper STT підтримує 99 мов з автоматичним визначенням мови. Оберіть розмір моделі.',
+            sttTitle: 'Розпізнавання мовлення (Vosk)',
+            sttDesc: 'Vosk STT працює офлайн на будь-якому пристрої. Оберіть модель для вашої мови.',
             sttSmallUk: 'Українська — компактна, швидка',
             sttSmallRu: 'Російська — компактна, швидка',
             sttSmallEn: 'Англійська — компактна, швидка',
@@ -568,7 +568,10 @@ const uk = {
             provTask_apply_config: 'Застосування конфігурації',
             provTask_download_stt: 'Завантаження моделі розпізнавання мовлення',
             provTask_download_tts: 'Завантаження голосової моделі',
+            provTask_download_embedding: 'Завантаження моделі вкладень',
+            provTask_download_translate: 'Встановлення офлайн-перекладача (Argos)',
             provTask_download_llm: 'Завантаження мовної моделі',
+            provTask_install_native_services: 'Встановлення нативних сервісів',
             provTask_finalize: 'Завершення налаштування',
         },
 

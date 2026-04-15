@@ -196,7 +196,7 @@ async def vosk_catalog(
     quality: str = Query("", description="Filter by model type: 'small' | 'big' | ''"),
     q: str = Query("", description="Search by model name"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
+    per_page: int = Query(20, ge=1, le=1000),
 ) -> dict[str, Any]:
     """Model catalog from alphacephei.com with caching, filtering, pagination.
 

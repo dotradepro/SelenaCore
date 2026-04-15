@@ -859,6 +859,28 @@
 
     <!-- Model list -->
     <div id="translateModelList"></div>
+
+    <!-- Custom Helsinki upload (ad-hoc any language). The /translate/catalog
+         response only lists languages in HELSINKI_CATALOG, so when the
+         operator converts an opus-mt pair on Jetson/Colab for a language
+         not in that list, they would have no place to upload it without
+         this form. Same endpoint the per-row upload uses. -->
+    <div class="mt16" style="border-top:1px solid var(--bd);padding-top:12px">
+        <div class="section-title" data-i18n="helsinki_upload_title">Upload custom Helsinki model</div>
+        <div class="section-sub" data-i18n="helsinki_upload_desc">Drop a Colab-converted .tar.gz for any language (ISO 639-1 code). Upload both directions to activate.</div>
+        <div class="flex gap8 mt8" style="flex-wrap:wrap;align-items:center">
+            <input type="text" id="helsinkiCustomLang" placeholder="uk" maxlength="5"
+                   style="width:60px;padding:6px 8px;font-family:monospace;text-transform:lowercase" />
+            <select id="helsinkiCustomDirection" style="padding:6px 8px">
+                <option value="input" data-i18n="helsinki_dir_input">lang → en (input)</option>
+                <option value="output" data-i18n="helsinki_dir_output">en → lang (output)</option>
+            </select>
+            <input type="file" id="helsinkiCustomFile" accept=".tar.gz,.tgz,application/gzip,application/x-gzip"
+                   style="flex:1;min-width:140px;font-size:12px" />
+            <button id="helsinkiCustomUploadBtn" class="btn btn-primary btn-sm" data-i18n="translation_install">Install</button>
+        </div>
+        <div id="helsinkiCustomStatus" class="label-xs mt4" style="opacity:.7"></div>
+    </div>
 </div>
 
 </div><!-- /tabTranslate -->
@@ -1383,6 +1405,10 @@
             translation_languages: 'languages',
             translation_delete_confirm: 'Delete this translation model?',
             common_delete: 'Delete',
+            helsinki_upload_title: 'Upload custom Helsinki model',
+            helsinki_upload_desc: 'Drop a Colab/Jetson-converted .tar.gz for any language (ISO 639-1 code). Upload both directions to activate.',
+            helsinki_dir_input: 'lang → en (input)',
+            helsinki_dir_output: 'en → lang (output)',
 
             intents_title: 'Registered Voice Commands',
             intents_desc: 'All voice intents from system modules, fast matcher, and user modules',
@@ -1630,6 +1656,10 @@
             translation_languages: 'мов',
             translation_delete_confirm: 'Видалити цю модель перекладу?',
             common_delete: 'Видалити',
+            helsinki_upload_title: 'Встановити власну Helsinki-модель',
+            helsinki_upload_desc: 'Завантаж .tar.gz, сконвертований у Colab/Jetson, для будь-якої мови (ISO 639-1). Для активації треба обидва напрямки.',
+            helsinki_dir_input: 'мова → en (input)',
+            helsinki_dir_output: 'en → мова (output)',
 
             intents_title: 'Зареєстровані голосові команди',
             intents_desc: 'Усі голосові інтенти системних модулів, fast matcher та модулів користувача',
@@ -2840,6 +2870,48 @@
                 });
                 showToast(t('saved'));
             } catch(e) { showToast('Error', 'error'); }
+        };
+    }
+
+    // Custom Helsinki upload — any language code the user has converted
+    // on Jetson/Colab, without waiting for the static catalog to grow.
+    if ($('helsinkiCustomUploadBtn')) {
+        $('helsinkiCustomUploadBtn').onclick = async function() {
+            var lang = ($('helsinkiCustomLang').value || '').trim().toLowerCase();
+            var direction = $('helsinkiCustomDirection').value || 'input';
+            var fileInput = $('helsinkiCustomFile');
+            var f = fileInput && fileInput.files && fileInput.files[0];
+            var statusEl = $('helsinkiCustomStatus');
+            if (!lang || !/^[a-z]{2,5}$/.test(lang)) {
+                showToast('Enter a valid language code (e.g. uk, de, fr)', 'error');
+                return;
+            }
+            if (!f) {
+                showToast('Pick a .tar.gz file first', 'error');
+                return;
+            }
+            try {
+                var fd = new FormData();
+                fd.append('engine', 'helsinki');
+                fd.append('lang', lang);
+                fd.append('direction', direction);
+                fd.append('file', f);
+                statusEl.textContent = 'Uploading ' + direction + ' for ' + lang + '… (' + formatSize(f.size) + ')';
+                var resp = await fetch('/api/ui/setup/translate/upload', {
+                    method: 'POST', body: fd,
+                });
+                if (!resp.ok) {
+                    var j = await resp.json().catch(function(){ return {}; });
+                    throw new Error(j.detail || ('HTTP ' + resp.status));
+                }
+                statusEl.textContent = 'Installed ' + lang + ' ' + direction;
+                showToast(t('saved'));
+                fileInput.value = '';
+                loadTranslateCatalog();
+            } catch(e) {
+                statusEl.textContent = 'Error: ' + (e.message || e);
+                showToast(String(e.message || e), 'error');
+            }
         };
     }
 
