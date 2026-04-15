@@ -19,6 +19,15 @@
 
 ---
 
+<p align="center">
+  <img src="docs/img/dashboard-dark.png" alt="SelenaCore dashboard — dark theme" width="46%"/>
+  &nbsp;
+  <img src="docs/img/dashboard-light.png" alt="SelenaCore dashboard — light theme" width="46%"/>
+</p>
+<p align="center"><sub>Dashboard running on a 7" kiosk display — dark evening / light day themes, media, weather, climate, voice control.</sub></p>
+
+---
+
 ## Why SelenaCore?
 
 - **100% offline** — voice assistant, automations, device control all run on your hardware. The internet is optional.
