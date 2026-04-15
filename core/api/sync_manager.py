@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path(os.environ.get("CORE_DATA_DIR", "/var/lib/selena"))
 _LAYOUT_PATH = _DATA_DIR / "widget_layout.json"
+_DEFAULT_LAYOUT_PATH = Path(__file__).resolve().parents[2] / "config" / "default_widget_layout.json"
 _CONFIG_PATH = Path(os.environ.get("SELENA_CONFIG", "/opt/selena-core/config/core.yaml"))
 
 
@@ -84,12 +85,22 @@ class SyncManager:
 
     @staticmethod
     def _load_layout() -> dict[str, Any]:
-        """Load widget layout from persisted JSON."""
+        """Load widget layout from persisted JSON.
+
+        On first boot (no widget_layout.json yet) fall back to the shipped
+        preset in config/default_widget_layout.json so the dashboard is
+        populated instead of blank — matches ui.py:_load_layout.
+        """
         try:
             if _LAYOUT_PATH.exists():
                 return json.loads(_LAYOUT_PATH.read_text())
         except Exception:
             pass
+        try:
+            if _DEFAULT_LAYOUT_PATH.exists():
+                return json.loads(_DEFAULT_LAYOUT_PATH.read_text())
+        except Exception as exc:
+            logger.debug("default_widget_layout.json unreadable: %s", exc)
         return {"pinned": [], "sizes": {}}
 
     # ── Snapshot providers ────────────────────────────────────────────

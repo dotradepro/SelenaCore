@@ -1,0 +1,78 @@
+{
+  "pinned": [
+    "weather-service",
+    "media-player",
+    "voice-core",
+    "energy-monitor",
+    "climate",
+    "lights-switches",
+    "clock"
+  ],
+  "sizes": {
+    "automation-engine": "normal",
+    "device-watchdog": "normal",
+    "energy-monitor": "normal",
+    "notification-router": "compact",
+    "presence-detection": "normal",
+    "protocol-bridge": "normal",
+    "update-manager": "normal",
+    "weather-service": "normal",
+    "weather-module": "normal",
+    "voice-core": "normal",
+    "media-player": "normal",
+    "device-control": "normal",
+    "climate": "normal",
+    "lights-switches": "normal",
+    "clock": "normal"
+  },
+  "hidden": [
+    "protocol-bridge",
+    "presence-detection",
+    "notification-router",
+    "device-watchdog",
+    "device-control",
+    "weather-module",
+    "update-manager",
+    "automation-engine"
+  ],
+  "screens": 3,
+  "positions": {
+    "weather-service": 5,
+    "media-player": 0,
+    "voice-core": 7,
+    "energy-monitor": 2,
+    "climate": 3,
+    "lights-switches": 12,
+    "clock": 8
+  },
+  "spans": {
+    "weather-service": {
+      "cols": 2,
+      "rows": 2
+    },
+    "media-player": {
+      "cols": 2,
+      "rows": 1
+    },
+    "voice-core": {
+      "cols": 1,
+      "rows": 1
+    },
+    "energy-monitor": {
+      "cols": 1,
+      "rows": 1
+    },
+    "climate": {
+      "cols": 1,
+      "rows": 1
+    },
+    "lights-switches": {
+      "cols": 1,
+      "rows": 1
+    },
+    "clock": {
+      "cols": 1,
+      "rows": 1
+    }
+  }
+}

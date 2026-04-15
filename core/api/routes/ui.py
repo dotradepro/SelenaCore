@@ -62,6 +62,20 @@ _NATIVE_STALE_TTL = 120.0
 
 # ── Layout persistence ───────────────────────────────────────────────────────
 _LAYOUT_PATH = Path(os.environ.get("CORE_DATA_DIR", "/var/lib/selena")) / "widget_layout.json"
+# Shipped preset used on first boot so the wizard hands users a populated
+# dashboard (weather / media / voice / climate / lights / clock / energy)
+# instead of a blank screen. Operators can rearrange freely afterwards —
+# once widget_layout.json is written to CORE_DATA_DIR, this preset is
+# never consulted again.
+_DEFAULT_LAYOUT_PATH = Path(__file__).resolve().parents[3] / "config" / "default_widget_layout.json"
+
+def _load_default_layout() -> dict[str, Any]:
+    try:
+        if _DEFAULT_LAYOUT_PATH.exists():
+            return json.loads(_DEFAULT_LAYOUT_PATH.read_text())
+    except Exception as exc:
+        logger.debug("default_widget_layout.json unreadable: %s", exc)
+    return {"pinned": [], "sizes": {}}
 
 def _load_layout() -> dict[str, Any]:
     try:
@@ -69,7 +83,15 @@ def _load_layout() -> dict[str, Any]:
             return json.loads(_LAYOUT_PATH.read_text())
     except Exception:
         pass
-    return {"pinned": [], "sizes": {}}
+    # First boot — seed from the shipped default and persist so the user's
+    # first rearrange starts from the preset, not from scratch.
+    default = _load_default_layout()
+    try:
+        _LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _LAYOUT_PATH.write_text(json.dumps(default))
+    except Exception as exc:
+        logger.debug("Could not persist default layout: %s", exc)
+    return default
 
 def _save_layout(layout: dict[str, Any]) -> None:
     try:
