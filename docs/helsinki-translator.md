@@ -83,6 +83,28 @@ increasing quality / size:
   vocab piece (NOT as text), otherwise it defaults to Russian. The
   wrapper handles this; you don't have to think about it after install.
 
+## Skip the conversion — pre-built archives on GitHub
+
+Before you fire up Colab, check the companion repo —
+**[dotradepro/selena-helsinki-models](https://github.com/dotradepro/selena-helsinki-models)** —
+for a ready-made archive. Currently shipped:
+
+| Language | Folder | Release |
+|---|---|---|
+| Ukrainian (`uk`) | [`languages/uk/`](https://github.com/dotradepro/selena-helsinki-models/tree/main/languages/uk) | [v1.0.0](https://github.com/dotradepro/selena-helsinki-models/releases/tag/v1.0.0) |
+
+Download both archives, then in SelenaCore go to **Settings →
+Translation → Upload custom Helsinki model**:
+
+1. Enter lang code `uk`.
+2. Pick direction `input`, attach `helsinki-uk-en-input.tar.gz`, click **Install**.
+3. Pick direction `output`, attach `helsinki-en-uk-output.tar.gz`, click **Install**.
+4. Click **Activate**.
+
+That's it — skip to [Step 4](#step-4-install-in-the-ui) for
+verification. The rest of this document describes how to convert new
+language pairs yourself (and contribute them back).
+
 ## Step 1: Convert opus-mt models on Colab (one-time)
 
 Jetson Orin and Raspberry Pi don't ship a recent enough PyTorch for
