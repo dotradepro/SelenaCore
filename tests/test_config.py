@@ -16,7 +16,7 @@ class TestCoreSettings:
     def test_defaults(self):
         from core.config import CoreSettings
         s = CoreSettings()
-        assert s.core_port == 7070
+        assert s.core_port == 80
         assert s.ui_port == 80
         assert s.core_log_level == "INFO"
         assert s.debug is False
