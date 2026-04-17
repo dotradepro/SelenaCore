@@ -48,13 +48,9 @@ jobs:
       - name: Checkout repo (with docs/)
         uses: actions/checkout@v4
 
-      - name: Fail fast if WIKI_SYNC_TOKEN is missing
-        if: ${{ secrets.WIKI_SYNC_TOKEN == '' }}
-        run: |
-          echo "::error::WIKI_SYNC_TOKEN secret is not set — see .github/workflows/sync-wiki.yml comment for provisioning steps." >&2
-          exit 1
-
       - name: Run sync
         env:
+          # WIKI_SYNC_TOKEN is a repo secret the maintainer sets once.
+          # sync-wiki.sh exits 1 with a clear error if it's empty.
           WIKI_SYNC_TOKEN: ${{ secrets.WIKI_SYNC_TOKEN }}
         run: bash scripts/sync-wiki.sh
