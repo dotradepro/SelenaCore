@@ -930,6 +930,13 @@ start_docker_stack() {
         log "Using GPU compose override (docker-compose.gpu.yml)"
     fi
 
+    # Build-arg for Dockerfile.core: picks the onnxruntime flavor.
+    if $IS_JETSON; then     export SELENA_TARGET=jetson
+    elif $HAS_NVIDIA; then  export SELENA_TARGET=linux_cuda
+    else                    export SELENA_TARGET=cpu
+    fi
+    log "Build target: SELENA_TARGET=$SELENA_TARGET"
+
     if $DRY_RUN; then
         echo "    [dry-run] cd $INSTALL_DIR && docker compose ${compose_args[*]} up -d --build"
         return

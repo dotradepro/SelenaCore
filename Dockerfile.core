@@ -1,9 +1,14 @@
 FROM python:3.11-slim
 
-# TARGET selects onnxruntime flavor: "cpu" (default, fresh Pi/x86 works out
-# of the box) or "jetson" (pulls onnxruntime-gpu from the Jetson AI Lab
-# index + wires the libcudnn symlink). Pass --build-arg TARGET=jetson on
-# Jetson Orin / JP6 hosts.
+# TARGET selects onnxruntime flavor:
+#   "cpu"        — default, fresh Pi / generic x86 without GPU
+#   "jetson"     — Jetson Orin / JP6 hosts: onnxruntime-gpu from Jetson AI Lab
+#                  index + libcudnn.so symlink
+#   "linux_cuda" — x86_64 with discrete NVIDIA GPU: onnxruntime-gpu from PyPI,
+#                  loads libcuda from the /usr/local/cuda mount provided by
+#                  docker-compose.gpu.yml
+# install.sh picks the right value from IS_JETSON / HAS_NVIDIA and passes it
+# as a build arg via SELENA_TARGET env → docker-compose.yml.
 ARG TARGET=cpu
 
 WORKDIR /opt/selena-core
@@ -73,6 +78,8 @@ RUN if [ "$TARGET" = "jetson" ]; then \
             onnxruntime-gpu \
         && ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 \
                   /usr/lib/aarch64-linux-gnu/libcudnn.so ; \
+    elif [ "$TARGET" = "linux_cuda" ]; then \
+        pip install --no-cache-dir onnxruntime-gpu ; \
     else \
         pip install --no-cache-dir onnxruntime ; \
     fi
