@@ -61,6 +61,47 @@ class CityCreateBody(BaseModel):
 class ClockModule(SystemModule):
     name = "clock"
 
+    OWNED_INTENTS = [
+        "clock.set_alarm",
+        "clock.set_timer",
+        "clock.set_reminder",
+        "clock.list_alarms",
+        "clock.cancel_alarm",
+        "clock.stop_alarm",
+        "clock.cancel_timer",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "clock.set_alarm": dict(
+            noun_class="CLOCK", verb="create", priority=100,
+            description="Set an alarm for a specific wall-clock time (HH:MM), optionally repeating.",
+        ),
+        "clock.set_timer": dict(
+            noun_class="CLOCK", verb="create", priority=100,
+            description="Start a countdown timer for N seconds / minutes / hours.",
+        ),
+        "clock.set_reminder": dict(
+            noun_class="CLOCK", verb="create", priority=100,
+            description="Schedule a one-off reminder with a label at a specific future time.",
+        ),
+        "clock.list_alarms": dict(
+            noun_class="CLOCK", verb="query", priority=100,
+            description="Read out the list of currently-enabled alarms.",
+        ),
+        "clock.cancel_alarm": dict(
+            noun_class="CLOCK", verb="cancel", priority=100,
+            description="Cancel / delete an existing alarm by label or position.",
+        ),
+        "clock.stop_alarm": dict(
+            noun_class="CLOCK", verb="cancel", priority=100,
+            description="Silence the alarm that is ringing right now (snooze or dismiss).",
+        ),
+        "clock.cancel_timer": dict(
+            noun_class="CLOCK", verb="cancel", priority=100,
+            description="Stop a running timer before it fires.",
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._service: ClockService | None = None
@@ -72,6 +113,10 @@ class ClockModule(SystemModule):
         self._voice = ClockVoiceHandler(self._service)
 
         self.subscribe(["voice.intent"], self._on_event)
+
+        # Register clock.* intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
+
         await self.publish("module.started", {"name": self.name})
         logger.info("Clock module started")
 

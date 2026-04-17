@@ -33,6 +33,39 @@ class ConfigRequest(BaseModel):
 class WeatherServiceModule(SystemModule):
     name = "weather-service"
 
+    OWNED_INTENTS = [
+        "weather.current",
+        "weather.forecast",
+        "weather.temperature",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "weather.current": dict(
+            noun_class="WEATHER", verb="query", priority=100,
+            description=(
+                "Report the CURRENT outdoor weather conditions "
+                "(temperature + summary). Use for 'what's the weather' "
+                "style questions. NOT for indoor AC / thermostat readings."
+            ),
+        ),
+        "weather.forecast": dict(
+            noun_class="WEATHER", verb="query", priority=100,
+            description=(
+                "Outdoor weather forecast for the next days "
+                "(high/low, precipitation). Use for 'forecast', "
+                "'will it rain', 'tomorrow' style questions."
+            ),
+        ),
+        "weather.temperature": dict(
+            noun_class="WEATHER", verb="query", priority=100,
+            description=(
+                "Report the OUTDOOR temperature right now. "
+                "NOT for indoor AC / thermostat — use device.query_temperature "
+                "for those."
+            ),
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._weather: WeatherService | None = None
@@ -67,6 +100,9 @@ class WeatherServiceModule(SystemModule):
             ["voice.intent"],
             self._on_event,
         )
+
+        # Register weather.* intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
 

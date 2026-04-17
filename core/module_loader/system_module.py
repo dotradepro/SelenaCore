@@ -264,6 +264,92 @@ class SystemModule(ABC):
                 headers=_NO_CACHE,
             )
 
+    # ── Intent ownership ──────────────────────────────────────────────────
+    #
+    # Subclasses that own voice intents declare them via two class attrs:
+    #
+    #     OWNED_INTENTS = ["media.play_radio", "media.pause", ...]
+    #     _OWNED_INTENT_META = {
+    #         "media.play_radio": dict(
+    #             noun_class="MEDIA", verb="play", priority=100,
+    #             description="...",
+    #             entity_types=None,      # optional
+    #         ),
+    #         ...
+    #     }
+    #
+    # and call ``await self._claim_intent_ownership()`` inside ``start()``.
+    # Idempotent — safe to run on every boot. See system_modules/
+    # device_control/module.py for the canonical usage.
+    OWNED_INTENTS: list[str] = []
+    _OWNED_INTENT_META: dict[str, dict] = {}
+
+    async def _claim_intent_ownership(self) -> None:
+        """Register this module's intents in intent_definitions.
+
+        1. UPDATE module=self.name on every OWNED_INTENTS row that exists
+           (so legacy seed-script rows get re-homed).
+        2. UPDATE description + entity_types from _OWNED_INTENT_META so
+           the module is the source of truth for LLM prompt wording.
+        3. INSERT any missing rows from _OWNED_INTENT_META.
+        """
+        if not self.OWNED_INTENTS or self._session_factory is None:
+            return
+        try:
+            from sqlalchemy import select, update
+            from core.registry.models import IntentDefinition
+
+            async with self._session_factory() as session:
+                await session.execute(
+                    update(IntentDefinition)
+                    .where(IntentDefinition.intent.in_(self.OWNED_INTENTS))
+                    .values(module=self.name)
+                )
+                for intent_name, meta in self._OWNED_INTENT_META.items():
+                    ent = meta.get("entity_types")
+                    payload = json.dumps(list(ent)) if ent else None
+                    await session.execute(
+                        update(IntentDefinition)
+                        .where(IntentDefinition.intent == intent_name)
+                        .values(
+                            entity_types=payload,
+                            description=meta["description"],
+                        )
+                    )
+                existing = {
+                    row[0] for row in (await session.execute(
+                        select(IntentDefinition.intent).where(
+                            IntentDefinition.intent.in_(self.OWNED_INTENTS)
+                        )
+                    )).all()
+                }
+                for intent_name in self.OWNED_INTENTS:
+                    if intent_name in existing:
+                        continue
+                    meta = self._OWNED_INTENT_META.get(intent_name)
+                    if meta is None:
+                        continue
+                    ent = meta.get("entity_types")
+                    session.add(IntentDefinition(
+                        intent=intent_name,
+                        module=self.name,
+                        noun_class=meta.get("noun_class", "GENERIC"),
+                        verb=meta.get("verb", ""),
+                        priority=meta.get("priority", 100),
+                        description=meta["description"],
+                        source="module",
+                        entity_types=json.dumps(list(ent)) if ent else None,
+                    ))
+                await session.commit()
+            logger.info(
+                "%s: claimed ownership of %d intent(s)",
+                self.name, len(self.OWNED_INTENTS),
+            )
+        except Exception as exc:
+            logger.warning(
+                "%s: intent ownership claim failed: %s", self.name, exc,
+            )
+
     def _register_health_endpoint(self, router: "APIRouter") -> None:
         """Register a minimal ``GET /health`` on *router*.
 

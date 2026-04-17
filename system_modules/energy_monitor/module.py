@@ -37,6 +37,22 @@ class ToggleRequest(BaseModel):
 class EnergyMonitorModule(SystemModule):
     name = "energy-monitor"
 
+    OWNED_INTENTS = [
+        "energy.current",
+        "energy.today",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "energy.current": dict(
+            noun_class="ENERGY", verb="query", priority=100,
+            description="Report current instantaneous power draw (watts) across the home or a named device.",
+        ),
+        "energy.today": dict(
+            noun_class="ENERGY", verb="query", priority=100,
+            description="Report total energy consumed today (kWh) across the home or a named device.",
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._monitor: EnergyMonitor | None = None
@@ -71,6 +87,9 @@ class EnergyMonitorModule(SystemModule):
         self.subscribe(["mqtt.message"], self._on_mqtt_message)
         # Subscribe to voice intents
         self.subscribe(["voice.intent"], self._on_voice_intent)
+
+        # Register energy.* intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
 

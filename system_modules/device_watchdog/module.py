@@ -30,6 +30,22 @@ class ConfigUpdateRequest(BaseModel):
 class DeviceWatchdogModule(SystemModule):
     name = "device-watchdog"
 
+    OWNED_INTENTS = [
+        "watchdog.status",
+        "watchdog.scan",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "watchdog.status": dict(
+            noun_class="DEVICE", verb="query", priority=100,
+            description="Report which devices are currently online/offline + last-seen time.",
+        ),
+        "watchdog.scan": dict(
+            noun_class="DEVICE", verb="run", priority=100,
+            description="Trigger an immediate liveness scan of every registered device.",
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._watchdog: DeviceWatchdog | None = None
@@ -69,6 +85,9 @@ class DeviceWatchdogModule(SystemModule):
         self._voice = WatchdogVoiceHandler(self)
         self.subscribe(["device.protocol_heartbeat"], self._on_heartbeat)
         self.subscribe(["voice.intent"], self._on_voice_intent)
+
+        # Register watchdog.* intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
 

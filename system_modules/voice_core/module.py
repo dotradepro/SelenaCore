@@ -215,6 +215,25 @@ def _rms_energy(pcm_data: bytes) -> float:
 class VoiceCoreModule(SystemModule):
     name = "voice-core"
 
+    OWNED_INTENTS = [
+        "privacy_on",
+        "privacy_off",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "privacy_on": dict(
+            noun_class="PRIVACY", verb="set", priority=100,
+            description=(
+                "Enable privacy mode — pause wake-word and STT so the "
+                "microphone is muted until the user turns it back on."
+            ),
+        ),
+        "privacy_off": dict(
+            noun_class="PRIVACY", verb="set", priority=100,
+            description="Disable privacy mode — resume normal voice pipeline.",
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._stt = None
@@ -1609,6 +1628,9 @@ class VoiceCoreModule(SystemModule):
         # Start GPIO privacy listener
         from system_modules.voice_core.privacy import gpio_listener_loop
         self._privacy_task = asyncio.create_task(gpio_listener_loop())
+
+        # Register privacy_on / privacy_off intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
         logger.info("VoiceCoreModule started")

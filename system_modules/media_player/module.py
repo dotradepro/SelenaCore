@@ -105,19 +105,76 @@ class MediaPlayerModule(SystemModule):
     # 1.5b confused play_radio with play_genre on cases like "play jazz
     # radio" / "вмикни джазове радіо". Each description now spells out
     # what the intent is FOR and what it is NOT for, with concrete
-    # examples in parentheses. Length kept ≤ 110 chars to fit the
-    # 120-char cap in IntentRouter._build_filtered_catalog.
-    _INTENT_DESCRIPTIONS: dict[str, str] = {
-        "media.play_genre": (
-            "Play radio by genre (jazz, rock, classical). "
-            "NOT for specific station names."
+    OWNED_INTENTS = [
+        "media.play_radio", "media.play_radio_name", "media.play_genre",
+        "media.play_search", "media.next", "media.previous",
+        "media.stop", "media.pause", "media.resume",
+        "media.volume_down", "media.volume_up", "media.volume_set",
+        "media.whats_playing", "media.shuffle_toggle",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "media.play_radio": dict(
+            noun_class="MEDIA", verb="play", priority=100,
+            description="Play radio, no genre and no station name specified.",
         ),
-        "media.play_radio": (
-            "Play radio, no genre and no station name specified."
+        "media.play_radio_name": dict(
+            noun_class="MEDIA", verb="play", priority=100,
+            description=(
+                "Play a specific named station ('Radio Relax', 'BBC'). "
+                "Use ONLY when user said the station name."
+            ),
         ),
-        "media.play_radio_name": (
-            "Play a specific named station ('Radio Relax', 'BBC'). "
-            "Use ONLY when user said the station name."
+        "media.play_genre": dict(
+            noun_class="MEDIA", verb="play", priority=100,
+            description=(
+                "Play radio by genre (jazz, rock, classical). "
+                "NOT for specific station names."
+            ),
+        ),
+        "media.play_search": dict(
+            noun_class="MEDIA", verb="play", priority=100,
+            description="Search + play radio by freetext query (artist, theme).",
+        ),
+        "media.next": dict(
+            noun_class="MEDIA", verb="skip", priority=100,
+            description="Skip to the next track / station.",
+        ),
+        "media.previous": dict(
+            noun_class="MEDIA", verb="skip", priority=100,
+            description="Go back to the previous track / station.",
+        ),
+        "media.stop": dict(
+            noun_class="MEDIA", verb="stop", priority=100,
+            description="Stop media playback entirely.",
+        ),
+        "media.pause": dict(
+            noun_class="MEDIA", verb="pause", priority=100,
+            description="Pause current playback (can be resumed).",
+        ),
+        "media.resume": dict(
+            noun_class="MEDIA", verb="resume", priority=100,
+            description="Resume paused playback.",
+        ),
+        "media.volume_down": dict(
+            noun_class="MEDIA", verb="set", priority=100,
+            description="Decrease media volume (quieter, softer).",
+        ),
+        "media.volume_up": dict(
+            noun_class="MEDIA", verb="set", priority=100,
+            description="Increase media volume (louder).",
+        ),
+        "media.volume_set": dict(
+            noun_class="MEDIA", verb="set", priority=100,
+            description="Set media volume to a specific percent level (0-100).",
+        ),
+        "media.whats_playing": dict(
+            noun_class="MEDIA", verb="query", priority=100,
+            description="Tell what is currently playing (station, track, artist).",
+        ),
+        "media.shuffle_toggle": dict(
+            noun_class="MEDIA", verb="set", priority=100,
+            description="Toggle shuffle / random playback mode.",
         ),
     }
 
@@ -168,45 +225,12 @@ class MediaPlayerModule(SystemModule):
         # Broadcast state periodically while playing
         self._state_task = asyncio.create_task(self._state_broadcast_loop())
 
-        # Resync radio-intent descriptions from _INTENT_DESCRIPTIONS into
-        # the DB so IntentRouter prompts pick up disambiguation phrases
-        # we've tuned here. Idempotent — runs every boot, no-op if
-        # values already match.
-        await self._resync_intent_descriptions()
+        # Register all media.* intents in the DB (static catalog).
+        # Idempotent — runs every boot via the SystemModule helper.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
         logger.info("MediaPlayer module started")
-
-    async def _resync_intent_descriptions(self) -> None:
-        """Push the module-owned descriptions for media.play_* into DB.
-
-        Mirrors the description-resync added to device-control's
-        _claim_intent_ownership in commit 2b0cfa2: each module is the
-        source of truth for the wording its prompt sees. We don't claim
-        the ``module`` column here (the seed script still owns it),
-        only ``description``.
-        """
-        if self._session_factory is None:
-            return
-        try:
-            from sqlalchemy import update
-            from core.registry.models import IntentDefinition
-            async with self._session_factory() as session:
-                for intent_name, desc in self._INTENT_DESCRIPTIONS.items():
-                    await session.execute(
-                        update(IntentDefinition)
-                        .where(IntentDefinition.intent == intent_name)
-                        .values(description=desc)
-                    )
-                await session.commit()
-            logger.info(
-                "MediaPlayer: resynced %d intent descriptions",
-                len(self._INTENT_DESCRIPTIONS),
-            )
-        except Exception as exc:
-            logger.warning(
-                "MediaPlayer: intent description resync failed: %s", exc,
-            )
 
     async def stop(self) -> None:
         if self._state_task:

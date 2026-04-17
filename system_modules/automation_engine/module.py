@@ -34,6 +34,32 @@ class EnableRequest(BaseModel):
 class AutomationEngineModule(SystemModule):
     name = "automation-engine"
 
+    OWNED_INTENTS = [
+        "automation.list",
+        "automation.enable",
+        "automation.disable",
+        "automation.status",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "automation.list": dict(
+            noun_class="AUTOMATION", verb="query", priority=100,
+            description="List configured automation rules / scenes.",
+        ),
+        "automation.enable": dict(
+            noun_class="AUTOMATION", verb="set", priority=100,
+            description="Enable a named automation rule so it starts reacting to triggers.",
+        ),
+        "automation.disable": dict(
+            noun_class="AUTOMATION", verb="set", priority=100,
+            description="Disable a named automation rule (keep it but stop reacting to triggers).",
+        ),
+        "automation.status": dict(
+            noun_class="AUTOMATION", verb="query", priority=100,
+            description="Report status of the automation engine and active rules.",
+        ),
+    }
+
     def __init__(self) -> None:
         super().__init__()
         self._engine: AutomationEngine | None = None
@@ -69,6 +95,9 @@ class AutomationEngineModule(SystemModule):
             ["device.state_changed", "presence.home", "presence.away", "voice.intent"],
             self._on_event,
         )
+
+        # Register automation.* intents (static catalog). Idempotent.
+        await self._claim_intent_ownership()
 
         await self.publish("module.started", {"name": self.name})
 
