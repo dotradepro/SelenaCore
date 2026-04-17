@@ -67,3 +67,6 @@ starlette>=0.40.0,<0.41.0
 zipp>=3.19.1
 requests>=2.33.0 # not directly required, pinned by Snyk to avoid a vulnerability
 urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
+onnxruntime>=1.24.1 # not directly required, pinned by Snyk to avoid a vulnerability
+protobuf>=5.29.6 # not directly required, pinned by Snyk to avoid a vulnerability
+sympy>=1.12 # not directly required, pinned by Snyk to avoid a vulnerability
