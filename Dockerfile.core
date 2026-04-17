@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# TARGET selects onnxruntime flavor: "cpu" (default, fresh Pi/x86 works out
+# of the box) or "jetson" (pulls onnxruntime-gpu from the Jetson AI Lab
+# index + wires the libcudnn symlink). Pass --build-arg TARGET=jetson on
+# Jetson Orin / JP6 hosts.
+ARG TARGET=cpu
+
 WORKDIR /opt/selena-core
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -52,11 +58,24 @@ RUN pip install --no-cache-dir --no-deps "argostranslate>=1.9.0" \
         protobuf \
         networkx \
         minisbd \
-        onnxruntime \
-        "numpy>=1.22.2"
+        "numpy>=1.22.2,<2"
 
 # Main install — pip sees argostranslate already satisfied, skips it.
 RUN pip install --no-cache-dir -r requirements.txt
+
+# onnxruntime: CPU wheel for Pi/x86, GPU wheel (from Jetson AI Lab index)
+# for Jetson. Installed AFTER the main requirements so the correct flavor
+# wins. Having both onnxruntime and onnxruntime-gpu installed is a known
+# import-time conflict — pick exactly one.
+RUN if [ "$TARGET" = "jetson" ]; then \
+        pip install --no-cache-dir \
+            --index-url https://pypi.jetson-ai-lab.io/jp6/cu126 \
+            onnxruntime-gpu \
+        && ln -sf /usr/lib/aarch64-linux-gnu/libcudnn.so.9 \
+                  /usr/lib/aarch64-linux-gnu/libcudnn.so ; \
+    else \
+        pip install --no-cache-dir onnxruntime ; \
+    fi
 
 # Defensive belt-and-braces: if a future requirements.txt bump smuggles in
 # a torch dep, strip it so the image stays lean. No-op on clean builds.
@@ -69,9 +88,11 @@ RUN pip uninstall -y triton \
        nvidia-nccl-cu13 nvidia-nvjitlink nvidia-nvshmem-cu13 nvidia-nvtx \
        cuda-toolkit cuda-bindings cuda-pathfinder 2>/dev/null; true
 
-# Whisper STT runs natively on host (whisper-server or faster-whisper)
-# Piper TTS runs natively on host via piper-server.py
-# Ollama LLM runs natively on host
+# Whisper STT runs natively on host (whisper-server or faster-whisper).
+# Piper TTS runs INSIDE the container: start.sh spawns piper-server.py as
+# a subprocess on :5100 (network_mode: host passes the port through).
+# Ollama LLM is user-managed: install from ollama.ai yourself, point the
+# wizard's LLM Provider step at the URL (local or remote).
 RUN pip install --no-cache-dir pathvalidate
 
 # Create data directories
@@ -83,8 +104,8 @@ COPY core/ ./core/
 COPY system_modules/ ./system_modules/
 COPY agent/ ./agent/
 COPY config/ ./config/
-COPY scripts/start.sh ./start.sh
-RUN chmod +x ./start.sh
+COPY scripts/ ./scripts/
+RUN cp scripts/start.sh ./start.sh && chmod +x ./start.sh
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

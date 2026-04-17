@@ -51,6 +51,26 @@ update_config('hardware', 'gpu_detected', os.environ.get('SELENA_GPU_AVAILABLE')
 update_config('hardware', 'gpu_type', os.environ.get('SELENA_GPU_TYPE', 'none'))
 " 2>/dev/null || true
 
+# --- Piper TTS device mode ---
+# Explicit user toggle in core.yaml wins: voice.tts.primary.cuda=true|false
+# (set by wizard TTS step or /tts/dual-config). Unset → fall back to
+# auto-detected GPU presence.
+if [ "$GPU_FOUND" = "1" ]; then
+  PIPER_DEVICE_AUTO=gpu
+else
+  PIPER_DEVICE_AUTO=cpu
+fi
+PIPER_DEVICE=$(python3 -c "
+from core.config_writer import get_nested
+v = get_nested('voice.tts.primary.cuda', None)
+if v is True:   print('gpu')
+elif v is False: print('cpu')
+else:           print('')
+" 2>/dev/null || echo "")
+[ -z "$PIPER_DEVICE" ] && PIPER_DEVICE=$PIPER_DEVICE_AUTO
+export PIPER_DEVICE
+echo "[start.sh] Piper device: $PIPER_DEVICE (auto=$PIPER_DEVICE_AUTO)"
+
 # --- Audio Mixer Setup ---
 echo "[start.sh] Configuring ALSA audio mixer..."
 python -c "
@@ -58,6 +78,24 @@ from core.audio_mixer import get_mixer
 mixer = get_mixer()
 mixer.initialize()
 " 2>/dev/null && echo "[start.sh] Audio mixer OK" || echo "[start.sh] WARNING: audio mixer setup failed"
+
+# --- Piper TTS HTTP server ---
+# Supervised as a subprocess so core + TTS share the same container +
+# process group (single `docker compose restart core` cycles both). Host
+# port 5100 is exposed via network_mode: host in docker-compose.yml.
+# Upgrading from the old host-side piper-tts.service? Run once:
+#   sudo bash scripts/migrate_piper_to_container.sh
+: "${PIPER_PORT:=5100}"
+: "${PIPER_MODELS_DIR:=/var/lib/selena/models/piper}"
+export PIPER_MODELS_DIR
+echo "[start.sh] Starting piper-server.py on :$PIPER_PORT (device=$PIPER_DEVICE)..."
+python3 scripts/piper-server.py \
+  --port "$PIPER_PORT" \
+  --host 127.0.0.1 \
+  --device "$PIPER_DEVICE" \
+  --models-dir "$PIPER_MODELS_DIR" &
+PIPER_PID=$!
+echo "[start.sh] Piper PID=$PIPER_PID"
 
 # --- Unified server: Core API + SPA on port 80 (no separate UI proxy) ---
 echo "[start.sh] Starting SelenaCore on :80 (HTTP, unified API + SPA)..."
@@ -115,9 +153,9 @@ fi
 echo "[start.sh] Core PID=$CORE_PID"
 
 # If any process exits, kill all others and exit
-wait -n "$CORE_PID" ${HTTPS_PID:+"$HTTPS_PID"}
+wait -n "$CORE_PID" "$PIPER_PID" ${HTTPS_PID:+"$HTTPS_PID"}
 EXIT_CODE=$?
 
 echo "[start.sh] Process exited (code $EXIT_CODE), shutting down..."
-kill "$CORE_PID" ${HTTPS_PID:+"$HTTPS_PID"} 2>/dev/null || true
+kill "$CORE_PID" "$PIPER_PID" ${HTTPS_PID:+"$HTTPS_PID"} 2>/dev/null || true
 exit $EXIT_CODE

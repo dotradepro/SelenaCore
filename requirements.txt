@@ -17,15 +17,19 @@ python-dotenv==1.0.1
 slowapi==0.1.9
 pywebpush==2.0.0
 psutil==6.0.0
-numpy>=1.22.2
+numpy>=1.22.2,<2
 pyaudio==0.2.14
 python-vlc>=3.0.20115
 websockets>=12.0
 num2words==0.5.14
 apscheduler>=3.10  # used by scheduler + clock modules for cron/date triggers
-# piper-tts is NOT installed in the container — TTS runs natively on host
-# via piper-tts.service (scripts/piper-tts.service). Container talks to it
-# over HTTP at http://localhost:5100. See system_modules/voice_core/tts.py.
+
+# Piper TTS runs INSIDE the container. start.sh supervises piper-server.py
+# as a subprocess on :5100 (network_mode: host passes it through). aiohttp
+# is piper-server's HTTP framework. See scripts/piper-server.py and
+# system_modules/voice_core/tts.py.
+piper-tts>=1.2.0
+aiohttp>=3.9
 
 # HuggingFace tokenizers — fast Rust-based tokenizer for the ONNX
 # embedding model (all-MiniLM-L6-v2). Tiny (~2 MB wheel), no PyTorch.
