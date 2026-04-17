@@ -1110,7 +1110,13 @@ async def stt_status() -> dict[str, Any]:
 async def tts_voices() -> dict[str, Any]:
     """List installed Piper TTS voices by scanning disk."""
     models_dir = _piper_models_dir()
-    active_voice = get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "ru_RU-irina-medium"))
+    # /tts/dual-config writes the active voice into voice.tts.primary.voice
+    # (new location). The legacy voice.tts_voice key is still honoured as a
+    # fallback so existing deploys keep working.
+    active_voice = (
+        get_nested("voice.tts.primary.voice")
+        or get_value("voice", "tts_voice", os.environ.get("PIPER_VOICE", "ru_RU-irina-medium"))
+    )
 
     result = []
     if models_dir.is_dir():

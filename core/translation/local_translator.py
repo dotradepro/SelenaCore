@@ -34,8 +34,27 @@ logger = logging.getLogger(__name__)
 _argos_loaded = False
 
 
+def _argos_package_available() -> bool:
+    """Can we at least inspect installed Argos packages?
+
+    `argostranslate.package` has no heavy deps (no stanza), so this import
+    should always work if the argostranslate wheel is installed. We use it
+    for is_available() checks where we only need to count installed pairs.
+    """
+    try:
+        import argostranslate.package  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _ensure_argos() -> bool:
-    """Lazy-load argostranslate on first use."""
+    """Lazy-load the full argostranslate.translate module.
+
+    Needed for actually running translations (not for listing packages).
+    Depends on stanza for sentence splitting, which may be missing in some
+    deployments — in that case callers should fall through silently.
+    """
     global _argos_loaded
     if _argos_loaded:
         return True
@@ -43,8 +62,8 @@ def _ensure_argos() -> bool:
         import argostranslate.translate  # noqa: F401
         _argos_loaded = True
         return True
-    except ImportError:
-        logger.warning("argostranslate not installed")
+    except ImportError as exc:
+        logger.warning("argostranslate.translate unavailable: %s", exc)
         return False
 
 
@@ -78,7 +97,10 @@ class InputTranslator:
     """
 
     def is_available(self) -> bool:
-        if not _ensure_argos():
+        # Only needs argostranslate.package (no stanza dep). This lets the
+        # UI correctly report installed pairs even on deployments where
+        # argostranslate.translate can't fully load.
+        if not _argos_package_available():
             return False
         import argostranslate.package
         installed = argostranslate.package.get_installed_packages()
@@ -132,7 +154,8 @@ class OutputTranslator:
     """
 
     def is_available(self) -> bool:
-        if not _ensure_argos():
+        # Only needs argostranslate.package (no stanza dep).
+        if not _argos_package_available():
             return False
         import argostranslate.package
         installed = argostranslate.package.get_installed_packages()
