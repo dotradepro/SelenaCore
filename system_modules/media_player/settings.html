@@ -134,12 +134,13 @@
             width: 14px;
             height: 14px;
             border-radius: 50%;
-            background: #fff;
-            transition: left .2s;
+            background: var(--tx);
+            transition: left .2s, background .2s;
         }
 
         .toggle input:checked~.toggle-thumb {
             left: 19px;
+            background: #fff;
         }
 
         .toggle-label {

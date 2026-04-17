@@ -18,24 +18,38 @@ router = APIRouter(prefix="/shared", tags=["shared"])
 
 THEME_CSS = """\
 /* Shared SelenaCore theme tokens v4 — loaded by all widget/settings iframes.
-   Single source of truth: keep in sync with src/index.css :root block.     */
+   Single source of truth: keep in sync with src/index.css :root block.
+
+   CONTRAST CONTRACT (WCAG 2.1 AA — minimum required for new widgets):
+     - body text on surface:       >= 4.5:1   (use --tx or --tx2)
+     - muted/hint text:             >= 4.5:1   (use --tx3 — values tuned for AA)
+     - large text (>=18px bold):    >= 3:1
+     - UI borders, icons, chips:    >= 3:1
+   Text ON TOP OF saturated fills (--ac/--gr/--am/--rd) MUST use the paired
+   --on-accent / --on-success / --on-warning / --on-danger tokens — white on
+   green/amber FAILS AA and is not allowed.                                   */
 
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif;font-size:13px;line-height:1.4}
+html.in-modal,html.in-modal body{overflow:auto!important;height:auto!important;min-height:100%}
+/* Parent dashboard modal provides its own close button — hide any
+   per-widget ones so users see a single, consistently-styled control. */
+html.in-modal .fs-close,html.in-modal #fsClose{display:none!important}
 body{background:var(--sf);color:var(--tx)}
 
 :root{
   --bg:#0B0C10;--sf:#14151E;--sf2:#1B1C27;--sf3:#242532;
   --b:rgba(255,255,255,.12);--b2:rgba(255,255,255,.20);
-  --tx:#EDEEF5;--tx2:#A0A5BE;--tx3:#6B7194;
+  --tx:#EDEEF5;--tx2:#A0A5BE;--tx3:#7B80A3;
   --ac:#5A96FF;--gr:#34D693;--am:#F5A93A;--rd:#E05454;
+  --on-accent:#FFFFFF;--on-success:#0A1F15;--on-warning:#2B1F07;--on-danger:#FFFFFF;
   --shadow:0 1px 3px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.06);
   --shadow-lg:0 4px 16px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06)
 }
 :root.light{
   --bg:#EFF0F5;--sf:#FFFFFF;--sf2:#F4F5F9;--sf3:#E8E9F0;
   --b:rgba(0,0,0,.13);--b2:rgba(0,0,0,.22);
-  --tx:#1A1C24;--tx2:#4A4F68;--tx3:#7C8198;
+  --tx:#1A1C24;--tx2:#4A4F68;--tx3:#636880;
   --ac:#3B7AE8;--gr:#1FAF75;--am:#DB8F1C;--rd:#C94040;
   --shadow:0 1px 3px rgba(0,0,0,.08),0 0 0 1px rgba(0,0,0,.06);
   --shadow-lg:0 4px 16px rgba(0,0,0,.1),0 0 0 1px rgba(0,0,0,.06)
@@ -73,16 +87,18 @@ h2{font-size:16px;font-weight:600;margin-bottom:4px}
 /* ── Buttons ──────────────────────────────────────────────────────────── */
 .btn{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:.15s;white-space:nowrap;font-family:inherit;position:relative}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-primary,.btn-blue{background:var(--ac);color:#fff}
+.btn-primary,.btn-blue{background:var(--ac);color:var(--on-accent)}
 .btn-primary:hover:not(:disabled),.btn-blue:hover:not(:disabled){opacity:.85}
-.btn-green{background:var(--gr);color:#fff}
+.btn-green{background:var(--gr);color:var(--on-success)}
 .btn-green:hover:not(:disabled){opacity:.85}
 .btn-danger,.btn-red{background:rgba(224,84,84,.15);color:var(--rd)}
 .btn-danger:hover:not(:disabled),.btn-red:hover:not(:disabled){background:rgba(224,84,84,.25)}
-.btn-danger-solid{background:var(--rd);color:#fff}
+.btn-danger-solid{background:var(--rd);color:var(--on-danger)}
 .btn-danger-solid:hover:not(:disabled){opacity:.85}
 .btn-amber{background:rgba(245,169,58,.15);color:var(--am)}
 .btn-amber:hover:not(:disabled){background:rgba(245,169,58,.25)}
+.btn-amber-solid{background:var(--am);color:var(--on-warning)}
+.btn-amber-solid:hover:not(:disabled){opacity:.85}
 .btn-ghost{background:transparent;color:var(--tx3)}
 .btn-ghost:hover:not(:disabled){color:var(--tx)}
 .btn-secondary,.btn-sec{background:var(--sf3);color:var(--tx);border:1px solid var(--b2)}
@@ -121,7 +137,7 @@ tr:hover td{background:var(--sf2)}
 .settings-tabs{display:flex;gap:2px;margin-bottom:16px;background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:3px;overflow-x:auto}
 .settings-tab{flex:1;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;background:transparent;color:var(--tx3);transition:.15s;text-align:center;font-family:inherit}
 .settings-tab:hover{color:var(--tx)}
-.settings-tab.active{background:var(--ac);color:#fff}
+.settings-tab.active{background:var(--ac);color:var(--on-accent)}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
@@ -132,9 +148,9 @@ tr:hover td{background:var(--sf2)}
 /* ── Toast ─────────────────────────────────────────────────────────────── */
 .toast{position:fixed;top:12px;right:12px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transform:translateY(-8px);transition:opacity .3s,transform .3s;z-index:9999;pointer-events:none}
 .toast.show{opacity:1;transform:translateY(0)}
-.toast-success{background:var(--gr);color:#fff}
-.toast-error{background:var(--rd);color:#fff}
-.toast-info{background:var(--ac);color:#fff}
+.toast-success{background:var(--gr);color:var(--on-success)}
+.toast-error{background:var(--rd);color:var(--on-danger)}
+.toast-info{background:var(--ac);color:var(--on-accent)}
 
 /* ── Modal ─────────────────────────────────────────────────────────────── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;justify-content:center;align-items:center;z-index:1000;backdrop-filter:blur(3px)}
@@ -187,6 +203,20 @@ tr:hover td{background:var(--sf2)}
 .slider-label{font-size:11px;color:var(--tx2)}
 .slider-value{font-size:11px;color:var(--tx);font-family:monospace}
 .slider-hints{display:flex;justify-content:space-between;font-size:10px;color:var(--tx3)}
+
+/* ── Toggle (Swift-style sliding switch) ──────────────────────────────── */
+/* Shared implementation — widgets should NOT redefine .toggle.
+   Off-state thumb uses var(--tx) so it contrasts with the --sf3 track in
+   both themes. On-state flips the track to var(--gr) and uses a white thumb,
+   which reads cleanly on saturated green. Add .amber modifier for variants
+   that should turn amber on activation (e.g. lights).                      */
+.toggle{position:relative;display:inline-block;width:52px;height:30px;flex-shrink:0;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;inset:0;background:var(--sf3);border:1px solid var(--b2);border-radius:30px;transition:background .22s ease,border-color .22s ease}
+.toggle .slider::before{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:var(--tx);box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform .22s ease,background .22s ease}
+.toggle input:checked + .slider{background:var(--gr);border-color:var(--gr)}
+.toggle.amber input:checked + .slider,.toggle.light input:checked + .slider{background:var(--am);border-color:var(--am)}
+.toggle input:checked + .slider::before{background:#fff;transform:translateX(22px)}
 """
 
 
@@ -218,6 +248,19 @@ WIDGET_COMMON_JS = """\
    Expects the module to define:  var L = { en: {...}, uk: {...} };
    Provides: i18n, theme sync, DOM helpers, fetch wrappers, toast,
    tab switching, loading states.                                          */
+
+/* ── Modal mode detection ─────────────────────────────────────────────── */
+(function () {
+    try {
+        if (new URLSearchParams(location.search).get('modal') === '1') {
+            document.documentElement.classList.add('in-modal');
+            if (document.body) document.body.classList.add('in-modal');
+            else document.addEventListener('DOMContentLoaded', function () {
+                document.body.classList.add('in-modal');
+            });
+        }
+    } catch (e) {}
+})();
 
 /* ── i18n ─────────────────────────────────────────────────────────────── */
 var LANG = (function () {

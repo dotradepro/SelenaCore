@@ -67,7 +67,7 @@ button,input,select{font-family:inherit;color:inherit}
   cursor:pointer;transition:background .15s,color .15s;
 }
 .tabs button:hover{color:var(--fg)}
-.tabs button.active{background:var(--pr);color:#fff;font-weight:600}
+.tabs button.active{background:var(--pr);color:var(--on-accent);font-weight:600}
 
 .pane{display:none;flex-direction:column;gap:10px}
 .pane.active{display:flex}
@@ -88,21 +88,22 @@ button,input,select{font-family:inherit;color:inherit}
 .list-row .repeat{font-size:11px;color:var(--hint);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
 .list-row.off{opacity:.55}
 
-/* Swift-style sliding toggle */
+/* Swift-style sliding toggle — clock uses a smaller 46x26 variant
+   (shared /api/shared/theme.css has the default 52x30). */
 .toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;cursor:pointer}
 .toggle input{opacity:0;width:0;height:0}
 .toggle .slider{
-  position:absolute;inset:0;background:var(--b);border-radius:30px;
-  transition:background .22s ease;border:1px solid var(--b);
+  position:absolute;inset:0;background:var(--sf3);border-radius:30px;
+  transition:background .22s ease,border-color .22s ease;border:1px solid var(--b2);
 }
 .toggle .slider::before{
   content:"";position:absolute;top:1px;left:1px;
   width:22px;height:22px;border-radius:50%;
-  background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.35);
-  transition:transform .22s ease;
+  background:var(--tx);box-shadow:0 2px 5px rgba(0,0,0,.25);
+  transition:transform .22s ease,background .22s ease;
 }
 .toggle input:checked + .slider{background:var(--gr);border-color:var(--gr)}
-.toggle input:checked + .slider::before{transform:translateX(20px)}
+.toggle input:checked + .slider::before{background:#fff;transform:translateX(20px)}
 
 /* Icon button (delete, pause, etc.) */
 .icon-btn{
@@ -129,9 +130,9 @@ button,input,select{font-family:inherit;color:inherit}
   transition:border-color .15s,background .15s;
 }
 .big-controls button:hover{border-color:var(--pr)}
-.big-controls button.primary{background:var(--pr);border-color:var(--pr);color:#fff}
+.big-controls button.primary{background:var(--pr);border-color:var(--pr);color:var(--on-accent)}
 .big-controls button.primary:hover{filter:brightness(1.1)}
-.big-controls button.danger{background:var(--rd);border-color:var(--rd);color:#fff}
+.big-controls button.danger{background:var(--rd);border-color:var(--rd);color:var(--on-danger)}
 
 .preset-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
 .preset-row button{
@@ -167,7 +168,7 @@ button,input,select{font-family:inherit;color:inherit}
 .fab{
   position:fixed;right:22px;bottom:22px;
   width:52px;height:52px;border-radius:50%;
-  background:var(--pr);color:#fff;border:none;cursor:pointer;
+  background:var(--pr);color:var(--on-accent);border:none;cursor:pointer;
   font-size:26px;line-height:1;font-weight:300;
   box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:5;
   display:flex;align-items:center;justify-content:center;
@@ -211,7 +212,7 @@ button,input,select{font-family:inherit;color:inherit}
   color:var(--mut);font-size:11px;font-weight:600;cursor:pointer;
   text-transform:uppercase;letter-spacing:.04em;
 }
-.day-picker button.on{background:var(--pr);border-color:var(--pr);color:#fff}
+.day-picker button.on{background:var(--pr);border-color:var(--pr);color:var(--on-accent)}
 
 .sheet-actions{display:flex;gap:8px;margin-top:18px}
 .sheet-actions button{
@@ -221,7 +222,7 @@ button,input,select{font-family:inherit;color:inherit}
 }
 .sheet-actions .cancel{background:var(--card);border:1px solid var(--b);color:var(--fg)}
 .sheet-actions .cancel:hover{border-color:var(--pr)}
-.sheet-actions .save{background:var(--pr);border:1px solid var(--pr);color:#fff}
+.sheet-actions .save{background:var(--pr);border:1px solid var(--pr);color:var(--on-accent)}
 .sheet-actions .save:hover{filter:brightness(1.1)}
 .sheet-actions .delete{background:transparent;border:1px solid var(--rd);color:var(--rd)}
 .sheet-actions .delete:hover{background:rgba(224,84,84,.12)}

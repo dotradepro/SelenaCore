@@ -15,7 +15,7 @@
 }
 body{background:transparent;color:var(--fg)}
 .wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0;margin:0}
-.wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
+.wrap.modal{padding:20px 22px 28px;max-width:720px;margin:0 auto;gap:14px;height:auto;min-height:100%;overflow-y:visible}
 /* Compact mode hides room headers; modal keeps them. */
 .room{display:flex;flex-direction:column;gap:6px;min-width:0}
 .room-title{display:none}
@@ -51,32 +51,7 @@ body{background:transparent;color:var(--fg)}
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
 .fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-/* Swift-style sliding toggle */
-.toggle{
-  position:relative;display:inline-block;width:52px;height:30px;
-  flex-shrink:0;cursor:pointer;
-}
-.toggle input{opacity:0;width:0;height:0}
-.toggle .slider{
-  position:absolute;inset:0;background:var(--b);border-radius:30px;
-  transition:background .22s ease;
-  border:1px solid var(--b);
-}
-.toggle .slider::before{
-  content:"";position:absolute;top:2px;left:2px;
-  width:24px;height:24px;border-radius:50%;
-  background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
-  transition:transform .22s ease;
-}
-.toggle input:checked + .slider{
-  background:var(--gr);border-color:var(--gr);
-}
-.toggle.light input:checked + .slider{
-  background:var(--am);border-color:var(--am);
-}
-.toggle input:checked + .slider::before{
-  transform:translateX(22px);
-}
+/* .toggle + .toggle.light: shared implementation lives in /api/shared/theme.css */
 
 .slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:0}
 .slider-label{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
@@ -320,8 +295,8 @@ function reportModalSize(){
   requestAnimationFrame(function(){
     var root = $('root');
     if(!root) return;
-    var w = Math.min(560, Math.max(360, root.scrollWidth + 48));
-    var h = Math.min(820, root.scrollHeight + 48);
+    var w = Math.min(760, Math.max(560, root.scrollWidth + 48));
+    var h = Math.min(820, Math.max(480, root.scrollHeight + 48));
     try{ window.parent.postMessage({type:'modal_resize', width:w, height:h}, '*'); }catch(_){}
   });
 }

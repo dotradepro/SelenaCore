@@ -17,13 +17,20 @@
   --b2: rgba(255, 255, 255, .20);
   --tx: #EDEEF5;
   --tx2: #A0A5BE;
-  --tx3: #6B7194;
+  --tx3: #7B80A3;
   --ac: #5A96FF;
   --gr: #34D693;
   --am: #F5A93A;
   --rd: #E05454;
   --pu: #9B6EF4;
   --tl: #2AB4C4;
+  /* Semantic "on-color" tokens — text/icon color to use ON TOP OF saturated
+     fills. White-on-green and white-on-amber fail WCAG AA; these pairs are
+     deliberately theme-independent so ratios stay stable in both modes. */
+  --on-accent: #FFFFFF;
+  --on-success: #0A1F15;
+  --on-warning: #2B1F07;
+  --on-danger: #FFFFFF;
   --topbar: 42px;
   --r: 12px;
   --shadow: 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.06);
@@ -42,7 +49,7 @@ html.light {
   --b2: rgba(0, 0, 0, .22);
   --tx: #1A1C24;
   --tx2: #4A4F68;
-  --tx3: #7C8198;
+  --tx3: #636880;
   --ac: #3B7AE8;
   --gr: #1FAF75;
   --am: #DB8F1C;
