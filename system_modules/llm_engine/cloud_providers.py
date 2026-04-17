@@ -99,10 +99,17 @@ async def validate_api_key(provider: str, api_key: str) -> dict[str, Any]:
         return {"valid": False, "error": str(exc)}
 
 
-async def list_models(provider: str, api_key: str) -> list[dict[str, str]]:
+async def list_models(
+    provider: str, api_key: str, text_only: bool = False,
+) -> list[dict[str, str]]:
     """Fetch available models from a cloud provider.
 
     Returns [{"id": "model-id", "name": "display name"}, ...].
+
+    ``text_only=True`` strips image-gen, TTS, STT, embedding and vision
+    SKUs — the wizard uses this so the user's picker only shows chat
+    models. The Engines tab leaves it off so power users see the full
+    catalog.
     """
     prov = PROVIDERS.get(provider)
     if not prov or not prov.get("needs_key", True):
@@ -127,21 +134,51 @@ async def list_models(provider: str, api_key: str) -> list[dict[str, str]]:
             resp.raise_for_status()
             data = resp.json()
 
-        return _parse_models(provider, data)
+        return _parse_models(provider, data, text_only=text_only)
 
     except Exception as exc:
         logger.warning("Model listing failed for %s: %s", provider, exc)
         return []
 
 
-def _parse_models(provider: str, data: dict) -> list[dict[str, str]]:
+# Substrings that identify non-text-generation SKUs. Matches are
+# case-insensitive and applied after the provider-specific allowlist.
+# Keeping this in one place makes it easy to add new families when
+# providers launch them.
+_TEXT_ONLY_BLOCKLIST: tuple[str, ...] = (
+    "dall-e",
+    "embedding",
+    "whisper",
+    "tts",
+    "text-to-",
+    "image",
+    "babbage",
+    "davinci",
+    "moderation",
+    "imagen",
+    "veo",
+    "chirp",
+    "vision",
+    "-audio",
+    "-realtime",
+)
+
+
+def _is_text_model(model_id: str) -> bool:
+    lowered = model_id.lower()
+    return not any(marker in lowered for marker in _TEXT_ONLY_BLOCKLIST)
+
+
+def _parse_models(
+    provider: str, data: dict, text_only: bool = False,
+) -> list[dict[str, str]]:
     """Parse provider-specific model list response into unified format."""
     models: list[dict[str, str]] = []
 
     if provider == "openai":
         for m in data.get("data", []):
             mid = m.get("id", "")
-            if mid and ("gpt" in mid or "o1" in mid or "o3" in mid or "o4" in mid):
+            if mid and ("gpt" in mid or "o1" in mid or "o3" in mid or "o4" in mid or "chatgpt" in mid):
                 models.append({"id": mid, "name": mid})
 
     elif provider == "anthropic":
@@ -163,6 +200,9 @@ def _parse_models(provider: str, data: dict) -> list[dict[str, str]]:
             mid = m.get("id", "")
             if mid:
                 models.append({"id": mid, "name": mid})
+
+    if text_only:
+        models = [m for m in models if _is_text_model(m["id"])]
 
     models.sort(key=lambda x: x["name"])
     return models

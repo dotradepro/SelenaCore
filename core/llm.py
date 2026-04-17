@@ -145,12 +145,20 @@ async def llm_call(
 
 
 def _get_provider() -> tuple[str, dict[str, Any]]:
-    """Read LLM provider from config. Returns (provider_name, config_dict)."""
+    """Read LLM provider from config. Returns (provider_name, config_dict).
+
+    If ``voice.llm_provider`` is missing (the user skipped the wizard's
+    "LLM Provider" step) we return ``("", {})`` so ``_call_provider``
+    short-circuits to an empty reply — novel voice phrases then fall
+    through to the deterministic fallback instead of crashing.
+    """
     from core.config_writer import read_config
 
     config = read_config()
     voice_cfg = config.get("voice", {})
-    provider = voice_cfg.get("llm_provider", "ollama")
+    provider = voice_cfg.get("llm_provider")
+    if not provider:
+        return "", {}
 
     cfg: dict[str, Any] = {"voice": voice_cfg}
 
@@ -183,6 +191,9 @@ async def _call_provider(
     num_ctx: int = 4096,
 ) -> str:
     """Dispatch to the appropriate LLM provider."""
+    if not provider:
+        logger.info("LLM call skipped: no provider configured (wizard skipped LLM step)")
+        return ""
     if provider == "ollama":
         from system_modules.llm_engine.ollama_client import get_ollama_client
         model = cfg.get("model") or None  # None → client falls back to its DEFAULT_MODEL

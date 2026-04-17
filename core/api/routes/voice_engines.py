@@ -55,17 +55,20 @@ class ProviderSelectRequest(BaseModel):
     provider: str
 
 
-class ApiKeyRequest(BaseModel):
+class ProviderCredentialsRequest(BaseModel):
+    """Unified save/validate payload for any LLM provider.
+
+    Ollama accepts ``url`` (mandatory) and ``api_key`` (optional — remote
+    or proxied Ollama deployments may require a Bearer token). Cloud
+    providers ignore ``url`` and require ``api_key``.
+    """
     provider: str
-    api_key: str
+    api_key: str | None = None
+    url: str | None = None
 
 
 class ProviderModelRequest(BaseModel):
     provider: str
-    model: str
-
-
-class OllamaModelRequest(BaseModel):
     model: str
 
 
@@ -994,7 +997,6 @@ class _InstallState:
 
 
 _piper_install = _InstallState()
-_ollama_install = _InstallState()
 
 
 # ================================================================== #
@@ -1090,444 +1092,9 @@ async def piper_install_progress() -> dict[str, Any]:
     return _piper_install.to_dict()
 
 
-# ================================================================== #
-#  Ollama Binary Management                                            #
-# ================================================================== #
-
-@router.get("/ollama/status")
-async def ollama_status() -> dict[str, Any]:
-    """Check if Ollama is installed and running.
-
-    Ollama may run natively on the host while Selena runs in a container — in
-    that case ``shutil.which("ollama")`` returns ``None`` because the host
-    binary is not on the container's PATH. The HTTP API is the authoritative
-    source of truth: if it answers, Ollama is both installed and running.
-    """
-    ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
-
-    running = False
-    version = None
-    try:
-        async with httpx.AsyncClient(timeout=3) as client:
-            resp = await client.get(f"{ollama_url}/api/tags")
-            running = resp.status_code == 200
-            if running:
-                try:
-                    ver_resp = await client.get(f"{ollama_url}/api/version")
-                    if ver_resp.status_code == 200:
-                        version = (ver_resp.json().get("version") or "").strip() or None
-                except Exception:
-                    pass
-    except Exception:
-        running = False
-
-    # Local binary fallback for the rare case where the API is down but the
-    # binary is present (e.g. service stopped on the host).
-    ollama_bin = shutil.which("ollama")
-    if not running and ollama_bin and version is None:
-        try:
-            result = subprocess.run(
-                ["ollama", "--version"], capture_output=True, text=True, timeout=5
-            )
-            version = result.stdout.strip().replace("ollama version ", "") or "unknown"
-        except Exception:
-            version = "unknown"
-
-    installed = running or (ollama_bin is not None)
-
-    return {"installed": installed, "version": version, "running": running, "url": ollama_url}
 
 
-@router.post("/ollama/install")
-async def ollama_install() -> dict[str, Any]:
-    """Install Ollama via official install script."""
-    if _ollama_install.running:
-        return {"status": "already_running", **_ollama_install.to_dict()}
-    _ollama_install.reset()
-    _ollama_install.running = True
-    _ollama_install.package = "ollama"
-    _ollama_install.action = "install"
-    asyncio.create_task(_shell_action(
-        _ollama_install,
-        ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
-        timeout=300,
-    ))
-    return {"status": "started"}
 
-
-@router.post("/ollama/uninstall")
-async def ollama_uninstall() -> dict[str, Any]:
-    """Uninstall Ollama."""
-    if _ollama_install.running:
-        return {"status": "already_running", **_ollama_install.to_dict()}
-    _ollama_install.reset()
-    _ollama_install.running = True
-    _ollama_install.package = "ollama"
-    _ollama_install.action = "uninstall"
-    asyncio.create_task(_shell_action(
-        _ollama_install,
-        ["bash", "-c", "systemctl stop ollama 2>/dev/null; rm -f /usr/local/bin/ollama; systemctl disable ollama 2>/dev/null; rm -f /etc/systemd/system/ollama.service"],
-        timeout=30,
-    ))
-    return {"status": "started"}
-
-
-@router.post("/ollama/start")
-async def ollama_start() -> dict[str, Any]:
-    """Start Ollama server (systemd service or Docker container)."""
-    loop = asyncio.get_event_loop()
-
-    def _start():
-        # Use nsenter to control host systemd (from inside container)
-        if shutil.which("nsenter"):
-            result = subprocess.run(
-                ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
-                 "systemctl", "start", "ollama"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                return "started via systemd (host)"
-
-        # Fallback: direct systemctl (if running on host)
-        if shutil.which("systemctl"):
-            result = subprocess.run(
-                ["systemctl", "start", "ollama"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                return "started via systemd"
-
-        # Fallback: start local process
-        ollama_bin = shutil.which("ollama")
-        if not ollama_bin:
-            raise RuntimeError("Ollama not installed")
-        env = os.environ.copy()
-        env["OLLAMA_HOST"] = "0.0.0.0:11434"
-        from core.hardware import should_use_gpu
-        env["OLLAMA_NUM_GPU"] = "999" if should_use_gpu() else "0"
-        subprocess.Popen(
-            [ollama_bin, "serve"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env,
-        )
-        import time
-        time.sleep(2)
-        return "started as background process"
-
-    try:
-        msg = await loop.run_in_executor(None, _start)
-        return {"status": "ok", "message": msg}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.post("/ollama/stop")
-async def ollama_stop() -> dict[str, Any]:
-    """Stop Ollama server (Docker container or local process)."""
-    loop = asyncio.get_event_loop()
-
-    def _stop():
-        # Use nsenter to control host systemd (from inside container)
-        if shutil.which("nsenter"):
-            result = subprocess.run(
-                ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
-                 "systemctl", "stop", "ollama"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                return "stopped via systemd (host)"
-
-        # Fallback: direct systemctl
-        if shutil.which("systemctl"):
-            result = subprocess.run(
-                ["systemctl", "stop", "ollama"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                return "stopped via systemd"
-
-        # Fallback: kill process
-        import signal
-        try:
-            for entry in Path("/proc").iterdir():
-                if not entry.name.isdigit():
-                    continue
-                try:
-                    cmdline = (entry / "cmdline").read_bytes().decode(errors="ignore")
-                    if "ollama" in cmdline and "serve" in cmdline:
-                        os.kill(int(entry.name), signal.SIGTERM)
-                except (PermissionError, FileNotFoundError, ProcessLookupError):
-                    continue
-        except Exception:
-            pass
-        return "killed process"
-
-    try:
-        msg = await loop.run_in_executor(None, _stop)
-        return {"status": "ok", "message": msg}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/ollama/install-progress")
-async def ollama_install_progress() -> dict[str, Any]:
-    """Poll Ollama install/uninstall progress."""
-    return _ollama_install.to_dict()
-
-
-@router.get("/ollama/models")
-async def ollama_models() -> dict[str, Any]:
-    """List models — from Ollama API if running, fallback to disk scan."""
-    ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
-    installed: list[dict] = []
-
-    # Try Ollama API first
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"{ollama_url}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-            for m in data.get("models", []):
-                size_gb = round(m.get("size", 0) / (1024 ** 3), 1)
-                installed.append({
-                    "id": m["name"],
-                    "name": m["name"],
-                    "size_gb": size_gb,
-                    "installed": True,
-                })
-    except Exception:
-        pass
-
-    # Fallback: scan disk manifests (works when Ollama is stopped)
-    if not installed:
-        installed = _scan_ollama_models_from_disk()
-
-    return {"models": installed}
-
-
-def _scan_ollama_models_from_disk() -> list[dict]:
-    """Scan Ollama model manifests on disk."""
-    models = []
-    manifests_root = None
-    search_paths = []
-    env_dir = os.environ.get("OLLAMA_MODELS_DIR")
-    if env_dir:
-        search_paths.append(Path(env_dir))
-    search_paths += [
-        Path("/usr/share/ollama/.ollama/models"),
-        Path(os.path.expanduser("~/.ollama/models")),
-        Path("/root/.ollama/models"),
-    ]
-    for base in search_paths:
-        candidate = base / "manifests" / "registry.ollama.ai"
-        if candidate.is_dir():
-            manifests_root = candidate
-            break
-    if manifests_root is None:
-        return models
-
-    for namespace in manifests_root.iterdir():
-        if not namespace.is_dir():
-            continue
-        for model_dir in namespace.iterdir():
-            if not model_dir.is_dir():
-                continue
-            for tag_file in model_dir.iterdir():
-                if not tag_file.is_file():
-                    continue
-                name = f"{model_dir.name}:{tag_file.name}" if namespace.name == "library" else f"{namespace.name}/{model_dir.name}:{tag_file.name}"
-                # Get size from manifest
-                size_gb = 0.0
-                try:
-                    manifest = json.loads(tag_file.read_text())
-                    for layer in manifest.get("layers", []):
-                        if layer.get("mediaType", "") == "application/vnd.ollama.image.model":
-                            size_gb = round(layer.get("size", 0) / (1024 ** 3), 1)
-                except Exception:
-                    pass
-                models.append({
-                    "id": name,
-                    "name": name,
-                    "size_gb": size_gb,
-                    "installed": True,
-                })
-    return models
-
-
-# Curated list of popular small models for edge devices
-_CURATED_MODELS = [
-    {"id": "gemma3:1b", "name": "Gemma 3 1B (Google)", "size_gb": 0.8},
-    {"id": "gemma3:4b", "name": "Gemma 3 4B (Google)", "size_gb": 3.3},
-    {"id": "qwen2.5:0.5b", "name": "Qwen 2.5 0.5B", "size_gb": 0.4},
-    {"id": "qwen2.5:1.5b", "name": "Qwen 2.5 1.5B", "size_gb": 1.0},
-    {"id": "qwen2.5:3b", "name": "Qwen 2.5 3B", "size_gb": 1.9},
-    {"id": "llama3.2:1b", "name": "LLaMA 3.2 1B (Meta)", "size_gb": 0.7},
-    {"id": "llama3.2:3b", "name": "LLaMA 3.2 3B (Meta)", "size_gb": 2.0},
-    {"id": "phi4-mini", "name": "Phi-4 Mini 3.8B (Microsoft)", "size_gb": 2.5},
-    {"id": "smollm2:135m", "name": "SmolLM2 135M", "size_gb": 0.1},
-    {"id": "smollm2:360m", "name": "SmolLM2 360M", "size_gb": 0.2},
-    {"id": "smollm2:1.7b", "name": "SmolLM2 1.7B", "size_gb": 1.0},
-    {"id": "tinyllama", "name": "TinyLlama 1.1B", "size_gb": 0.6},
-    {"id": "ministral-3:3b", "name": "Ministral 3 3B (Mistral)", "size_gb": 2.2},
-    {"id": "ministral-3:8b", "name": "Ministral 3 8B (Mistral)", "size_gb": 4.9},
-    {"id": "deepseek-r1:1.5b", "name": "DeepSeek R1 1.5B", "size_gb": 1.1},
-    {"id": "deepseek-r1:7b", "name": "DeepSeek R1 7B", "size_gb": 4.7},
-]
-
-
-@router.get("/llm/catalog")
-async def llm_model_catalog() -> dict[str, Any]:
-    """Return LLM models suitable for this device (filtered by RAM)."""
-    ram_gb = 0
-    try:
-        import psutil
-        ram_gb = psutil.virtual_memory().total / (1024 ** 3)
-    except Exception:
-        ram_gb = 4
-
-    max_size_gb = ram_gb * 0.75
-
-    # Start with curated list + merge from Ollama registry
-    models = list(_CURATED_MODELS)
-    seen_ids = {m["id"] for m in models}
-
-    # Try to fetch additional from Ollama registry
-    cache_file = CACHE_DIR / "ollama_catalog.json"
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    import time as _time
-    remote_models: list[dict] = []
-
-    if cache_file.exists() and (_time.time() - cache_file.stat().st_mtime) < 3600:
-        try:
-            remote_models = json.loads(cache_file.read_text()).get("models", [])
-        except Exception:
-            pass
-
-    if not remote_models:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get("https://ollama.com/api/tags")
-                resp.raise_for_status()
-                data = resp.json()
-            for m in data.get("models", []):
-                size_gb = round(m.get("size", 0) / (1024 ** 3), 1)
-                remote_models.append({"id": m["name"], "name": m["name"], "size_gb": size_gb})
-            cache_file.write_text(json.dumps({"models": remote_models}, ensure_ascii=False))
-        except Exception:
-            pass
-
-    for m in remote_models:
-        if m["id"] not in seen_ids:
-            models.append(m)
-            seen_ids.add(m["id"])
-
-    # Filter by RAM
-    suitable = [m for m in models if 0 < m["size_gb"] <= max_size_gb]
-    suitable.sort(key=lambda x: x["size_gb"])
-
-    return {
-        "models": suitable,
-        "ram_total_gb": round(ram_gb, 1),
-        "max_model_gb": round(max_size_gb, 1),
-    }
-
-
-def _run_on_host(cmd: list[str], timeout: int = 10) -> subprocess.CompletedProcess:
-    """Run command on host via nsenter (PID 1 namespace)."""
-    return subprocess.run(
-        ["nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"] + cmd,
-        capture_output=True, text=True, timeout=timeout,
-    )
-
-
-class _OllamaPullState:
-    def __init__(self) -> None:
-        self.running = False
-        self.model = ""
-        self.status = ""
-        self.total = 0
-        self.completed = 0
-        self.error: str | None = None
-        self.done = False
-
-    def to_dict(self) -> dict[str, Any]:
-        pct = round(self.completed / self.total * 100, 1) if self.total > 0 else 0
-        return {
-            "running": self.running, "model": self.model,
-            "status": self.status, "percent": pct,
-            "total": self.total, "completed": self.completed,
-            "error": self.error, "done": self.done,
-        }
-
-
-_pull_state = _OllamaPullState()
-
-
-@router.post("/ollama/pull")
-async def ollama_pull(req: OllamaModelRequest) -> dict[str, Any]:
-    """Start pulling an Ollama model (async). Poll /ollama/pull-progress."""
-    if _pull_state.running:
-        return {"status": "already_running", **_pull_state.to_dict()}
-
-    _pull_state.running = True
-    _pull_state.model = req.model
-    _pull_state.status = "starting"
-    _pull_state.total = 0
-    _pull_state.completed = 0
-    _pull_state.error = None
-    _pull_state.done = False
-
-    asyncio.create_task(_ollama_pull_bg(req.model))
-    return {"status": "started", "model": req.model}
-
-
-@router.get("/ollama/pull-progress")
-async def ollama_pull_progress() -> dict[str, Any]:
-    """Poll Ollama model pull progress."""
-    return _pull_state.to_dict()
-
-
-async def _ollama_pull_bg(model: str) -> None:
-    ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(1800.0, connect=30.0)) as client:
-            async with client.stream(
-                "POST", f"{ollama_url}/api/pull", json={"name": model}
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                        _pull_state.status = data.get("status", "")
-                        if "total" in data:
-                            _pull_state.total = data["total"]
-                        if "completed" in data:
-                            _pull_state.completed = data["completed"]
-                    except Exception:
-                        pass
-        _pull_state.done = True
-        _pull_state.status = "success"
-        logger.info("Ollama pull '%s' completed", model)
-    except Exception as exc:
-        logger.error("Ollama pull '%s' failed: %s", model, exc)
-        _pull_state.error = str(exc)
-        _pull_state.status = "error"
-    finally:
-        _pull_state.running = False
-
-
-@router.post("/ollama/delete-model")
-async def ollama_delete_model(req: OllamaModelRequest) -> dict[str, Any]:
-    """Delete an Ollama model."""
-    ollama_url = get_value("voice", "ollama_url", os.environ.get("OLLAMA_URL", "http://localhost:11434"))
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.request("DELETE", f"{ollama_url}/api/delete", json={"name": req.model})
-            resp.raise_for_status()
-        return {"status": "ok"}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ================================================================== #
@@ -1736,83 +1303,139 @@ async def llm_provider_select(req: ProviderSelectRequest) -> dict[str, Any]:
     from core.config_writer import write_config
     write_config(config)
 
-    # Auto-manage local servers in background (don't block the response)
-    asyncio.create_task(_switch_local_servers(req.provider, saved_model))
+    # Clear the OllamaClient singleton so the next LLM call picks up the
+    # new provider / URL / key. Cheap, no host-management.
+    try:
+        from system_modules.llm_engine.ollama_client import reset_ollama_client
+        reset_ollama_client()
+    except Exception:
+        pass
 
     return {"status": "ok", "provider": req.provider, "model": saved_model}
 
 
-async def _switch_local_servers(provider: str, model: str) -> None:
-    """Background task: stop/start the local Ollama server based on selected provider."""
-    loop = asyncio.get_event_loop()
-
-    def _force_kill_ollama() -> None:
-        """Kill ollama serve regardless of how it was started."""
-        try:
-            _run_on_host(["pkill", "-f", "ollama serve"], timeout=5)
-        except Exception:
-            pass
-
-    try:
-        if provider == "ollama":
-            try: await ollama_start()
-            except Exception: pass
-        else:
-            # Cloud provider — stop Ollama to free GPU RAM
-            try: await ollama_stop()
-            except Exception: pass
-            await loop.run_in_executor(None, _force_kill_ollama)
-    except Exception as exc:
-        logger.warning("Server switch failed: %s", exc)
-
-
 @router.post("/llm/provider/apikey")
-async def llm_provider_apikey(req: ApiKeyRequest) -> dict[str, Any]:
-    """Save API key for a cloud provider."""
+async def llm_provider_apikey(req: ProviderCredentialsRequest) -> dict[str, Any]:
+    """Save credentials for a provider.
+
+    - Ollama: writes ``url`` (required) + ``api_key`` (optional Bearer).
+    - Cloud: writes ``api_key`` (required).
+
+    Cloud-only callers that pass just ``{provider, api_key}`` still work
+    — Pydantic defaults ``url`` to None and the cloud branch ignores it.
+    """
     config = read_config()
     voice_cfg = config.setdefault("voice", {})
     providers = voice_cfg.setdefault("providers", {})
     p_cfg = providers.setdefault(req.provider, {})
-    p_cfg["api_key"] = req.api_key
+
+    if req.provider == "ollama":
+        if req.url:
+            p_cfg["url"] = req.url.rstrip("/")
+        # api_key is optional for Ollama. Explicit empty string clears it.
+        if req.api_key is not None:
+            if req.api_key.strip():
+                p_cfg["api_key"] = req.api_key.strip()
+            else:
+                p_cfg.pop("api_key", None)
+    else:
+        if req.api_key is not None:
+            p_cfg["api_key"] = req.api_key
 
     from core.config_writer import write_config
     write_config(config)
+
+    # Any credential change invalidates the singleton for Ollama.
+    if req.provider == "ollama":
+        try:
+            from system_modules.llm_engine.ollama_client import reset_ollama_client
+            reset_ollama_client()
+        except Exception:
+            pass
 
     return {"status": "ok"}
 
 
 @router.post("/llm/provider/validate")
-async def llm_provider_validate(req: ApiKeyRequest) -> dict[str, Any]:
-    """Validate API key and return available models on success."""
+async def llm_provider_validate(req: ProviderCredentialsRequest) -> dict[str, Any]:
+    """Test a provider's credentials and return available models on success.
+
+    For Ollama this probes ``GET {url}/api/tags`` with the optional Bearer
+    header and returns ``{valid, auth_required, models, error}``. For cloud
+    providers this keeps the pre-existing ``validate_api_key`` path.
+    """
+    if req.provider == "ollama":
+        from system_modules.llm_engine.ollama_client import OllamaClient
+        url = (req.url or "http://localhost:11434").rstrip("/")
+        key = (req.api_key or None) or None
+        client = OllamaClient(base_url=url, api_key=key)
+        probe = await client.probe()
+        if probe.get("reachable") and not probe.get("auth_required"):
+            names = await client.list_models()
+            return {
+                "valid": True,
+                "auth_required": False,
+                "models": [{"id": n, "name": n} for n in names],
+            }
+        return {
+            "valid": False,
+            "auth_required": bool(probe.get("auth_required")),
+            "error": probe.get("error") or "unreachable",
+            "models": [],
+        }
+
     from system_modules.llm_engine.cloud_providers import validate_api_key, list_models
-    result = await validate_api_key(req.provider, req.api_key)
-    if result["valid"]:
-        models = await list_models(req.provider, req.api_key)
-        result["models"] = models
+    key = req.api_key or ""
+    result = await validate_api_key(req.provider, key)
+    if result.get("valid"):
+        result["models"] = await list_models(req.provider, key)
     return result
 
 
 @router.get("/llm/provider/models")
-async def llm_provider_models(provider: str | None = None) -> dict[str, Any]:
-    """Get models for a provider. Uses active provider if not specified."""
+async def llm_provider_models(
+    provider: str | None = None,
+    text_only: bool = False,
+) -> dict[str, Any]:
+    """List models available on the configured provider endpoint.
+
+    ``text_only=true`` filters out image / embedding / TTS / STT / vision
+    SKUs — the wizard uses this so the picker only offers chat-capable
+    models. The Engines tab leaves it off so power users can still see
+    the full catalog.
+    """
     config = read_config()
     voice_cfg = config.get("voice", {})
+    provider_configs = voice_cfg.get("providers", {})
     active = provider or voice_cfg.get("llm_provider", "ollama")
+    p_cfg = provider_configs.get(active, {})
 
     if active == "ollama":
-        # Delegate to ollama_models endpoint logic
-        data = await ollama_models()
-        return data
+        # Ollama endpoint is user-managed; URL + optional key come from
+        # voice.providers.ollama.*. OllamaClient.list_models() returns a
+        # list of name strings — wrap them into the {id, name, installed}
+        # shape the UI expects.
+        from core.config_writer import get_nested
+        from system_modules.llm_engine.ollama_client import OllamaClient
+        url = str(p_cfg.get("url") or get_nested("voice.providers.ollama.url") or "http://localhost:11434")
+        key = p_cfg.get("api_key") or None
+        client = OllamaClient(base_url=url, api_key=key)
+        probe = await client.probe()
+        if not probe.get("reachable"):
+            err = "authentication required" if probe.get("auth_required") else "not reachable"
+            return {"models": [], "error": err, "auth_required": bool(probe.get("auth_required"))}
+        names = await client.list_models()
+        models = [{"id": n, "name": n, "installed": True} for n in names]
+        # text_only is a no-op for Ollama — users decide which models they
+        # pull, and Ollama's model registry is overwhelmingly text-gen.
+        return {"models": models}
 
-    provider_configs = voice_cfg.get("providers", {})
-    p_cfg = provider_configs.get(active, {})
     api_key = p_cfg.get("api_key", "")
-
     if not api_key:
         return {"models": [], "error": "No API key configured"}
 
     from system_modules.llm_engine.cloud_providers import list_models
-    models = await list_models(active, api_key)
+    models = await list_models(active, api_key, text_only=bool(text_only))
     return {"models": models}
 
 
@@ -1833,6 +1456,28 @@ async def llm_provider_model_select(req: ProviderModelRequest) -> dict[str, Any]
     write_config(config)
 
     return {"status": "ok"}
+
+
+@router.get("/ollama/config")
+async def ollama_config_get() -> dict[str, Any]:
+    """Read Ollama config for the UI (URL + whether a key is stored).
+
+    Returns only ``api_key_set: bool`` — the raw key never leaves the
+    backend. The UI shows a masked value (••••••) when ``api_key_set``
+    is true and only sends a new key when the user overwrites it.
+    """
+    config = read_config()
+    p_cfg = (
+        config.get("voice", {})
+        .get("providers", {})
+        .get("ollama", {})
+    )
+    url = p_cfg.get("url") or config.get("llm", {}).get("ollama_url") or "http://localhost:11434"
+    return {
+        "url": url,
+        "api_key_set": bool(p_cfg.get("api_key")),
+        "model": p_cfg.get("model", ""),
+    }
 
 
 # ================================================================== #
@@ -1863,20 +1508,3 @@ async def _pip_action(state: _InstallState, action: str, package: str) -> None:
         state.running = False
 
 
-async def _shell_action(state: _InstallState, cmd: list[str], timeout: int = 120) -> None:
-    """Run shell command in background."""
-    loop = asyncio.get_event_loop()
-
-    def _run():
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return result
-
-    try:
-        result = await loop.run_in_executor(None, _run)
-        state.output = result.stdout + result.stderr
-        state.success = result.returncode == 0
-    except Exception as exc:
-        state.output = str(exc)
-        state.success = False
-    finally:
-        state.running = False

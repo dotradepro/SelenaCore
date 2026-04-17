@@ -70,14 +70,6 @@ export interface SystemStats {
   mode: string;
   version: string;
   corePort: number;
-  ollama: {
-    installed: boolean;
-    running: boolean;
-    model: string | null;
-    modelLoaded: boolean;
-    loadedModel?: string;
-    models?: { name: string; size_mb: number }[];
-  };
   llmEngine: LlmEngineStatus;
   nativeServices: NativeService[];
 }
@@ -501,7 +493,6 @@ export const useStore = create<AppState>((set, get) => ({
       if (data) {
         const hw = data.hardware ?? {};
         const core = data.core ?? {};
-        const ollama = data.ollama ?? {};
         const llm = data.llm_engine ?? {};
         const nativeRaw: Array<Record<string, unknown>> = Array.isArray(data.native_services)
           ? data.native_services
@@ -526,14 +517,6 @@ export const useStore = create<AppState>((set, get) => ({
             mode: core.mode ?? 'normal',
             version: core.version ?? '—',
             corePort: core.core_port ?? 80,
-            ollama: {
-              installed: ollama.installed ?? false,
-              running: ollama.running ?? false,
-              model: ollama.model ?? null,
-              modelLoaded: ollama.model_loaded ?? false,
-              loadedModel: ollama.loaded_model,
-              models: ollama.models,
-            },
             llmEngine: {
               provider: (llm.provider as string) ?? 'ollama',
               model: (llm.model as string) ?? '',
@@ -823,7 +806,6 @@ export const useStore = create<AppState>((set, get) => ({
               mode: (sys.mode as string) ?? base.mode ?? 'normal',
               version: (sys.version as string) ?? base.version ?? '',
               corePort: base.corePort ?? 7070,
-              ollama: base.ollama ?? { installed: false, running: false, model: null, modelLoaded: false },
               llmEngine: base.llmEngine ?? { provider: '', model: '', twoStep: false, cloudProviders: [], intentCache: { size: 0, hot: 0 } },
               nativeServices: base.nativeServices ?? [],
             } as SystemStats,

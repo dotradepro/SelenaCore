@@ -138,7 +138,7 @@ export default function SystemPage() {
   const activeTab: TabId =
     urlTab === 'processes' || urlTab === 'integrity' ? urlTab : 'overview';
 
-  const [modal, setModal] = useState<null | 'core' | 'llm' | 'cloud' | 'native' | 'ollama'>(null);
+  const [modal, setModal] = useState<null | 'core' | 'llm' | 'cloud' | 'native'>(null);
 
   useEffect(() => {
     fetchStats();
@@ -249,33 +249,6 @@ export default function SystemPage() {
         })}
       </DetailModal>
 
-      <DetailModal open={modal === 'ollama'} title="Ollama" onClose={() => setModal(null)}>
-        {stats?.ollama ? (
-          <>
-            <DetailRows rows={[
-              [t('systemInfo.ollamaInstalled'), stats.ollama.installed ? t('common.yes') : t('systemInfo.notInstalled')],
-              [t('systemInfo.ollamaRunning'), stats.ollama.running ? t('systemInfo.running') : t('systemInfo.stopped')],
-              [t('systemInfo.activeModel'), stats.ollama.model ?? t('systemInfo.noModel')],
-              [t('systemInfo.modelLoaded'), stats.ollama.modelLoaded
-                ? (stats.ollama.loadedModel ?? t('common.yes'))
-                : t('systemInfo.modelNotLoaded')],
-            ]} />
-            {stats.ollama.models && stats.ollama.models.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 11, color: 'var(--tx3)', marginBottom: 4 }}>
-                  {t('systemInfo.installedModels')}
-                </div>
-                {stats.ollama.models.map((m) => (
-                  <div key={m.name} style={{ fontSize: 11, padding: '2px 0' }}>
-                    {m.name} <span style={{ color: 'var(--tx3)' }}>· {m.size_mb} MB</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        ) : <div style={{ color: 'var(--tx3)' }}>—</div>}
-      </DetailModal>
-
       <DetailModal open={modal === 'native'} title={t('nativeServices.title')} onClose={() => setModal(null)}>
         {(stats?.nativeServices ?? []).map((svc) => (
           <div key={svc.name} style={{
@@ -314,7 +287,7 @@ export default function SystemPage() {
 interface OverviewTabProps {
   stats: ReturnType<typeof useStore.getState>['stats'];
   health: ReturnType<typeof useStore.getState>['health'];
-  openModal: (m: 'core' | 'llm' | 'cloud' | 'native' | 'ollama') => void;
+  openModal: (m: 'core' | 'llm' | 'cloud' | 'native') => void;
 }
 
 function OverviewTab({ stats, health, openModal }: OverviewTabProps) {
@@ -444,58 +417,53 @@ function OverviewTab({ stats, health, openModal }: OverviewTabProps) {
           </button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 6 }}>
-          {nativeServices.map((svc) => {
-            const extra = svc.extra ?? {};
-            let detail = '';
-            if (svc.name === 'ollama') {
-              const c = extra.models_count as number | undefined;
-              if (c !== undefined) detail = `${c} models`;
-            } else if (svc.name === 'piper') {
-              const dev = extra.device as string | undefined;
-              if (dev) detail = dev;
-            } else if (svc.name === 'alsa') {
-              const c = extra.cards as number | undefined;
-              if (c !== undefined) detail = `${c} ${t('nativeServices.cards')}`;
-            } else if (svc.name === 'vosk') {
-              const c = extra.models as number | undefined;
-              if (c !== undefined) detail = `${c} ${t('nativeServices.models')}`;
-            }
-            const isOllama = svc.name === 'ollama';
-            return (
-              <button
-                key={svc.name}
-                type="button"
-                onClick={isOllama ? () => openModal('ollama') : undefined}
-                style={{
-                  border: '1px solid var(--b)',
-                  borderRadius: 6,
-                  padding: '6px 8px',
-                  background: 'var(--sf2)',
-                  cursor: isOllama ? 'pointer' : 'default',
-                  textAlign: 'left',
-                  font: 'inherit',
-                  color: 'inherit',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>
-                    {t(`nativeServices.${svc.name}`)}
-                  </span>
-                  <span
-                    title={svc.running ? t('systemInfo.running') : t('systemInfo.stopped')}
-                    style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: svc.running ? 'var(--gr)' : 'var(--rd)', flexShrink: 0,
-                    }}
-                  />
+          {nativeServices
+            // Ollama is no longer a native service managed by Selena — it
+            // appears in the "Active Provider" / "Cloud Providers" cards
+            // instead, same as OpenAI / Anthropic / Groq / Google.
+            .filter((svc) => svc.name !== 'ollama')
+            .map((svc) => {
+              const extra = svc.extra ?? {};
+              let detail = '';
+              if (svc.name === 'piper') {
+                const dev = extra.device as string | undefined;
+                if (dev) detail = dev;
+              } else if (svc.name === 'alsa') {
+                const c = extra.cards as number | undefined;
+                if (c !== undefined) detail = `${c} ${t('nativeServices.cards')}`;
+              } else if (svc.name === 'vosk') {
+                const c = extra.models as number | undefined;
+                if (c !== undefined) detail = `${c} ${t('nativeServices.models')}`;
+              }
+              return (
+                <div
+                  key={svc.name}
+                  style={{
+                    border: '1px solid var(--b)',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    background: 'var(--sf2)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>
+                      {t(`nativeServices.${svc.name}`)}
+                    </span>
+                    <span
+                      title={svc.running ? t('systemInfo.running') : t('systemInfo.stopped')}
+                      style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: svc.running ? 'var(--gr)' : 'var(--rd)', flexShrink: 0,
+                      }}
+                    />
+                  </div>
+                  {detail && (
+                    <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>{detail}</div>
+                  )}
                 </div>
-                {detail && (
-                  <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>{detail}</div>
-                )}
-              </button>
-            );
-          })}
-          {nativeServices.length === 0 && (
+              );
+            })}
+          {nativeServices.filter((svc) => svc.name !== 'ollama').length === 0 && (
             <div style={{ fontSize: 11, color: 'var(--tx3)' }}>—</div>
           )}
         </div>

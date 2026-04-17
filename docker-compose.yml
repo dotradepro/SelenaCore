@@ -11,7 +11,9 @@ services:
     volumes:
       - selena_data:/var/lib/selena
       - selena_secure:/secure
-      - ${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}:ro
+      # Ollama is now user-managed — Selena only talks to it over HTTP.
+      # Nothing to volume-mount, no prerequisite host binary. The URL
+      # (local or remote) lives in voice.providers.ollama.url.
       - ${PIPER_MODELS_DIR:-${HOME}/.local/share/piper/models}:/var/lib/selena/models/piper
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/bin/docker:/usr/bin/docker:ro
@@ -43,7 +45,6 @@ services:
     environment:
       - PULSE_SERVER=unix:/run/user/${HOST_UID:-1000}/pulse/native
       - HOST_USER=${USER:-root}
-      - OLLAMA_MODELS_DIR=${OLLAMA_MODELS_DIR:-/usr/share/ollama/.ollama/models}
       - PIPER_MODELS_DIR=/var/lib/selena/models/piper
       - MALLOC_ARENA_MAX=2
       - SELENA_GPU_AVAILABLE=1

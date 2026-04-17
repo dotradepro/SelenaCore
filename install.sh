@@ -513,252 +513,18 @@ install_host_packages() {
     fi
 }
 
-# ── Phase 2.5: Native AI runtimes (Ollama + Piper) ─────────────────
-# These run on the HOST, not inside the docker container, because the
-# wizard cannot install host-level binaries from inside the sandbox.
-# install.sh runs them once during bootstrap; the wizard then handles
-# model downloads via the already-installed CLIs.
+# ── Phase 2.5: Native AI runtimes ──────────────────────────────────
+# Piper TTS runs inside the smarthome-core container (start.sh spawns
+# piper-server.py as a subprocess on :5100). Ollama is NOT installed by
+# Selena — users pick their own LLM backend (local Ollama, remote Ollama,
+# OpenAI / Anthropic / Groq / Google) during the wizard's LLM Provider
+# step. See docs/configuration.md for how to install Ollama yourself if
+# you want a local model.
 
 install_native_runtimes() {
-    title "Installing native AI runtimes (Ollama + Piper)"
-    install_ollama
-    install_piper_runtime
+    log "Skipping native runtime install (Piper is bundled in the container; Ollama is user-managed)."
 }
 
-install_ollama() {
-    if command -v ollama >/dev/null 2>&1; then
-        log "Ollama already installed: $(ollama --version 2>/dev/null | head -1)"
-        run systemctl enable --now ollama 2>/dev/null || true
-        return 0
-    fi
-    if $DRY_RUN; then
-        echo "    [dry-run] curl -fsSL https://ollama.com/install.sh | sh"
-        return 0
-    fi
-    log "Installing Ollama via official installer (https://ollama.com/install.sh)"
-    if ! curl -fsSL https://ollama.com/install.sh | sh; then
-        warn "Ollama install script failed — LLM features will be unavailable until installed manually"
-        return 0
-    fi
-    # The official installer creates ollama.service. Make sure it's enabled.
-    systemctl enable --now ollama 2>/dev/null || \
-        warn "Could not enable ollama.service — start it manually with: sudo systemctl start ollama"
-    # Keep only one model loaded at a time to save RAM on Pi/Jetson.
-    if ! grep -q "OLLAMA_MAX_LOADED_MODELS" /etc/systemd/system/ollama.service 2>/dev/null; then
-        sed -i '/^\[Service\]/a Environment="OLLAMA_MAX_LOADED_MODELS=1"' \
-            /etc/systemd/system/ollama.service 2>/dev/null && \
-            systemctl daemon-reload 2>/dev/null
-    fi
-    log "Ollama installed: $(ollama --version 2>/dev/null | head -1 || echo unknown)"
-}
-
-install_piper_runtime() {
-    # The Piper Python package + a small runner that the wizard's
-    # piper-tts.service expects. Install for the SUDO_USER (the operator),
-    # not root, so the systemd unit's User=__USER__ template can find it.
-    #
-    # Sets the global PIPER_PYTHON to the absolute path of the interpreter
-    # that has piper installed. Leaves PIPER_PYTHON UNSET if the runtime
-    # could not be installed — the rest of the installer treats an unset
-    # PIPER_PYTHON as "no native Piper, skip the systemd unit".
-    PIPER_PYTHON=""
-    local piper_user="${SUDO_USER:-root}"
-    local piper_home
-    piper_home="$(getent passwd "$piper_user" | cut -d: -f6 || true)"
-    [ -z "$piper_home" ] && piper_home="/root"
-
-    # Resolve a python3.9+ interpreter that can install piper-tts wheels.
-    # Strategy (first that works wins):
-    #   1. System python3 >= 3.9 (jammy+, bookworm, Pi OS Bookworm, Jetson JetPack 6)
-    #   2. deadsnakes apt PPA (Ubuntu jammy+/noble — gives python3.10)
-    #   3. uv-managed standalone python3.11 (focal, bullseye, buster, old Pi OS)
-    #
-    # If none work — log an informative message and continue without native
-    # Piper (container TTS still renders the wizard's voice selection step).
-    local py=""
-    if ! py="$(_ensure_piper_python "$piper_user" "$piper_home")" || [ -z "$py" ]; then
-        log "Native Piper TTS not installed on this OS. The wizard's TTS step will still work via the docker container build."
-        return 0
-    fi
-
-    if su -s /bin/bash - "$piper_user" -c "'$py' -c 'import piper, aiohttp' 2>/dev/null"; then
-        log "Piper TTS Python package already installed for $piper_user (via $py)"
-        install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
-        PIPER_PYTHON="$py"
-        return 0
-    fi
-    if $DRY_RUN; then
-        echo "    [dry-run] install piper-tts + aiohttp via $py for $piper_user"
-        PIPER_PYTHON="$py"
-        return 0
-    fi
-
-    log "Installing Piper TTS Python package for user '$piper_user' via $py (~80 MB onnxruntime)"
-    local pip_cmd="'$py' -m pip install --user piper-tts aiohttp"
-    # --break-system-packages tolerates PEP 668 on noble/bookworm where the
-    # system python is externally-managed.
-    if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd --break-system-packages 2>&1" >/tmp/_piper_pip.log; then
-        if ! su -s /bin/bash - "$piper_user" -c "$pip_cmd 2>&1" >/tmp/_piper_pip.log; then
-            warn "pip install piper-tts failed — TTS will be unavailable until installed manually"
-            tail -n 10 /tmp/_piper_pip.log >&2
-            return 0
-        fi
-    fi
-    install -d -o "$piper_user" -g "$piper_user" "$piper_home/.local/share/piper/models"
-    PIPER_PYTHON="$py"
-    log "Piper TTS Python package installed for $piper_user (via $PIPER_PYTHON)"
-}
-
-# ── Piper Python resolver ─────────────────────────────────────────── #
-
-_ensure_piper_python() {
-    # Prints the absolute path of a python3.9+ interpreter usable by
-    # SUDO_USER. Returns 1 if none can be installed on this platform.
-    #
-    # IMPORTANT: this function's stdout is captured by the caller, so every
-    # diagnostic must be written to stderr. Only the final interpreter path
-    # goes to stdout on the last line.
-    local piper_user="$1"
-    local piper_home="$2"
-
-    # 1. System python3 >= 3.9
-    local sys_minor
-    sys_minor="$(python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null || echo 0)"
-    if [ "$sys_minor" -ge 9 ] 2>/dev/null; then
-        command -v python3
-        return 0
-    fi
-
-    log "System python3 is 3.$sys_minor (too old for piper-tts wheels) — looking for an alternative" >&2
-
-    # 2. deadsnakes apt PPA — only for Ubuntu jammy+ / derivatives
-    if _try_deadsnakes_python310 >&2; then
-        command -v python3.10
-        return 0
-    fi
-
-    # 3. uv fallback — works on any modern-glibc Linux amd64/arm64
-    local uv_py=""
-    if uv_py="$(_try_uv_python "$piper_user" "$piper_home")" && [ -n "$uv_py" ]; then
-        printf '%s\n' "$uv_py"
-        return 0
-    fi
-
-    return 1
-}
-
-_try_deadsnakes_python310() {
-    # Install python3.10 from deadsnakes PPA on supported Ubuntu releases.
-    # Returns 0 if python3.10 is on PATH afterwards, 1 otherwise.
-    if command -v python3.10 >/dev/null 2>&1; then
-        return 0
-    fi
-
-    # Skip releases where deadsnakes no longer publishes packages.
-    case "$OS_CODENAME" in
-        focal|bionic|xenial|buster|stretch|bullseye)
-            log "$OS_ID $OS_CODENAME: deadsnakes does not ship python3.10 here — will try uv instead"
-            return 1
-            ;;
-    esac
-    case "$OS_ID" in
-        ubuntu|pop|linuxmint) ;;
-        *)
-            log "$OS_ID: deadsnakes PPA is Ubuntu-only — will try uv instead"
-            return 1
-            ;;
-    esac
-
-    install_apt gnupg curl ca-certificates
-    install -d -m 0755 /etc/apt/keyrings
-    local key_url="https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xF23C5A6CF475977595C89F51BA6932366A755776"
-    if ! curl -fsSL "$key_url" | gpg --dearmor --batch --yes -o /etc/apt/keyrings/deadsnakes.gpg 2>/dev/null; then
-        warn "Could not download deadsnakes GPG key"
-        return 1
-    fi
-    chmod 0644 /etc/apt/keyrings/deadsnakes.gpg
-    local repo_codename="$OS_CODENAME"
-    case "$repo_codename" in
-        jammy|noble|oracular|plucky) ;;
-        *) repo_codename="jammy" ;;
-    esac
-    echo "deb [signed-by=/etc/apt/keyrings/deadsnakes.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu $repo_codename main" \
-        > /etc/apt/sources.list.d/deadsnakes.list
-    apt_update
-    if ! apt-cache madison python3.10 2>/dev/null | grep -q .; then
-        warn "deadsnakes PPA for $repo_codename does not publish python3.10 — skipping"
-        rm -f /etc/apt/sources.list.d/deadsnakes.list
-        return 1
-    fi
-    install_apt python3.10 python3.10-venv python3.10-distutils python3.10-dev
-    command -v python3.10 >/dev/null 2>&1 || return 1
-    # Bootstrap pip for python3.10 if it's missing
-    if ! python3.10 -m pip --version >/dev/null 2>&1; then
-        curl -fsSL https://bootstrap.pypa.io/get-pip.py | python3.10 || return 1
-    fi
-    return 0
-}
-
-_try_uv_python() {
-    # Install uv (a ~15MB single-binary Python package manager from Astral)
-    # and use it to download a standalone CPython 3.11 — works on any
-    # Linux with modern glibc, independent of distro repos.
-    #
-    # Prints the absolute path of the uv-managed python3.11 on stdout on
-    # success. ALL diagnostics MUST go to stderr because the caller
-    # captures our stdout.
-    local piper_user="$1"
-    local piper_home="$2"
-
-    # uv doesn't publish armv7 or old-glibc builds — bail on unsupported arches.
-    case "$ARCH" in
-        amd64|arm64) ;;
-        *)
-            log "uv does not ship a $ARCH binary — cannot install a newer Python automatically" >&2
-            return 1
-            ;;
-    esac
-
-    # 1. Ensure uv is installed (for SUDO_USER, ~/.local/bin/uv)
-    local uv_bin="$piper_home/.local/bin/uv"
-    if [ ! -x "$uv_bin" ]; then
-        if $DRY_RUN; then
-            echo "    [dry-run] curl -LsSf https://astral.sh/uv/install.sh | sh  (as $piper_user)" >&2
-            printf '%s\n' "$piper_home/.local/share/uv/python/cpython-3.11/bin/python3.11"
-            return 0
-        fi
-        log "Installing uv (~15 MB standalone package manager) for user '$piper_user'" >&2
-        if ! su -s /bin/bash - "$piper_user" -c \
-                'curl -LsSf https://astral.sh/uv/install.sh | sh' >/tmp/_uv_install.log 2>&1; then
-            warn "uv installer script failed — see /tmp/_uv_install.log" >&2
-            return 1
-        fi
-    fi
-    if [ ! -x "$uv_bin" ]; then
-        warn "uv binary not found at $uv_bin after installer ran" >&2
-        return 1
-    fi
-    log "uv ready: $uv_bin" >&2
-
-    # 2. Install a standalone CPython 3.11
-    if ! su -s /bin/bash - "$piper_user" -c "'$uv_bin' python install 3.11" >/tmp/_uv_python.log 2>&1; then
-        warn "uv failed to install Python 3.11 — see /tmp/_uv_python.log" >&2
-        tail -n 10 /tmp/_uv_python.log >&2
-        return 1
-    fi
-
-    # 3. Resolve its absolute path. `uv python find 3.11` prints the path.
-    local uv_py
-    uv_py="$(su -s /bin/bash - "$piper_user" -c "'$uv_bin' python find 3.11" 2>/dev/null | head -1)"
-    if [ -z "$uv_py" ] || [ ! -x "$uv_py" ]; then
-        warn "uv reported no usable python3.11 at '$uv_py'" >&2
-        return 1
-    fi
-
-    log "uv-managed Python 3.11 ready: $uv_py" >&2
-    printf '%s\n' "$uv_py"
-    return 0
-}
 
 # ── Phase 3: Robust Docker installation ────────────────────────────
 
@@ -984,16 +750,13 @@ create_shared_model_dirs() {
     VOSK_HOST_DIR="$DATA_DIR/models/vosk"
     run install -d -m 0775 -o "$origin_user" -g "$origin_user" "$VOSK_HOST_DIR"
 
-    # Ollama models live where the official installer put them. The wizard's
-    # provisioning calls the host ollama.service over HTTP, so we just need
-    # to make sure the dir exists; ollama.service writes to it.
-    OLLAMA_HOST_DIR="/usr/share/ollama/.ollama/models"
-    [ -d "$OLLAMA_HOST_DIR" ] || run install -d -m 0755 "$OLLAMA_HOST_DIR" 2>/dev/null || true
+    # Ollama is user-managed — no host dir to provision. If the user
+    # installs Ollama themselves, its default model path (/usr/share/
+    # ollama/.ollama/models) is managed by the Ollama installer.
 
     log "Shared model dirs:"
-    echo "    Piper:  $PIPER_HOST_DIR"
-    echo "    Vosk:   $VOSK_HOST_DIR"
-    echo "    Ollama: $OLLAMA_HOST_DIR"
+    echo "    Piper: $PIPER_HOST_DIR"
+    echo "    Vosk:  $VOSK_HOST_DIR"
 }
 
 seed_piper_voices_from_host() {
@@ -1091,10 +854,9 @@ PYEOF
 
 write_env_overrides() {
     # Append/update the docker-compose env vars that drive the bind mounts:
-    #   PIPER_MODELS_DIR  → mounted at /var/lib/selena/models/piper inside core
-    #   VOSK_MODELS_DIR   → mounted at /var/lib/selena/models/vosk inside core
-    #   OLLAMA_MODELS_DIR → mounted RO at the same path inside core
-    #   HOST_UID          → for the PulseAudio socket path
+    #   PIPER_MODELS_DIR → mounted at /var/lib/selena/models/piper inside core
+    #   VOSK_MODELS_DIR  → mounted at /var/lib/selena/models/vosk inside core
+    #   HOST_UID         → for the PulseAudio socket path
     local env_file="$INSTALL_DIR/.env"
     [ -f "$env_file" ] || run touch "$env_file"
     local origin_user="${SUDO_USER:-root}"
@@ -1102,23 +864,16 @@ write_env_overrides() {
     origin_uid="$(id -u "$origin_user" 2>/dev/null || echo 0)"
     local piper_dir="${PIPER_HOST_DIR:-/root/.local/share/piper/models}"
     local vosk_dir="${VOSK_HOST_DIR:-$DATA_DIR/models/vosk}"
-    local ollama_dir="${OLLAMA_HOST_DIR:-/usr/share/ollama/.ollama/models}"
 
     if $DRY_RUN; then
-        echo "    [dry-run] would write PIPER_MODELS_DIR=$piper_dir VOSK_MODELS_DIR=$vosk_dir OLLAMA_MODELS_DIR=$ollama_dir HOST_UID=$origin_uid into $env_file"
+        echo "    [dry-run] would write PIPER_MODELS_DIR=$piper_dir VOSK_MODELS_DIR=$vosk_dir HOST_UID=$origin_uid into $env_file"
         return
     fi
     _set_env_var "$env_file" PIPER_MODELS_DIR  "$piper_dir"
     _set_env_var "$env_file" VOSK_MODELS_DIR   "$vosk_dir"
-    _set_env_var "$env_file" OLLAMA_MODELS_DIR "$ollama_dir"
     _set_env_var "$env_file" HOST_UID          "$origin_uid"
-    # Record which python interpreter has piper-tts installed (may be a
-    # newer one we pulled from deadsnakes when system python was 3.8).
-    if [ -n "${PIPER_PYTHON:-}" ]; then
-        _set_env_var "$env_file" PIPER_PYTHON "$PIPER_PYTHON"
-    fi
     chown "$SELENA_USER:$SELENA_USER" "$env_file" 2>/dev/null || true
-    log "Pinned docker-compose env: PIPER/VOSK/OLLAMA dirs + HOST_UID=$origin_uid${PIPER_PYTHON:+ + PIPER_PYTHON=$PIPER_PYTHON}"
+    log "Pinned docker-compose env: PIPER/VOSK dirs + HOST_UID=$origin_uid"
 }
 
 _set_env_var() {

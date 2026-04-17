@@ -1821,7 +1821,11 @@ async def start_provision() -> dict[str, Any]:
         or config.get("voice", {}).get("tts", {}).get("primary", {}).get("voice")
         or "uk_UA-ukrainian_tts-medium"
     )
-    llm_model = config.get("llm", {}).get("default_model")
+    # LLM provisioning is no longer part of the wizard pipeline. The user
+    # picks an Ollama URL / cloud API key in the "LLM Provider" step and
+    # manages model pulls themselves (`ollama pull …`). The selected
+    # `voice.llm_provider` + `voice.providers.<id>.*` config is already
+    # written by /wizard/step handling, so there's nothing to download here.
 
     _provision.reset()
     _provision.running = True
@@ -1868,12 +1872,14 @@ async def start_provision() -> dict[str, Any]:
         except Exception as exc:
             logger.debug("Argos install-check skipped: %s", exc)
 
-    # Check if LLM model needs downloading
-    if llm_model:
-        tasks.append({"id": "download_llm", "label": "download_llm", "status": "pending", "model": llm_model})
-
-    # Install systemd units (host-side); skipped silently inside docker if no systemctl
-    tasks.append({"id": "install_native_services", "label": "install_native_services", "status": "pending"})
+    # Install systemd units (host-side). Inside the container systemctl is
+    # unavailable and the task is a no-op — skip it from the pipeline
+    # entirely so the wizard's final screen doesn't show a redundant
+    # "installing local services" row that just ticks to done without
+    # doing anything.
+    import shutil as _sh
+    if _sh.which("systemctl"):
+        tasks.append({"id": "install_native_services", "label": "install_native_services", "status": "pending"})
 
     tasks.append({"id": "finalize", "label": "finalize", "status": "pending"})
 
@@ -1881,7 +1887,7 @@ async def start_provision() -> dict[str, Any]:
     _provision.total = len(tasks)
     _provision.completed = 0
 
-    asyncio.create_task(_run_provision(stt_model, tts_voice, llm_model))
+    asyncio.create_task(_run_provision(stt_model, tts_voice))
     return {"status": "started", **_provision.to_dict()}
 
 
@@ -1891,7 +1897,7 @@ async def provision_status() -> dict[str, Any]:
     return _provision.to_dict()
 
 
-async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) -> None:
+async def _run_provision(stt_model: str, tts_voice: str) -> None:
     """Execute provisioning tasks sequentially."""
     try:
         for task in _provision.tasks:
@@ -1910,8 +1916,6 @@ async def _run_provision(stt_model: str, tts_voice: str, llm_model: str | None) 
                     await _provision_download_embedding(task)
                 elif task["id"] == "download_translate":
                     await _provision_download_translate(task)
-                elif task["id"] == "download_llm":
-                    await _provision_download_llm(llm_model or "", task)
                 elif task["id"] == "install_native_services":
                     await _provision_install_native_services()
                 elif task["id"] == "finalize":
@@ -2005,36 +2009,6 @@ async def _provision_download_tts(voice_id: str, task: dict[str, Any] | None = N
                             downloaded_bytes += len(chunk)
                             task["progress"]["downloaded_bytes"] = downloaded_bytes
     logger.info("TTS voice %s downloaded to %s", voice_id, piper_dir)
-
-
-async def _provision_download_llm(model_id: str, task: dict[str, Any] | None = None) -> None:
-    """Download LLM model via Ollama pull.
-
-    Raises on failure so the provisioning runner marks the task as
-    ``error`` instead of silently marking it ``done``.
-    """
-    if not model_id:
-        return
-    from system_modules.llm_engine.ollama_client import get_ollama_client
-    client = get_ollama_client()
-    if not await client.is_available():
-        raise RuntimeError(
-            "Ollama server is not running — install it on the host "
-            "(curl -fsSL https://ollama.com/install.sh | sh) and start "
-            "with: sudo systemctl enable --now ollama"
-        )
-
-    if task is not None:
-        task["progress"] = {"downloaded_bytes": 0, "total_bytes": 0}
-
-    def _on_progress(downloaded: int, total: int) -> None:
-        if task is not None:
-            task["progress"]["downloaded_bytes"] = downloaded
-            task["progress"]["total_bytes"] = total
-
-    ok = await client.pull_model(model_id, progress_cb=_on_progress)
-    if not ok:
-        raise RuntimeError(f"Ollama pull failed for model '{model_id}'")
 
 
 async def _provision_download_stt(model_id: str, task: dict[str, Any] | None = None) -> None:

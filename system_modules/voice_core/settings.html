@@ -474,46 +474,62 @@
     <!-- Provider tabs -->
     <div class="provider-tabs" id="providerTabs"></div>
 
-    <!-- Switch progress -->
-    <div id="switchSteps" class="card-inner hidden steps-list"></div>
 
-    <!-- Ollama panel -->
+    <!-- Ollama panel — user-managed: Selena only connects via HTTP. -->
     <div id="ollamaPanel" class="hidden">
-        <div class="flex gap8 mb12">
-            <span id="ollamaStatusBadge" class="badge badge-off"></span>
-            <span id="ollamaRunBadge" class="badge hidden"></span>
-        </div>
-
-        <div class="flex gap8 mb16 wrap" id="ollamaActions"></div>
-        <div id="ollamaProgress" class="hidden mb12">
-            <div class="label-xs mono truncate" id="ollamaProgressText"></div>
-            <div class="progress-bar"><div class="fill pulse" style="width:60%"></div></div>
-        </div>
-
-        <!-- Ollama models -->
-        <div id="ollamaModels" class="mb12 hidden">
-            <div class="label-sm" data-i18n="installed_models"></div>
-            <div id="ollamaModelList"></div>
-        </div>
-
-        <!-- Pull model -->
-        <div id="ollamaPullSection" class="hidden">
+        <!-- URL + optional API key (Bearer) -->
+        <div class="mb12">
+            <div class="label-sm" data-i18n="ollama_url"></div>
             <div class="flex gap8">
-                <input type="text" id="pullModelInput" style="flex:1" data-placeholder-i18n="model_name_placeholder">
-                <button id="pullModelBtn" class="btn btn-secondary">Pull</button>
+                <input type="text" id="ollamaUrlInput" style="flex:1"
+                       placeholder="http://localhost:11434">
+                <button id="ollamaTestBtn" class="btn btn-blue" data-i18n="ollama_test"></button>
             </div>
-            <div id="pullProgress" class="hidden mt8">
-                <div class="row"><span id="pullStatusText" class="label-xs"></span><span id="pullPercent" class="label-xs"></span></div>
-                <div class="progress-bar"><div class="fill" id="pullFill" style="width:0%"></div></div>
+            <div class="label-xs" style="color:var(--tx3);margin-top:4px" data-i18n="ollama_url_hint"></div>
+        </div>
+        <div class="mb12">
+            <div class="label-sm" data-i18n="ollama_api_key"></div>
+            <div class="password-wrap flex1">
+                <input type="password" id="ollamaApiKeyInput"
+                       data-placeholder-i18n="ollama_api_key_placeholder">
+                <button class="password-toggle" id="toggleOllamaKeyVis">&#128065;</button>
+            </div>
+            <div class="label-xs" style="color:var(--tx3);margin-top:4px" data-i18n="ollama_api_key_hint"></div>
+        </div>
+
+        <!-- Status line (reachable / auth-required / unreachable) -->
+        <div id="ollamaStatusRow" class="flex gap8 mb12">
+            <span id="ollamaStatusBadge" class="badge badge-off"></span>
+            <span id="ollamaStatusText" class="label-xs" style="color:var(--tx3)"></span>
+        </div>
+        <div id="ollamaAuthWarning" class="hidden mb12"
+             style="font-size:11px;color:var(--rd);padding:6px 8px;background:rgba(255,70,70,0.08);border-radius:6px"
+             data-i18n="ollama_auth_required_hint"></div>
+
+        <!-- Models dropdown + activate -->
+        <div id="ollamaModelsSection" class="mb12 hidden">
+            <div class="label-sm" data-i18n="select_model"></div>
+            <div class="flex gap8">
+                <select id="ollamaModelSelect" style="flex:1"></select>
+                <button id="ollamaRefreshBtn" class="btn btn-secondary"
+                        data-i18n="refresh"></button>
+                <button id="ollamaSaveBtn" class="btn btn-green"
+                        data-i18n="save"></button>
             </div>
         </div>
 
-        <!-- Ollama catalog -->
-        <div class="mt12">
-            <button id="ollamaCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
-            <div id="ollamaCatalog" class="hidden mt8">
-                <div id="ollamaCatalogList" class="catalog-list"></div>
+        <!-- Empty-state: reachable but no models pulled yet -->
+        <div id="ollamaEmptyState" class="hidden mb12"
+             style="padding:10px;background:var(--sf2);border-radius:6px">
+            <div class="label-sm mb8" data-i18n="ollama_no_models"></div>
+            <div class="flex gap8" style="align-items:center">
+                <code style="flex:1;padding:6px 8px;background:var(--bg);border-radius:4px;font-size:11px"
+                      id="ollamaPullCmd">ollama pull llama3.2</code>
+                <button id="ollamaCopyCmd" class="btn btn-secondary"
+                        style="font-size:11px" data-i18n="copy"></button>
             </div>
+            <div class="label-xs" style="color:var(--tx3);margin-top:6px"
+                 data-i18n="ollama_no_models_hint"></div>
         </div>
     </div>
 
@@ -1101,7 +1117,23 @@
             installing: 'Installing...',
             uninstalling: 'Uninstalling...',
             refresh: 'Refresh',
+            copy: 'Copy',
+            copied: 'Copied',
             installed_models: 'Installed Models',
+            ollama_url: 'Ollama server URL',
+            ollama_url_hint: 'Point at a local or remote Ollama instance. Selena only connects via HTTP.',
+            ollama_api_key: 'API key (optional)',
+            ollama_api_key_placeholder: 'Leave empty for local servers',
+            ollama_api_key_hint: 'Local or LAN Ollama usually needs no key. Remote or proxied deployments may require a Bearer token.',
+            ollama_test: 'Test connection',
+            ollama_not_tested: 'Not tested',
+            ollama_testing: 'Testing...',
+            ollama_reachable: 'Reachable',
+            ollama_auth_required: 'Auth required',
+            ollama_auth_required_hint: 'Server returned 401/403. Enter the API key above and test again.',
+            ollama_unreachable: 'Unreachable',
+            ollama_no_models: 'No models on this server yet.',
+            ollama_no_models_hint: 'Run the command above in your terminal, then click Refresh.',
             vosk_desc: 'Offline speech recognition (Vosk)',
             vosk_active_model: 'Active model:',
             vosk_browse_models: 'Browse Model Catalog',
@@ -1392,7 +1424,23 @@
             installing: 'Встановлення...',
             uninstalling: 'Видалення...',
             refresh: 'Оновити',
+            copy: 'Копіювати',
+            copied: 'Скопійовано',
             installed_models: 'Встановленi моделi',
+            ollama_url: 'URL сервера Ollama',
+            ollama_url_hint: 'Вкажіть локальний або віддалений Ollama. Selena лише підключається через HTTP.',
+            ollama_api_key: 'API ключ (опціонально)',
+            ollama_api_key_placeholder: 'Залиште пустим для локальних серверів',
+            ollama_api_key_hint: 'Локальний або LAN Ollama зазвичай без ключа. Віддалений або за проксі може вимагати Bearer-токен.',
+            ollama_test: 'Перевірити зв’язок',
+            ollama_not_tested: 'Не перевірено',
+            ollama_testing: 'Перевіряємо...',
+            ollama_reachable: 'Доступний',
+            ollama_auth_required: 'Потрібна авторизація',
+            ollama_auth_required_hint: 'Сервер повернув 401/403. Введіть API-ключ вище та перевірте знову.',
+            ollama_unreachable: 'Недоступний',
+            ollama_no_models: 'На цьому сервері ще немає моделей.',
+            ollama_no_models_hint: 'Виконайте команду вище в терміналі, потім натисніть Оновити.',
             vosk_desc: 'Офлайн розпiзнавання мовлення (Vosk)',
             vosk_active_model: 'Активна модель:',
             vosk_browse_models: 'Каталог моделей',
@@ -2775,53 +2823,17 @@
     }
 
     async function selectProvider(pid) {
-        var oldPid = state.activeProvider;
         state.activeProvider = pid;
         renderProviderTabs();
-
-        // Show switch steps
-        show('switchSteps');
-        var steps = [];
-        function addStep(text) {
-            steps.push(text);
-            $('switchSteps').innerHTML = steps.map(function(s, i) {
-                var isLast = i === steps.length - 1;
-                return '<div class="step-item ' + (isLast ? 'step-active' : 'step-done') + '">' +
-                    (isLast ? '<span class="spinner"></span>' : '&#10003;') + ' ' + s + '</div>';
-            }).join('');
-        }
-
+        // No more "Stopping/Starting Ollama" choreography — Selena is an
+        // HTTP client only. The backend flips voice.llm_provider and
+        // clears the OllamaClient singleton; nothing to wait for.
         try {
-            if (oldPid === 'ollama' && pid !== 'ollama') addStep('Stopping Ollama...');
-
-            addStep('Selecting provider...');
             await postJson('/setup/llm/provider/select', { provider: pid });
-
-            if (pid === 'ollama') {
-                addStep('Starting Ollama...');
-                await waitForServer(function() { return api('/setup/ollama/status').then(function(d) { return d.running; }); }, 15);
-            }
-            addStep('Ready');
-            // Mark all done
-            $('switchSteps').innerHTML = steps.map(function(s) {
-                return '<div class="step-item step-done">&#10003; ' + s + '</div>';
-            }).join('');
-        } catch(e) { /* ignore */ }
-
-        setTimeout(function() {
-            hide('switchSteps');
-            loadProviders();
-            loadOllamaStatus();
-            loadOllamaModels();
-            showProviderPanel();
-        }, 1500);
-    }
-
-    async function waitForServer(check, maxSec) {
-        for (var i = 0; i < maxSec; i++) {
-            await new Promise(function(r) { setTimeout(r, 1000); });
-            try { if (await check()) return; } catch(e) { /* retry */ }
-        }
+        } catch (e) { /* ignore */ }
+        loadProviders();
+        loadOllamaConfig();
+        showProviderPanel();
     }
 
     function showProviderPanel() {
@@ -3302,202 +3314,143 @@
         };
     }
 
-    // ── Ollama ────────────────────────────────────────────────────
-    async function loadOllamaStatus() {
-        try {
-            var res = await api('/setup/ollama/status');
-            state.ollamaInstalled = res.installed;
-            state.ollamaVersion = res.version;
-            state.ollamaRunning = res.running;
-            $('ollamaStatusBadge').textContent = res.installed ? 'Ollama v' + res.version : t('not_installed');
-            $('ollamaStatusBadge').className = 'badge ' + (res.installed ? 'badge-ok' : 'badge-off');
-            if (res.installed) {
-                show('ollamaRunBadge');
-                $('ollamaRunBadge').textContent = res.running ? t('server_running') : t('server_stopped');
-                $('ollamaRunBadge').className = 'badge ' + (res.running ? 'badge-ok' : 'badge-warn');
-            } else {
-                hide('ollamaRunBadge');
-            }
-            renderOllamaActions();
-        } catch(e) { /* ignore */ }
-    }
-
-    async function loadOllamaModels() {
-        try {
-            var res = await api('/setup/ollama/models');
-            state.ollamaModels = res.models || [];
-        } catch(e) { /* ignore */ }
-        try {
-            var res2 = await api('/setup/llm/models');
-            state.ollamaActive = res2.active || '';
-        } catch(e) { /* ignore */ }
-        renderOllamaModels();
-    }
-
-    function renderOllamaModels() {
-        var list = $('ollamaModelList');
-        if (state.ollamaModels.length === 0) { hide('ollamaModels'); return; }
-        show('ollamaModels');
-        list.innerHTML = state.ollamaModels.map(function(m) {
-            var isActive = m.id === state.ollamaActive;
-            return '<div class="model-item' + (isActive ? ' active' : '') + '">' +
-                '<div><div class="model-name">' + m.name + '</div>' +
-                (m.size_gb !== undefined ? '<div class="model-meta">' + m.size_gb + ' GB</div>' : '') + '</div>' +
-                '<div class="flex gap8">' +
-                '<button class="btn ' + (isActive ? 'btn-green' : 'btn-secondary') + '" ' + (isActive ? 'disabled' : '') +
-                ' onclick="window._ollamaSelect(\'' + m.id + '\')">' + (isActive ? '&#10003;' : t('activate')) + '</button>' +
-                '<button class="btn btn-red" ' + (isActive ? 'disabled' : '') +
-                ' onclick="window._ollamaDelete(\'' + m.id + '\')">&#10005;</button>' +
-                '</div></div>';
-        }).join('');
-    }
-
-    window._ollamaSelect = async function(id) {
-        try { await postJson('/setup/llm/select', { model: id }); state.ollamaActive = id; renderOllamaModels(); } catch(e) { /* ignore */ }
-    };
-    window._ollamaDelete = async function(id) {
-        try { await postJson('/setup/ollama/delete-model', { model: id }); loadOllamaModels(); } catch(e) { /* ignore */ }
-    };
-
-    function renderOllamaActions() {
-        var html = '';
-        if (!state.ollamaInstalled) {
-            html += '<button class="btn btn-green" id="ollamaInstallBtn">' + t('install_engine') + '</button>';
+    // ── Ollama (user-managed: URL + optional Bearer, HTTP probe only) ─
+    function setOllamaStatus(kind, label) {
+        var badge = $('ollamaStatusBadge');
+        var text = $('ollamaStatusText');
+        badge.className = 'badge ' + (kind === 'ok' ? 'badge-ok' :
+                                        kind === 'warn' ? 'badge-warn' : 'badge-off');
+        badge.textContent = label;
+        text.textContent = '';
+        if (kind === 'warn') {
+            show('ollamaAuthWarning');
         } else {
-            if (!state.ollamaRunning) {
-                html += '<button class="btn btn-green" id="ollamaStartBtn">' + t('start_server') + '</button>';
+            hide('ollamaAuthWarning');
+        }
+    }
+
+    async function loadOllamaConfig() {
+        // Populate URL + key fields from core.yaml (voice.providers.ollama.*).
+        try {
+            var res = await api('/setup/llm/providers');
+            var o = (res.providers || []).find(function(p) { return p.id === 'ollama'; }) || {};
+            state.ollamaActive = o.model || '';
+        } catch (e) { /* ignore */ }
+        try {
+            var cfg = await api('/setup/ollama/config');
+            $('ollamaUrlInput').value = cfg.url || 'http://localhost:11434';
+            // api_key is never returned — empty placeholder means "leave as is".
+            $('ollamaApiKeyInput').value = cfg.api_key_set ? '••••••••' : '';
+            $('ollamaApiKeyInput').dataset.unchanged = cfg.api_key_set ? '1' : '';
+        } catch (e) {
+            $('ollamaUrlInput').value = 'http://localhost:11434';
+        }
+        setOllamaStatus('off', t('ollama_not_tested'));
+    }
+
+    async function testOllamaConnection() {
+        var url = ($('ollamaUrlInput').value || '').trim();
+        if (!url) return;
+        var keyInput = $('ollamaApiKeyInput');
+        var key = null;
+        if (keyInput.value && keyInput.dataset.unchanged !== '1') {
+            key = keyInput.value;
+        }
+        setOllamaStatus('off', t('ollama_testing'));
+        hide('ollamaModelsSection');
+        hide('ollamaEmptyState');
+        try {
+            var res = await postJson('/setup/llm/provider/validate', {
+                provider: 'ollama', url: url, api_key: key,
+            });
+            if (res.valid) {
+                setOllamaStatus('ok', t('ollama_reachable'));
+                var models = res.models || [];
+                populateOllamaModels(models);
+            } else if (res.auth_required) {
+                setOllamaStatus('warn', t('ollama_auth_required'));
             } else {
-                html += '<button class="btn btn-amber" id="ollamaStopBtn">' + t('stop_server') + '</button>';
+                setOllamaStatus('off', t('ollama_unreachable'));
             }
-            html += '<button class="btn btn-red" id="ollamaUninstallBtn">' + t('uninstall_engine') + '</button>';
-        }
-        html += '<button class="btn btn-ghost" id="ollamaRefreshBtn">' + t('refresh') + '</button>';
-        $('ollamaActions').innerHTML = html;
-
-        if ($('ollamaRefreshBtn')) $('ollamaRefreshBtn').onclick = function() { loadOllamaStatus(); loadOllamaModels(); };
-        if ($('ollamaInstallBtn')) $('ollamaInstallBtn').onclick = function() { ollamaEngineAction('install'); };
-        if ($('ollamaUninstallBtn')) $('ollamaUninstallBtn').onclick = function() { ollamaEngineAction('uninstall'); };
-        if ($('ollamaStartBtn')) $('ollamaStartBtn').onclick = async function() {
-            try { await api('/setup/ollama/start', { method: 'POST' }); setTimeout(loadOllamaStatus, 2000); } catch(e) { /* ignore */ }
-        };
-        if ($('ollamaStopBtn')) $('ollamaStopBtn').onclick = async function() {
-            try { await api('/setup/ollama/stop', { method: 'POST' }); setTimeout(loadOllamaStatus, 1000); } catch(e) { /* ignore */ }
-        };
-
-        // Show pull section if running
-        if (state.ollamaRunning) show('ollamaPullSection'); else hide('ollamaPullSection');
-    }
-
-    async function ollamaEngineAction(action) {
-        state.ollamaInstalling = true;
-        show('ollamaProgress');
-        $('ollamaProgressText').textContent = action === 'install' ? 'downloading ollama...' : 'removing ollama...';
-        $('ollamaActions').querySelectorAll('button').forEach(function(b) { b.disabled = true; });
-        try {
-            await api('/setup/ollama/' + action, { method: 'POST' });
-            var poll = setInterval(async function() {
-                try {
-                    var res = await api('/setup/ollama/install-progress');
-                    if (res.output) $('ollamaProgressText').textContent = res.output.split('\n').filter(Boolean).pop() || '';
-                    if (!res.running) {
-                        clearInterval(poll);
-                        state.ollamaInstalling = false;
-                        hide('ollamaProgress');
-                        await loadOllamaStatus();
-                        await loadOllamaModels();
-                    }
-                } catch(e) { /* ignore */ }
-            }, 3000);
-        } catch(e) { state.ollamaInstalling = false; hide('ollamaProgress'); renderOllamaActions(); }
-    }
-
-    // ── Pull model ────────────────────────────────────────────────
-    $('pullModelInput').onkeydown = function(e) { if (e.key === 'Enter' && this.value.trim()) pullModel(); };
-    $('pullModelBtn').onclick = pullModel;
-
-    async function pullModel() {
-        var name = $('pullModelInput').value.trim();
-        if (!name) return;
-        state.pulling = true;
-        state.pullProgress = 0;
-        state.pullStatus = 'starting...';
-        show('pullProgress');
-        $('pullModelBtn').disabled = true;
-        $('pullModelInput').disabled = true;
-
-        try {
-            await postJson('/setup/ollama/pull', { model: name });
-            var poll = setInterval(async function() {
-                try {
-                    var res = await api('/setup/ollama/pull-progress');
-                    state.pullProgress = res.percent || 0;
-                    state.pullStatus = res.status || '';
-                    $('pullStatusText').textContent = state.pullStatus;
-                    $('pullPercent').textContent = state.pullProgress.toFixed(1) + '%';
-                    $('pullFill').style.width = state.pullProgress + '%';
-                    if (!res.running) {
-                        clearInterval(poll);
-                        state.pulling = false;
-                        hide('pullProgress');
-                        $('pullModelBtn').disabled = false;
-                        $('pullModelInput').disabled = false;
-                        if (res.done) {
-                            $('pullModelInput').value = '';
-                            loadOllamaModels();
-                        }
-                    }
-                } catch(e) { /* ignore */ }
-            }, 1500);
-        } catch(e) {
-            state.pulling = false;
-            hide('pullProgress');
-            $('pullModelBtn').disabled = false;
-            $('pullModelInput').disabled = false;
+        } catch (e) {
+            setOllamaStatus('off', t('ollama_unreachable'));
         }
     }
 
-    // ── Ollama Catalog ────────────────────────────────────────────
-    var ollamaCatalogData = [];
-    $('ollamaCatalogToggle').onclick = function() {
-        var el = $('ollamaCatalog');
-        if (el.classList.contains('hidden')) {
-            show(el);
-            this.textContent = t('hide_catalog');
-            loadOllamaCatalog();
-        } else {
-            hide(el);
-            this.textContent = t('show_catalog');
-        }
-    };
-
-    async function loadOllamaCatalog() {
-        $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
-        try {
-            var res = await api('/setup/llm/catalog');
-            ollamaCatalogData = res.models || [];
-            renderOllamaCatalog();
-        } catch(e) { $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>'; }
-    }
-
-    function renderOllamaCatalog() {
-        if (ollamaCatalogData.length === 0) {
-            $('ollamaCatalogList').innerHTML = '<div class="label-xs">' + t('no_models_found') + '</div>';
+    function populateOllamaModels(models) {
+        var sel = $('ollamaModelSelect');
+        sel.innerHTML = '';
+        if (!models || models.length === 0) {
+            hide('ollamaModelsSection');
+            show('ollamaEmptyState');
             return;
         }
-        $('ollamaCatalogList').innerHTML = ollamaCatalogData.map(function(m) {
-            return '<div class="model-item" style="padding:8px 10px">' +
-                '<div><span class="model-name" style="font-size:12px">' + m.name + '</span>' +
-                '<span class="model-meta" style="margin-left:8px">' + (m.size_gb || '') + ' GB</span></div>' +
-                '<button class="btn btn-secondary" style="font-size:11px;padding:4px 8px" ' +
-                (state.pulling ? 'disabled' : '') +
-                ' onclick="window._ollamaPullCatalog(\'' + m.id + '\')">Pull</button>' +
-                '</div>';
-        }).join('');
+        models.forEach(function(m) {
+            var opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = m.name || m.id;
+            if (m.id === state.ollamaActive) opt.selected = true;
+            sel.appendChild(opt);
+        });
+        show('ollamaModelsSection');
+        hide('ollamaEmptyState');
     }
 
-    window._ollamaPullCatalog = function(id) {
-        $('pullModelInput').value = id;
-        pullModel();
+    async function saveOllamaActiveModel() {
+        var url = ($('ollamaUrlInput').value || '').trim();
+        var keyInput = $('ollamaApiKeyInput');
+        var keyPayload = {};
+        if (keyInput.dataset.unchanged === '1' && !keyInput.value) {
+            // Leave the stored key untouched.
+        } else {
+            keyPayload.api_key = keyInput.value || '';
+        }
+        // Persist URL + key first.
+        try {
+            await postJson('/setup/llm/provider/apikey',
+                Object.assign({ provider: 'ollama', url: url }, keyPayload));
+        } catch (e) { /* non-fatal */ }
+        // Then select + activate the chosen model.
+        var model = $('ollamaModelSelect').value;
+        if (model) {
+            try {
+                await postJson('/setup/llm/provider/model', { provider: 'ollama', model: model });
+                await postJson('/setup/llm/provider/select', { provider: 'ollama' });
+                state.ollamaActive = model;
+                if (typeof showToast === 'function') showToast(t('saved_ok'));
+            } catch (e) { /* non-fatal */ }
+        }
+    }
+
+    async function refreshOllamaModels() {
+        try {
+            var res = await api('/setup/llm/provider/models?provider=ollama');
+            var models = (res && res.models) || [];
+            if (models.length === 0 && res && res.auth_required) {
+                setOllamaStatus('warn', t('ollama_auth_required'));
+                return;
+            }
+            populateOllamaModels(models);
+            if (models.length > 0) setOllamaStatus('ok', t('ollama_reachable'));
+        } catch (e) { /* ignore */ }
+    }
+
+    $('ollamaTestBtn').onclick = testOllamaConnection;
+    $('ollamaRefreshBtn').onclick = refreshOllamaModels;
+    $('ollamaSaveBtn').onclick = saveOllamaActiveModel;
+    $('toggleOllamaKeyVis').onclick = function() {
+        var inp = $('ollamaApiKeyInput');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+    };
+    $('ollamaApiKeyInput').oninput = function() {
+        this.dataset.unchanged = '';
+    };
+    $('ollamaCopyCmd').onclick = function() {
+        var cmd = $('ollamaPullCmd').textContent;
+        try {
+            navigator.clipboard.writeText(cmd);
+            if (typeof showToast === 'function') showToast(t('copied'));
+        } catch (e) { /* ignore */ }
     };
 
     // ── Cloud Provider ────────────────────────────────────────────
@@ -4036,8 +3989,7 @@
             loadPiperCatalog(),
             loadDualVoiceStatus(),
             loadProviders(),
-            loadOllamaStatus(),
-            loadOllamaModels(),
+            loadOllamaConfig(),
         ]);
         // Vosk model management is in the catalog section
         renderPiperVoices();

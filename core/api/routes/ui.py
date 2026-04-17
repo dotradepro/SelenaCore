@@ -222,105 +222,82 @@ def _ollama_http_get(url: str, timeout: float = 4.0) -> dict[str, Any] | None:
 
 
 async def _read_ollama_status() -> dict[str, Any]:
-    """Read Ollama/LLM status (best-effort, non-blocking, sticky-cached).
+    """Probe the user-configured Ollama endpoint (if any).
 
-    Ollama runs natively on the host while Selena runs in a container, so the
-    host binary is NOT on the container's PATH and ``shutil.which("ollama")``
-    would return ``None``. The HTTP API is the authoritative source: if
-    ``/api/tags`` answers, Ollama is reachable and we treat it as both
-    installed and running.
+    Ollama is now a regular provider: Selena holds an HTTP URL + optional
+    Bearer token and probes ``/api/tags``. There is no host-side
+    install/running state any more — the UI surfaces reachability inside
+    the "Active Provider" card.
 
-    Behaviour:
-    - Probes are run in a worker thread (non-blocking for the event loop).
-    - ``/api/tags`` and ``/api/ps`` are issued in parallel.
-    - Successful results are cached for ``_OLLAMA_CACHE_TTL`` seconds.
-    - On a transient probe failure, the previous good result is reused for
-      up to ``_OLLAMA_STALE_TTL`` seconds — this prevents the system-info
-      card from flickering when Ollama is briefly busy.
+    Returns ``{url, reachable, auth_required, models: [{name,size_mb}]}``.
+    Result is cached for ``_OLLAMA_CACHE_TTL`` seconds; transient failures
+    serve the last good value for up to ``_OLLAMA_STALE_TTL``.
     """
     global _ollama_cache, _ollama_cache_ts
 
-    # Active model name is read fresh from config every call — it changes
-    # the moment the user switches LLM provider and must NOT be cached.
-    try:
-        from core.config import get_yaml_config
-        voice_cfg = get_yaml_config().get("voice", {})
-        active_model = (
-            voice_cfg.get("llm_model")
-            or voice_cfg.get("providers", {}).get("ollama", {}).get("model", "")
-            or os.environ.get("OLLAMA_MODEL", "")
-        )
-    except Exception:
-        voice_cfg = {}
-        active_model = os.environ.get("OLLAMA_MODEL", "")
+    from core.config_writer import read_config
+    config = read_config()
+    voice_cfg = config.get("voice", {}) if isinstance(config, dict) else {}
+    provider_cfg = (
+        voice_cfg.get("providers", {}).get("ollama", {})
+        if isinstance(voice_cfg, dict) else {}
+    )
+    active_model = (
+        voice_cfg.get("llm_model")
+        or provider_cfg.get("model", "")
+        or os.environ.get("OLLAMA_MODEL", "")
+    )
+    url = (
+        os.environ.get("OLLAMA_URL")
+        or provider_cfg.get("url")
+        or config.get("llm", {}).get("ollama_url")
+        or "http://localhost:11434"
+    )
+    api_key = provider_cfg.get("api_key") or os.environ.get("OLLAMA_API_KEY") or None
 
-    # Skip Ollama HTTP probe entirely when a cloud provider is active —
-    # avoids connection-timeout errors and unnecessary network traffic.
-    active_provider = voice_cfg.get("llm_provider", "ollama") or "ollama"
+    active_provider = voice_cfg.get("llm_provider") or None
+
+    # Skip the HTTP probe entirely when Ollama is not the active provider
+    # — no reason to burn network timeouts on an endpoint nobody uses.
     if active_provider != "ollama":
         return {
-            "installed": False,
-            "running": False,
-            "model": active_model,
-            "model_loaded": False,
-            "url": os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+            "url": url,
+            "reachable": False,
+            "auth_required": False,
+            "active_model": active_model,
+            "models": [],
             "skipped": True,
         }
 
     now = time.monotonic()
     if _ollama_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_CACHE_TTL:
         cached = dict(_ollama_cache)
-        cached["model"] = active_model
+        cached["active_model"] = active_model
         return cached
 
-    url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+    from system_modules.llm_engine.ollama_client import OllamaClient
+    client = OllamaClient(base_url=url, api_key=api_key)
+    probe = await client.probe()
+    models: list[dict[str, Any]] = []
+    if probe.get("reachable") and not probe.get("auth_required"):
+        try:
+            names = await client.list_models()
+            models = [{"name": n, "size_mb": 0} for n in names]
+        except Exception as exc:
+            logger.debug("Ollama list_models failed: %s", exc)
+
     result: dict[str, Any] = {
-        "installed": False,
-        "running": False,
-        "model": None,
-        "model_loaded": False,
         "url": url,
+        "reachable": bool(probe.get("reachable")),
+        "auth_required": bool(probe.get("auth_required")),
+        "active_model": active_model,
+        "models": models,
     }
 
-    tags_data, ps_data = await asyncio.gather(
-        asyncio.to_thread(_ollama_http_get, f"{url}/api/tags", 4.0),
-        asyncio.to_thread(_ollama_http_get, f"{url}/api/ps", 4.0),
-        return_exceptions=True,
-    )
-
-    probe_failed = True
-    if isinstance(tags_data, dict):
-        probe_failed = False
-        result["running"] = True
-        result["installed"] = True
-        models = tags_data.get("models", [])
-        result["models"] = [
-            {"name": m.get("name", ""), "size_mb": round(m.get("size", 0) / 1e6)}
-            for m in models
-        ]
-
-    if isinstance(ps_data, dict):
-        probe_failed = False
-        running_models = ps_data.get("models", [])
-        result["model_loaded"] = len(running_models) > 0
-        if running_models:
-            result["loaded_model"] = running_models[0].get("name", "")
-
-    # Binary-on-PATH fallback for the rare case where the API is down but
-    # the local binary is present (e.g. service stopped on this same host).
-    if not result["installed"]:
-        try:
-            result["installed"] = shutil.which("ollama") is not None
-        except Exception:
-            pass
-
-    # Active model from config (independent of liveness probe).
-    result["model"] = active_model
-
-    # Sticky cache: serve last-good on transient probe failure.
-    if probe_failed and _ollama_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_STALE_TTL:
+    if not probe.get("reachable") and _ollama_cache is not None \
+            and (now - _ollama_cache_ts) < _OLLAMA_STALE_TTL:
         cached = dict(_ollama_cache)
-        cached["model"] = active_model
+        cached["active_model"] = active_model
         return cached
 
     _ollama_cache = result
@@ -350,13 +327,19 @@ async def _read_llm_engine_status() -> dict[str, Any]:
     try:
         from system_modules.llm_engine.cloud_providers import PROVIDERS
         for pid, meta in PROVIDERS.items():
-            if not meta.get("needs_key", True):
-                continue  # skip ollama — it has its own card
             p_cfg = provider_configs.get(pid, {}) if isinstance(provider_configs, dict) else {}
+            if pid == "ollama":
+                # Ollama is user-managed and considered a remote LLM provider
+                # just like OpenAI / Anthropic / Groq / Google. "Configured"
+                # == a reachable URL is saved (URL alone is enough — the key
+                # is optional).
+                configured = bool(p_cfg.get("url") or active_provider == "ollama")
+            else:
+                configured = bool(p_cfg.get("api_key"))
             cloud_providers.append({
                 "id": pid,
                 "name": meta.get("name", pid),
-                "configured": bool(p_cfg.get("api_key")),
+                "configured": configured,
                 "model": p_cfg.get("model", "") or "",
                 "active": pid == active_provider,
             })
@@ -446,8 +429,7 @@ async def _read_native_services() -> list[dict[str, Any]]:
 
     piper_url = os.environ.get("PIPER_GPU_URL", "http://localhost:5100")
 
-    ollama_status, piper_health, pulse_ok, alsa_info, vosk_info, dbus_ok = await asyncio.gather(
-        _read_ollama_status(),
+    piper_health, pulse_ok, alsa_info, vosk_info, dbus_ok = await asyncio.gather(
         asyncio.to_thread(_probe_piper_blocking, piper_url, 3.0),
         asyncio.to_thread(_probe_pulseaudio_blocking),
         asyncio.to_thread(_probe_alsa_blocking),
@@ -458,20 +440,9 @@ async def _read_native_services() -> list[dict[str, Any]]:
 
     services: list[dict[str, Any]] = []
 
-    # Ollama
-    if isinstance(ollama_status, dict):
-        services.append({
-            "name": "ollama",
-            "running": bool(ollama_status.get("running")),
-            "url": ollama_status.get("url"),
-            "extra": {
-                "model": ollama_status.get("model"),
-                "model_loaded": bool(ollama_status.get("model_loaded")),
-                "models_count": len(ollama_status.get("models") or []),
-            },
-        })
-    else:
-        services.append({"name": "ollama", "running": False, "url": None, "extra": {}})
+    # Ollama is no longer a "native service managed by Selena" — it's a
+    # user-managed remote endpoint, surfaced via llm_engine.cloud_providers
+    # instead of this list.
 
     # Piper
     if isinstance(piper_health, dict):
@@ -622,8 +593,10 @@ async def ui_system() -> dict[str, Any]:
             "core_port": settings.core_port,
         },
         "hardware": hw,
-        "ollama": ollama,
-        "llm_engine": llm_engine,
+        # Ollama status is now nested under llm_engine.cloud_providers so
+        # the UI has one consistent shape per provider. Keeping the old
+        # `ollama` top-level key would make the frontend carry dead state.
+        "llm_engine": {**llm_engine, "ollama": ollama},
         "native_services": native_services,
     }
 
@@ -1081,6 +1054,7 @@ WIZARD_STEPS = {
     "timezone": {"required": True, "label": "Timezone"},
     "stt_model": {"required": False, "label": "STT Model"},
     "tts_voice": {"required": False, "label": "TTS Voice"},
+    "llm_provider": {"required": False, "label": "LLM Provider"},
     "admin_user": {"required": True, "label": "Admin User"},
     "home_devices": {"required": False, "label": "Home Devices"},
     "platform": {"required": False, "label": "Platform"},
@@ -1289,6 +1263,53 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
             update_config("voice", "tts_voice", data["voice"])  # legacy key
             update_nested("voice.tts.primary.voice", data["voice"])  # canonical
             os.environ["PIPER_VOICE"] = data["voice"]
+            # Wizard passes a "cuda" flag based on GPU detection + user
+            # override. start.sh reads voice.tts.primary.cuda on boot and
+            # passes --device gpu|cpu to piper-server.py. Missing field →
+            # preserve whatever auto-detection populated at container boot.
+            if "cuda" in data:
+                update_nested("voice.tts.primary.cuda", bool(data["cuda"]))
+
+        elif step == "llm_provider":
+            # Payload shape:
+            #   { provider: "ollama" | "openai" | ... | "skip", url?, api_key?, model? }
+            # skip → remove voice.llm_provider so _get_provider() returns
+            # a no-op. The user can still add a provider later under
+            # System → Engines without re-running the wizard.
+            from core.config_writer import read_config, write_config
+            provider = (data.get("provider") or "").strip()
+            config = read_config()
+            voice_cfg = config.setdefault("voice", {})
+            if not provider or provider == "skip":
+                voice_cfg.pop("llm_provider", None)
+                voice_cfg.pop("llm_model", None)
+            else:
+                voice_cfg["llm_provider"] = provider
+                providers = voice_cfg.setdefault("providers", {})
+                p_cfg = providers.setdefault(provider, {})
+                if provider == "ollama":
+                    if data.get("url"):
+                        p_cfg["url"] = str(data["url"]).rstrip("/")
+                    # api_key is optional; empty string → remove.
+                    key = data.get("api_key")
+                    if isinstance(key, str):
+                        if key.strip():
+                            p_cfg["api_key"] = key.strip()
+                        else:
+                            p_cfg.pop("api_key", None)
+                else:
+                    key = data.get("api_key")
+                    if isinstance(key, str) and key.strip():
+                        p_cfg["api_key"] = key.strip()
+                if data.get("model"):
+                    p_cfg["model"] = str(data["model"])
+                    voice_cfg["llm_model"] = str(data["model"])
+            write_config(config)
+            try:
+                from system_modules.llm_engine.ollama_client import reset_ollama_client
+                reset_ollama_client()
+            except Exception:
+                pass
 
         elif step == "admin_user":
             # admin_user is REQUIRED — without a valid PIN the user cannot
