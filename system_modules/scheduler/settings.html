@@ -7,93 +7,17 @@
     <title>Scheduler — Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
         body {
-            font-family: system-ui, sans-serif;
             max-width: 700px;
             margin: 0 auto;
             padding: 20px;
-            background: var(--bg);
-            color: var(--tx);
             min-height: 100%;
             overflow-y: auto;
         }
 
-        h1 {
-            font-size: 1.4rem;
-            margin-bottom: 8px;
-        }
-
-        h2 {
-            font-size: 1.1rem;
-            margin-top: 24px;
-            color: var(--tx2);
-        }
-
-        .form-group {
-            margin-bottom: 14px;
-        }
-
-        label {
-            display: block;
-            font-size: 0.85rem;
-            color: var(--tx2);
-            margin-bottom: 4px;
-        }
-
-        input,
-        select {
-            width: 100%;
-            padding: 8px 10px;
-            background: var(--sf);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            color: var(--tx);
-            font-size: 0.9rem;
-            box-sizing: border-box;
-        }
-
-        button {
-            padding: 8px 18px;
-            background: var(--ac);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-
-        button:hover {
-            background: var(--ac);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-        }
-
-        th,
-        td {
-            padding: 8px 10px;
-            text-align: left;
-            border-bottom: 1px solid var(--sf);
-        }
-
-        th {
-            color: var(--tx2);
-        }
-
-        .badge {
-            padding: 2px 8px;
-            border-radius: 10px;
-            background: var(--sf3);
-            font-size: 0.78rem;
-        }
-
         #msg {
             margin-top: 10px;
-            font-size: 0.88rem;
+            font-size: 12px;
             color: var(--gr);
             min-height: 20px;
         }
@@ -103,69 +27,52 @@
             background: var(--sf2);
             color: var(--ac);
             border: 1px solid var(--ac);
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 12px;
             margin-bottom: 10px;
             transition: background .2s;
         }
+        .btn-detect:hover { background: var(--ac); color: #fff; }
+        .btn-detect:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .btn-detect:hover {
-            background: var(--ac);
-            color: #fff;
-        }
-
-        .btn-detect:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .detect-msg {
-            font-size: 0.82rem;
-            color: var(--tx2);
-            min-height: 18px;
-            margin-bottom: 6px;
-        }
-
-        .detect-msg.error {
-            color: var(--rd);
-        }
+        .detect-msg { font-size: 12px; color: var(--tx2); min-height: 18px; margin-bottom: 6px; }
+        .detect-msg.error { color: var(--rd); }
 
         .loc-info {
-            font-size: 0.85rem;
+            font-size: 12px;
             color: var(--tx2);
             margin-bottom: 10px;
             padding: 8px 12px;
             background: var(--sf);
             border: 1px solid var(--b);
-            border-radius: 6px;
+            border-radius: 8px;
             min-height: 20px;
         }
+        .loc-info .coords { color: var(--tx3); font-size: 11px; }
 
-        .loc-info .coords {
-            color: var(--tx3);
-            font-size: 0.78rem;
-        }
+        .form-group { margin-bottom: 14px; }
+        .form-group label { display: block; font-size: 12px; color: var(--tx2); margin-bottom: 4px; }
     </style>
 </head>
 
 <body>
-    <h1 data-i18n="title"></h1>
+    <h2 data-i18n="title"></h2>
 
-    <h2 data-i18n="h_loc_tz"></h2>
+    <div class="section-sub" data-i18n="h_loc_tz"></div>
     <input type="hidden" id="lat" />
     <input type="hidden" id="lon" />
     <div id="loc-info" class="loc-info"></div>
-    <button class="btn-detect" onclick="detectLocation()" id="btn-detect" data-i18n="detect"></button>
+    <button class="btn-detect" id="btn-detect" data-i18n="detect"></button>
     <div id="detect-msg" class="detect-msg"></div>
     <div class="form-group">
         <label data-i18n="lbl_tz"></label>
-        <input type="text" id="tz" placeholder="Europe/Kyiv" />
+        <input type="text" id="tz" placeholder="Europe/Kyiv" style="width:100%" />
     </div>
-    <button onclick="saveConfig()" data-i18n="save"></button>
+    <button class="btn btn-primary" id="btnSave" data-i18n="save"></button>
     <div id="msg"></div>
 
-    <h2 data-i18n="h_jobs"></h2>
+    <div class="section-title mt16" data-i18n="h_jobs"></div>
     <table id="jobs-table">
         <thead>
             <tr>
@@ -179,112 +86,113 @@
         <tbody id="jobs-body"></tbody>
     </table>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
-                title: '⏱ Scheduler', h_loc_tz: 'Location & Timezone',
-                detect: '📍 Detect my location', detecting: 'Detecting…',
+                title: 'Scheduler', h_loc_tz: 'Location & Timezone',
+                detect: 'Detect my location', detecting: 'Detecting\u2026',
                 detect_ok: 'Location detected', detect_tz: 'Timezone detected',
                 detect_err_denied: 'Location access denied. Allow it in browser settings.',
                 detect_err_unavail: 'Location unavailable. Try again later.',
                 detect_err_timeout: 'Location request timed out. Try again.',
                 detect_err_nosupport: 'Geolocation is not supported by this browser.',
                 detect_err_unknown: 'Failed to detect location.',
-                loc_not_set: 'Location not set — press the button above to detect',
+                loc_not_set: 'Location not set \u2014 press the button above to detect',
                 loc_set: 'Location', lbl_tz: 'Timezone',
-                save: 'Save', saved: '✓ Saved',
+                save: 'Save', saved: 'Saved',
                 h_jobs: 'Active Jobs', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Owner', col_next: 'Next Run',
                 remove_confirm: 'Remove job ',
-                removed_ok: '✓ Job removed', error: 'Error'
+                removed_ok: 'Job removed', error: 'Error'
             },
             uk: {
-                title: '⏱ Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
-                detect: '📍 Визначити моє місце', detecting: 'Визначаємо…',
+                title: 'Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
+                detect: 'Визначити моє місце', detecting: 'Визначаємо\u2026',
                 detect_ok: 'Місцезнаходження визначено', detect_tz: 'Часовий пояс визначено',
                 detect_err_denied: 'Доступ до геолокації заборонено. Дозвольте у налаштуваннях браузера.',
                 detect_err_unavail: 'Місцезнаходження недоступне. Спробуйте пізніше.',
                 detect_err_timeout: 'Час очікування вичерпано. Спробуйте ще раз.',
                 detect_err_nosupport: 'Геолокація не підтримується цим браузером.',
                 detect_err_unknown: 'Не вдалося визначити місцезнаходження.',
-                loc_not_set: 'Місцезнаходження не встановлено — натисніть кнопку вище',
+                loc_not_set: 'Місцезнаходження не встановлено \u2014 натисніть кнопку вище',
                 loc_set: 'Місцезнаходження', lbl_tz: 'Часовий пояс',
-                save: 'Зберегти', saved: '✓ Збережено',
+                save: 'Зберегти', saved: 'Збережено',
                 h_jobs: 'Активні завдання', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Власник', col_next: 'Наступний запуск',
                 remove_confirm: 'Видалити завдання ',
-                removed_ok: '✓ Завдання видалено', error: 'Помилка'
+                removed_ok: 'Завдання видалено', error: 'Помилка'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadConfig(); loadJobs(); } });
-
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         function updateLocInfo() {
-            var el = document.getElementById('loc-info');
-            var lat = document.getElementById('lat').value;
-            var lon = document.getElementById('lon').value;
+            var el = $('loc-info');
+            var lat = $('lat').value;
+            var lon = $('lon').value;
             if (lat && lon && lat !== '' && lon !== '') {
-                el.innerHTML = '✅ ' + t('loc_set') + ': <span class="coords">' + lat + ', ' + lon + '</span>';
+                el.innerHTML = t('loc_set') + ': <span class="coords">' + esc(lat) + ', ' + esc(lon) + '</span>';
             } else {
                 el.textContent = t('loc_not_set');
             }
         }
 
         async function loadConfig() {
-            const r = await fetch(BASE + '/config');
-            const d = await r.json();
-            document.getElementById('lat').value = d.latitude ?? '';
-            document.getElementById('lon').value = d.longitude ?? '';
-            document.getElementById('tz').value = d.timezone ?? 'UTC';
-            updateLocInfo();
+            try {
+                var d = await apiGet('/config');
+                $('lat').value = d.latitude ?? '';
+                $('lon').value = d.longitude ?? '';
+                $('tz').value = d.timezone ?? 'UTC';
+                updateLocInfo();
+            } catch (e) {
+                showToast(t('error') + ': ' + e.message, 'error');
+            }
         }
 
-        async function saveConfig() {
-            const body = {
-                latitude: parseFloat(document.getElementById('lat').value) || null,
-                longitude: parseFloat(document.getElementById('lon').value) || null,
-                timezone: document.getElementById('tz').value || 'UTC',
-            };
-            await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            document.getElementById('msg').textContent = t('saved');
-            setTimeout(() => document.getElementById('msg').textContent = '', 3000);
-        }
+        $('btnSave').addEventListener('click', function () {
+            withLoading(this, async function () {
+                var body = {
+                    latitude: parseFloat($('lat').value) || null,
+                    longitude: parseFloat($('lon').value) || null,
+                    timezone: $('tz').value || 'UTC',
+                };
+                await apiPost('/config', body);
+                showToast(t('saved'));
+            });
+        });
 
         async function loadJobs() {
-            const r = await fetch(BASE + '/jobs');
-            const d = await r.json();
-            const tbody = document.getElementById('jobs-body');
-            tbody.innerHTML = '';
-            for (const j of (d.jobs || [])) {
-                const row = document.createElement('tr');
-                const next = j.next_run ? new Date(j.next_run).toLocaleString() : '—';
-                row.innerHTML = `<td>${j.job_id}</td><td><span class="badge">${j.trigger}</span></td><td>${j.owner}</td><td>${next}</td><td><button onclick="removeJob('${j.job_id}')">✕</button></td>`;
-                tbody.appendChild(row);
+            try {
+                var d = await apiGet('/jobs');
+                var tbody = $('jobs-body');
+                tbody.innerHTML = '';
+                var jobs = d.jobs || [];
+                for (var i = 0; i < jobs.length; i++) {
+                    var j = jobs[i];
+                    var row = document.createElement('tr');
+                    var next = j.next_run ? new Date(j.next_run).toLocaleString() : '\u2014';
+                    row.innerHTML = '<td>' + esc(j.job_id) + '</td><td><span class="badge badge-info">' + esc(j.trigger) + '</span></td><td>' + esc(j.owner) + '</td><td>' + esc(next) + '</td><td><button class="btn btn-danger btn-xs" data-job="' + esc(j.job_id) + '">\u2715</button></td>';
+                    tbody.appendChild(row);
+                }
+                tbody.querySelectorAll('[data-job]').forEach(function (btn) {
+                    btn.addEventListener('click', function () { removeJob(btn.getAttribute('data-job')); });
+                });
+            } catch (e) {
+                showToast(t('error') + ': ' + e.message, 'error');
             }
         }
 
         async function removeJob(jobId) {
             if (!confirm(t('remove_confirm') + jobId + '?')) return;
             try {
-                var r = await fetch(BASE + '/jobs/' + encodeURIComponent(jobId), { method: 'DELETE' });
-                if (r.ok) { showMsg(t('removed_ok'), true); }
-                else { showMsg(t('error'), false); }
-            } catch (e) { showMsg(t('error') + ': ' + e.message, false); }
+                await apiDelete('/jobs/' + encodeURIComponent(jobId));
+                showToast(t('removed_ok'));
+            } catch (e) {
+                showToast(t('error') + ': ' + e.message, 'error');
+            }
             loadJobs();
         }
 
-        function showMsg(text, ok) {
-            var el = document.getElementById('msg');
-            el.textContent = text;
-            el.style.color = ok ? 'var(--gr)' : 'var(--rd)';
-            setTimeout(function () { el.textContent = ''; }, 3000);
-        }
-
         function detectLocation() {
-            var msgEl = document.getElementById('detect-msg');
-            var btn = document.getElementById('btn-detect');
+            var msgEl = $('detect-msg');
+            var btn = $('btn-detect');
             msgEl.className = 'detect-msg';
 
             if (!navigator.geolocation) {
@@ -301,22 +209,18 @@
                 function (pos) {
                     var lat = Math.round(pos.coords.latitude * 10000) / 10000;
                     var lon = Math.round(pos.coords.longitude * 10000) / 10000;
-                    document.getElementById('lat').value = lat;
-                    document.getElementById('lon').value = lon;
+                    $('lat').value = lat;
+                    $('lon').value = lon;
 
-                    // Detect browser timezone via Intl API
                     try {
                         var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                        if (tz) {
-                            document.getElementById('tz').value = tz;
-                        }
-                    } catch (e) { /* keep existing tz value */ }
+                        if (tz) $('tz').value = tz;
+                    } catch (e) { }
 
                     updateLocInfo();
                     msgEl.className = 'detect-msg';
                     msgEl.style.color = 'var(--gr)';
                     msgEl.textContent = t('detect_ok');
-
                     btn.disabled = false;
                     btn.textContent = t('detect');
                 },
@@ -335,12 +239,13 @@
             );
         }
 
+        $('btn-detect').addEventListener('click', detectLocation);
+
         applyLang();
         loadConfig();
         loadJobs();
         setInterval(loadJobs, 30000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

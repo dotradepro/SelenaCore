@@ -10,20 +10,6 @@
     <style>
         body { padding: 1rem; overflow: auto; }
 
-        h2 {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: .75rem;
-        }
-
-        .card {
-            background: var(--sf);
-            border: 1px solid var(--b);
-            border-radius: .5rem;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-
         .user-row {
             display: flex;
             align-items: center;
@@ -34,13 +20,6 @@
 
         .user-row:last-child {
             border-bottom: none;
-        }
-
-        .badge {
-            font-size: .7rem;
-            padding: .15rem .4rem;
-            border-radius: 9999px;
-            font-weight: 600;
         }
 
         .badge-owner {
@@ -63,41 +42,9 @@
             color: var(--am);
         }
 
-        button {
-            background: var(--sf2);
-            border: 1px solid var(--b);
-            color: var(--tx);
-            padding: .35rem .7rem;
-            border-radius: .375rem;
-            cursor: pointer;
-            font-size: .85rem;
-        }
-
-        button:hover {
-            background: var(--sf3);
-        }
-
-        .btn-danger {
-            background: rgba(224,84,84,.13);
-            color: var(--rd);
-            border-color: transparent;
-        }
-
-        .btn-danger:hover {
-            background: rgba(224,84,84,.25);
-        }
-
         #status {
             font-size: .8rem;
             color: var(--tx3);
-            margin-bottom: .5rem;
-        }
-
-        .section-title {
-            font-size: .75rem;
-            color: var(--tx3);
-            text-transform: uppercase;
-            letter-spacing: .05em;
             margin-bottom: .5rem;
         }
 
@@ -107,31 +54,6 @@
             gap: .25rem .5rem;
             align-items: center;
             font-size: .85rem;
-        }
-
-        select {
-            background: var(--sf2);
-            color: var(--tx);
-            border: 1px solid var(--b);
-            border-radius: .375rem;
-            padding: .25rem .5rem;
-            font-size: .85rem;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 1rem;
-            height: 1rem;
-            border: 2px solid var(--b);
-            border-top-color: var(--ac);
-            border-radius: 50%;
-            animation: spin .6s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
         }
     </style>
 </head>
@@ -144,7 +66,7 @@
     <div class="card">
         <div class="section-title" data-i18n="usersSection"></div>
         <div id="users-list"></div>
-        <button id="btn-add-user" style="margin-top:.75rem" data-i18n="addUser"></button>
+        <button class="btn btn-secondary" id="btn-add-user" style="margin-top:.75rem" data-i18n="addUser"></button>
     </div>
 
     <!-- Role permissions -->
@@ -155,10 +77,9 @@
     </div>
 
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
-                loading: 'Loading…',
+                loading: 'Loading\u2026',
                 usersSection: 'Users',
                 addUser: '+ Add user',
                 rolePerms: 'Role permissions',
@@ -175,9 +96,10 @@
                 savePerms: 'Save',
                 saved: 'Saved', save_error: 'Save failed',
                 errLoad: 'Failed to load users',
+                errPerms: 'Failed to load permissions',
             },
             uk: {
-                loading: 'Завантаження…',
+                loading: 'Завантаження\u2026',
                 usersSection: 'Користувачі',
                 addUser: '+ Додати користувача',
                 rolePerms: 'Права ролей',
@@ -194,38 +116,30 @@
                 savePerms: 'Зберегти',
                 saved: 'Збережено', save_error: 'Не вдалося зберегти',
                 errLoad: 'Помилка завантаження',
+                errPerms: 'Не вдалося завантажити права',
             },
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() {
-            document.querySelectorAll('[data-i18n]').forEach(function (el) {
-                el.textContent = t(el.getAttribute('data-i18n'));
-            });
-        }
-        window.addEventListener('message', function (e) {
-            if (e.data && e.data.type === 'lang_changed') {
-                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
-                applyLang();
-                load();
-            }
-        });
 
-        var BASE = window.location.pathname.replace(/\/(settings)(\.html)?$/, '');
-        var ROLE_LABELS = { owner: t('roleOwner'), admin: t('roleAdmin'), user: t('roleUser'), guest: t('roleGuest') };
+        var ROLE_LABELS = {};
         var selectedRole = 'admin';
 
+        function updateRoleLabels() {
+            ROLE_LABELS = { owner: t('roleOwner'), admin: t('roleAdmin'), user: t('roleUser'), guest: t('roleGuest') };
+        }
+
         applyLang();
+        updateRoleLabels();
 
         async function load() {
-            document.getElementById('status').textContent = t('loading');
+            $('status').textContent = t('loading');
+            updateRoleLabels();
             try {
-                var res = await fetch(BASE + '/users', { headers: { 'X-Device-Token': localStorage.getItem('selena_device') || '' } });
-                if (!res.ok) throw new Error(res.status);
-                var data = await res.json();
+                var data = await apiGet('/users');
                 renderUsers(data.users || []);
-                document.getElementById('status').textContent = '';
+                $('status').textContent = '';
             } catch (e) {
-                document.getElementById('status').textContent = t('errLoad');
+                $('status').textContent = t('errLoad');
+                showToast(t('errLoad'), 'error');
             }
             loadPerms(selectedRole);
         }
@@ -235,34 +149,34 @@
         }
 
         function renderUsers(users) {
-            var el = document.getElementById('users-list');
-            if (!users.length) { el.innerHTML = '<p style="color:#71717a;font-size:.85rem">' + t('noUsers') + '</p>'; return; }
+            var el = $('users-list');
+            if (!users.length) { el.innerHTML = '<p style="color:var(--tx3);font-size:.85rem">' + esc(t('noUsers')) + '</p>'; return; }
             el.innerHTML = users.map(function (u) {
                 return '<div class="user-row">' +
-                    '<span>' + u.display_name + ' <small style="color:#71717a">@' + u.username + '</small></span>' +
-                    '<span class="' + badgeClass(u.role) + '">' + (ROLE_LABELS[u.role] || u.role) + '</span>' +
+                    '<span>' + esc(u.display_name) + ' <small style="color:var(--tx3)">@' + esc(u.username) + '</small></span>' +
+                    '<span class="' + badgeClass(u.role) + '">' + esc(ROLE_LABELS[u.role] || u.role) + '</span>' +
                     '</div>';
             }).join('');
         }
 
         async function loadPerms(role) {
-            var panel = document.getElementById('perms-panel');
+            var panel = $('perms-panel');
             panel.innerHTML = '<div class="spinner"></div>';
             try {
-                var res = await fetch(BASE + '/roles/' + role + '/permissions', { headers: { 'X-Device-Token': localStorage.getItem('selena_device') || '' } });
-                if (!res.ok) throw new Error();
-                var p = await res.json();
+                var p = await apiGet('/roles/' + role + '/permissions');
                 renderPerms(role, p);
                 renderRoleTabs();
             } catch (e) {
-                panel.innerHTML = '<p style="color:#71717a;font-size:.85rem">—</p>';
+                panel.innerHTML = '<p style="color:var(--tx3);font-size:.85rem">\u2014</p>';
+                showToast(t('errPerms'), 'error');
             }
         }
 
         function renderRoleTabs() {
-            var el = document.getElementById('role-tabs');
+            var el = $('role-tabs');
             el.innerHTML = ['admin', 'user', 'guest'].map(function (r) {
-                return '<button onclick="switchRole(\'' + r + '\')" style="' + (selectedRole === r ? 'background:#7c3aed' : '') + '">' + (ROLE_LABELS[r] || r) + '</button>';
+                var cls = 'btn ' + (selectedRole === r ? 'btn-primary' : 'btn-secondary');
+                return '<button class="' + cls + '" onclick="switchRole(\'' + r + '\')">' + esc(ROLE_LABELS[r] || r) + '</button>';
             }).join('');
         }
 
@@ -285,7 +199,7 @@
             var html = '<div class="perms-grid">';
             rows.forEach(function (row) {
                 var label = t(row[0]), key = row[1], type = row[2];
-                html += '<span>' + label + '</span>';
+                html += '<span>' + esc(label) + '</span>';
                 if (type === 'bool') {
                     html += '<input type="checkbox" id="p_' + key + '" ' + (p[key] ? 'checked' : '') + '>';
                 } else {
@@ -295,47 +209,31 @@
                 }
             });
             html += '</div>';
-            html += '<button id="btn-save-perms" style="margin-top:.75rem" onclick="savePerms(\'' + role + '\')">' + t('savePerms') + '</button>';
-            document.getElementById('perms-panel').innerHTML = html;
+            html += '<button class="btn btn-primary" id="btn-save-perms" style="margin-top:.75rem" onclick="savePerms(\'' + role + '\')">' + esc(t('savePerms')) + '</button>';
+            $('perms-panel').innerHTML = html;
         }
 
         async function savePerms(role) {
-            var btn = document.getElementById('btn-save-perms');
-            btn.disabled = true;
-            var body = {
-                devices_view: document.getElementById('p_devices_view').checked,
-                devices_control: document.getElementById('p_devices_control').checked,
-                modules_configure: document.getElementById('p_modules_configure').checked,
-                users_manage: document.getElementById('p_users_manage').checked,
-                system_reboot: document.getElementById('p_system_reboot').checked,
-                system_update: document.getElementById('p_system_update').checked,
-                voice_commands: document.getElementById('p_voice_commands').value,
-                scenes_run: document.getElementById('p_scenes_run').value,
-            };
-            try {
-                var elevated = sessionStorage.getItem('selena_elevated') || '';
+            var btn = $('btn-save-perms');
+            await withLoading(btn, async function () {
+                var body = {
+                    devices_view: $('p_devices_view').checked,
+                    devices_control: $('p_devices_control').checked,
+                    modules_configure: $('p_modules_configure').checked,
+                    users_manage: $('p_users_manage').checked,
+                    system_reboot: $('p_system_reboot').checked,
+                    system_update: $('p_system_update').checked,
+                    voice_commands: $('p_voice_commands').value,
+                    scenes_run: $('p_scenes_run').value,
+                };
                 var res = await fetch(BASE + '/roles/' + role + '/permissions', {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', 'X-Device-Token': localStorage.getItem('selena_device') || '', 'X-Elevated-Token': elevated },
+                    headers: _apiHeaders(),
                     body: JSON.stringify(body),
                 });
-                if (res.ok) {
-                    btn.textContent = t('saved');
-                    btn.style.background = 'var(--gr)';
-                    btn.style.color = '#fff';
-                    setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 2000);
-                } else {
-                    btn.textContent = t('save_error');
-                    btn.style.background = 'var(--rd)';
-                    btn.style.color = '#fff';
-                    setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 3000);
-                }
-            } catch (e) {
-                btn.textContent = t('save_error');
-                btn.style.background = 'var(--rd)';
-                btn.style.color = '#fff';
-                setTimeout(function () { btn.textContent = t('savePerms'); btn.disabled = false; btn.style.background = ''; btn.style.color = ''; }, 3000);
-            }
+                if (!res.ok) throw new Error(t('save_error'));
+                showToast(t('saved'), 'success');
+            });
         }
 
         load();

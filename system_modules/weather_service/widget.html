@@ -7,27 +7,14 @@
     <title>Weather</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        /* iframe fills the grid cell — NO viewport units */
+        /* Widget-specific overrides on top of shared theme.css */
         html,
         body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
             background: transparent;
         }
 
         body {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            color: var(--tx);
             background: var(--bg);
             background-image:
                 linear-gradient(var(--b) 1px, transparent 1px),
@@ -241,11 +228,11 @@
             opacity: .45;
         }
 
-        .pulse {
-            animation: pulse 1.8s ease-in-out infinite;
+        .w-pulse {
+            animation: w-pulse 1.8s ease-in-out infinite;
         }
 
-        @keyframes pulse {
+        @keyframes w-pulse {
 
             0%,
             100% {
@@ -405,22 +392,19 @@
 
     <div class="root" id="root">
         <div class="state-center">
-            <div class="ico pulse">🌤</div>
+            <div class="ico w-pulse">🌤</div>
             <div data-i18n="loading"></div>
         </div>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: { loading: 'Loading…', feels_like: 'Feels like' },
             uk: { loading: 'Завантаження…', feels_like: 'Відчувається' }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        (function () {
-            const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
+        (function () {
             function r(v, d) {
                 if (v == null) return '—';
                 return d != null ? Number(v).toFixed(d) : Math.round(v);
@@ -504,24 +488,24 @@
 
             async function load() {
                 try {
-                    const [cr, fr] = await Promise.all([
-                        fetch(`${BASE}/weather/current`),
-                        fetch(`${BASE}/weather/forecast`),
+                    const [cur, fore] = await Promise.all([
+                        apiGet('/weather/current'),
+                        apiGet('/weather/forecast'),
                     ]);
-                    if (!cr.ok) throw new Error(`HTTP ${cr.status}`);
-                    const cur = await cr.json();
-                    const fore = await fr.json();
-                    render(cur, fore.forecast || []);
+                    render(cur, (fore && fore.forecast) || []);
                 } catch (e) {
                     document.getElementById('root').innerHTML = `
         <div class="state-center">
           <div class="ico">⚠️</div>
-          <div>${e.message}</div>
+          <div>${esc(e.message || String(e))}</div>
         </div>`;
+                    showToast(String(e && e.message || e), 'error');
                 }
             }
 
-            window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); load(); } });
+            // Expose refresh so widget-common.js lang_changed re-triggers data reload
+            window.refresh = load;
+
             applyLang();
             applySize();
             load();
@@ -535,7 +519,6 @@
             }
         })();
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

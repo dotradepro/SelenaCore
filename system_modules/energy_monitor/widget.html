@@ -7,19 +7,7 @@
     <title>Energy Monitor</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        html,
-        body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
+        /* Widget-specific overrides on top of shared theme.css */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg);
@@ -43,6 +31,7 @@
         }
         body > * { pointer-events: none; }
         body.modal-mode > * { pointer-events: auto; }
+
         .kpi-row {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -58,6 +47,7 @@
         }
         .kpi-val { font-size: 1.05rem; font-weight: 700; color: var(--tx); }
         .kpi-lbl { font-size: 0.65rem; color: var(--tx3); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
         .modal-table {
             width: 100%;
             border-collapse: collapse;
@@ -74,6 +64,7 @@
             font-size: 0.65rem;
             text-transform: uppercase;
         }
+
         .filter-row {
             display: flex;
             gap: 6px;
@@ -90,6 +81,7 @@
             color: var(--tx);
             font-size: 0.75rem;
         }
+
         .pill {
             display: inline-block;
             padding: 1px 6px;
@@ -99,6 +91,7 @@
         }
         .pill.on { background: rgba(34,197,94,.18); color: var(--gn,#22c55e); }
         .pill.off { background: rgba(239,68,68,.18); color: var(--rd); }
+
         .fs-close {
             position: fixed; top: 12px; right: 16px;
             background: var(--sf); border: 1px solid var(--b); border-radius: 50%;
@@ -116,18 +109,15 @@
             color: var(--tx2);
             line-height: 1;
         }
-
         .top .icon {
             font-size: 0.95rem;
             color: var(--am);
         }
-
         .top .active {
             display: inline-flex;
             align-items: center;
             gap: 3px;
         }
-
         .top .dot {
             width: 6px;
             height: 6px;
@@ -135,7 +125,6 @@
             background: var(--gn, #22c55e);
             display: inline-block;
         }
-
         .top .dot.idle {
             background: var(--tx3, #6b7280);
         }
@@ -144,21 +133,18 @@
             text-align: center;
             line-height: 1;
         }
-
         .watts {
             font-size: 1.65rem;
             font-weight: 700;
             color: var(--am);
             white-space: nowrap;
         }
-
         .watts .unit {
             font-size: 0.85rem;
             font-weight: 500;
             color: var(--tx2);
             margin-left: 2px;
         }
-
         .label {
             margin-top: 3px;
             font-size: 0.65rem;
@@ -173,7 +159,6 @@
             color: var(--tx2);
             line-height: 1;
         }
-
         .bottom .kwh {
             font-weight: 600;
             color: var(--tx);
@@ -214,7 +199,7 @@
             <div class="kpi-card"><div class="kpi-val" id="m-total">—</div><div class="kpi-lbl" data-i18n="m_total"></div></div>
         </div>
         <div class="filter-row">
-            <input type="text" id="f-search" data-i18n-placeholder="ph_search">
+            <input type="text" id="f-search" data-placeholder-i18n="ph_search">
             <select id="f-type">
                 <option value="" data-i18n="f_type_all"></option>
                 <option value="light" data-i18n="f_type_light"></option>
@@ -250,10 +235,8 @@
         </table>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
-        var inFrame = window.self !== window.top;
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
                 now: 'now', today: 'today', err: 'error',
@@ -276,27 +259,18 @@
                 loading: 'Завантаження…',
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() {
-            document.querySelectorAll('[data-i18n]').forEach(function (el) {
-                el.textContent = t(el.getAttribute('data-i18n'));
-            });
-            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
-                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
-            });
-        }
+
+        var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
+        var inFrame = window.self !== window.top;
+
+        // Listen for 'refresh' postMessage on top of widget-common's built-in handlers
         window.addEventListener('message', function (e) {
             if (!e.data) return;
-            if (e.data.type === 'lang_changed') {
-                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
-                applyLang();
-                refresh();
-                if (IS_MODAL) loadFull();
-            }
             if (e.data.type === 'refresh') { refresh(); if (IS_MODAL) loadFull(); }
+            // lang_changed is handled by widget-common.js (calls refresh() automatically),
+            // but we also need to reload modal data + re-populate room filter dropdown.
+            if (e.data.type === 'lang_changed' && IS_MODAL) loadFull();
         });
-
-        var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         function fmtWatts(w) {
             if (w == null || isNaN(w)) return '—';
@@ -314,25 +288,24 @@
 
         async function refresh() {
             try {
-                var r = await fetch(BASE + '/energy/status');
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                var d = await r.json();
+                var d = await apiGet('/energy/status');
                 var total = d.devices || 0;
                 var active = d.active_devices || 0;
-                document.getElementById('watts').textContent = fmtWatts(d.total_power_w);
-                document.getElementById('kwh').textContent = fmtKwh(d.total_today_kwh);
-                document.getElementById('active').textContent = active + '/' + total;
-                document.getElementById('dot').className = 'dot' + (active > 0 ? '' : ' idle');
+                $('watts').textContent = fmtWatts(d.total_power_w);
+                $('kwh').textContent = fmtKwh(d.total_today_kwh);
+                $('active').textContent = active + '/' + total;
+                $('dot').className = 'dot' + (active > 0 ? '' : ' idle');
                 if (IS_MODAL) {
-                    document.getElementById('m-power').textContent = fmtWatts(d.total_power_w) + ' W';
-                    document.getElementById('m-kwh').textContent = fmtKwh(d.total_today_kwh);
-                    document.getElementById('m-active').textContent = active;
-                    document.getElementById('m-total').textContent = total;
+                    $('m-power').textContent = fmtWatts(d.total_power_w) + ' W';
+                    $('m-kwh').textContent = fmtKwh(d.total_today_kwh);
+                    $('m-active').textContent = active;
+                    $('m-total').textContent = total;
                 }
             } catch (e) {
-                document.getElementById('watts').textContent = '—';
-                document.getElementById('kwh').textContent = '—';
-                document.getElementById('active').textContent = '—';
+                $('watts').textContent = '—';
+                $('kwh').textContent = '—';
+                $('active').textContent = '—';
+                showToast(String(e && e.message || e), 'error');
             }
         }
 
@@ -343,29 +316,28 @@
 
         async function loadFull() {
             try {
-                var r = await fetch(BASE + '/energy/devices/full');
-                if (!r.ok) return;
-                var d = await r.json();
-                FULL = d.devices || [];
+                var d = await apiGet('/energy/devices/full');
+                FULL = (d && d.devices) || [];
                 _populateRoomFilter();
                 _renderFull();
-            } catch (e) { /* silent */ }
+            } catch (e) {
+                showToast(String(e && e.message || e), 'error');
+            }
         }
         function _populateRoomFilter() {
-            var sel = document.getElementById('f-room'); if (!sel) return;
+            var sel = $('f-room'); if (!sel) return;
             var current = sel.value;
             var rooms = {};
             FULL.forEach(function (r) { if (r.location) rooms[r.location] = true; });
             sel.innerHTML = '<option value="">' + t('f_room_all') + '</option>' +
-                Object.keys(rooms).sort().map(function (r) { return '<option value="' + r + '">' + r + '</option>'; }).join('');
+                Object.keys(rooms).sort().map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('');
             sel.value = current;
         }
-        function esc(s) { return (s == null ? '' : String(s)).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
         function _renderFull() {
-            var search = (document.getElementById('f-search').value || '').toLowerCase();
-            var typeF = document.getElementById('f-type').value;
-            var roomF = document.getElementById('f-room').value;
-            var statusF = document.getElementById('f-status').value;
+            var search = ($('f-search').value || '').toLowerCase();
+            var typeF = $('f-type').value;
+            var roomF = $('f-room').value;
+            var statusF = $('f-status').value;
 
             var filtered = FULL.filter(function (r) {
                 if (search && r.name.toLowerCase().indexOf(search) === -1) return false;
@@ -385,7 +357,7 @@
                 if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * SORT_DIR;
                 return String(av).localeCompare(String(bv)) * SORT_DIR;
             });
-            var tb = document.getElementById('m-rows');
+            var tb = $('m-rows');
             if (filtered.length === 0) {
                 tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--tx3)">—</td></tr>';
                 return;
@@ -425,12 +397,12 @@
 
         if (IS_MODAL) {
             document.body.classList.add('modal-mode');
-            document.getElementById('compact-view').style.display = 'none';
-            document.getElementById('modal-view').style.display = 'block';
-            document.getElementById('fsClose').onclick = closeModal;
+            $('compact-view').style.display = 'none';
+            $('modal-view').style.display = 'block';
+            $('fsClose').onclick = closeModal;
             window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
             ['f-search', 'f-type', 'f-room', 'f-status'].forEach(function (id) {
-                var el = document.getElementById(id);
+                var el = $(id);
                 if (el) el.addEventListener('input', _renderFull);
             });
             document.querySelectorAll('table.modal-table th[data-sort]').forEach(function (th) {
@@ -460,7 +432,6 @@
         refresh();
         setInterval(refresh, 5000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

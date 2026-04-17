@@ -34,19 +34,6 @@
             margin-bottom: 4px;
         }
 
-        .subtitle {
-            color: var(--tx3);
-            font-size: 13px;
-            margin-bottom: 24px;
-        }
-
-        .card {
-            background: var(--sf);
-            border-radius: 10px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }
-
         .card-header {
             display: flex;
             justify-content: space-between;
@@ -61,30 +48,6 @@
             margin: 0;
         }
 
-        .btn {
-            padding: 6px 16px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 13px;
-        }
-
-        .btn-primary {
-            background: var(--ac);
-            color: var(--tx);
-        }
-
-        .btn-danger {
-            background: rgba(248, 113, 113, 0.15);
-            color: var(--rd);
-        }
-
-        .btn-sm {
-            padding: 4px 10px;
-            font-size: 12px;
-        }
-
         .form-row {
             display: flex;
             flex-direction: column;
@@ -95,17 +58,6 @@
         .form-row label {
             font-size: 12px;
             color: var(--tx2);
-        }
-
-        .form-row input,
-        .form-row select {
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            padding: 8px 10px;
-            color: var(--tx);
-            font-size: 13px;
-            outline: none;
         }
 
         .form-row input:focus,
@@ -138,20 +90,6 @@
             padding: 6px 0;
         }
 
-        details textarea {
-            width: 100%;
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            padding: 10px;
-            color: var(--tx);
-            font-size: 12px;
-            font-family: monospace;
-            resize: vertical;
-            min-height: 160px;
-            margin-top: 8px;
-        }
-
         details textarea:focus {
             outline: none;
             border-color: var(--ac);
@@ -173,14 +111,6 @@
         .rule-trigger {
             font-size: 11px;
             color: var(--tx3);
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 9999px;
-            font-size: 11px;
-            font-weight: 600;
         }
 
         .badge.on {
@@ -271,7 +201,7 @@
 
             <div class="form-row">
                 <label data-i18n="f_name"></label>
-                <input type="text" id="f-name" data-i18n-placeholder="f_name_ph">
+                <input type="text" id="f-name" data-placeholder-i18n="f_name_ph">
             </div>
 
             <div class="form-grid">
@@ -354,7 +284,7 @@
             </div>
 
             <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
-                <button class="btn btn-primary" onclick="addRule()" data-i18n="add_rule_btn"></button>
+                <button class="btn btn-primary" id="btn-add-rule" data-i18n="add_rule_btn"></button>
                 <span class="msg" id="add-msg"></span>
                 <span class="msg err-msg" id="add-err"></span>
             </div>
@@ -365,14 +295,14 @@
                 <p style="color:var(--tx3);font-size:12px;margin:8px 0 4px" data-i18n="adv_yaml_hint"></p>
                 <textarea id="yaml-input" placeholder="automations:"></textarea>
                 <div style="margin-top:6px">
-                    <button class="btn btn-primary btn-sm" onclick="importYaml()" data-i18n="import_btn"></button>
+                    <button class="btn btn-primary btn-sm" id="btn-import-yaml" data-i18n="import_btn"></button>
                 </div>
             </details>
         </div>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
                 title: '⚙️ Automation Engine', subtitle: 'Triggers → conditions → actions',
@@ -427,141 +357,124 @@
                 rule_enabled: 'Правило увімкнено', rule_disabled: 'Правило вимкнено', importing: 'Імпортування…'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); applyLangPlaceholders(); loadRules(); } });
-
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        const TOKEN = window.SELENA_TOKEN || "";
-        const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
 
         async function loadStatus() {
             try {
-                const r = await fetch(BASE + "/status", { headers: h });
-                if (!r.ok) return;
-                const d = await r.json();
-                document.getElementById("s-total").textContent = d.rules_total ?? 0;
-                document.getElementById("s-enabled").textContent = d.rules_enabled ?? 0;
-                document.getElementById("s-runs").textContent = d.run_count ?? 0;
-                document.getElementById("s-errors").textContent = d.error_count ?? 0;
-            } catch { }
+                var d = await apiGet('/status');
+                $('s-total').textContent = d.rules_total ?? 0;
+                $('s-enabled').textContent = d.rules_enabled ?? 0;
+                $('s-runs').textContent = d.run_count ?? 0;
+                $('s-errors').textContent = d.error_count ?? 0;
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
         }
 
         async function loadRules() {
             var refBtn = document.querySelector('[onclick="loadRules()"]');
             if (refBtn) { refBtn.disabled = true; }
             try {
-                const r = await fetch(BASE + "/rules", { headers: h });
-                if (!r.ok) return;
-                const d = await r.json();
-                const container = document.getElementById("rules-container");
-                const rules = d.rules ?? [];
+                var d = await apiGet('/rules');
+                var container = $('rules-container');
+                var rules = d.rules ?? [];
                 if (rules.length === 0) {
-                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + t('no_rules') + '</p>';
+                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + esc(t('no_rules')) + '</p>';
                     return;
                 }
-                container.innerHTML = rules.map(rule => `
-      <div class="rule-row">
-        <div>
-          <div class="rule-name">${rule.name}</div>
-          <div class="rule-trigger">${t('trigger_lbl')}${rule.trigger?.type ?? "?"} ${rule.trigger?.at || rule.trigger?.event_type || ""}</div>
-        </div>
-        <span class="badge ${rule.enabled ? 'on' : 'off'}">${rule.enabled ? t('on') : t('off')}</span>
-        <button class="btn btn-sm ${rule.enabled ? 'btn-danger' : 'btn-primary'}"
-          onclick="toggleRule('${rule.id}', ${!rule.enabled})">
-          ${rule.enabled ? t('disable') : t('enable')}
-        </button>
-        <button class="btn btn-danger btn-sm" onclick="deleteRule('${rule.id}')">✕</button>
-      </div>
-    `).join("");
-            } catch { } finally {
+                container.innerHTML = rules.map(function (rule) { return '\
+      <div class="rule-row">\
+        <div>\
+          <div class="rule-name">' + esc(rule.name) + '</div>\
+          <div class="rule-trigger">' + esc(t('trigger_lbl')) + esc(rule.trigger && rule.trigger.type ? rule.trigger.type : '?') + ' ' + esc(rule.trigger && (rule.trigger.at || rule.trigger.event_type) || '') + '</div>\
+        </div>\
+        <span class="badge ' + (rule.enabled ? 'on' : 'off') + '">' + (rule.enabled ? t('on') : t('off')) + '</span>\
+        <button class="btn btn-sm ' + (rule.enabled ? 'btn-danger' : 'btn-primary') + '"\
+          onclick="toggleRule(\'' + esc(rule.id) + '\', ' + (!rule.enabled) + ')">\
+          ' + (rule.enabled ? t('disable') : t('enable')) + '\
+        </button>\
+        <button class="btn btn-danger btn-sm" onclick="deleteRule(\'' + esc(rule.id) + '\')">✕</button>\
+      </div>'; }).join('');
+            } catch (e) { showToast(e.message || 'Error', 'error'); } finally {
                 if (refBtn) { refBtn.disabled = false; }
             }
         }
 
         async function toggleRule(id, enabled) {
             try {
-                await fetch(BASE + "/rules/" + id + "/enabled", {
-                    method: "PATCH", headers: h, body: JSON.stringify({ enabled })
-                });
+                await apiPatch('/rules/' + id + '/enabled', { enabled: enabled });
                 showToast(enabled ? t('rule_enabled') : t('rule_disabled'));
                 loadRules();
                 loadStatus();
-            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
         }
 
         async function deleteRule(id) {
             if (!confirm(t('delete_confirm'))) return;
             try {
-                await fetch(BASE + "/rules/" + id, { method: "DELETE", headers: h });
+                await apiDelete('/rules/' + id);
                 showToast(t('deleted'));
                 loadRules();
                 loadStatus();
-            } catch (e) { showToast(t('error') + ': ' + e.message, 3000); }
+            } catch (e) { showToast(e.message || 'Error', 'error'); }
         }
 
         function onTriggerChange() {
-            var v = document.getElementById('f-trigger').value;
+            var v = $('f-trigger').value;
             ['time', 'event', 'device', 'presence'].forEach(function (k) {
-                var el = document.getElementById('trig-' + k);
+                var el = $('trig-' + k);
                 if (el) el.className = 'dyn-fields' + (k === v ? ' visible' : '');
             });
         }
         function onActionChange() {
-            var v = document.getElementById('f-action').value;
+            var v = $('f-action').value;
             ['device_command', 'publish_event', 'notify'].forEach(function (k) {
-                var el = document.getElementById('act-' + k);
+                var el = $('act-' + k);
                 if (el) el.className = 'dyn-fields' + (k === v ? ' visible' : '');
             });
         }
-        function applyLangPlaceholders() {
-            document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
-                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
-            });
-            // localise <option> elements
-            document.querySelectorAll('option[data-i18n]').forEach(function (el) {
-                el.textContent = t(el.getAttribute('data-i18n'));
-            });
+
+        function showAddOk(msg) {
+            $('add-msg').textContent = msg;
+            $('add-err').textContent = '';
+            setTimeout(function () { $('add-msg').textContent = ''; }, 3000);
+        }
+        function showAddErr(msg) {
+            $('add-err').textContent = msg;
+            $('add-msg').textContent = '';
         }
 
-        async function addRule() {
-            var name = document.getElementById('f-name').value.trim();
+        $('btn-add-rule').addEventListener('click', function () {
+            var name = $('f-name').value.trim();
             if (!name) { showAddErr(t('err_name')); return; }
-            var addBtn = document.querySelector('[onclick="addRule()"]');
-            addBtn.disabled = true;
-            var origAddText = addBtn.textContent;
-            addBtn.textContent = t('saving');
 
-            var trigType = document.getElementById('f-trigger').value;
-            var actType = document.getElementById('f-action').value;
+            var trigType = $('f-trigger').value;
+            var actType = $('f-action').value;
             var trigger = { type: trigType };
             var action = { type: actType };
 
             if (trigType === 'time') {
-                trigger.at = document.getElementById('f-at').value || '07:00';
+                trigger.at = $('f-at').value || '07:00';
             } else if (trigType === 'event') {
-                trigger.event_type = document.getElementById('f-trig-event').value.trim();
+                trigger.event_type = $('f-trig-event').value.trim();
             } else if (trigType === 'device') {
-                trigger.device_id = document.getElementById('f-trig-dev-id').value.trim();
-                var key = document.getElementById('f-trig-key').value.trim();
-                var val = document.getElementById('f-trig-val').value.trim();
+                trigger.device_id = $('f-trig-dev-id').value.trim();
+                var key = $('f-trig-key').value.trim();
+                var val = $('f-trig-val').value.trim();
                 if (key) { trigger.state = {}; trigger.state[key] = val; }
             } else if (trigType === 'presence') {
-                trigger.user_id = document.getElementById('f-trig-user').value.trim();
-                trigger.status = document.getElementById('f-trig-presence-st').value;
+                trigger.user_id = $('f-trig-user').value.trim();
+                trigger.status = $('f-trig-presence-st').value;
             }
 
             if (actType === 'device_command') {
-                action.device_id = document.getElementById('f-act-dev-id').value.trim();
-                var akey = document.getElementById('f-act-key').value.trim();
-                var aval = document.getElementById('f-act-val').value.trim();
+                action.device_id = $('f-act-dev-id').value.trim();
+                var akey = $('f-act-key').value.trim();
+                var aval = $('f-act-val').value.trim();
                 action.state = {};
                 if (akey) action.state[akey] = aval; else action.state = { state: 'ON' };
             } else if (actType === 'publish_event') {
-                action.event_type = document.getElementById('f-pub-event').value.trim();
+                action.event_type = $('f-pub-event').value.trim();
             } else if (actType === 'notify') {
-                action.message = document.getElementById('f-notify-msg').value.trim();
-                action.channel = document.getElementById('f-notify-ch').value;
+                action.message = $('f-notify-msg').value.trim();
+                action.channel = $('f-notify-ch').value;
             }
 
             var id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
@@ -579,69 +492,48 @@
             if (action.message) yaml_text += '\n        message: "' + action.message.replace(/"/g, "'") + '"';
             if (action.channel) yaml_text += '\n        channel: ' + action.channel;
 
-            try {
-                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: h, body: JSON.stringify({ yaml_text: yaml_text }) });
+            var self = this;
+            withLoading(self, async function () {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: yaml_text }) });
                 if (r.ok) {
                     showAddOk(t('added_ok'));
-                    document.getElementById('f-name').value = '';
+                    $('f-name').value = '';
                     loadRules(); loadStatus();
                 } else {
                     var e = await r.json();
-                    showAddErr(e.detail || 'Error');
+                    throw new Error(e.detail || 'Error');
                 }
-            } catch (ex) { showAddErr(String(ex)); } finally {
-                addBtn.disabled = false;
-                addBtn.textContent = origAddText;
-            }
-        }
+            });
+        });
 
-        function showAddOk(msg) {
-            document.getElementById('add-msg').textContent = msg;
-            document.getElementById('add-err').textContent = '';
-            setTimeout(function () { document.getElementById('add-msg').textContent = ''; }, 3000);
-        }
-        function showAddErr(msg) {
-            document.getElementById('add-err').textContent = msg;
-            document.getElementById('add-msg').textContent = '';
-        }
-
-        function showToast(msg, ms) {
-            var el = document.getElementById('toast');
-            if (!el) { el = document.createElement('div'); el.id = 'toast'; el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--sf2);color:var(--tx);padding:10px 20px;border-radius:8px;font-size:0.85rem;z-index:9999;opacity:0;transition:opacity .3s;border:1px solid var(--b2)'; document.body.appendChild(el); }
-            el.textContent = msg; el.style.opacity = '1';
-            setTimeout(function () { el.style.opacity = '0'; }, ms || 2500);
-        }
-
-        async function importYaml() {
-            var yaml_text = document.getElementById('yaml-input').value.trim();
+        $('btn-import-yaml').addEventListener('click', function () {
+            var yaml_text = $('yaml-input').value.trim();
             if (!yaml_text) return;
-            var impBtn = document.querySelector('[onclick="importYaml()"]');
-            impBtn.disabled = true;
-            var origImpText = impBtn.textContent;
-            impBtn.textContent = t('importing');
-            try {
-                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: h, body: JSON.stringify({ yaml_text: yaml_text }) });
+            var self = this;
+            withLoading(self, async function () {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: yaml_text }) });
                 if (r.ok) {
                     var d = await r.json();
                     showAddOk(t('imported_ok') + ' ' + d.imported + ' rule(s)');
                     loadRules(); loadStatus();
                 } else {
                     var e = await r.json();
-                    showAddErr(e.detail || 'Import failed');
+                    throw new Error(e.detail || 'Import failed');
                 }
-            } catch (ex) { showAddErr(String(ex)); } finally {
-                impBtn.disabled = false;
-                impBtn.textContent = origImpText;
-            }
+            });
+        });
+
+        /* refresh() is called by widget-common.js on lang_changed */
+        function refresh() {
+            loadRules();
+            loadStatus();
         }
 
         applyLang();
-        applyLangPlaceholders();
         loadStatus();
         loadRules();
         setInterval(loadStatus, 10000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

@@ -50,62 +50,16 @@
             margin-bottom: 4px;
         }
 
-        input,
-        select {
-            width: 100%;
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 8px;
-            color: var(--tx);
-            padding: 9px 12px;
-            font-size: 0.9rem;
-            margin-bottom: 12px;
-        }
-
-        input:focus,
-        select:focus {
-            outline: none;
-            border-color: var(--ac);
-        }
-
-        .row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        button,
-        .btn {
-            display: inline-block;
-            background: var(--ac);
-            color: var(--tx);
-            border: none;
-            border-radius: 8px;
-            padding: 10px 16px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            text-align: center;
-        }
-
-        button:hover,
-        .btn:hover {
-            background: var(--ac);
-        }
-
-        .btn-secondary {
-            background: var(--sf3);
-        }
-
-        .btn-secondary:hover {
-            background: var(--sf3);
-        }
-
         .btn-detect {
             background: linear-gradient(135deg, #22c55e, #16a34a);
             width: 100%;
             padding: 12px;
             font-size: 0.95rem;
             margin-bottom: 12px;
+            border: none;
+            border-radius: 8px;
+            color: var(--tx);
+            cursor: pointer;
         }
 
         .btn-detect:hover {
@@ -170,7 +124,7 @@
             padding-right: 36px;
         }
 
-        .search-wrap .spinner {
+        .search-wrap .search-spinner {
             position: absolute;
             right: 10px;
             top: 10px;
@@ -181,12 +135,6 @@
             border-radius: 50%;
             animation: spin .6s linear infinite;
             display: none;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
         }
 
         .search-results {
@@ -258,18 +206,10 @@
             overflow-y: auto;
         }
 
-        /* Dark scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--sf3);
-            border-radius: 3px;
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
         }
     </style>
 </head>
@@ -287,16 +227,15 @@
                 <div class="name" id="loc-name">—</div>
                 <div class="coords" id="loc-coords">—</div>
             </div>
-            <button class="change-btn" onclick="showLocationPicker()" data-i18n="change_btn"></button>
+            <button class="change-btn" id="btn-change" data-i18n="change_btn"></button>
         </div>
 
         <div id="loc-picker">
-            <button class="btn-detect" onclick="detectLocation()" data-i18n="detect_btn"></button>
+            <button class="btn-detect" id="btn-detect" data-i18n="detect_btn"></button>
 
             <div class="search-wrap">
-                <input type="text" id="search-city" placeholder="Search city name…" oninput="onSearchInput()"
-                    autocomplete="off">
-                <div class="spinner" id="search-spinner"></div>
+                <input type="text" id="search-city" placeholder="Search city name…" autocomplete="off">
+                <div class="search-spinner" id="search-spinner"></div>
             </div>
             <div class="search-results" id="search-results"></div>
 
@@ -342,9 +281,8 @@
         </div>
     </div>
 
-    <button onclick="save()" style="width:100%" data-i18n="save_btn"></button>
-    <button onclick="refreshWeather()" class="btn-secondary" style="width:100%;margin-top:8px;"
-        data-i18n="refresh_btn"></button>
+    <button class="btn btn-primary" id="btn-save" style="width:100%" data-i18n="save_btn"></button>
+    <button class="btn btn-secondary" id="btn-refresh" style="width:100%;margin-top:8px;" data-i18n="refresh_btn"></button>
     <div id="msg"></div>
 
     <div class="section" style="margin-top:14px">
@@ -354,8 +292,13 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
-        var TR = {
+        /* Leaflet claims window.L — save it before widget-common.js loads,
+           because widget-common.js expects window.L to be the i18n dict. */
+        var _LF = window.L;
+    </script>
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
             en: {
                 title: '🌤️ Weather Service Settings',
                 h_location: '📍 Location', change_btn: 'Change', detect_btn: '📡 Detect My Location',
@@ -393,45 +336,40 @@
                 refreshed: 'Погода оновлена!'
             }
         };
-        function t(k) { return (TR[LANG] || TR.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
 
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-
-        let map, marker, accuracyCircle;
-        let selectedLat = null, selectedLon = null, selectedName = '';
-        let searchTimeout = null;
+        var leafletMap, marker, accuracyCircle;
+        var selectedLat = null, selectedLon = null, selectedName = '';
+        var searchTimeout = null;
 
         // ── Init Map ──
         function initMap(lat, lon, accuracy) {
-            if (map) { map.remove(); accuracyCircle = null; }
-            map = L.map('map', {
+            if (leafletMap) { leafletMap.remove(); accuracyCircle = null; }
+            leafletMap = _LF.map('map', {
                 center: [lat, lon], zoom: 10,
                 zoomControl: true, attributionControl: false,
             });
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            _LF.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
                 maxZoom: 18,
-            }).addTo(map);
+            }).addTo(leafletMap);
             // Show accuracy radius circle (only if meaningful, < 50 km)
             if (accuracy && accuracy < 50000) {
-                accuracyCircle = L.circle([lat, lon], {
+                accuracyCircle = _LF.circle([lat, lon], {
                     radius: accuracy,
                     color: '#4F8CF7',
                     fillColor: '#4F8CF7',
                     fillOpacity: 0.08,
                     weight: 1,
-                }).addTo(map);
+                }).addTo(leafletMap);
                 // Zoom map to fit the accuracy circle
-                map.fitBounds(accuracyCircle.getBounds());
+                leafletMap.fitBounds(accuracyCircle.getBounds());
             }
-            marker = L.marker([lat, lon], { draggable: true }).addTo(map);
+            marker = _LF.marker([lat, lon], { draggable: true }).addTo(leafletMap);
             marker.on('dragend', function () {
-                const pos = marker.getLatLng();
+                var pos = marker.getLatLng();
                 setLocation(pos.lat, pos.lng, '');
                 reverseGeocode(pos.lat, pos.lng);
             });
-            map.on('click', function (e) {
+            leafletMap.on('click', function (e) {
                 marker.setLatLng(e.latlng);
                 setLocation(e.latlng.lat, e.latlng.lng, '');
                 reverseGeocode(e.latlng.lat, e.latlng.lng);
@@ -441,29 +379,29 @@
         function setLocation(lat, lon, name) {
             selectedLat = Math.round(lat * 10000) / 10000;
             selectedLon = Math.round(lon * 10000) / 10000;
-            document.getElementById('lat').value = selectedLat;
-            document.getElementById('lon').value = selectedLon;
+            $('lat').value = selectedLat;
+            $('lon').value = selectedLon;
             if (name) {
                 selectedName = name;
-                document.getElementById('loc-name').textContent = name;
+                $('loc-name').textContent = name;
             }
-            document.getElementById('loc-coords').textContent = `${selectedLat}, ${selectedLon}`;
-            if (map && marker) {
+            $('loc-coords').textContent = selectedLat + ', ' + selectedLon;
+            if (leafletMap && marker) {
                 marker.setLatLng([selectedLat, selectedLon]);
-                map.setView([selectedLat, selectedLon], map.getZoom());
+                leafletMap.setView([selectedLat, selectedLon], leafletMap.getZoom());
             }
         }
 
         function showLocationCompact() {
             if (!selectedName && !selectedLat) return;
-            document.getElementById('loc-display').style.display = 'flex';
-            document.getElementById('loc-picker').style.display = 'none';
+            $('loc-display').style.display = 'flex';
+            $('loc-picker').style.display = 'none';
         }
 
         function showLocationPicker() {
-            document.getElementById('loc-display').style.display = 'none';
-            document.getElementById('loc-picker').style.display = 'block';
-            setTimeout(() => { if (map) map.invalidateSize(); }, 100);
+            $('loc-display').style.display = 'none';
+            $('loc-picker').style.display = 'block';
+            setTimeout(function () { if (leafletMap) leafletMap.invalidateSize(); }, 100);
         }
 
         // ── Detect Location (Browser Geolocation API) ──
@@ -475,19 +413,19 @@
             showMsg(t('detecting'), 'ok');
             navigator.geolocation.getCurrentPosition(
                 function (pos) {
-                    const lat = pos.coords.latitude;
-                    const lon = pos.coords.longitude;
-                    const acc = pos.coords.accuracy; // metres
+                    var lat = pos.coords.latitude;
+                    var lon = pos.coords.longitude;
+                    var acc = pos.coords.accuracy; // metres
                     setLocation(lat, lon, '');
                     initMap(lat, lon, acc);
                     reverseGeocode(lat, lon);
                     // Show human-readable accuracy
-                    const accLabel = acc < 1000
+                    var accLabel = acc < 1000
                         ? '\xb1' + Math.round(acc) + 'm'
                         : '\xb1' + (acc / 1000).toFixed(1) + 'km';
                     showMsg(t('detected') + ' (' + accLabel + ')', 'ok');
                 },
-                function (err) {
+                function () {
                     // Fallback: use IP-based location
                     fetchIpLocation();
                 },
@@ -497,11 +435,11 @@
 
         async function fetchIpLocation() {
             try {
-                let loc = null;
+                var loc = null;
                 // 1st try: ipapi.co (HTTPS, free, ~city accuracy)
                 try {
-                    const r1 = await fetch('https://ipapi.co/json/');
-                    const j1 = await r1.json();
+                    var r1 = await fetch('https://ipapi.co/json/');
+                    var j1 = await r1.json();
                     if (j1.latitude && j1.longitude) {
                         loc = {
                             lat: j1.latitude, lon: j1.longitude,
@@ -512,15 +450,15 @@
 
                 // 2nd try: ip-api.com (HTTP, free fallback)
                 if (!loc) {
-                    const r2 = await fetch('http://ip-api.com/json/?fields=lat,lon,city,country');
-                    const j2 = await r2.json();
+                    var r2 = await fetch('http://ip-api.com/json/?fields=lat,lon,city,country');
+                    var j2 = await r2.json();
                     if (j2.lat && j2.lon) {
                         loc = { lat: j2.lat, lon: j2.lon, city: j2.city, country: j2.country };
                     }
                 }
 
                 if (loc) {
-                    const name = [loc.city, loc.country].filter(Boolean).join(', ');
+                    var name = [loc.city, loc.country].filter(Boolean).join(', ');
                     setLocation(loc.lat, loc.lon, name);
                     initMap(loc.lat, loc.lon); // no accuracy circle — IP is city-level
                     showMsg(t('detected_ip'), 'err'); // amber warning — approximate
@@ -535,120 +473,122 @@
         // ── Reverse Geocode (coordinates → city name) ──
         async function reverseGeocode(lat, lon) {
             try {
-                const r = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10&accept-language=en`,
+                var r = await fetch(
+                    'https://nominatim.openstreetmap.org/reverse?lat=' + lat + '&lon=' + lon + '&format=json&zoom=10&accept-language=en',
                     { headers: { 'User-Agent': 'SelenaCore/0.3' } }
                 );
-                const d = await r.json();
-                const parts = [];
+                var d = await r.json();
+                var parts = [];
                 if (d.address) {
                     parts.push(d.address.city || d.address.town || d.address.village || d.address.county || '');
                     parts.push(d.address.country || '');
                 }
-                const name = parts.filter(Boolean).join(', ') || d.display_name || '';
+                var name = parts.filter(Boolean).join(', ') || d.display_name || '';
                 if (name) {
                     selectedName = name;
-                    document.getElementById('loc-name').textContent = name;
+                    $('loc-name').textContent = name;
                 }
-            } catch (e) { /* silent */ }
+            } catch (e) {
+                showToast(e.message || 'Reverse geocode failed', 'error');
+            }
         }
 
         // ── City Search ──
         function onSearchInput() {
             clearTimeout(searchTimeout);
-            const q = document.getElementById('search-city').value.trim();
+            var q = $('search-city').value.trim();
             if (q.length < 2) {
-                document.getElementById('search-results').style.display = 'none';
+                $('search-results').style.display = 'none';
                 return;
             }
-            document.getElementById('search-spinner').style.display = 'block';
-            searchTimeout = setTimeout(() => searchCity(q), 350);
+            $('search-spinner').style.display = 'block';
+            searchTimeout = setTimeout(function () { searchCity(q); }, 350);
         }
 
         async function searchCity(q) {
             try {
-                const r = await fetch(`${BASE}/weather/geocode?q=${encodeURIComponent(q)}`);
-                const d = await r.json();
-                const el = document.getElementById('search-results');
+                var r = await fetch(BASE + '/weather/geocode?q=' + encodeURIComponent(q));
+                var d = await r.json();
+                var el = $('search-results');
                 if (!d.results || d.results.length === 0) {
                     el.innerHTML = '<div class="item"><span class="city" style="color:var(--tx3)">No results</span></div>';
                     el.style.display = 'block';
                     return;
                 }
-                el.innerHTML = d.results.map((r, i) => `
-                    <div class="item" onclick='pickResult(${i})'>
-                        <div class="city">${esc(r.name)}</div>
-                        <div class="region">${esc([r.admin1, r.country].filter(Boolean).join(', '))} · ${r.latitude.toFixed(2)}, ${r.longitude.toFixed(2)}</div>
-                    </div>
-                `).join('');
+                el.innerHTML = d.results.map(function (r, i) {
+                    return '<div class="item" data-idx="' + i + '">'
+                        + '<div class="city">' + esc(r.name) + '</div>'
+                        + '<div class="region">' + esc([r.admin1, r.country].filter(Boolean).join(', ')) + ' · ' + r.latitude.toFixed(2) + ', ' + r.longitude.toFixed(2) + '</div>'
+                        + '</div>';
+                }).join('');
                 el.style.display = 'block';
                 window._searchResults = d.results;
+                // Attach click handlers
+                el.querySelectorAll('[data-idx]').forEach(function (item) {
+                    item.addEventListener('click', function () {
+                        pickResult(parseInt(item.getAttribute('data-idx'), 10));
+                    });
+                });
             } catch (e) {
-                showMsg('Search failed: ' + e.message, 'err');
+                showToast(e.message || 'Search failed', 'error');
             } finally {
-                document.getElementById('search-spinner').style.display = 'none';
+                $('search-spinner').style.display = 'none';
             }
         }
 
         function pickResult(i) {
-            const r = window._searchResults[i];
-            const name = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+            var r = window._searchResults[i];
+            var name = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
             setLocation(r.latitude, r.longitude, name);
             initMap(r.latitude, r.longitude);
-            document.getElementById('search-results').style.display = 'none';
-            document.getElementById('search-city').value = '';
-        }
-
-        function esc(s) {
-            const d = document.createElement('div');
-            d.textContent = s || '';
-            return d.innerHTML;
+            $('search-results').style.display = 'none';
+            $('search-city').value = '';
         }
 
         // ── Load Status ──
         async function loadStatus() {
             try {
-                const s = await fetch(`${BASE}/weather/status`).then(r => r.json());
-                document.getElementById('status-panel').textContent = JSON.stringify(s, null, 2);
+                var s = await apiGet('/weather/status');
+                $('status-panel').textContent = JSON.stringify(s, null, 2);
                 if (s.latitude) {
                     selectedLat = s.latitude;
-                    document.getElementById('lat').value = s.latitude;
+                    $('lat').value = s.latitude;
                 }
                 if (s.longitude) {
                     selectedLon = s.longitude;
-                    document.getElementById('lon').value = s.longitude;
+                    $('lon').value = s.longitude;
                 }
                 if (s.location_name) {
                     selectedName = s.location_name;
-                    document.getElementById('loc-name').textContent = s.location_name;
+                    $('loc-name').textContent = s.location_name;
                 }
-                if (s.units) document.getElementById('units').value = s.units;
-                if (s.update_interval_sec) document.getElementById('interval').value = s.update_interval_sec;
-                if (s.alert_rain_mm) document.getElementById('alert_rain').value = s.alert_rain_mm;
-                if (s.alert_wind_kmh) document.getElementById('alert_wind').value = s.alert_wind_kmh;
+                if (s.units) $('units').value = s.units;
+                if (s.update_interval_sec) $('interval').value = s.update_interval_sec;
+                if (s.alert_rain_mm) $('alert_rain').value = s.alert_rain_mm;
+                if (s.alert_wind_kmh) $('alert_wind').value = s.alert_wind_kmh;
 
                 // Show coordinates
                 if (selectedLat && selectedLon) {
-                    document.getElementById('loc-coords').textContent = `${selectedLat}, ${selectedLon}`;
+                    $('loc-coords').textContent = selectedLat + ', ' + selectedLon;
                     initMap(selectedLat, selectedLon);
                     if (selectedName) {
                         showLocationCompact();
                     }
                 }
             } catch (e) {
-                document.getElementById('status-panel').textContent = 'Error loading status: ' + e.message;
+                $('status-panel').textContent = 'Error loading status: ' + e.message;
             }
         }
 
         // ── Save ──
-        async function save() {
-            const body = {};
-            const lat = parseFloat(document.getElementById('lat').value);
-            const lon = parseFloat(document.getElementById('lon').value);
-            const interval = parseInt(document.getElementById('interval').value);
-            const units = document.getElementById('units').value;
-            const alertRain = parseFloat(document.getElementById('alert_rain').value);
-            const alertWind = parseFloat(document.getElementById('alert_wind').value);
+        async function doSave() {
+            var body = {};
+            var lat = parseFloat($('lat').value);
+            var lon = parseFloat($('lon').value);
+            var interval = parseInt($('interval').value);
+            var units = $('units').value;
+            var alertRain = parseFloat($('alert_rain').value);
+            var alertWind = parseFloat($('alert_wind').value);
             if (!isNaN(lat)) body.latitude = lat;
             if (!isNaN(lon)) body.longitude = lon;
             if (selectedName) body.location_name = selectedName;
@@ -656,43 +596,42 @@
             if (units) body.units = units;
             if (!isNaN(alertRain)) body.alert_rain_mm = alertRain;
             if (!isNaN(alertWind)) body.alert_wind_kmh = alertWind;
-            try {
-                const r = await fetch(`${BASE}/weather/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-                if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                showMsg(t('saved'), 'ok');
-                if (selectedName) showLocationCompact();
-                loadStatus();
-            } catch (e) {
-                showMsg('Error: ' + e.message, 'err');
-            }
+            await apiPost('/weather/config', body);
+            showToast(t('saved'));
+            if (selectedName) showLocationCompact();
+            loadStatus();
         }
 
         async function refreshWeather() {
-            try {
-                await fetch(`${BASE}/weather/refresh`, { method: 'POST' });
-                showMsg(t('refreshed'), 'ok');
-                loadStatus();
-            } catch (e) {
-                showMsg('Error: ' + e.message, 'err');
-            }
+            await apiPost('/weather/refresh');
+            showToast(t('refreshed'));
+            loadStatus();
         }
 
         function showMsg(text, type) {
-            const el = document.getElementById('msg');
+            var el = $('msg');
             el.className = 'msg ' + type;
             el.textContent = text;
-            setTimeout(() => { el.textContent = ''; el.className = ''; }, 5000);
+            setTimeout(function () { el.textContent = ''; el.className = ''; }, 5000);
         }
+
+        // ── Event listeners ──
+        $('btn-change').addEventListener('click', showLocationPicker);
+        $('btn-detect').addEventListener('click', detectLocation);
+        $('search-city').addEventListener('input', onSearchInput);
+
+        $('btn-save').addEventListener('click', function () {
+            withLoading(this, doSave);
+        });
+
+        $('btn-refresh').addEventListener('click', function () {
+            withLoading(this, refreshWeather);
+        });
 
         // ── Init ──
         applyLang();
         loadStatus();
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

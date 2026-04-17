@@ -6,24 +6,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Lights & Switches</title>
 <style>
-:root{ --bg:var(--sf2); --card:var(--sf); --fg:var(--tx); --mut:var(--tx2); --pr:var(--ac); }
-*{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
 .wrap{padding:14px;max-width:980px;margin:0 auto}
-h2{margin:0 0 12px;font-size:16px;font-weight:600}
-.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px}
-.help{font-size:11px;color:var(--mut);line-height:1.55;margin-bottom:10px}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--b);vertical-align:top}
-th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
-.badge-on{background:rgba(245,158,11,.18);color:var(--am)}
+.help{font-size:11px;color:var(--tx2);line-height:1.55;margin-bottom:10px}
+.muted{color:var(--tx2)}
+pre{background:var(--sf2);padding:6px 8px;border-radius:5px;font-size:10px;font-family:'DM Mono',monospace;margin:0;white-space:pre-wrap;word-break:break-all;color:var(--tx2)}
 .badge-on.switch,.badge-on.outlet{background:rgba(34,197,94,.18);color:var(--gr)}
-.badge-off{background:rgba(239,68,68,.18);color:var(--rd)}
-.badge-pr{background:rgba(168,85,247,.18);color:var(--pr)}
-.muted{color:var(--mut)}
-pre{background:var(--bg);padding:6px 8px;border-radius:5px;font-size:10px;font-family:'DM Mono',monospace;margin:0;white-space:pre-wrap;word-break:break-all;color:var(--mut)}
-.btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;background:var(--bg);color:var(--mut);border:1px solid var(--b)}
 </style>
 </head>
 <body>
@@ -31,10 +18,7 @@ pre{background:var(--bg);padding:6px 8px;border-radius:5px;font-size:10px;font-f
   <h2 data-i18n="title">Lights & Switches</h2>
   <div class="card">
     <div class="help" data-i18n="help">
-      Diagnostic view of every device with entity_type ∈ light / switch / outlet.
-      Devices are added through Device Control → Tuya Cloud Wizard. Voice commands
-      ("turn on the kitchen light") are owned by the Device Control module — there
-      is no separate intent layer here.
+      Diagnostic view of every device with entity_type light / switch / outlet.
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div class="muted" data-i18n="detected">Detected lights / switches</div>
@@ -54,49 +38,33 @@ pre{background:var(--bg);padding:6px 8px;border-radius:5px;font-size:10px;font-f
   </div>
 </div>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
 var L = {
   en: {
     title:'Lights & Switches',
-    help:'Diagnostic view of every device with entity_type ∈ light / switch / outlet. Devices are added through Device Control → Tuya Cloud Wizard. Voice commands ("turn on the kitchen light") are owned by the Device Control module — there is no separate intent layer here.',
+    help:'Diagnostic view of every device with entity_type \u2208 light / switch / outlet. Devices are added through Device Control \u2192 Tuya Cloud Wizard. Voice commands (\u201cturn on the kitchen light\u201d) are owned by the Device Control module \u2014 there is no separate intent layer here.',
     detected:'Detected lights / switches', refresh:'Refresh',
     col_room:'Room', col_name:'Name', col_type:'Type', col_protocol:'Protocol', col_status:'Status', col_state:'State',
-    loading:'Loading…',
-    empty:'No lights, switches or outlets yet — add some via Device Control.',
+    loading:'Loading\u2026',
+    empty:'No lights, switches or outlets yet \u2014 add some via Device Control.',
     on:'on', off:'off', unassigned:'unassigned',
   },
   uk: {
     title:'Світло та вимикачі',
-    help:'Діагностичний перегляд усіх пристроїв з entity_type ∈ light / switch / outlet. Пристрої додаються через Керування пристроями → Tuya Cloud майстер. Голосові команди ("увімкни світло на кухні") належать модулю Керування пристроями — окремого шару інтентів тут немає.',
+    help:'Діагностичний перегляд усіх пристроїв з entity_type \u2208 light / switch / outlet. Пристрої додаються через Керування пристроями \u2192 Tuya Cloud майстер. Голосові команди (\u201cувімкни світло на кухні\u201d) належать модулю Керування пристроями \u2014 окремого шару інтентів тут немає.',
     detected:'Знайдені лампи / вимикачі', refresh:'Оновити',
     col_room:'Кімната', col_name:'Назва', col_type:'Тип', col_protocol:'Протокол', col_status:'Стан', col_state:'Дані',
-    loading:'Завантаження…',
-    empty:'Немає пристроїв — додайте через Керування пристроями.',
+    loading:'Завантаження\u2026',
+    empty:'Немає пристроїв \u2014 додайте через Керування пристроями.',
     on:'увімк', off:'вимк', unassigned:'без кімнати',
   }
 };
-function t(k){return (L[LANG]||L.en)[k]||k;}
-function applyLang(){
-  document.querySelectorAll('[data-i18n]').forEach(function(el){
-    el.textContent = t(el.getAttribute('data-i18n'));
-  });
-}
-window.addEventListener('message',function(e){
-  if(e.data && e.data.type==='lang_changed'){
-    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
-    applyLang(); load();
-  }
-});
-
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function api(p){return fetch(BASE+p).then(function(r){return r.json();});}
 
 function load(){
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var devs = res.devices || [];
-    var tb = document.getElementById('rows');
+    var tb = $('rows');
     if(devs.length===0){
       tb.innerHTML='<tr><td colspan="6" class="muted">'+esc(t('empty'))+'</td></tr>';
       return;
@@ -110,21 +78,21 @@ function load(){
       return '<tr>'+
         '<td>'+esc(d.location || t('unassigned'))+'</td>'+
         '<td>'+esc(d.name)+'</td>'+
-        '<td>'+esc(d.entity_type||'—')+'</td>'+
+        '<td>'+esc(d.entity_type||'\u2014')+'</td>'+
         '<td><span class="badge badge-pr">'+esc(d.protocol)+'</span></td>'+
         '<td>'+statusBadge+'</td>'+
         '<td><pre>'+esc(JSON.stringify(s))+'</pre></td>'+
       '</tr>';
     }).join('');
   }).catch(function(e){
-    document.getElementById('rows').innerHTML='<tr><td colspan="6" class="muted">'+esc(e.message||'error')+'</td></tr>';
+    showToast(e.message || 'error', 'error');
   });
 }
-document.getElementById('refreshBtn').onclick = load;
+
+$('refreshBtn').onclick = function(){ withLoading(this, load); };
 
 applyLang();
 load();
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

@@ -13,36 +13,32 @@
   --mut:var(--tx2);
   --pr:var(--ac);
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
-.wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0}
+body{background:transparent;color:var(--fg)}
+.wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0;margin:0}
 .wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
-/* Compact mode hides room headers — names need every pixel of width.
-   Modal mode keeps them. */
+/* Compact mode hides room headers; modal keeps them. */
 .room{display:flex;flex-direction:column;gap:6px;min-width:0}
 .room-title{display:none}
 .wrap.modal .room-title{display:block;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
 .list{display:flex;flex-direction:column;gap:3px;min-width:0}
 
-/* compact row (dashboard mode) */
-.row{
+/* compact row (dashboard) — module-specific override of shared .row */
+.wrap .row{
   display:flex;align-items:center;gap:8px;min-width:0;
   padding:8px 10px;background:var(--card);border:1px solid var(--b);border-radius:8px;
   cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
   user-select:none;-webkit-user-select:none;
   -webkit-tap-highlight-color:transparent;
+  justify-content:flex-start;margin-bottom:0;
 }
-.row:hover{border-color:var(--pr)}
-.row:active{transform:scale(.985)}
-.row.off{opacity:.55}
-/* ALL descendants pass clicks through (not just direct children). */
-.row *{pointer-events:none}
+.wrap .row:hover{border-color:var(--pr)}
+.wrap .row:active{transform:scale(.985)}
+.wrap .row.off{opacity:.55}
+.wrap .row *{pointer-events:none}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
 .dot.on{background:var(--am);box-shadow:0 0 6px rgba(245,158,11,.55)}
 .dot.on.light{background:var(--am)}
 .dot.on.switch,.dot.on.outlet{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.55)}
-/* min-width:0 lets the flex item shrink below intrinsic content
-   width so the ellipsis kicks in instead of overflowing the row. */
 .row-name{flex:1 1 auto;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
@@ -82,7 +78,7 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
   transform:translateX(22px);
 }
 
-.slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px}
+.slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:0}
 .slider-label{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .slider-label b{color:var(--fg);font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
 input[type=range]{width:100%;-webkit-appearance:none;background:transparent;cursor:pointer}
@@ -98,13 +94,6 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 .fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
 .fc-meta b{color:var(--fg);font-weight:600}
 
-.toast{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
-  background:var(--card);border:1px solid var(--b);padding:8px 14px;border-radius:8px;
-  z-index:1000;font-size:12px;max-width:90%;
-}
-.toast.error{border-color:var(--rd);color:var(--rd)}
-
 .fs-close{
   position:fixed;top:14px;right:18px;
   background:var(--card);border:1px solid var(--b);border-radius:50%;
@@ -119,9 +108,9 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 </div>
 <button class="fs-close" id="fsClose" style="display:none">×</button>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-// ── i18n ─────────────────────────────────────────────────────────────────
-var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+// ── i18n dictionaries ───────────────────────────────────────────────────
 var ROOM_KEYS = {
   en: { living_room:'Living room', livingroom:'Living room', lounge:'Lounge', bedroom:'Bedroom', kitchen:'Kitchen', office:'Office', hallway:'Hallway', bathroom:'Bathroom', garage:'Garage', nursery:'Nursery', dining:'Dining room', balcony:'Balcony' },
   uk: { living_room:'Вітальня', livingroom:'Вітальня', lounge:'Вітальня', bedroom:'Спальня', kitchen:'Кухня', office:'Кабінет', hallway:'Коридор', bathroom:'Ванна', garage:'Гараж', nursery:'Дитяча', dining:'Їдальня', balcony:'Балкон' }
@@ -155,53 +144,16 @@ var L = {
     estimated:'оцінка', power_w:'Спожив.',
   }
 };
-function t(k){return (L[LANG]||L.en)[k]||k;}
-function applyLang(){
-  document.querySelectorAll('[data-i18n]').forEach(function(el){
-    el.textContent = t(el.getAttribute('data-i18n'));
-  });
-}
-window.addEventListener('message',function(e){
-  if(!e.data) return;
-  if(e.data.type==='lang_changed'){
-    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
-    applyLang(); load();
-  }
-  if(e.data.type==='refresh') load();
-});
 
 // ── helpers ──────────────────────────────────────────────────────────────
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
 var inFrame = window.self !== window.top;
-function $(id){return document.getElementById(id);}
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function api(path,opts){
-  opts=opts||{};
-  return fetch(BASE+path,{
-    method:opts.method||'GET',
-    headers:opts.body?{'Content-Type':'application/json'}:{},
-    body:opts.body?JSON.stringify(opts.body):null,
-  }).then(function(r){
-    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
-    return r.json();
-  });
-}
-function toast(msg,err){
-  var d=document.createElement('div');
-  d.className='toast'+(err?' error':'');
-  d.textContent=msg;
-  document.body.appendChild(d);
-  setTimeout(function(){d.remove();},2200);
-}
 
 var ICONS = { light: '💡', switch: '⏻', outlet: '🔌' };
 var DEVICES = {};
 
 // ── compact row ─────────────────────────────────────────────────────────
 function renderRow(d){
-  // Minimal layout — JUST status dot + name. Brightness, watts and
-  // controls live in the modal. Voice / click are the entry points.
   var s = d.state || {};
   var on = s.on === true;
   var et = (d.entity_type||'switch').toLowerCase();
@@ -285,7 +237,6 @@ function renderFullCard(d){
 }
 
 function bindFullCards(){
-  // Swift-style toggle: react on inner checkbox change
   document.querySelectorAll('label.toggle').forEach(function(lbl){
     var input = lbl.querySelector('input.power-input');
     var id = lbl.getAttribute('data-id');
@@ -294,7 +245,6 @@ function bindFullCards(){
       sendCmd(id, {on: input.checked});
     });
   });
-  // Debounce sliders so we don't fire 100 commands per drag.
   function debounceCmd(el, key){
     var timer;
     el.addEventListener('input', function(){
@@ -315,14 +265,12 @@ function bindFullCards(){
       sendCmd(el.getAttribute('data-id'), {rgb_color: el.value});
     });
   });
-  // Grab focus immediately so the very first interaction registers
-  // without an extra "click to focus iframe" round-trip.
   try { window.focus(); } catch(_) {}
 }
 
 // ── load + render ───────────────────────────────────────────────────────
 function load(){
-  api('/rooms').then(function(res){
+  apiGet('/rooms').then(function(res){
     var rooms = res.rooms || {};
     var keys = Object.keys(rooms);
     DEVICES = {};
@@ -356,14 +304,15 @@ function load(){
     reportModalSize();
   }).catch(function(e){
     $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    showToast(e.message || 'Error', 'error');
     reportModalSize();
   });
 }
 
 function sendCmd(id, state){
-  api('/device/'+encodeURIComponent(id)+'/command', {method:'POST', body:{state:state}})
+  apiPost('/device/'+encodeURIComponent(id)+'/command', {state:state})
     .then(function(){ load(); })
-    .catch(function(e){ toast(t('cmd_failed')+': '+e.message, true); });
+    .catch(function(e){ showToast(t('cmd_failed')+': '+e.message, 'error'); });
 }
 
 function reportModalSize(){
@@ -395,12 +344,16 @@ if(IS_MODAL){
   }
 }
 
+// Additional 'refresh' postMessage handler (shared listener handles lang_changed)
+window.addEventListener('message', function(e){
+  if(e.data && e.data.type === 'refresh') load();
+});
+
 // ── boot ─────────────────────────────────────────────────────────────────
 applyLang();
 load();
 setInterval(load, IS_MODAL ? 5000 : 10000);
 window.addEventListener('focus', load);
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

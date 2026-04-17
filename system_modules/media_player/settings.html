@@ -8,25 +8,9 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
 
-        *,
-        *::before,
-        *::after {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        html {
-            width: 100%;
-            height: 100%;
-        }
-
         body {
             width: 100%;
             min-height: 100%;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            color: var(--tx);
-            background: var(--bg);
             background-image: linear-gradient(var(--b) 1px, transparent 1px),
                 linear-gradient(90deg, var(--b) 1px, transparent 1px);
             background-size: 32px 32px;
@@ -81,16 +65,7 @@
             display: flex;
         }
 
-        /* ── Section / Field ── */
-        .section-title {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--tx3);
-            text-transform: uppercase;
-            letter-spacing: .07em;
-            margin-bottom: 4px;
-        }
-
+        /* ── Field ── */
         .field {
             display: flex;
             flex-direction: column;
@@ -100,33 +75,6 @@
         .field label {
             font-size: 12px;
             color: var(--tx2);
-        }
-
-        .row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        input[type=text],
-        input[type=password],
-        input[type=number],
-        select,
-        textarea {
-            background: var(--sf2);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            color: var(--tx);
-            font-size: 13px;
-            padding: 7px 10px;
-            width: 100%;
-            outline: none;
-            transition: border-color .15s;
-        }
-
-        input:focus,
-        select:focus {
-            border-color: var(--ac);
         }
 
         input[type=range] {
@@ -199,82 +147,7 @@
             color: var(--tx);
         }
 
-        /* Button */
-        .btn {
-            background: var(--ac);
-            color: #fff;
-            border: none;
-            border-radius: 7px;
-            padding: 8px 16px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: filter .15s;
-        }
-
-        .btn:hover {
-            filter: brightness(1.12);
-        }
-
-        .btn-sm {
-            padding: 5px 11px;
-            font-size: 12px;
-        }
-
-        .btn-outline {
-            background: none;
-            border: 1px solid var(--b2);
-            color: var(--tx);
-        }
-
-        .btn-outline:hover {
-            background: var(--sf2);
-        }
-
-        .btn-danger {
-            background: var(--rd);
-        }
-
-        .btn:disabled {
-            opacity: 0.55;
-            cursor: not-allowed;
-            filter: none;
-        }
-
-        /* Table */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-        }
-
-        th {
-            color: var(--tx3);
-            font-weight: 600;
-            padding: 4px 8px;
-            text-align: left;
-            border-bottom: 1px solid var(--b2);
-        }
-
-        td {
-            padding: 6px 8px;
-            border-bottom: 1px solid var(--b);
-        }
-
-        tr:last-child td {
-            border: none;
-        }
-
-        /* Station / result card */
-        .card {
-            background: var(--sf2);
-            border-radius: 8px;
-            padding: 10px 12px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
+        /* ── Station / result card (module-specific layout) ── */
         .card-icon {
             width: 36px;
             height: 36px;
@@ -306,27 +179,6 @@
             display: flex;
             gap: 6px;
             flex-shrink: 0;
-        }
-
-        /* Toast */
-        .toast {
-            position: fixed;
-            bottom: 14px;
-            right: 14px;
-            background: var(--sf);
-            border: 1px solid var(--b2);
-            border-radius: 8px;
-            padding: 10px 16px;
-            font-size: 13px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
-            opacity: 0;
-            transition: opacity .3s;
-            pointer-events: none;
-            z-index: 999;
-        }
-
-        .toast.show {
-            opacity: 1;
         }
 
         /* Status chip */
@@ -398,11 +250,11 @@
             </div>
         </div>
         <div class="field">
-            <label data-i18n="lbl_def_vol">Default volume: <span id="lblVolVal">70</span></label>
+            <label><span data-i18n="lbl_def_vol">Default volume</span>: <span id="lblVolVal">70</span></label>
             <input type="range" id="rngDefVol" min="0" max="100" value="70"
-                oninput="document.getElementById('lblVolVal').textContent=this.value">
+                oninput="var l=document.getElementById('lblVolVal'); if(l) l.textContent=this.value">
         </div>
-        <button class="btn btn-sm" onclick="savePlaybackConfig()" data-i18n="btn_save">Save</button>
+        <button class="btn btn-sm" id="btnSavePlayback" onclick="savePlaybackConfig()" data-i18n="btn_save">Save</button>
     </div>
 
     <!-- ══════════════════════════════════════════════════════════
@@ -462,7 +314,7 @@
                 <input type="text" id="inpStationGenre" placeholder="Genre" style="flex:1">
                 <input type="text" id="inpStationCountry" placeholder="Country" style="flex:1">
             </div>
-            <button class="btn btn-sm" onclick="addStation()" data-i18n="btn_add">Add</button>
+            <button class="btn btn-sm" id="btnAddStation" onclick="addStation()" data-i18n="btn_add">Add</button>
         </div>
 
         <!-- Import -->
@@ -475,7 +327,7 @@
                 <textarea id="inpM3UContent" rows="5"
                     style="width:100%;font-size:11px;font-family:monospace;background:var(--bg2);color:var(--tx1);border:1px solid var(--sf3);border-radius:4px;padding:6px;box-sizing:border-box;resize:vertical;"></textarea>
             </div>
-            <button class="btn btn-sm" onclick="importM3U()" data-i18n="btn_do_import">Import</button>
+            <button class="btn btn-sm" id="btnDoImport" onclick="importM3U()" data-i18n="btn_do_import">Import</button>
             <span id="importM3UResult" style="margin-left:8px;font-size:12px;color:var(--tx3);"></span>
         </div>
         <button class="btn btn-sm btn-outline" style="margin-top:6px" onclick="showSection('importRBForm'); rbInit()"
@@ -557,7 +409,7 @@
         <div class="section-title" data-i18n="sec_mounted">Mounted devices</div>
         <div id="mountedDevices"><span style="color:var(--tx3);font-size:12px">—</span></div>
 
-        <button class="btn btn-sm" onclick="scanUSB()" data-i18n="btn_scan_now">Scan now</button>
+        <button class="btn btn-sm" id="btnScanUSB" onclick="scanUSB()" data-i18n="btn_scan_now">Scan now</button>
         <div id="usbResults" style="max-height:220px;overflow-y:auto;margin-top:4px;"></div>
     </div>
 
@@ -600,7 +452,7 @@
                     <input type="password" id="sharePass">
                 </div>
             </div>
-            <button class="btn btn-sm" onclick="mountShare()" data-i18n="btn_mount">Mount</button>
+            <button class="btn btn-sm" id="btnMount" onclick="mountShare()" data-i18n="btn_mount">Mount</button>
         </div>
     </div>
 
@@ -618,7 +470,7 @@
                 <option value="georgeblood">78rpm HD</option>
                 <option value="classical_music_library">Classical</option>
             </select>
-            <button class="btn btn-sm" onclick="searchArchive()" data-i18n="btn_search">Search</button>
+            <button class="btn btn-sm" id="btnSearchArchive" onclick="searchArchive()" data-i18n="btn_search">Search</button>
         </div>
         <div id="archiveResults" style="max-height:300px;overflow-y:auto;margin-top:8px;"></div>
 
@@ -639,7 +491,7 @@
             </label>
             <div class="row">
                 <input type="text" id="inpLastfmKey" placeholder="abc123…">
-                <button class="btn btn-sm" onclick="verifyLastfm()" data-i18n="btn_verify">Verify</button>
+                <button class="btn btn-sm" id="btnVerifyLastfm" onclick="verifyLastfm()" data-i18n="btn_verify">Verify</button>
             </div>
             <span id="lastfmStatus"></span>
         </div>
@@ -648,7 +500,7 @@
         <div class="row">
             <span style="font-size:13px;color:var(--tx2)" data-i18n="lbl_cache_size">Size:</span>
             <span id="cacheSize" style="font-size:13px">—</span>
-            <button class="btn btn-sm btn-outline btn-danger" onclick="clearCache()" data-i18n="btn_clear_cache">
+            <button class="btn btn-sm btn-outline btn-danger" id="btnClearCache" onclick="clearCache()" data-i18n="btn_clear_cache">
                 Clear cache
             </button>
         </div>
@@ -667,16 +519,14 @@
         <div class="section-title" data-i18n="sec_test_voice">Test voice command</div>
         <div class="row">
             <input type="text" id="inpTestVoice" placeholder="включи радио джаз" style="flex:1">
-            <button class="btn btn-sm" onclick="testVoice()" data-i18n="btn_test">Test</button>
+            <button class="btn btn-sm" id="btnTestVoice" onclick="testVoice()" data-i18n="btn_test">Test</button>
         </div>
         <div id="testVoiceResult" style="font-size:12px;color:var(--tx2);margin-top:6px;"></div>
     </div>
 
-    <div class="toast" id="toast"></div>
-
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        // ── i18n ──────────────────────────────────────────────────────────────────────
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+        // ── i18n dictionaries ─────────────────────────────────────────────────────────
         var L = {
             en: {
                 tab_playback: 'Playback', tab_radio: 'Radio', tab_usb: 'USB / Files',
@@ -783,26 +633,6 @@
                 searching: 'Пошук…',
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() {
-            document.querySelectorAll('[data-i18n]').forEach(function (el) {
-                var k = el.getAttribute('data-i18n');
-                if (el.tagName === 'OPTION') el.textContent = t(k);
-                else if (el.tagName === 'BUTTON' || el.tagName === 'SPAN' || el.tagName === 'DIV' || el.tagName === 'TH')
-                    el.textContent = t(k);
-                else el.textContent = t(k);
-            });
-        }
-        window.addEventListener('message', function (e) {
-            if (e.data && e.data.type === 'lang_changed') {
-                try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { }
-                applyLang();
-                load();
-            }
-        });
-
-        // ── BASE URL ──────────────────────────────────────────────────────────────────
-        var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         // ── Tabs ──────────────────────────────────────────────────────────────────────
         document.querySelectorAll('.tab').forEach(function (btn) {
@@ -813,23 +643,6 @@
                 document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
             });
         });
-
-        // ── Helpers ───────────────────────────────────────────────────────────────────
-        function apiGet(path) {
-            return fetch(BASE + path).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
-        }
-        function apiPost(path, body) {
-            return fetch(BASE + path, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: body ? JSON.stringify(body) : undefined
-            }).then(function (r) { return r.json(); }).catch(function () { return null; });
-        }
-        function showToast(msg) {
-            var el = document.getElementById('toast');
-            el.textContent = msg; el.classList.add('show');
-            setTimeout(function () { el.classList.remove('show'); }, 2500);
-        }
-        function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
         // ── VOICE COMMANDS TABLE ──────────────────────────────────────────────────────
         var VOICE_CMDS = [
@@ -868,7 +681,7 @@
                     opt.value = o.id; opt.textContent = o.name + ' (' + o.type + ')';
                     sel.appendChild(opt);
                 });
-            }).catch(function () { });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function loadPlaybackConfig() {
@@ -878,26 +691,20 @@
                 document.getElementById('chkNormalize').checked = !!cfg.normalize_volume;
                 document.getElementById('rngDefVol').value = cfg.default_volume || 70;
                 document.getElementById('lblVolVal').textContent = cfg.default_volume || 70;
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function savePlaybackConfig() {
-            var btn = document.querySelector('#pane-playback .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('saving');
-            var body = {
-                stream_buffer_ms: parseInt(document.getElementById('selBuffer').value),
-                normalize_volume: document.getElementById('chkNormalize').checked,
-                default_volume: parseInt(document.getElementById('rngDefVol').value),
-            };
-            apiPost('/config', body).then(function (r) {
-                showToast(r ? t('saved_ok') : t('error'));
-            }).catch(function () {
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+            var btn = document.getElementById('btnSavePlayback');
+            withLoading(btn, function () {
+                var body = {
+                    stream_buffer_ms: parseInt(document.getElementById('selBuffer').value),
+                    normalize_volume: document.getElementById('chkNormalize').checked,
+                    default_volume: parseInt(document.getElementById('rngDefVol').value),
+                };
+                return apiPost('/config', body).then(function () {
+                    showToast(t('saved_ok'));
+                });
             });
         }
 
@@ -918,7 +725,7 @@
                     '<span class="chip">' + s.genres + ' genres</span>' +
                     '<span class="chip">' + s.countries + ' countries</span>' +
                     '<span class="chip chip-warn">&#9829; ' + s.favourites + '</span>';
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function loadRadioFilters() {
@@ -926,7 +733,7 @@
             var genres = {}; var countries = {};
             _allStations.forEach(function (s) {
                 if (s.genre) genres[s.genre] = 1;
-                (s.tags || []).forEach(function (t) { if (t) genres[t] = 1; });
+                (s.tags || []).forEach(function (tg) { if (tg) genres[tg] = 1; });
                 if (s.country) countries[s.country] = 1;
             });
             var gSel = document.getElementById('radioGenre');
@@ -949,7 +756,7 @@
                 _allStations = stations || [];
                 loadRadioFilters();
                 applyRadioFilter();
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function applyRadioFilter() {
@@ -1030,12 +837,12 @@
             card.querySelectorAll('button')[1].onclick = function (e) {
                 apiPost('/sources/radio/favourite/' + s.id, {}).then(function (r) {
                     if (r) { e.target.style.color = r.favourite ? 'var(--acc)' : ''; loadFavourites(); loadRadioStats(); }
-                });
+                }).catch(function (err) { showToast(err.message || 'Error', 'error'); });
             };
             card.querySelectorAll('button')[2].onclick = function () {
                 fetch(BASE + '/sources/radio/station/' + s.id, { method: 'DELETE' }).then(function () {
                     card.remove(); loadRadioStats();
-                });
+                }).catch(function (err) { showToast(err.message || 'Error', 'error'); });
             };
             return card;
         }
@@ -1049,62 +856,49 @@
                     return;
                 }
                 favs.forEach(function (s) { el.appendChild(makeStationCard(s)); });
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function addStation() {
             var name = document.getElementById('inpStationName').value.trim();
             var url = document.getElementById('inpStationUrl').value.trim();
-            if (!name || !url) { showToast(t('name_url_required')); return; }
-            var btn = document.querySelector('#addStationForm .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('saving');
-            apiPost('/sources/radio/add', {
-                name: name, url: url,
-                genre: document.getElementById('inpStationGenre').value.trim(),
-                country: document.getElementById('inpStationCountry').value.trim(),
-            }).then(function (r) {
-                if (r && r.id) {
-                    showToast(t('station_added'));
-                    document.getElementById('inpStationName').value = '';
-                    document.getElementById('inpStationUrl').value = '';
-                    document.getElementById('inpStationGenre').value = '';
-                    document.getElementById('inpStationCountry').value = '';
-                    document.getElementById('addStationForm').style.display = 'none';
-                    loadRadioStats(); loadRadioLibrary();
-                } else {
-                    showToast(t('error'));
-                }
-            }).catch(function () {
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+            if (!name || !url) { showToast(t('name_url_required'), 'error'); return; }
+            var btn = document.getElementById('btnAddStation');
+            withLoading(btn, function () {
+                return apiPost('/sources/radio/add', {
+                    name: name, url: url,
+                    genre: document.getElementById('inpStationGenre').value.trim(),
+                    country: document.getElementById('inpStationCountry').value.trim(),
+                }).then(function (r) {
+                    if (r && r.id) {
+                        showToast(t('station_added'));
+                        document.getElementById('inpStationName').value = '';
+                        document.getElementById('inpStationUrl').value = '';
+                        document.getElementById('inpStationGenre').value = '';
+                        document.getElementById('inpStationCountry').value = '';
+                        document.getElementById('addStationForm').style.display = 'none';
+                        loadRadioStats(); loadRadioLibrary();
+                    } else {
+                        showToast(t('error'), 'error');
+                    }
+                });
             });
         }
 
         function importM3U() {
             var content = document.getElementById('inpM3UContent').value.trim();
-            if (!content) { showToast(t('nothing_to_import')); return; }
-            var btn = document.querySelector('#importM3UForm .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('importing');
-            document.getElementById('importM3UResult').textContent = t('importing');
-            apiPost('/sources/radio/import/m3u', { content: content }).then(function (r) {
-                document.getElementById('importM3UResult').textContent =
-                    r ? '+' + r.added + ' / total: ' + r.total : t('no_results');
-                if (r && r.added > 0) {
-                    showToast('+' + r.added + ' stations');
-                    loadRadioStats(); loadRadioLibrary();
-                }
-            }).catch(function () {
-                showToast(t('error'));
-                document.getElementById('importM3UResult').textContent = t('error');
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+            if (!content) { showToast(t('nothing_to_import'), 'error'); return; }
+            var btn = document.getElementById('btnDoImport');
+            withLoading(btn, function () {
+                document.getElementById('importM3UResult').textContent = t('importing');
+                return apiPost('/sources/radio/import/m3u', { content: content }).then(function (r) {
+                    document.getElementById('importM3UResult').textContent =
+                        r ? '+' + r.added + ' / total: ' + r.total : t('no_results');
+                    if (r && r.added > 0) {
+                        showToast('+' + r.added + ' stations');
+                        loadRadioStats(); loadRadioLibrary();
+                    }
+                });
             });
         }
 
@@ -1125,7 +919,7 @@
                     sel.appendChild(o);
                 });
                 applyLang();
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
             rbSearch(true);
         }
 
@@ -1176,6 +970,7 @@
                 var bAll = document.getElementById('btnRBImportAll');
                 if (bAll) bAll.style.display = _rb.stations.length > 0 ? '' : 'none';
             }).catch(function () {
+                // Silent: radio-browser.info fetch may fail due to network; label serves as feedback
                 _rb.loading = false;
                 if (lbl) lbl.textContent = t('no_results');
             });
@@ -1219,7 +1014,7 @@
                 var lbl = document.getElementById('importRBResult');
                 if (lbl) lbl.textContent = '+1: ' + esc(s.name || '');
                 loadRadioStats();
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function rbImportAll() {
@@ -1238,7 +1033,7 @@
             apiPost('/sources/radio/add-many', records).then(function (r) {
                 if (lbl && r) lbl.textContent = '+' + r.added + ' / total: ' + r.total;
                 loadRadioStats(); loadRadioLibrary();
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function importFromRB() { rbSearch(true); }
@@ -1255,9 +1050,7 @@
                 loadRadioStats(); loadRadioLibrary();
                 document.getElementById('radioResults').innerHTML = '';
                 document.getElementById('favStations').innerHTML = '<span style="color:var(--tx3);font-size:12px">—</span>';
-            }).catch(function () {
-                showToast(t('error'));
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         // ── Tab 3: USB ────────────────────────────────────────────────────────────────
@@ -1275,44 +1068,38 @@
                     span.textContent = d.mountpoint;
                     el.appendChild(span);
                 });
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function scanUSB() {
             var el = document.getElementById('usbResults');
-            var btn = document.querySelector('#pane-usb .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('scanning');
+            var btn = document.getElementById('btnScanUSB');
             el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('scan_running') + '</span>';
-            apiGet('/sources/usb/scan').then(function (tracks) {
-                if (!tracks || !tracks.length) {
-                    el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('no_results') + '</span>';
-                    showToast(t('scan_done') + ': 0');
-                    return;
-                }
-                el.innerHTML = '';
-                tracks.slice(0, 50).forEach(function (tr) {
-                    var card = document.createElement('div');
-                    card.className = 'card'; card.style.marginBottom = '4px';
-                    card.innerHTML =
-                        '<div class="card-meta">' +
-                        '<div class="card-title">' + esc(tr.title || tr.name) + '</div>' +
-                        '<div class="card-sub">' + esc(tr.artist) + (tr.album ? ' · ' + esc(tr.album) : '') + (tr.duration_sec ? ' · ' + fmtTime(tr.duration_sec) : '') + '</div>' +
-                        '</div>' +
-                        '<button class="btn btn-sm">' + t('play') + '</button>';
-                    card.querySelector('button').onclick = function () {
-                        fetch(BASE + '/player/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: tr.path, source_type: 'usb' }) });
-                    };
-                    el.appendChild(card);
+            withLoading(btn, function () {
+                return apiGet('/sources/usb/scan').then(function (tracks) {
+                    if (!tracks || !tracks.length) {
+                        el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('no_results') + '</span>';
+                        showToast(t('scan_done') + ': 0');
+                        return;
+                    }
+                    el.innerHTML = '';
+                    tracks.slice(0, 50).forEach(function (tr) {
+                        var card = document.createElement('div');
+                        card.className = 'card'; card.style.marginBottom = '4px';
+                        card.innerHTML =
+                            '<div class="card-meta">' +
+                            '<div class="card-title">' + esc(tr.title || tr.name) + '</div>' +
+                            '<div class="card-sub">' + esc(tr.artist) + (tr.album ? ' · ' + esc(tr.album) : '') + (tr.duration_sec ? ' · ' + fmtTime(tr.duration_sec) : '') + '</div>' +
+                            '</div>' +
+                            '<button class="btn btn-sm">' + t('play') + '</button>';
+                        card.querySelector('button').onclick = function () {
+                            fetch(BASE + '/player/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: tr.path, source_type: 'usb' }) });
+                        };
+                        el.appendChild(card);
+                    });
+                    if (tracks.length > 50) el.innerHTML += '<div style="color:var(--tx3);font-size:11px;padding:4px">+' + (tracks.length - 50) + ' more</div>';
+                    showToast(t('scan_done') + ': ' + tracks.length);
                 });
-                if (tracks.length > 50) el.innerHTML += '<div style="color:var(--tx3);font-size:11px;padding:4px">+' + (tracks.length - 50) + ' more</div>';
-                showToast(t('scan_done') + ': ' + tracks.length);
-            }).catch(function () {
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
             });
         }
 
@@ -1331,81 +1118,69 @@
 
         function mountShare() {
             var type = document.getElementById('shareType').value;
-            var btn = document.querySelector('#addShareForm .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('mounting');
-            var p;
-            if (type === 'smb') {
-                p = apiPost('/sources/smb/mount', {
-                    host: document.getElementById('shareHost').value,
-                    share: document.getElementById('shareShare').value,
-                    username: document.getElementById('shareUser').value,
-                    password: document.getElementById('sharePass').value,
-                });
-            } else {
-                p = apiPost('/sources/nfs/mount', {
-                    host: document.getElementById('shareHost').value,
-                    export: document.getElementById('shareExport').value,
-                });
-            }
-            p.then(function (d) {
-                if (d && d.ok) {
-                    showToast(t('mounted_ok') + ': ' + d.mount_point);
-                    document.getElementById('addShareForm').style.display = 'none';
-                    loadMountedDevices();
+            var btn = document.getElementById('btnMount');
+            withLoading(btn, function () {
+                var p;
+                if (type === 'smb') {
+                    p = apiPost('/sources/smb/mount', {
+                        host: document.getElementById('shareHost').value,
+                        share: document.getElementById('shareShare').value,
+                        username: document.getElementById('shareUser').value,
+                        password: document.getElementById('sharePass').value,
+                    });
                 } else {
-                    showToast(t('mount_err') + (d && d.detail ? ': ' + d.detail : ''));
+                    p = apiPost('/sources/nfs/mount', {
+                        host: document.getElementById('shareHost').value,
+                        export: document.getElementById('shareExport').value,
+                    });
                 }
-            }).catch(function () {
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+                return p.then(function (d) {
+                    if (d && d.ok) {
+                        showToast(t('mounted_ok') + ': ' + d.mount_point);
+                        document.getElementById('addShareForm').style.display = 'none';
+                        loadMountedDevices();
+                    } else {
+                        showToast(t('mount_err') + (d && d.detail ? ': ' + d.detail : ''), 'error');
+                    }
+                });
             });
         }
 
         // ── Tab 5: Archive ────────────────────────────────────────────────────────────
         function searchArchive() {
             var el = document.getElementById('archiveResults');
-            var btn = document.querySelector('#pane-archive .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('searching');
+            var btn = document.getElementById('btnSearchArchive');
             el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('searching') + '</span>';
-            var q = document.getElementById('archiveQuery').value;
-            var col = document.getElementById('archiveCollection').value;
-            apiGet('/sources/archive/search?q=' + encodeURIComponent(q) + '&collection=' + encodeURIComponent(col) + '&rows=10').then(function (items) {
-                if (!items || !items.length) {
-                    el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('no_results') + '</span>';
-                    return;
-                }
-                el.innerHTML = '';
-                items.forEach(function (item) {
-                    var card = document.createElement('div');
-                    card.className = 'card'; card.style.marginBottom = '6px';
-                    card.innerHTML =
-                        '<img class="card-icon" src="' + esc(item.cover_url) + '" onerror="this.style.display=\'none\'">' +
-                        '<div class="card-meta">' +
-                        '<div class="card-title">' + esc(item.title) + '</div>' +
-                        '<div class="card-sub">' + esc(item.creator) + (item.year ? ' · ' + esc(item.year) : '') + (item.tracks ? ' · ' + item.tracks.length + ' tracks' : '') + '</div>' +
-                        '</div>' +
-                        '<div class="card-actions">' +
-                        '<button class="btn btn-sm">' + t('play') + '</button>' +
-                        '<a class="btn btn-sm btn-outline" href="' + esc(item.page_url) + '" target="_blank" rel="noopener">↗</a>' +
-                        '</div>';
-                    card.querySelector('button').onclick = function () {
-                        if (item.first_track_url) {
-                            fetch(BASE + '/player/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: item.first_track_url, source_type: 'archive' }) });
-                        }
-                    };
-                    el.appendChild(card);
+            withLoading(btn, function () {
+                var q = document.getElementById('archiveQuery').value;
+                var col = document.getElementById('archiveCollection').value;
+                return apiGet('/sources/archive/search?q=' + encodeURIComponent(q) + '&collection=' + encodeURIComponent(col) + '&rows=10').then(function (items) {
+                    if (!items || !items.length) {
+                        el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('no_results') + '</span>';
+                        return;
+                    }
+                    el.innerHTML = '';
+                    items.forEach(function (item) {
+                        var card = document.createElement('div');
+                        card.className = 'card'; card.style.marginBottom = '6px';
+                        card.innerHTML =
+                            '<img class="card-icon" src="' + esc(item.cover_url) + '" onerror="this.style.display=\'none\'">' +
+                            '<div class="card-meta">' +
+                            '<div class="card-title">' + esc(item.title) + '</div>' +
+                            '<div class="card-sub">' + esc(item.creator) + (item.year ? ' · ' + esc(item.year) : '') + (item.tracks ? ' · ' + item.tracks.length + ' tracks' : '') + '</div>' +
+                            '</div>' +
+                            '<div class="card-actions">' +
+                            '<button class="btn btn-sm">' + t('play') + '</button>' +
+                            '<a class="btn btn-sm btn-outline" href="' + esc(item.page_url) + '" target="_blank" rel="noopener">↗</a>' +
+                            '</div>';
+                        card.querySelector('button').onclick = function () {
+                            if (item.first_track_url) {
+                                fetch(BASE + '/player/play', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: item.first_track_url, source_type: 'archive' }) });
+                            }
+                        };
+                        el.appendChild(card);
+                    });
                 });
-            }).catch(function () {
-                el.innerHTML = '<span style="color:var(--tx3);font-size:12px">' + t('error') + '</span>';
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
             });
         }
 
@@ -1414,81 +1189,69 @@
             apiGet('/config').then(function (cfg) {
                 if (!cfg) return;
                 document.getElementById('inpLastfmKey').value = cfg.lastfm_api_key === '****' ? '' : (cfg.lastfm_api_key || '');
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
             apiGet('/covers/cache/info').then(function (d) {
                 if (d) document.getElementById('cacheSize').textContent = (d.size_mb || 0).toFixed(2) + ' MB';
-            });
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
         function verifyLastfm() {
             var key = document.getElementById('inpLastfmKey').value.trim();
             if (!key) return;
-            var btn = document.querySelector('#pane-covers .row .btn');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = t('verifying');
+            var btn = document.getElementById('btnVerifyLastfm');
             var st = document.getElementById('lastfmStatus');
             st.textContent = t('verifying');
             st.className = '';
-            apiPost('/config', { lastfm_api_key: key }).then(function () {
-                return apiPost('/config/lastfm/verify');
-            }).then(function (d) {
-                st.className = d && d.ok ? 'chip chip-ok' : 'chip chip-err';
-                st.textContent = d && d.ok ? t('key_ok') : t('key_err') + (d && d.error ? ' (' + d.error + ')' : '');
-                showToast(d && d.ok ? t('key_ok') : t('key_err'));
-            }).catch(function () {
-                st.className = 'chip chip-err';
-                st.textContent = t('error');
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+            withLoading(btn, function () {
+                return apiPost('/config', { lastfm_api_key: key }).then(function () {
+                    return apiPost('/config/lastfm/verify');
+                }).then(function (d) {
+                    st.className = d && d.ok ? 'chip chip-ok' : 'chip chip-err';
+                    st.textContent = d && d.ok ? t('key_ok') : t('key_err') + (d && d.error ? ' (' + d.error + ')' : '');
+                    showToast(d && d.ok ? t('key_ok') : t('key_err'));
+                });
             });
         }
 
         function clearCache() {
-            var btn = document.querySelector('#pane-covers .btn-danger');
-            var orig = btn.textContent;
-            btn.disabled = true;
-            apiPost('/covers/cache/clear').then(function (d) {
-                showToast(t('cache_cleared') + (d ? ' (' + d.cleared + ')' : ''));
-                document.getElementById('cacheSize').textContent = '0.00 MB';
-            }).catch(function () {
-                showToast(t('error'));
-            }).finally(function () {
-                btn.disabled = false;
-                btn.textContent = orig;
+            var btn = document.getElementById('btnClearCache');
+            withLoading(btn, function () {
+                return apiPost('/covers/cache/clear').then(function (d) {
+                    showToast(t('cache_cleared') + (d ? ' (' + d.cleared + ')' : ''));
+                    document.getElementById('cacheSize').textContent = '0.00 MB';
+                });
             });
         }
 
         function testVoice() {
             var txt = document.getElementById('inpTestVoice').value.trim();
             if (!txt) return;
-            var btn = document.querySelector('#pane-covers .row:last-of-type .btn');
-            if (btn) { btn.disabled = true; var _origTest = btn.textContent; btn.textContent = t('testing'); }
+            var btn = document.getElementById('btnTestVoice');
             var out = document.getElementById('testVoiceResult');
             out.textContent = t('testing');
-            var intents = [
-                [/\b(?:play|put on|turn on|start)\b/i, /radio/i, 'media.play_radio'],
-                [/\b(?:play|put on|turn on|start)\b/i, /rock|jazz|classic|ambient|lofi|pop|news/i, 'media.play_genre'],
-                [/\b(?:next|skip)\b/i, null, 'media.next'],
-                [/\b(?:previous|back)\b/i, null, 'media.previous'],
-                [/\bstop\b/i, null, 'media.stop'],
-                [/\bpause\b/i, null, 'media.pause'],
-                [/\b(?:resume|continue)\b/i, null, 'media.resume'],
-                [/\b(?:quieter|lower|softer)\b/i, null, 'media.volume_down'],
-                [/\b(?:louder|turn it up)\b/i, null, 'media.volume_up'],
-                [/\bvolume\s+\d+/i, null, 'media.volume_set'],
-                [/what.*playing/i, null, 'media.whats_playing'],
-                [/\bshuffle\b/i, null, 'media.shuffle_toggle'],
-            ];
-            var matched = null;
-            for (var i = 0; i < intents.length; i++) {
-                var rule = intents[i];
-                if (rule[0].test(txt) && (!rule[1] || rule[1].test(txt))) { matched = rule[2]; break; }
-            }
-            out.textContent = matched ? '→ intent: ' + matched : '→ no match (will fall back to LLM)';
-            if (btn) { btn.disabled = false; btn.textContent = t('btn_test'); }
+            withLoading(btn, function () {
+                var intents = [
+                    [/\b(?:play|put on|turn on|start)\b/i, /radio/i, 'media.play_radio'],
+                    [/\b(?:play|put on|turn on|start)\b/i, /rock|jazz|classic|ambient|lofi|pop|news/i, 'media.play_genre'],
+                    [/\b(?:next|skip)\b/i, null, 'media.next'],
+                    [/\b(?:previous|back)\b/i, null, 'media.previous'],
+                    [/\bstop\b/i, null, 'media.stop'],
+                    [/\bpause\b/i, null, 'media.pause'],
+                    [/\b(?:resume|continue)\b/i, null, 'media.resume'],
+                    [/\b(?:quieter|lower|softer)\b/i, null, 'media.volume_down'],
+                    [/\b(?:louder|turn it up)\b/i, null, 'media.volume_up'],
+                    [/\bvolume\s+\d+/i, null, 'media.volume_set'],
+                    [/what.*playing/i, null, 'media.whats_playing'],
+                    [/\bshuffle\b/i, null, 'media.shuffle_toggle'],
+                ];
+                var matched = null;
+                for (var i = 0; i < intents.length; i++) {
+                    var rule = intents[i];
+                    if (rule[0].test(txt) && (!rule[1] || rule[1].test(txt))) { matched = rule[2]; break; }
+                }
+                out.textContent = matched ? '→ intent: ' + matched : '→ no match (will fall back to LLM)';
+                return Promise.resolve();
+            });
         }
 
         // ── Time formatting ───────────────────────────────────────────────────────────

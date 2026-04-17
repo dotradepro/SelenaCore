@@ -14,11 +14,10 @@
   --hint:var(--tx3);
   --pr:var(--ac);
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
+body{background:transparent;color:var(--fg)}
 button,input,select{font-family:inherit;color:inherit}
 
-.wrap{padding:8px;display:flex;flex-direction:column;gap:6px;height:100vh;overflow-y:auto;min-width:0}
+.wrap{padding:8px;display:flex;flex-direction:column;gap:6px;height:100vh;overflow-y:auto;min-width:0;margin:0}
 .wrap.modal{padding:18px 18px 80px;max-width:560px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
 
 /* ── Compact dashboard tile (3 lines: time / date / status icons) ─ */
@@ -56,7 +55,6 @@ button,input,select{font-family:inherit;color:inherit}
 .compact .ico.reminder{color:var(--gr)}
 .compact .ico.ringing{color:var(--rd);animation:pulse 1s infinite}
 .compact .ico .count{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
 /* ── Modal: tabs ────────────────────────────────────────────────── */
 .tabs{
@@ -76,17 +74,19 @@ button,input,select{font-family:inherit;color:inherit}
 
 .empty{padding:40px 14px;text-align:center;color:var(--mut);font-size:12px}
 
-/* ── List rows (alarms / timers / reminders / cities) ───────────── */
-.row{
+/* ── List rows (alarms / timers / reminders) — scoped to avoid
+     clashing with shared .row class. ───────────────────────────── */
+.list-row{
   display:flex;align-items:center;gap:12px;min-width:0;
   padding:12px 14px;background:var(--card);border:1px solid var(--b);border-radius:10px;
   transition:border-color .15s;
 }
-.row:hover{border-color:var(--pr)}
-.row .main{flex:1;min-width:0;cursor:pointer}
-.row .big{font-size:24px;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.1}
-.row .label{font-size:12px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row .repeat{font-size:11px;color:var(--hint);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+.list-row:hover{border-color:var(--pr)}
+.list-row .main{flex:1;min-width:0;cursor:pointer}
+.list-row .big{font-size:24px;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.1}
+.list-row .label{font-size:12px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-row .repeat{font-size:11px;color:var(--hint);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+.list-row.off{opacity:.55}
 
 /* Swift-style sliding toggle */
 .toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;cursor:pointer}
@@ -226,14 +226,6 @@ button,input,select{font-family:inherit;color:inherit}
 .sheet-actions .delete{background:transparent;border:1px solid var(--rd);color:var(--rd)}
 .sheet-actions .delete:hover{background:rgba(224,84,84,.12)}
 
-/* ── Toast ──────────────────────────────────────────────────────── */
-.toast{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
-  background:var(--card);border:1px solid var(--b);padding:8px 14px;border-radius:8px;
-  z-index:1100;font-size:12px;max-width:90%;color:var(--fg);
-}
-.toast.error{border-color:var(--rd);color:var(--rd)}
-
 /* ── Fullscreen modal close button ──────────────────────────────── */
 .fs-close{
   position:fixed;top:14px;right:18px;
@@ -310,9 +302,9 @@ button,input,select{font-family:inherit;color:inherit}
 <!-- Fullscreen close button (modal mode only) -->
 <button id="fsClose" class="fs-close" title="Close">×</button>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-// ── i18n ───────────────────────────────────────────────────────────────
-var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+// ── i18n dictionary ────────────────────────────────────────────────────
 var L = {
   en:{
     tab_alarms:'Alarms',tab_timers:'Timers',tab_reminders:'Reminders',
@@ -359,52 +351,31 @@ var L = {
     saved:'Збережено',deleted:'Видалено',error_save:'Помилка збереження',
   }
 };
-function t(k){return (L[LANG]||L.en)[k]||k;}
-function applyLang(){
-  document.querySelectorAll('[data-i18n]').forEach(function(el){
-    el.textContent = t(el.getAttribute('data-i18n'));
-  });
-}
+
+// Extra postMessage refresh handler (shared listener already handles lang_changed)
 window.addEventListener('message', function(e){
-  if(!e.data) return;
-  if(e.data.type === 'lang_changed'){
-    try{LANG = localStorage.getItem('selena-lang')||'en';}catch(_){}
-    applyLang(); refreshAll();
-  }
-  if(e.data.type === 'refresh') refreshAll();
+  if(e.data && e.data.type === 'refresh') refreshAll();
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
 var inFrame = window.self !== window.top;
 
-function $(id){return document.getElementById(id);}
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function pad2(n){return (n<10?'0':'')+n;}
 
-function api(path, opts){
-  opts = opts || {};
-  return fetch(BASE+path, {
-    method: opts.method || 'GET',
-    headers: opts.body ? {'Content-Type':'application/json'} : {},
-    body: opts.body ? JSON.stringify(opts.body) : null,
-  }).then(function(r){
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  });
+// Error-aware wrappers. We want the "null on failure" behaviour of the
+// old apiGet/apiPost, but also want the user to see errors via toast.
+function safeGet(p){
+  return apiGet(p).catch(function(e){ showToast(e.message || 'Error', 'error'); return null; });
 }
-function apiGet(p){return api(p).catch(function(){return null;});}
-function apiPost(p,b){return api(p,{method:'POST',body:b||{}}).catch(function(){return null;});}
-function apiPatch(p,b){return api(p,{method:'PATCH',body:b}).catch(function(){return null;});}
-function apiDel(p){return fetch(BASE+p,{method:'DELETE'}).then(function(r){return r.ok;}).catch(function(){return false;});}
-
-function toast(msg, err){
-  var d = document.createElement('div');
-  d.className = 'toast' + (err ? ' error' : '');
-  d.textContent = msg;
-  document.body.appendChild(d);
-  setTimeout(function(){d.remove();}, 2200);
+function safePost(p, b){
+  return apiPost(p, b || {}).catch(function(e){ showToast(e.message || 'Error', 'error'); return null; });
+}
+function safePatch(p, b){
+  return apiPatch(p, b).catch(function(e){ showToast(e.message || 'Error', 'error'); return null; });
+}
+function safeDel(p){
+  return apiDelete(p).then(function(){ return true; }).catch(function(e){ showToast(e.message || 'Error', 'error'); return false; });
 }
 
 // ── Compact widget ─────────────────────────────────────────────────────
@@ -427,7 +398,7 @@ function tickCompactClock(){
 }
 
 function refreshCompact(){
-  apiGet('/state').then(function(s){
+  safeGet('/state').then(function(s){
     if(!s) return;
     var icons = [];
     var ringingCount = (s.ringing_alarms||[]).length;
@@ -436,21 +407,21 @@ function refreshCompact(){
     var reminderCount = s.pending_reminders_count || 0;
 
     if(ringingCount > 0){
-      icons.push('<span class="ico ringing" title="ringing">🔔</span>');
+      icons.push('<span class="ico ringing" title="ringing">!</span>');
     } else if(hasAlarm){
-      icons.push('<span class="ico alarm" title="alarm">⏰</span>');
+      icons.push('<span class="ico alarm" title="alarm">A</span>');
     }
     if(timerCount > 0){
-      icons.push('<span class="ico timer" title="timers">⏱<span class="count">'+timerCount+'</span></span>');
+      icons.push('<span class="ico timer" title="timers">T<span class="count">'+timerCount+'</span></span>');
     }
     if(reminderCount > 0){
-      icons.push('<span class="ico reminder" title="reminders">📌<span class="count">'+reminderCount+'</span></span>');
+      icons.push('<span class="ico reminder" title="reminders">R<span class="count">'+reminderCount+'</span></span>');
     }
     $('cIcons').innerHTML = icons.join('');
   });
 }
 
-// Tap-on-first-click handler (climate-style pointerdown + click fallback)
+// Tap-on-first-click handler (pointerdown + click fallback)
 function bindCompactClick(){
   var root = $('compactRoot');
   if(!root) return;
@@ -485,7 +456,7 @@ function selectTab(name){
 // ── Alarms ─────────────────────────────────────────────────────────────
 var _alarmsCache = [];
 function loadAlarms(){
-  apiGet('/alarms').then(function(d){
+  safeGet('/alarms').then(function(d){
     _alarmsCache = (d && d.alarms) || [];
     renderAlarms();
     reportModalSize();
@@ -496,7 +467,7 @@ function renderAlarms(){
   if(!_alarmsCache.length){c.innerHTML = '<div class="empty">'+esc(t('no_alarms'))+'</div>';return;}
   var listHtml = '<div style="display:flex;flex-direction:column;gap:8px">';
   listHtml += _alarmsCache.map(function(a){
-    return '<div class="row '+(a.enabled?'':'off')+'">'+
+    return '<div class="list-row '+(a.enabled?'':'off')+'">'+
       '<div class="main" onclick="openAlarmEditor(\''+a.id+'\')">'+
         '<div class="big">'+pad2(a.hour)+':'+pad2(a.minute)+'</div>'+
         (a.label?'<div class="label">'+esc(a.label)+'</div>':'')+
@@ -521,7 +492,7 @@ function formatRepeat(days){
   return days.slice().sort().map(function(d){return t(names[d]);}).join(' ');
 }
 function toggleAlarm(id, enabled){
-  apiPatch('/alarms/'+id, {enabled:enabled}).then(function(a){if(a) loadAlarms();});
+  safePatch('/alarms/'+id, {enabled:enabled}).then(function(a){if(a) loadAlarms();});
 }
 
 var _editorDays = [];
@@ -571,15 +542,15 @@ function saveAlarm(id){
   var label = $('aLabel').value;
   var snooze = parseInt($('aSnooze').value,10) || 0;
   var body = {hour:hour,minute:minute,label:label,repeat_days:_editorDays.slice(),snooze_minutes:snooze,enabled:true};
-  var p = id ? apiPatch('/alarms/'+id, body) : apiPost('/alarms', body);
+  var p = id ? safePatch('/alarms/'+id, body) : safePost('/alarms', body);
   p.then(function(r){
-    if(r){toast(t('saved'));closeSheet();loadAlarms();}
-    else{toast(t('error_save'),true);}
+    if(r){showToast(t('saved'), 'success');closeSheet();loadAlarms();}
+    else{showToast(t('error_save'), 'error');}
   });
 }
 function deleteAlarm(id){
-  apiDel('/alarms/'+id).then(function(ok){
-    if(ok){toast(t('deleted'));closeSheet();loadAlarms();}
+  safeDel('/alarms/'+id).then(function(ok){
+    if(ok){showToast(t('deleted'), 'success');closeSheet();loadAlarms();}
   });
 }
 
@@ -587,7 +558,7 @@ function deleteAlarm(id){
 var _timersCache = [];
 var _timerTickHandle = null;
 function loadTimers(){
-  apiGet('/timers').then(function(d){
+  safeGet('/timers').then(function(d){
     _timersCache = (d && d.timers) || [];
     _timersCache.sort(function(a,b){return (a.remaining_sec||0) - (b.remaining_sec||0);});
     renderTimers();
@@ -614,15 +585,15 @@ function renderTimers(){
   html += _timersCache.map(function(tm){
     var left = fmtDuration(tm.remaining_sec);
     var btn = '';
-    if(tm.state === 'running') btn = '<button class="icon-btn" onclick="pauseTimer(\''+tm.id+'\')" title="pause">⏸</button>';
-    else if(tm.state === 'paused') btn = '<button class="icon-btn" onclick="resumeTimer(\''+tm.id+'\')" title="resume">▶</button>';
-    return '<div class="row">'+
+    if(tm.state === 'running') btn = '<button class="icon-btn" onclick="pauseTimer(\''+tm.id+'\')" title="pause">||</button>';
+    else if(tm.state === 'paused') btn = '<button class="icon-btn" onclick="resumeTimer(\''+tm.id+'\')" title="resume">&gt;</button>';
+    return '<div class="list-row">'+
       '<div class="main">'+
         '<div class="big" data-tid="'+tm.id+'">'+left+'</div>'+
         (tm.label?'<div class="label">'+esc(tm.label)+'</div>':'')+
       '</div>'+
       btn+
-      '<button class="icon-btn danger" onclick="deleteTimer(\''+tm.id+'\')" title="delete">✕</button>'+
+      '<button class="icon-btn danger" onclick="deleteTimer(\''+tm.id+'\')" title="delete">×</button>'+
     '</div>';
   }).join('');
   html += '</div>';
@@ -644,11 +615,11 @@ function tickTimers(){
   if(changed) loadTimers();
 }
 function quickTimer(seconds){
-  apiPost('/timers', {duration_sec:seconds, label:''}).then(function(r){if(r) loadTimers();});
+  safePost('/timers', {duration_sec:seconds, label:''}).then(function(r){if(r) loadTimers();});
 }
-function pauseTimer(id){apiPost('/timers/'+id+'/pause').then(function(){loadTimers();});}
-function resumeTimer(id){apiPost('/timers/'+id+'/resume').then(function(){loadTimers();});}
-function deleteTimer(id){apiDel('/timers/'+id).then(function(){loadTimers();});}
+function pauseTimer(id){safePost('/timers/'+id+'/pause').then(function(){loadTimers();});}
+function resumeTimer(id){safePost('/timers/'+id+'/resume').then(function(){loadTimers();});}
+function deleteTimer(id){safeDel('/timers/'+id).then(function(){loadTimers();});}
 function openTimerEditor(){
   var html = '<h3>'+t('add_timer')+'</h3>'+
     '<div class="field"><label>'+t('lbl_label')+'</label>'+
@@ -669,17 +640,17 @@ function saveTimer(){
   var s = parseInt($('tSec').value,10) || 0;
   var label = $('tLabel').value;
   var total = m*60 + s;
-  if(total <= 0){toast(t('error_save'),true);return;}
-  apiPost('/timers', {duration_sec:total, label:label}).then(function(r){
-    if(r){toast(t('saved'));closeSheet();loadTimers();}
-    else{toast(t('error_save'),true);}
+  if(total <= 0){showToast(t('error_save'), 'error');return;}
+  safePost('/timers', {duration_sec:total, label:label}).then(function(r){
+    if(r){showToast(t('saved'), 'success');closeSheet();loadTimers();}
+    else{showToast(t('error_save'), 'error');}
   });
 }
 
 // ── Reminders ──────────────────────────────────────────────────────────
 var _remindersCache = [];
 function loadReminders(){
-  apiGet('/reminders').then(function(d){
+  safeGet('/reminders').then(function(d){
     _remindersCache = (d && d.reminders) || [];
     _remindersCache.sort(function(a,b){return (a.due_at||'').localeCompare(b.due_at||'');});
     renderReminders();
@@ -695,18 +666,18 @@ function renderReminders(){
     var d = new Date(r.due_at);
     var dateStr = d.toLocaleString(LANG==='uk'?'uk-UA':'en-US',
       {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    return '<div class="row">'+
+    return '<div class="list-row">'+
       '<div class="main">'+
         '<div class="label" style="font-size:14px;color:var(--fg);font-weight:500;margin-top:0">'+esc(r.label||'')+'</div>'+
         '<div class="repeat">'+esc(dateStr)+'</div>'+
       '</div>'+
-      '<button class="icon-btn danger" onclick="deleteReminder(\''+r.id+'\')">✕</button>'+
+      '<button class="icon-btn danger" onclick="deleteReminder(\''+r.id+'\')">×</button>'+
     '</div>';
   }).join('');
   html += '</div>';
   c.innerHTML = html;
 }
-function deleteReminder(id){apiDel('/reminders/'+id).then(function(){loadReminders();});}
+function deleteReminder(id){safeDel('/reminders/'+id).then(function(){loadReminders();});}
 function openReminderEditor(){
   var now = new Date();
   now.setMinutes(now.getMinutes() + 10 - (now.getMinutes() % 5));
@@ -726,11 +697,11 @@ function openReminderEditor(){
 function saveReminder(){
   var label = $('rLabel').value;
   var dueLocal = $('rDue').value;
-  if(!dueLocal){toast(t('error_save'),true);return;}
+  if(!dueLocal){showToast(t('error_save'), 'error');return;}
   var d = new Date(dueLocal);
-  apiPost('/reminders', {due_at:d.toISOString(), label:label}).then(function(r){
-    if(r){toast(t('saved'));closeSheet();loadReminders();}
-    else{toast(t('error_save'),true);}
+  safePost('/reminders', {due_at:d.toISOString(), label:label}).then(function(r){
+    if(r){showToast(t('saved'), 'success');closeSheet();loadReminders();}
+    else{showToast(t('error_save'), 'error');}
   });
 }
 
@@ -738,7 +709,7 @@ function saveReminder(){
 var _citiesCache = [];
 var _worldTickHandle = null;
 function loadCities(){
-  apiGet('/world-clock').then(function(d){
+  safeGet('/world-clock').then(function(d){
     _citiesCache = (d && d.cities) || [];
     renderCities();
     if(_worldTickHandle) clearInterval(_worldTickHandle);
@@ -758,7 +729,7 @@ function renderCities(){
         '<div class="tz">'+esc(city.tz_name)+'</div>'+
       '</div>'+
       '<div class="ct" data-tz="'+esc(city.tz_name)+'">--:--</div>'+
-      '<button class="icon-btn danger" onclick="deleteCity(\''+city.id+'\')">✕</button>'+
+      '<button class="icon-btn danger" onclick="deleteCity(\''+city.id+'\')">×</button>'+
     '</div>';
   }).join('');
   html += '</div>';
@@ -775,7 +746,7 @@ function updateCityTimes(){
     }catch(e){el.textContent = '??:??';}
   });
 }
-function deleteCity(id){apiDel('/world-clock/'+id).then(function(){loadCities();});}
+function deleteCity(id){safeDel('/world-clock/'+id).then(function(){loadCities();});}
 function openCityEditor(){
   var html = '<h3>'+t('add_city')+'</h3>'+
     '<div class="field"><label>'+t('lbl_city_name')+'</label>'+
@@ -791,10 +762,10 @@ function openCityEditor(){
 function saveCity(){
   var label = $('cName').value.trim();
   var tz = $('cTz').value.trim();
-  if(!label || !tz){toast(t('error_save'),true);return;}
-  apiPost('/world-clock', {label:label, tz_name:tz}).then(function(r){
-    if(r){toast(t('saved'));closeSheet();loadCities();}
-    else{toast(t('error_save'),true);}
+  if(!label || !tz){showToast(t('error_save'), 'error');return;}
+  safePost('/world-clock', {label:label, tz_name:tz}).then(function(r){
+    if(r){showToast(t('saved'), 'success');closeSheet();loadCities();}
+    else{showToast(t('error_save'), 'error');}
   });
 }
 
@@ -802,7 +773,7 @@ function saveCity(){
 var _swState = null;
 var _swTickHandle = null;
 function loadStopwatch(){
-  apiGet('/stopwatch').then(function(d){
+  safeGet('/stopwatch').then(function(d){
     _swState = d || {state:'idle',elapsed_ms:0,started_at:null,laps:[]};
     renderStopwatch();
     if(_swTickHandle) cancelAnimationFrame(_swTickHandle);
@@ -854,10 +825,10 @@ function renderStopwatch(){
   }
   lapList.innerHTML = rows.join('');
 }
-function swStart(){apiPost('/stopwatch/start').then(function(d){_swState = d;renderStopwatch();tickStopwatch();});}
-function swPause(){apiPost('/stopwatch/pause').then(function(d){_swState = d;renderStopwatch();tickStopwatch();});}
-function swLap(){apiPost('/stopwatch/lap').then(function(d){_swState = d;renderStopwatch();});}
-function swReset(){apiPost('/stopwatch/reset').then(function(d){_swState = d;renderStopwatch();tickStopwatch();});}
+function swStart(){safePost('/stopwatch/start').then(function(d){if(d){_swState = d;renderStopwatch();tickStopwatch();}});}
+function swPause(){safePost('/stopwatch/pause').then(function(d){if(d){_swState = d;renderStopwatch();tickStopwatch();}});}
+function swLap(){safePost('/stopwatch/lap').then(function(d){if(d){_swState = d;renderStopwatch();}});}
+function swReset(){safePost('/stopwatch/reset').then(function(d){if(d){_swState = d;renderStopwatch();tickStopwatch();}});}
 
 // ── Sheet helpers ──────────────────────────────────────────────────────
 function openSheet(html){
@@ -889,6 +860,9 @@ function refreshAll(){
     refreshCompact();
   }
 }
+
+// Expose refresh() for the shared lang_changed handler.
+function refresh(){ refreshAll(); }
 
 // ── Init ───────────────────────────────────────────────────────────────
 applyLang();
@@ -928,6 +902,5 @@ if(IS_MODAL){
   setInterval(refreshCompact, 10000);
 }
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

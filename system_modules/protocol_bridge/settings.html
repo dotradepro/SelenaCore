@@ -7,18 +7,7 @@
     <title>Protocol Bridge Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
         body {
-            margin: 0;
-            font-family: system-ui, sans-serif;
-            background: var(--bg);
-            color: var(--tx);
-            font-size: 14px;
-            min-height: 100%;
             overflow-y: auto;
         }
 
@@ -32,12 +21,6 @@
             font-size: 20px;
             font-weight: 700;
             margin-bottom: 4px;
-        }
-
-        .subtitle {
-            color: var(--tx3);
-            font-size: 13px;
-            margin-bottom: 24px;
         }
 
         .tabs {
@@ -70,13 +53,6 @@
             display: block;
         }
 
-        .card {
-            background: var(--sf);
-            border-radius: 10px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }
-
         .card h2 {
             font-size: 14px;
             font-weight: 600;
@@ -98,18 +74,6 @@
         input,
         select {
             width: 100%;
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            padding: 8px 10px;
-            color: var(--tx);
-            font-size: 13px;
-        }
-
-        input:focus,
-        select:focus {
-            outline: none;
-            border-color: var(--ac);
         }
 
         .toggle-row {
@@ -138,44 +102,12 @@
             width: auto;
         }
 
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 9999px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
         .badge.connected {
             background: rgba(52, 211, 153, 0.15);
             color: var(--gr);
         }
 
         .badge.disconnected {
-            background: rgba(248, 113, 113, 0.15);
-            color: var(--rd);
-        }
-
-        .btn {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: background .15s;
-        }
-
-        .btn-primary {
-            background: var(--ac);
-            color: var(--tx);
-        }
-
-        .btn-primary:hover {
-            background: var(--ac);
-        }
-
-        .btn-danger {
             background: rgba(248, 113, 113, 0.15);
             color: var(--rd);
         }
@@ -364,16 +296,16 @@
         </div>
 
         <div class="actions">
-            <button class="btn btn-primary" onclick="save()" data-i18n="save_btn"></button>
+            <button class="btn btn-primary" id="save-btn" onclick="save()" data-i18n="save_btn"></button>
             <span id="save-msg" data-i18n="saved"></span>
         </div>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
-                title: '⚡ Protocol Bridge', subtitle: 'MQTT / HTTP / Zigbee gateway — device state synchronization',
+                title: '\u26A1 Protocol Bridge', subtitle: 'MQTT / HTTP / Zigbee gateway \u2014 device state synchronization',
                 lbl_bridged: 'Bridged devices', lbl_msgrate: 'Messages/min', lbl_errors: 'Errors',
                 mqtt_offline: 'MQTT offline', mqtt_online: 'MQTT online',
                 tab_mqtt: 'MQTT', tab_http: 'HTTP Poll', tab_zigbee: 'Zigbee / Z-Wave', tab_advanced: 'Advanced',
@@ -387,62 +319,54 @@
                 h_zwave: 'Z-Wave via MQTT', tgl_zwave: 'Enable Z-Wave JS UI discovery', lbl_zwave_topic: 'Z-Wave MQTT base topic',
                 h_general: 'General', tgl_reconnect: 'Reconnect on disconnect', tgl_reconnect_desc: 'Exponential backoff up to 60s',
                 lbl_reconnect_max: 'Max reconnect delay (seconds)',
-                save_btn: 'Save & Reconnect', saved: '✓ Saved', save_error: '✕ Save failed'
+                save_btn: 'Save & Reconnect', saved: '\u2713 Saved', save_error: '\u2715 Save failed'
             },
             uk: {
-                title: '⚡ Міст протоколів', subtitle: 'MQTT / HTTP / Zigbee шлюз — синхронізація стану пристроїв',
-                lbl_bridged: 'Пристрої', lbl_msgrate: 'Повід./хв', lbl_errors: 'Помилки',
-                mqtt_offline: 'MQTT офлайн', mqtt_online: 'MQTT онлайн',
-                tab_mqtt: 'MQTT', tab_http: 'HTTP Poll', tab_zigbee: 'Zigbee / Z-Wave', tab_advanced: 'Налаштування',
-                h_mqtt_broker: 'MQTT брокер', lbl_broker_host: 'Хост брокера', lbl_port: 'Порт',
-                lbl_user_opt: 'Користувач (необов\'язково)', lbl_pass_opt: 'Пароль (необов\'язково)',
-                h_subscriptions: 'Підписки', tgl_ha_discovery: 'Виявлення Home Assistant', lbl_z2m_topic: 'zigbee2mqtt base topic',
-                h_http_polling: 'HTTP опитування', tgl_http_enable: 'Увімкнути HTTP-опитування', tgl_http_desc: 'Автоопит пристроїв з poll_url у meta',
-                lbl_poll_interval: 'Інтервал опитування (секунд)', lbl_req_timeout: 'Таймаут запиту (секунд)',
-                h_zigbee: 'Zigbee через MQTT', zigbee_info: 'Zigbee-пристрої бриджуються через zigbee2mqtt. Налаштуйте zigbee2mqtt topic у вкладці MQTT.',
-                tgl_zigbee_autoreg: 'Автореєстрація Zigbee-пристроїв', tgl_zigbee_autoreg_desc: 'Додати в Device Registry при першому повідомленні',
-                h_zwave: 'Z-Wave через MQTT', tgl_zwave: 'Z-Wave JS UI discovery', lbl_zwave_topic: 'Z-Wave MQTT base topic',
-                h_general: 'Загальне', tgl_reconnect: 'Відновлення після роз\'єднання', tgl_reconnect_desc: 'Експоненціальне збільшення до 60с',
-                lbl_reconnect_max: 'Макс. затримка перед повторним підключенням (с)',
-                save_btn: 'Зберегти і перепідключити', saved: '✓ Збережено', save_error: '✕ Не вдалося зберегти'
+                title: '\u26A1 \u041C\u0456\u0441\u0442 \u043F\u0440\u043E\u0442\u043E\u043A\u043E\u043B\u0456\u0432', subtitle: 'MQTT / HTTP / Zigbee \u0448\u043B\u044E\u0437 \u2014 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0456\u0437\u0430\u0446\u0456\u044F \u0441\u0442\u0430\u043D\u0443 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432',
+                lbl_bridged: '\u041F\u0440\u0438\u0441\u0442\u0440\u043E\u0457', lbl_msgrate: '\u041F\u043E\u0432\u0456\u0434./\u0445\u0432', lbl_errors: '\u041F\u043E\u043C\u0438\u043B\u043A\u0438',
+                mqtt_offline: 'MQTT \u043E\u0444\u043B\u0430\u0439\u043D', mqtt_online: 'MQTT \u043E\u043D\u043B\u0430\u0439\u043D',
+                tab_mqtt: 'MQTT', tab_http: 'HTTP Poll', tab_zigbee: 'Zigbee / Z-Wave', tab_advanced: '\u041D\u0430\u043B\u0430\u0448\u0442\u0443\u0432\u0430\u043D\u043D\u044F',
+                h_mqtt_broker: 'MQTT \u0431\u0440\u043E\u043A\u0435\u0440', lbl_broker_host: '\u0425\u043E\u0441\u0442 \u0431\u0440\u043E\u043A\u0435\u0440\u0430', lbl_port: '\u041F\u043E\u0440\u0442',
+                lbl_user_opt: '\u041A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447 (\u043D\u0435\u043E\u0431\u043E\u0432\u2019\u044F\u0437\u043A\u043E\u0432\u043E)', lbl_pass_opt: '\u041F\u0430\u0440\u043E\u043B\u044C (\u043D\u0435\u043E\u0431\u043E\u0432\u2019\u044F\u0437\u043A\u043E\u0432\u043E)',
+                h_subscriptions: '\u041F\u0456\u0434\u043F\u0438\u0441\u043A\u0438', tgl_ha_discovery: '\u0412\u0438\u044F\u0432\u043B\u0435\u043D\u043D\u044F Home Assistant', lbl_z2m_topic: 'zigbee2mqtt base topic',
+                h_http_polling: 'HTTP \u043E\u043F\u0438\u0442\u0443\u0432\u0430\u043D\u043D\u044F', tgl_http_enable: '\u0423\u0432\u0456\u043C\u043A\u043D\u0443\u0442\u0438 HTTP-\u043E\u043F\u0438\u0442\u0443\u0432\u0430\u043D\u043D\u044F', tgl_http_desc: '\u0410\u0432\u0442\u043E\u043E\u043F\u0438\u0442 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432 \u0437 poll_url \u0443 meta',
+                lbl_poll_interval: '\u0406\u043D\u0442\u0435\u0440\u0432\u0430\u043B \u043E\u043F\u0438\u0442\u0443\u0432\u0430\u043D\u043D\u044F (\u0441\u0435\u043A\u0443\u043D\u0434)', lbl_req_timeout: '\u0422\u0430\u0439\u043C\u0430\u0443\u0442 \u0437\u0430\u043F\u0438\u0442\u0443 (\u0441\u0435\u043A\u0443\u043D\u0434)',
+                h_zigbee: 'Zigbee \u0447\u0435\u0440\u0435\u0437 MQTT', zigbee_info: 'Zigbee-\u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457 \u0431\u0440\u0438\u0434\u0436\u0443\u044E\u0442\u044C\u0441\u044F \u0447\u0435\u0440\u0435\u0437 zigbee2mqtt. \u041D\u0430\u043B\u0430\u0448\u0442\u0443\u0439\u0442\u0435 zigbee2mqtt topic \u0443 \u0432\u043A\u043B\u0430\u0434\u0446\u0456 MQTT.',
+                tgl_zigbee_autoreg: '\u0410\u0432\u0442\u043E\u0440\u0435\u0454\u0441\u0442\u0440\u0430\u0446\u0456\u044F Zigbee-\u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432', tgl_zigbee_autoreg_desc: '\u0414\u043E\u0434\u0430\u0442\u0438 \u0432 Device Registry \u043F\u0440\u0438 \u043F\u0435\u0440\u0448\u043E\u043C\u0443 \u043F\u043E\u0432\u0456\u0434\u043E\u043C\u043B\u0435\u043D\u043D\u0456',
+                h_zwave: 'Z-Wave \u0447\u0435\u0440\u0435\u0437 MQTT', tgl_zwave: 'Z-Wave JS UI discovery', lbl_zwave_topic: 'Z-Wave MQTT base topic',
+                h_general: '\u0417\u0430\u0433\u0430\u043B\u044C\u043D\u0435', tgl_reconnect: '\u0412\u0456\u0434\u043D\u043E\u0432\u043B\u0435\u043D\u043D\u044F \u043F\u0456\u0441\u043B\u044F \u0440\u043E\u0437\u2019\u0454\u0434\u043D\u0430\u043D\u043D\u044F', tgl_reconnect_desc: '\u0415\u043A\u0441\u043F\u043E\u043D\u0435\u043D\u0446\u0456\u0430\u043B\u044C\u043D\u0435 \u0437\u0431\u0456\u043B\u044C\u0448\u0435\u043D\u043D\u044F \u0434\u043E 60\u0441',
+                lbl_reconnect_max: '\u041C\u0430\u043A\u0441. \u0437\u0430\u0442\u0440\u0438\u043C\u043A\u0430 \u043F\u0435\u0440\u0435\u0434 \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u0438\u043C \u043F\u0456\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u043D\u044F\u043C (\u0441)',
+                save_btn: '\u0417\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0456 \u043F\u0435\u0440\u0435\u043F\u0456\u0434\u043A\u043B\u044E\u0447\u0438\u0442\u0438', saved: '\u2713 \u0417\u0431\u0435\u0440\u0435\u0436\u0435\u043D\u043E', save_error: '\u2715 \u041D\u0435 \u0432\u0434\u0430\u043B\u043E\u0441\u044F \u0437\u0431\u0435\u0440\u0435\u0433\u0442\u0438'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); loadConfig(); } });
-
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        const TOKEN = window.SELENA_TOKEN || "";
-        const h = { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" };
 
         function switchTab(name) {
-            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-            document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+            document.querySelectorAll(".tab").forEach(function (el) { el.classList.remove("active"); });
+            document.querySelectorAll(".tab-content").forEach(function (c) { c.classList.remove("active"); });
             event.target.classList.add("active");
             document.getElementById("tab-" + name).classList.add("active");
         }
 
-        async function loadStatus() {
-            try {
-                const r = await fetch(BASE + "/status", { headers: h });
-                if (!r.ok) return;
-                const d = await r.json();
-                document.getElementById("s-bridged").textContent = d.bridged_devices ?? 0;
-                document.getElementById("s-msg").textContent = d.messages_per_min ?? 0;
-                document.getElementById("s-err").textContent = d.error_count ?? 0;
-                const badge = document.getElementById("s-mqtt-badge");
-                if (d.mqtt?.connected) { badge.textContent = t('mqtt_online'); badge.className = "badge connected"; }
-                else { badge.textContent = t('mqtt_offline'); badge.className = "badge disconnected"; }
-            } catch { }
+        function loadStatus() {
+            apiGet("/status").then(function (d) {
+                $("s-bridged").textContent = d.bridged_devices != null ? d.bridged_devices : 0;
+                $("s-msg").textContent = d.messages_per_min != null ? d.messages_per_min : 0;
+                $("s-err").textContent = d.error_count != null ? d.error_count : 0;
+                var badge = $("s-mqtt-badge");
+                if (d.mqtt && d.mqtt.connected) {
+                    badge.textContent = t('mqtt_online');
+                    badge.className = "badge connected";
+                } else {
+                    badge.textContent = t('mqtt_offline');
+                    badge.className = "badge disconnected";
+                }
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
-        async function loadConfig() {
-            try {
-                const r = await fetch(BASE + "/config", { headers: h });
-                if (!r.ok) return;
-                const d = await r.json();
-                const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val ?? el.value; };
-                const chk = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+        function loadConfig() {
+            apiGet("/config").then(function (d) {
+                var set = function (id, val) { var el = $(id); if (el && val != null) el.value = val; };
+                var chk = function (id, val) { var el = $(id); if (el) el.checked = !!val; };
                 set("mqtt-host", d.mqtt_host);
                 set("mqtt-port", d.mqtt_port);
                 set("mqtt-user", d.mqtt_username);
@@ -455,46 +379,31 @@
                 chk("http-enabled", d.http_enabled !== false);
                 chk("reconnect", d.reconnect !== false);
                 set("reconnect-max", d.reconnect_max_delay);
-            } catch { }
+            }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
 
-        async function save() {
-            const cfg = {
-                mqtt_host: document.getElementById("mqtt-host").value,
-                mqtt_port: parseInt(document.getElementById("mqtt-port").value) || 1883,
-                mqtt_username: document.getElementById("mqtt-user").value || null,
-                mqtt_password: document.getElementById("mqtt-pass").value || null,
-                ha_discovery_enabled: document.getElementById("ha-discovery").checked,
-                z2m_enabled: document.getElementById("z2m-enabled").checked,
-                z2m_base_topic: document.getElementById("z2m-topic").value,
-                zigbee_auto_register: document.getElementById("zigbee-auto-register").checked,
-                http_enabled: document.getElementById("http-enabled").checked,
-                http_poll_interval: parseInt(document.getElementById("http-interval").value) || 30,
-                http_timeout: parseFloat(document.getElementById("http-timeout").value) || 5,
-                reconnect: document.getElementById("reconnect").checked,
-                reconnect_max_delay: parseInt(document.getElementById("reconnect-max").value) || 60,
-            };
-            try {
-                const r = await fetch(BASE + "/config", { method: "POST", headers: h, body: JSON.stringify(cfg) });
-                const msg = document.getElementById("save-msg");
-                if (r.ok) {
-                    msg.textContent = t("saved");
-                    msg.style.color = "var(--gr)";
-                    msg.style.display = "inline";
-                    setTimeout(() => msg.style.display = "none", 2000);
-                } else {
-                    msg.textContent = t("save_error");
-                    msg.style.color = "var(--rd)";
-                    msg.style.display = "inline";
-                    setTimeout(() => msg.style.display = "none", 3000);
-                }
-            } catch (e) {
-                const msg = document.getElementById("save-msg");
-                msg.textContent = t("save_error");
-                msg.style.color = "var(--rd)";
-                msg.style.display = "inline";
-                setTimeout(() => msg.style.display = "none", 3000);
-            }
+        function save() {
+            var btn = $("save-btn");
+            withLoading(btn, function () {
+                var cfg = {
+                    mqtt_host: $("mqtt-host").value,
+                    mqtt_port: parseInt($("mqtt-port").value) || 1883,
+                    mqtt_username: $("mqtt-user").value || null,
+                    mqtt_password: $("mqtt-pass").value || null,
+                    ha_discovery_enabled: $("ha-discovery").checked,
+                    z2m_enabled: $("z2m-enabled").checked,
+                    z2m_base_topic: $("z2m-topic").value,
+                    zigbee_auto_register: $("zigbee-auto-register").checked,
+                    http_enabled: $("http-enabled").checked,
+                    http_poll_interval: parseInt($("http-interval").value) || 30,
+                    http_timeout: parseFloat($("http-timeout").value) || 5,
+                    reconnect: $("reconnect").checked,
+                    reconnect_max_delay: parseInt($("reconnect-max").value) || 60
+                };
+                return apiPost("/config", cfg).then(function () {
+                    showToast(t("saved"), "success");
+                });
+            });
         }
 
         applyLang();
@@ -502,7 +411,6 @@
         loadConfig();
         setInterval(loadStatus, 10000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

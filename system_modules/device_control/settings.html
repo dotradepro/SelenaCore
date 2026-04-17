@@ -6,10 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Device Control</title>
 <style>
-/* Alias the legacy local variable names to shared theme tokens so we can
-   keep the existing markup/classes intact while picking up dark/light mode
-   from the parent app. --b, --gr, --rd, --am, --ac already exist in the
-   shared theme — we let those fall through unchanged. */
+/* Alias legacy local variable names to shared theme tokens */
 :root{
   --bg:var(--sf2);
   --card:var(--sf);
@@ -17,48 +14,18 @@
   --mut:var(--tx2);
   --pr:var(--ac);
 }
-*{box-sizing:border-box}
-html{height:100%}
 body{margin:0;min-height:100%;overflow-y:auto;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
 .wrap{padding:14px;max-width:980px;margin:0 auto}
-h2{margin:0 0 12px;font-size:16px;font-weight:600}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--b);margin-bottom:14px;flex-wrap:wrap}
 .tab{padding:8px 14px;cursor:pointer;border:none;background:transparent;color:var(--mut);font-size:13px;border-bottom:2px solid transparent}
 .tab.active{color:var(--fg);border-bottom-color:var(--pr)}
-.card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:14px;margin-bottom:12px}
-.label-sm{font-size:12px;color:var(--mut);margin-bottom:4px}
-.label-xs{font-size:11px;color:var(--mut)}
-input,select,textarea{width:100%;padding:7px 9px;background:var(--bg);border:1px solid var(--b);border-radius:6px;color:var(--fg);font-size:13px;font-family:inherit}
+.tab-pane{}
 textarea{font-family:'DM Mono',monospace;font-size:11px}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pr)}
-.btn{padding:7px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;font-family:inherit}
-.btn-green{background:var(--gr);color:#fff}
-.btn-blue{background:var(--ac);color:#fff}
-.btn-red{background:var(--rd);color:#fff}
-.btn-amber{background:var(--am);color:#000}
-.btn-ghost{background:transparent;color:var(--mut);border:1px solid var(--b)}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.row{display:flex;gap:8px;margin-bottom:8px;align-items:flex-end;flex-wrap:wrap}
 .row > *{flex:1;min-width:140px}
 .row .narrow{flex:0 0 120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--b)}
-th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600}
-.badge-on{background:rgba(34,197,94,.18);color:var(--gr)}
-.badge-off{background:rgba(239,68,68,.18);color:var(--rd)}
-.badge-mut{background:rgba(154,161,177,.15);color:var(--mut)}
-.badge-pr{background:rgba(168,85,247,.18);color:var(--pr)}
 .muted{color:var(--mut)}
-.hidden{display:none !important}
-.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
-.mt8{margin-top:8px}
-.flex{display:flex}.gap6{gap:6px}.gap8{gap:8px}
-.toast{position:fixed;bottom:18px;right:18px;background:var(--card);border:1px solid var(--b);padding:10px 16px;border-radius:8px;z-index:1000;animation:slide .25s}
-.toast.error{border-color:var(--rd);color:var(--rd)}
-@keyframes slide{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
 .help{font-size:11px;color:var(--mut);line-height:1.55}
 .help ol{padding-left:18px;margin:6px 0}
 .help code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:10px}
@@ -222,7 +189,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
         <div id="wQrCode" style="display:flex;justify-content:center;padding:14px;background:#fff;border-radius:8px"></div>
         <div class="label-xs muted mt8" style="text-align:center">
           <span data-i18n="wizard_waiting">Waiting for you to scan and confirm in the app…</span>
-          <span id="wSpinner" style="display:inline-block;width:12px;height:12px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-left:6px"></span>
+          <span class="spinner" style="vertical-align:middle;margin-left:6px"></span>
         </div>
         <div class="flex gap8 mt8" style="justify-content:center">
           <button id="wCancelBtn" class="btn btn-ghost" data-i18n="wizard_cancel">Cancel</button>
@@ -265,7 +232,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       </div>
       <div class="flex gap8 mb12">
         <button id="matterPairBtn" class="btn btn-green" data-i18n="matter_pair">Pair device</button>
-        <span id="matterPairSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <span id="matterPairSpinner" class="spinner hidden" style="align-self:center"></span>
         <button id="matterRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
       </div>
       <div id="matterPairResult" class="mb12"></div>
@@ -292,7 +259,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       </div>
       <div class="flex gap8 mb12">
         <button id="greeScanBtn" class="btn btn-green" data-i18n="gree_scan">Scan</button>
-        <span id="greeScanSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <span id="greeScanSpinner" class="spinner hidden" style="align-self:center"></span>
       </div>
       <div id="greeResults"></div>
     </div>
@@ -318,7 +285,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       </div>
       <div class="flex gap8 mb12">
         <button id="hueDiscoverBtn" class="btn btn-green" data-i18n="hue_discover">Discover lights</button>
-        <span id="hueDiscoverSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <span id="hueDiscoverSpinner" class="spinner hidden" style="align-self:center"></span>
       </div>
       <div id="hueDiscoverResults" class="mb12"></div>
       <div class="label-sm mb8" data-i18n="hue_devices_label">Hue devices</div>
@@ -420,7 +387,7 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
       </div>
       <div class="flex gap8 mb12">
         <button id="z2mDiscoverBtn" class="btn btn-green" data-i18n="z2m_discover">Discover</button>
-        <span id="z2mDiscoverSpinner" class="hidden" style="display:inline-block;width:14px;height:14px;border:2px solid var(--tx3);border-top-color:var(--ac);border-radius:50%;animation:spin 0.8s linear infinite;align-self:center"></span>
+        <span id="z2mDiscoverSpinner" class="spinner hidden" style="align-self:center"></span>
         <button id="z2mRefreshBtn" class="btn btn-ghost" data-i18n="refresh">Refresh</button>
       </div>
       <div id="z2mDiscoverResults" class="mb12"></div>
@@ -437,12 +404,11 @@ th{color:var(--mut);font-weight:500;font-size:11px;text-transform:uppercase;lett
     </div>
   </div>
 
-  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
 </div>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-// ── i18n ─────────────────────────────────────────────────────────────────
-var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+// ── i18n dictionaries ────────────────────────────────────────────────────
 var L = {
   en: {
     title:'Device Control',
@@ -741,46 +707,6 @@ var L = {
     page_of:'з',
   }
 };
-function t(k){return (L[LANG]||L.en)[k]||k;}
-function applyLang(){
-  document.querySelectorAll('[data-i18n]').forEach(function(el){
-    el.textContent = t(el.getAttribute('data-i18n'));
-  });
-  document.querySelectorAll('[data-placeholder-i18n]').forEach(function(el){
-    el.placeholder = t(el.getAttribute('data-placeholder-i18n'));
-  });
-}
-window.addEventListener('message',function(e){
-  if(e.data && e.data.type==='lang_changed'){
-    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
-    applyLang(); loadDevices(); loadWizardStatus();
-  }
-});
-
-// ── helpers ──────────────────────────────────────────────────────────────
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-function $(id){return document.getElementById(id);}
-function show(id){$(id).classList.remove('hidden');}
-function hide(id){$(id).classList.add('hidden');}
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function api(path,opts){
-  opts=opts||{};
-  return fetch(BASE+path,{
-    method:opts.method||'GET',
-    headers:opts.body?{'Content-Type':'application/json'}:{},
-    body:opts.body?JSON.stringify(opts.body):null,
-  }).then(function(r){
-    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
-    return r.json();
-  });
-}
-function toast(msg,err){
-  var t=document.createElement('div');
-  t.className='toast'+(err?' error':'');
-  t.textContent=msg;
-  document.body.appendChild(t);
-  setTimeout(function(){t.remove();},2200);
-}
 
 // ── tabs ─────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(function(b){
@@ -807,7 +733,7 @@ var _devPerPage = 20;
 var _devRetries = 0;
 
 function loadDevices(){
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     _devRetries = 0;
     _allDevices = (res.devices||[]);
     _devPage = 1;
@@ -819,7 +745,7 @@ function loadDevices(){
       setTimeout(loadDevices, _devRetries * 500);
     } else {
       _devRetries = 0;
-      toast(e.message, true);
+      showToast(e.message, 'error');
     }
   });
 }
@@ -913,20 +839,20 @@ if($('devFilterLocation')) $('devFilterLocation').onchange = function(){ _devPag
 if($('devPrevBtn')) $('devPrevBtn').onclick = function(){ if(_devPage > 1){ _devPage--; renderDevices(); } };
 if($('devNextBtn')) $('devNextBtn').onclick = function(){ _devPage++; renderDevices(); };
 window.testDev = function(id){
-  api('/devices/'+id+'/test',{method:'POST'}).then(function(){toast(t('test_ok'));loadDevices();}).catch(function(e){toast(t('test_fail')+': '+e.message,true);});
+  apiPost('/devices/'+id+'/test').then(function(){showToast(t('test_ok'));loadDevices();}).catch(function(e){showToast(t('test_fail')+': '+e.message,'error');});
 };
 window.delDev = function(id){
   if(!confirm(t('confirm_del'))) return;
-  api('/devices/'+id,{method:'DELETE'}).then(function(){toast(t('deleted'));loadDevices();}).catch(function(e){toast(e.message,true);});
+  apiDelete('/devices/'+id).then(function(){showToast(t('deleted'));loadDevices();}).catch(function(e){showToast(e.message,'error');});
 };
 
 // ── Edit device modal ────────────────────────────────────────────────────
 var _editCurrent = null;  // cached device row while editing
 
 window.editDev = function(id){
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var d = (res.devices||[]).filter(function(x){return x.device_id===id;})[0];
-    if(!d){toast('Device not found',true);return;}
+    if(!d){showToast('Device not found','error');return;}
     _editCurrent = d;
     $('editDeviceId').value = d.device_id;
     $('editName').value = d.name || '';
@@ -935,13 +861,14 @@ window.editDev = function(id){
     $('editLocation').value = d.location || '';
     $('editLocationEnDisplay').textContent = (d.meta && d.meta.location_en) || '—';
     show('editModal');
-  }).catch(function(e){toast(e.message,true);});
+  }).catch(function(e){showToast(e.message,'error');});
 };
 $('editCloseBtn').onclick = function(){ hide('editModal'); _editCurrent=null; };
 $('editCancelBtn').onclick = function(){ hide('editModal'); _editCurrent=null; };
 
 $('editSaveBtn').onclick = function(){
   if(!_editCurrent) return;
+  var btn = this;
   var id = _editCurrent.device_id;
   // Preserve protocol-specific meta keys (tuya.*, gree.*, matter.*) and
   // strip name_en/location_en — those are server-derived from name/location
@@ -956,14 +883,13 @@ $('editSaveBtn').onclick = function(){
     location: ($('editLocation').value||'').trim(),
     meta: newMeta,
   };
-  this.disabled=true;
-  api('/devices/'+id,{method:'PATCH',body:body}).then(function(){
-    toast(t('saved'));
-    hide('editModal');
-    _editCurrent=null;
-    loadDevices();
-  }).catch(function(e){toast(e.message,true);}).finally(function(){
-    $('editSaveBtn').disabled=false;
+  withLoading(btn, function(){
+    return apiPatch('/devices/'+id, body).then(function(){
+      showToast(t('saved'));
+      hide('editModal');
+      _editCurrent=null;
+      loadDevices();
+    });
   });
 };
 
@@ -972,7 +898,7 @@ var _currentUserCode = '';
 var _pollAbort = false;
 
 function loadWizardStatus(){
-  api('/tuya/wizard/status').then(function(s){
+  apiGet('/tuya/wizard/status').then(function(s){
     if(s && s.connected){
       $('wizardStatus').innerHTML='<span class="badge badge-on">'+esc(t('wizard_connected'))+'</span> &nbsp; <span class="muted">user_code: '+esc(s.user_code||'?')+' · uid: '+esc((s.uid||'').slice(0,10)+'…')+'</span>';
       if($('wDisconnectBtn')) $('wDisconnectBtn').classList.remove('hidden');
@@ -1012,15 +938,16 @@ function _resetWizardUi(){
 
 $('wStartBtn').onclick = function(){
   var code = ($('wUserCode').value||'').trim().toUpperCase();
-  if(!code){toast(t('fill_required'),true);return;}
+  if(!code){showToast(t('fill_required'),'error');return;}
   _currentUserCode = code;
-  this.disabled=true;
+  var btn = this;
+  btn.disabled=true;
   $('wizardResults').innerHTML='';
-  api('/tuya/wizard/start',{method:'POST',body:{user_code:code}}).then(function(res){
+  apiPost('/tuya/wizard/start',{user_code:code}).then(function(res){
     _showQr(res.qr_url);
     // Start polling in parallel
     _pollAbort = false;
-    api('/tuya/wizard/poll',{method:'POST',body:{user_code:code}}).then(function(p){
+    apiPost('/tuya/wizard/poll',{user_code:code}).then(function(p){
       if(_pollAbort) return;
       loadWizardStatus();
       _resetWizardUi();
@@ -1030,11 +957,11 @@ $('wStartBtn').onclick = function(){
       _resetWizardUi();
       $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
     }).finally(function(){
-      $('wStartBtn').disabled=false;
+      btn.disabled=false;
     });
   }).catch(function(e){
     $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-    $('wStartBtn').disabled=false;
+    btn.disabled=false;
   });
 };
 
@@ -1046,22 +973,23 @@ $('wCancelBtn').onclick = function(){
 
 $('wDisconnectBtn').onclick = function(){
   if(!confirm(t('wizard_confirm_disconnect'))) return;
-  api('/tuya/wizard/disconnect',{method:'POST'}).then(function(){
-    loadWizardStatus();
-    $('wizardResults').innerHTML='';
-    toast(t('wizard_disconnected'));
-  }).catch(function(e){toast(e.message,true);});
+  var btn = this;
+  withLoading(btn, function(){
+    return apiPost('/tuya/wizard/disconnect').then(function(){
+      loadWizardStatus();
+      $('wizardResults').innerHTML='';
+      showToast(t('wizard_disconnected'));
+    });
+  });
 };
 
 $('wRefreshBtn').onclick = function(){
-  this.disabled=true;
-  $('wizardResults').innerHTML='<div class="muted">…</div>';
-  api('/tuya/wizard/refresh',{method:'POST'}).then(function(res){
-    _renderDeviceList(res.devices||[]);
-  }).catch(function(e){
-    $('wizardResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-  }).finally(function(){
-    $('wRefreshBtn').disabled=false;
+  var btn = this;
+  withLoading(btn, function(){
+    $('wizardResults').innerHTML='<div class="muted">…</div>';
+    return apiPost('/tuya/wizard/refresh').then(function(res){
+      _renderDeviceList(res.devices||[]);
+    });
   });
 };
 
@@ -1086,12 +1014,12 @@ function _renderDeviceList(devs){
     var ids=[];
     document.querySelectorAll('.wsel').forEach(function(c){if(c.checked) ids.push(c.getAttribute('data-id'));});
     if(ids.length===0) return;
-    this.disabled=true;
-    api('/tuya/wizard/import',{method:'POST',body:{selected_ids:ids}}).then(function(r){
-      toast(t('wizard_imported')+': '+(r.created||[]).length);
-      document.querySelector('.tab[data-tab="devices"]').click();
-    }).catch(function(e){toast(e.message,true);}).finally(function(){
-      var b=$('importAllBtn'); if(b) b.disabled=false;
+    var btn = this;
+    withLoading(btn, function(){
+      return apiPost('/tuya/wizard/import',{selected_ids:ids}).then(function(r){
+        showToast(t('wizard_imported')+': '+(r.created||[]).length);
+        document.querySelector('.tab[data-tab="devices"]').click();
+      });
     });
   };
 }
@@ -1099,18 +1027,17 @@ function _renderDeviceList(devs){
 // ── Gree / Pular tab ─────────────────────────────────────────────────────
 $('greeScanBtn').onclick = function(){
   var btn = this;
-  btn.disabled = true;
-  btn.textContent = t('gree_scanning');
-  $('greeScanSpinner').classList.remove('hidden');
-  $('greeResults').innerHTML = '';
-  api('/gree/discover',{method:'POST',body:{timeout:10}}).then(function(res){
-    _renderGreeList(res.devices||[]);
-  }).catch(function(e){
-    $('greeResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-  }).finally(function(){
-    btn.disabled=false;
-    btn.textContent = t('gree_scan');
-    $('greeScanSpinner').classList.add('hidden');
+  withLoading(btn, function(){
+    show('greeScanSpinner');
+    $('greeResults').innerHTML = '';
+    return apiPost('/gree/discover',{timeout:10}).then(function(res){
+      _renderGreeList(res.devices||[]);
+    }).catch(function(e){
+      $('greeResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+      throw e;
+    }).finally(function(){
+      hide('greeScanSpinner');
+    });
   });
 };
 
@@ -1155,13 +1082,13 @@ function _renderGreeList(devs){
         location: (locInput && locInput.value || '').trim(),
       });
     });
-    if(picks.length===0){toast(t('gree_no_selection'),true);return;}
-    this.disabled=true;
-    api('/gree/import',{method:'POST',body:{devices:picks}}).then(function(r){
-      toast(t('gree_imported')+': '+(r.created||[]).length);
-      document.querySelector('.tab[data-tab="devices"]').click();
-    }).catch(function(e){toast(e.message,true);}).finally(function(){
-      var b=$('greeImportBtn'); if(b) b.disabled=false;
+    if(picks.length===0){showToast(t('gree_no_selection'),'error');return;}
+    var btn = this;
+    withLoading(btn, function(){
+      return apiPost('/gree/import',{devices:picks}).then(function(r){
+        showToast(t('gree_imported')+': '+(r.created||[]).length);
+        document.querySelector('.tab[data-tab="devices"]').click();
+      });
     });
   };
 }
@@ -1169,7 +1096,7 @@ function _renderGreeList(devs){
 // ── Providers tab ────────────────────────────────────────────────────────
 function loadProviders(){
   $('provGrid').innerHTML = '<div class="muted">'+esc(t('loading'))+'</div>';
-  api('/providers').then(function(res){
+  apiGet('/providers').then(function(res){
     _renderProviders(res.providers||[]);
   }).catch(function(e){
     $('provGrid').innerHTML = '<div class="muted">'+esc(e.message)+'</div>';
@@ -1237,22 +1164,22 @@ function _renderProviders(list){
 window.provInstall = function(id){
   var card = document.querySelector('.prov-card button[onclick*="\''+id+'\'"]');
   if(card){ card.disabled = true; card.textContent = t('prov_installing'); }
-  api('/providers/'+id+'/install', {method:'POST'}).then(function(){
-    toast(t('prov_install_ok'));
+  apiPost('/providers/'+id+'/install').then(function(){
+    showToast(t('prov_install_ok'));
     loadProviders();
   }).catch(function(e){
-    toast(t('prov_install_fail')+': '+e.message, true);
+    showToast(t('prov_install_fail')+': '+e.message, 'error');
     loadProviders();
   });
 };
 
 window.provDisable = function(id){
   if(!confirm(t('prov_confirm_disable'))) return;
-  api('/providers/'+id+'/uninstall', {method:'POST', body:{remove_package:false}}).then(function(){
-    toast(t('prov_disabled'));
+  apiPost('/providers/'+id+'/uninstall', {remove_package:false}).then(function(){
+    showToast(t('prov_disabled'));
     loadProviders();
   }).catch(function(e){
-    toast(e.message, true);
+    showToast(e.message, 'error');
   });
 };
 
@@ -1262,7 +1189,7 @@ $('provRefreshBtn').onclick = loadProviders;
 function loadMatterDevices(){
   var tb = $('matterDeviceBody');
   tb.innerHTML = '<tr><td colspan="3" class="muted">'+esc(t('loading'))+'</td></tr>';
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var rows = (res.devices||[]).filter(function(d){return d.protocol==='matter';});
     if(rows.length===0){
       tb.innerHTML = '<tr><td colspan="3" class="muted">'+esc(t('matter_no_devices'))+'</td></tr>';
@@ -1285,25 +1212,25 @@ $('matterPairBtn').onclick = function(){
   var code = ($('matterSetupCode').value||'').trim();
   var name = ($('matterDeviceName').value||'').trim();
   var etype = $('matterEntityType').value;
-  if(!code || !name){toast(t('matter_fill_required'),true);return;}
+  if(!code || !name){showToast(t('matter_fill_required'),'error');return;}
   var btn = this;
-  btn.disabled = true;
-  $('matterPairSpinner').classList.remove('hidden');
-  $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pairing'))+'</div>';
-  api('/matter/commission',{method:'POST',body:{
-    setup_code: code, device_name: name, entity_type: etype,
-  }}).then(function(r){
-    $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_ok'))+': node '+esc(String(r.node_id))+'</div>';
-    toast(t('matter_pair_ok'));
-    $('matterSetupCode').value = '';
-    $('matterDeviceName').value = '';
-    loadMatterDevices();
-  }).catch(function(e){
-    $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_fail'))+': '+esc(e.message)+'</div>';
-    toast(t('matter_pair_fail')+': '+e.message,true);
-  }).finally(function(){
-    btn.disabled = false;
-    $('matterPairSpinner').classList.add('hidden');
+  withLoading(btn, function(){
+    show('matterPairSpinner');
+    $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pairing'))+'</div>';
+    return apiPost('/matter/commission',{
+      setup_code: code, device_name: name, entity_type: etype,
+    }).then(function(r){
+      $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_ok'))+': node '+esc(String(r.node_id))+'</div>';
+      showToast(t('matter_pair_ok'));
+      $('matterSetupCode').value = '';
+      $('matterDeviceName').value = '';
+      loadMatterDevices();
+    }).catch(function(e){
+      $('matterPairResult').innerHTML = '<div class="muted">'+esc(t('matter_pair_fail'))+': '+esc(e.message)+'</div>';
+      throw e;
+    }).finally(function(){
+      hide('matterPairSpinner');
+    });
   });
 };
 
@@ -1311,17 +1238,17 @@ $('matterRefreshBtn').onclick = loadMatterDevices;
 
 window.matterRemove = function(nodeId){
   if(!confirm(t('matter_confirm_remove'))) return;
-  api('/matter/remove/'+nodeId,{method:'POST'}).then(function(){
-    toast(t('deleted'));
+  apiPost('/matter/remove/'+nodeId).then(function(){
+    showToast(t('deleted'));
     loadMatterDevices();
-  }).catch(function(e){toast(e.message,true);});
+  }).catch(function(e){showToast(e.message,'error');});
 };
 
 // ── Philips Hue tab ─────────────────────────────────────────────────────
 function loadHueDevices(){
   var tb = $('hueDeviceBody');
   tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var rows = (res.devices||[]).filter(function(d){return d.protocol==='philips_hue';});
     if(rows.length===0){
       tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('hue_no_devices'))+'</td></tr>';
@@ -1344,39 +1271,40 @@ function loadHueDevices(){
 $('hueDiscoverBtn').onclick = function(){
   var host = ($('hueApiHost').value||'').trim().replace(/\/+$/,'');
   var token = ($('hueToken').value||'').trim();
-  if(!host || !token){toast(t('hue_fill_required'),true);return;}
-  var btn = this; btn.disabled = true;
-  $('hueDiscoverSpinner').classList.remove('hidden');
-  $('hueDiscoverResults').innerHTML = '';
-  api('/hue/discover',{method:'POST',body:{api_host:host,token:token}}).then(function(res){
-    var devs = res.devices||[];
-    if(devs.length===0){$('hueDiscoverResults').innerHTML='<div class="muted">'+esc(t('hue_no_found'))+'</div>';return;}
-    $('hueDiscoverResults').innerHTML =
-      '<div class="label-sm mb8">'+esc(devs.length+' '+t('hue_found'))+'</div>'+
-      '<table><thead><tr>'+
-        '<th>'+esc(t('hue_col_select'))+'</th>'+
-        '<th>'+esc(t('hue_col_id'))+'</th>'+
-        '<th>'+esc(t('col_name'))+'</th>'+
-        '<th>'+esc(t('hue_col_type'))+'</th>'+
-        '<th>'+esc(t('hue_col_manufacturer'))+'</th>'+
-        '<th>'+esc(t('hue_col_on'))+'</th>'+
-      '</tr></thead><tbody>'+
-      devs.map(function(d){
-        return '<tr>'+
-          '<td><input type="checkbox" checked data-lid="'+esc(String(d.light_id))+'"></td>'+
-          '<td><code>'+esc(String(d.light_id))+'</code></td>'+
-          '<td><input value="'+esc(d.name)+'" class="hue-name" style="width:100%"></td>'+
-          '<td>'+esc(d.type||'')+'</td>'+
-          '<td>'+esc(d.manufacturer||'')+'</td>'+
-          '<td>'+(d.on?'🟢':'⚫')+'</td>'+
-        '</tr>';
-      }).join('')+
-      '</tbody></table>'+
-      '<button class="btn btn-green mt8" onclick="hueImportSelected()">'+esc(t('hue_import_btn'))+'</button>';
-  }).catch(function(e){
-    $('hueDiscoverResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-    toast(e.message,true);
-  }).finally(function(){ btn.disabled=false; $('hueDiscoverSpinner').classList.add('hidden'); });
+  if(!host || !token){showToast(t('hue_fill_required'),'error');return;}
+  var btn = this;
+  withLoading(btn, function(){
+    show('hueDiscoverSpinner');
+    $('hueDiscoverResults').innerHTML = '';
+    return apiPost('/hue/discover',{api_host:host,token:token}).then(function(res){
+      var devs = res.devices||[];
+      if(devs.length===0){$('hueDiscoverResults').innerHTML='<div class="muted">'+esc(t('hue_no_found'))+'</div>';return;}
+      $('hueDiscoverResults').innerHTML =
+        '<div class="label-sm mb8">'+esc(devs.length+' '+t('hue_found'))+'</div>'+
+        '<table><thead><tr>'+
+          '<th>'+esc(t('hue_col_select'))+'</th>'+
+          '<th>'+esc(t('hue_col_id'))+'</th>'+
+          '<th>'+esc(t('col_name'))+'</th>'+
+          '<th>'+esc(t('hue_col_type'))+'</th>'+
+          '<th>'+esc(t('hue_col_manufacturer'))+'</th>'+
+          '<th>'+esc(t('hue_col_on'))+'</th>'+
+        '</tr></thead><tbody>'+
+        devs.map(function(d){
+          return '<tr>'+
+            '<td><input type="checkbox" checked data-lid="'+esc(String(d.light_id))+'"></td>'+
+            '<td><code>'+esc(String(d.light_id))+'</code></td>'+
+            '<td><input value="'+esc(d.name)+'" class="hue-name" style="width:100%"></td>'+
+            '<td>'+esc(d.type||'')+'</td>'+
+            '<td>'+esc(d.manufacturer||'')+'</td>'+
+            '<td>'+(d.on?'🟢':'⚫')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table>'+
+        '<button class="btn btn-green mt8" onclick="hueImportSelected()">'+esc(t('hue_import_btn'))+'</button>';
+    }).finally(function(){
+      hide('hueDiscoverSpinner');
+    });
+  });
 };
 
 window.hueImportSelected = function(){
@@ -1393,21 +1321,21 @@ window.hueImportSelected = function(){
       });
     }
   });
-  if(picks.length===0){toast(t('hue_no_selection'),true);return;}
-  api('/hue/import',{method:'POST',body:{api_host:host,token:token,devices:picks}}).then(function(r){
-    toast(t('hue_imported')+': '+(r.created||[]).length);
+  if(picks.length===0){showToast(t('hue_no_selection'),'error');return;}
+  apiPost('/hue/import',{api_host:host,token:token,devices:picks}).then(function(r){
+    showToast(t('hue_imported')+': '+(r.created||[]).length);
     $('hueDiscoverResults').innerHTML='';
     loadHueDevices();
-  }).catch(function(e){toast(e.message,true);});
+  }).catch(function(e){showToast(e.message,'error');});
 };
 
-$('hueRefreshBtn').onclick = loadHueDevices;
+if ($('hueRefreshBtn')) $('hueRefreshBtn').onclick = loadHueDevices;
 
 // ── ESPHome tab ─────────────────────────────────────────────────────────
 function loadEspDevices(){
   var tb = $('espDeviceBody');
   tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var rows = (res.devices||[]).filter(function(d){return d.protocol==='esphome';});
     if(rows.length===0){
       tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('esp_no_devices'))+'</td></tr>';
@@ -1435,26 +1363,28 @@ $('espAddBtn').onclick = function(){
   var pw = ($('espPassword').value||'').trim() || null;
   var ek = ($('espEncKey').value||'').trim() || null;
   var loc = ($('espLocation').value||'').trim() || null;
-  if(!ip || !name){toast(t('esp_fill_required'),true);return;}
-  var btn = this; btn.disabled = true;
+  if(!ip || !name){showToast(t('esp_fill_required'),'error');return;}
+  var btn = this;
   var caps = (etype==='sensor') ? ['read'] : ['on','off'];
   if(etype==='light') caps.push('brightness');
   var meta = { esphome:{ ip: ip, port: port } };
   if(pw) meta.esphome.password = pw;
   if(ek) meta.esphome.encryption_key = ek;
-  api('/devices',{method:'POST',body:{
-    name: name, entity_type: etype, protocol:'esphome',
-    capabilities: caps, location: loc, meta: meta
-  }}).then(function(){
-    toast(t('esp_add_ok'));
-    $('espDeviceName').value=''; $('espIp').value='';
-    $('espPassword').value=''; $('espEncKey').value='';
-    $('espAddResult').innerHTML='';
-    loadEspDevices();
-  }).catch(function(e){
-    $('espAddResult').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-    toast(e.message,true);
-  }).finally(function(){ btn.disabled=false; });
+  withLoading(btn, function(){
+    return apiPost('/devices',{
+      name: name, entity_type: etype, protocol:'esphome',
+      capabilities: caps, location: loc, meta: meta
+    }).then(function(){
+      showToast(t('esp_add_ok'));
+      $('espDeviceName').value=''; $('espIp').value='';
+      $('espPassword').value=''; $('espEncKey').value='';
+      $('espAddResult').innerHTML='';
+      loadEspDevices();
+    }).catch(function(e){
+      $('espAddResult').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
+      throw e;
+    });
+  });
 };
 $('espRefreshBtn').onclick = loadEspDevices;
 
@@ -1462,7 +1392,7 @@ $('espRefreshBtn').onclick = loadEspDevices;
 function loadZ2mDevices(){
   var tb = $('z2mDeviceBody');
   tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('loading'))+'</td></tr>';
-  api('/devices').then(function(res){
+  apiGet('/devices').then(function(res){
     var rows = (res.devices||[]).filter(function(d){return d.protocol==='zigbee2mqtt';});
     if(rows.length===0){
       tb.innerHTML = '<tr><td colspan="4" class="muted">'+esc(t('z2m_no_devices'))+'</td></tr>';
@@ -1485,39 +1415,40 @@ function loadZ2mDevices(){
 $('z2mDiscoverBtn').onclick = function(){
   var host = ($('z2mMqttHost').value||'').trim();
   var port = parseInt($('z2mMqttPort').value||'1883',10);
-  if(!host){toast(t('z2m_fill_required'),true);return;}
-  var btn = this; btn.disabled = true;
-  $('z2mDiscoverSpinner').classList.remove('hidden');
-  $('z2mDiscoverResults').innerHTML = '';
-  api('/z2m/discover',{method:'POST',body:{mqtt_host:host,mqtt_port:port}}).then(function(res){
-    var devs = res.devices||[];
-    if(devs.length===0){$('z2mDiscoverResults').innerHTML='<div class="muted">'+esc(t('z2m_no_found'))+'</div>';return;}
-    $('z2mDiscoverResults').innerHTML =
-      '<div class="label-sm mb8">'+esc(devs.length+' '+t('z2m_found'))+'</div>'+
-      '<table><thead><tr>'+
-        '<th>'+esc(t('z2m_col_select'))+'</th>'+
-        '<th>'+esc(t('z2m_col_friendly'))+'</th>'+
-        '<th>'+esc(t('col_name'))+'</th>'+
-        '<th>'+esc(t('z2m_col_type'))+'</th>'+
-        '<th>'+esc(t('z2m_col_model'))+'</th>'+
-        '<th>'+esc(t('z2m_col_ieee'))+'</th>'+
-      '</tr></thead><tbody>'+
-      devs.map(function(d){
-        return '<tr>'+
-          '<td><input type="checkbox" checked data-fn="'+esc(d.friendly_name)+'" data-ieee="'+esc(d.ieee_address||'')+'" data-etype="'+esc(d.entity_type||'sensor')+'"></td>'+
-          '<td><code>'+esc(d.friendly_name)+'</code></td>'+
-          '<td><input value="'+esc(d.friendly_name)+'" class="z2m-name" style="width:100%"></td>'+
-          '<td>'+esc(d.entity_type||'')+'</td>'+
-          '<td>'+esc(d.model||'')+'</td>'+
-          '<td><code>'+esc(d.ieee_address||'')+'</code></td>'+
-        '</tr>';
-      }).join('')+
-      '</tbody></table>'+
-      '<button class="btn btn-green mt8" onclick="z2mImportSelected()">'+esc(t('z2m_import_btn'))+'</button>';
-  }).catch(function(e){
-    $('z2mDiscoverResults').innerHTML='<div class="muted">'+esc(e.message)+'</div>';
-    toast(e.message,true);
-  }).finally(function(){ btn.disabled=false; $('z2mDiscoverSpinner').classList.add('hidden'); });
+  if(!host){showToast(t('z2m_fill_required'),'error');return;}
+  var btn = this;
+  withLoading(btn, function(){
+    show('z2mDiscoverSpinner');
+    $('z2mDiscoverResults').innerHTML = '';
+    return apiPost('/z2m/discover',{mqtt_host:host,mqtt_port:port}).then(function(res){
+      var devs = res.devices||[];
+      if(devs.length===0){$('z2mDiscoverResults').innerHTML='<div class="muted">'+esc(t('z2m_no_found'))+'</div>';return;}
+      $('z2mDiscoverResults').innerHTML =
+        '<div class="label-sm mb8">'+esc(devs.length+' '+t('z2m_found'))+'</div>'+
+        '<table><thead><tr>'+
+          '<th>'+esc(t('z2m_col_select'))+'</th>'+
+          '<th>'+esc(t('z2m_col_friendly'))+'</th>'+
+          '<th>'+esc(t('col_name'))+'</th>'+
+          '<th>'+esc(t('z2m_col_type'))+'</th>'+
+          '<th>'+esc(t('z2m_col_model'))+'</th>'+
+          '<th>'+esc(t('z2m_col_ieee'))+'</th>'+
+        '</tr></thead><tbody>'+
+        devs.map(function(d){
+          return '<tr>'+
+            '<td><input type="checkbox" checked data-fn="'+esc(d.friendly_name)+'" data-ieee="'+esc(d.ieee_address||'')+'" data-etype="'+esc(d.entity_type||'sensor')+'"></td>'+
+            '<td><code>'+esc(d.friendly_name)+'</code></td>'+
+            '<td><input value="'+esc(d.friendly_name)+'" class="z2m-name" style="width:100%"></td>'+
+            '<td>'+esc(d.entity_type||'')+'</td>'+
+            '<td>'+esc(d.model||'')+'</td>'+
+            '<td><code>'+esc(d.ieee_address||'')+'</code></td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table>'+
+        '<button class="btn btn-green mt8" onclick="z2mImportSelected()">'+esc(t('z2m_import_btn'))+'</button>';
+    }).finally(function(){
+      hide('z2mDiscoverSpinner');
+    });
+  });
 };
 
 window.z2mImportSelected = function(){
@@ -1537,12 +1468,12 @@ window.z2mImportSelected = function(){
       });
     }
   });
-  if(picks.length===0){toast(t('z2m_no_selection'),true);return;}
-  api('/z2m/import',{method:'POST',body:{mqtt_host:host,mqtt_port:port,base_topic:btopic,devices:picks}}).then(function(r){
-    toast(t('z2m_imported')+': '+(r.created||[]).length);
+  if(picks.length===0){showToast(t('z2m_no_selection'),'error');return;}
+  apiPost('/z2m/import',{mqtt_host:host,mqtt_port:port,base_topic:btopic,devices:picks}).then(function(r){
+    showToast(t('z2m_imported')+': '+(r.created||[]).length);
     $('z2mDiscoverResults').innerHTML='';
     loadZ2mDevices();
-  }).catch(function(e){toast(e.message,true);});
+  }).catch(function(e){showToast(e.message,'error');});
 };
 
 $('z2mRefreshBtn').onclick = loadZ2mDevices;
@@ -1550,13 +1481,22 @@ $('z2mRefreshBtn').onclick = loadZ2mDevices;
 // Shared helper: delete a device and reload a tab-specific list
 window.delDevice = function(deviceId, reloadFn){
   if(!confirm(t('confirm_del'))) return;
-  api('/devices/'+deviceId,{method:'DELETE'}).then(function(){
-    toast(t('deleted'));
+  apiDelete('/devices/'+deviceId).then(function(){
+    showToast(t('deleted'));
     if(reloadFn) reloadFn();
-  }).catch(function(e){toast(e.message,true);});
+  }).catch(function(e){showToast(e.message,'error');});
 };
 
 // ── boot ─────────────────────────────────────────────────────────────────
+// Override widget-common.js lang_changed to also reload wizard status
+var _origLangHandler = window.addEventListener;
+window.addEventListener('message', function(e){
+  if(e.data && e.data.type === 'lang_changed'){
+    loadDevices();
+    loadWizardStatus();
+  }
+});
+
 function boot(){
   applyLang();
   loadDevices();
@@ -1567,6 +1507,5 @@ if(document.readyState === 'loading'){
   boot();
 }
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

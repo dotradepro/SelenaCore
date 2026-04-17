@@ -13,9 +13,8 @@
   --mut:var(--tx2);
   --pr:var(--ac);
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;color:var(--fg);font-size:13px}
-.wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0}
+body{background:transparent;color:var(--fg)}
+.wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0;margin:0}
 .wrap.modal{padding:18px;max-width:520px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
 /* Compact mode: NO room headers (the dashboard tile is too narrow to
    waste a row on group titles). Modal mode keeps grouped layout
@@ -25,28 +24,26 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .wrap.modal .room-title{display:block;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
 .list{display:flex;flex-direction:column;gap:3px;min-width:0}
 
-/* compact row (dashboard mode) */
-.row{
+/* compact row (dashboard mode) — module-specific override of shared .row */
+.wrap .row{
   display:flex;align-items:center;gap:8px;min-width:0;
   padding:8px 10px;background:var(--card);border:1px solid var(--b);border-radius:8px;
   cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
   user-select:none;-webkit-user-select:none;
   -webkit-tap-highlight-color:transparent;
+  justify-content:flex-start;margin-bottom:0;
 }
-.row:hover{border-color:var(--pr)}
-.row:active{transform:scale(.985)}
-.row.off{opacity:.55}
+.wrap .row:hover{border-color:var(--pr)}
+.wrap .row:active{transform:scale(.985)}
+.wrap .row.off{opacity:.55}
 /* ALL descendants (not just direct children) pass clicks through to
-   .row so any pixel of the row is clickable. The previous .row > *
-   selector left grandchildren clickable, which broke clicks on text
-   wrapped in inner spans. */
-.row *{pointer-events:none}
+   .row so any pixel of the row is clickable. */
+.wrap .row *{pointer-events:none}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
 .dot.on{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.5)}
 /* min-width:0 is critical: without it a flex item with white-space:nowrap
    refuses to shrink below its intrinsic content width and ellipsis never
-   kicks in. With min-width:0 the name shrinks to whatever space is left
-   after the fixed-size siblings (dot, target temp) reserve theirs. */
+   kicks in. */
 .row-name{flex:1 1 auto;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row-target{font-size:13px;font-weight:700;color:var(--pr);font-variant-numeric:tabular-nums;flex-shrink:0}
 
@@ -60,8 +57,7 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
 .fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-/* Swift-style sliding toggle (replaces the old ⏻ button — emoji
-   doesn't render reliably across systems). */
+/* Swift-style sliding toggle */
 .toggle{
   position:relative;display:inline-block;width:52px;height:30px;
   flex-shrink:0;cursor:pointer;
@@ -112,13 +108,6 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 .fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
 .fc-meta b{color:var(--fg);font-weight:600}
 
-.toast{
-  position:fixed;bottom:14px;left:50%;transform:translateX(-50%);
-  background:var(--card);border:1px solid var(--b);padding:8px 14px;border-radius:8px;
-  z-index:1000;font-size:12px;max-width:90%;
-}
-.toast.error{border-color:var(--rd);color:var(--rd)}
-
 /* fullscreen modal close button */
 .fs-close{
   position:fixed;top:14px;right:18px;
@@ -134,9 +123,9 @@ body{margin:0;font-family:'DM Sans',system-ui,sans-serif;background:transparent;
 </div>
 <button class="fs-close" id="fsClose" style="display:none">×</button>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-// ── i18n ─────────────────────────────────────────────────────────────────
-var LANG = (function(){try{return localStorage.getItem('selena-lang')||'en';}catch(e){return 'en';}})();
+// ── i18n dictionaries ───────────────────────────────────────────────────
 var ROOM_KEYS = {
   en: {
     living_room:'Living room', livingroom:'Living room', lounge:'Lounge',
@@ -188,46 +177,10 @@ var L = {
     estimated:'оцінка', power_w:'Спожив.',
   }
 };
-function t(k){return (L[LANG]||L.en)[k]||k;}
-function applyLang(){
-  document.querySelectorAll('[data-i18n]').forEach(function(el){
-    el.textContent = t(el.getAttribute('data-i18n'));
-  });
-}
-window.addEventListener('message',function(e){
-  if(!e.data) return;
-  if(e.data.type==='lang_changed'){
-    try{LANG=localStorage.getItem('selena-lang')||'en';}catch(_){}
-    applyLang(); load();
-  }
-  if(e.data.type==='refresh') load();
-});
 
 // ── helpers ──────────────────────────────────────────────────────────────
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
 var inFrame = window.self !== window.top;
-
-function $(id){return document.getElementById(id);}
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-function api(path,opts){
-  opts=opts||{};
-  return fetch(BASE+path,{
-    method:opts.method||'GET',
-    headers:opts.body?{'Content-Type':'application/json'}:{},
-    body:opts.body?JSON.stringify(opts.body):null,
-  }).then(function(r){
-    if(!r.ok) return r.json().then(function(j){throw new Error(j.detail||r.statusText);}).catch(function(){throw new Error('HTTP '+r.status);});
-    return r.json();
-  });
-}
-function toast(msg,err){
-  var d=document.createElement('div');
-  d.className='toast'+(err?' error':'');
-  d.textContent=msg;
-  document.body.appendChild(d);
-  setTimeout(function(){d.remove();},2200);
-}
 
 var MODES = ['auto','cool','dry','fan','heat'];
 var FANS = ['auto','low','medium','high'];
@@ -243,8 +196,6 @@ var DEVICES = {};
 // ── compact row (dashboard) ─────────────────────────────────────────────
 function renderRow(d){
   // Compact dashboard row — JUST status dot, name, target temp.
-  // Everything else (current temp, mode, fan, swing, watts) lives in
-  // the modal. Keeping this minimal lets long device names breathe.
   var s = d.state || {};
   var on = s.on === true;
   var tgt = (s.target_temp != null) ? s.target_temp+'°' : '—';
@@ -256,18 +207,11 @@ function renderRow(d){
 }
 
 function bindCompactRows(){
-  // We use pointerdown (with click as fallback) instead of plain click.
-  // Reason: when the dashboard widget iframe doesn't yet have focus,
-  // browsers swallow the first click as a focus-shift gesture, so the
-  // user has to click twice. pointerdown fires before focus management,
-  // so the modal opens on the very first interaction.
+  // pointerdown + click fallback to register on the first interaction
+  // even when the iframe doesn't yet have focus.
   var openModal = function(){
     if(!inFrame) return;
     try{
-      // Pass an initial size hint so the SPA opens the modal already at
-      // the right dimensions instead of flashing through near-fullscreen
-      // and then resizing down. modal_resize from inside still refines
-      // it once we know the exact content height.
       window.parent.postMessage({
         type:'openWidgetModal',
         module:'climate',
@@ -281,13 +225,11 @@ function bindCompactRows(){
     var trigger = function(e){
       if(fired) return;
       fired = true;
-      // Reset on the next tick so subsequent rows still respond.
       setTimeout(function(){ fired = false; }, 350);
       if(e && e.preventDefault) e.preventDefault();
       openModal();
     };
     r.addEventListener('pointerdown', trigger);
-    // Fallback for browsers without pointer events.
     r.addEventListener('click', trigger);
   });
 }
@@ -360,9 +302,7 @@ function renderFullCard(d){
   '</div>';
 }
 
-// Helper: register a control with a pointerdown trigger so it fires
-// on the very first interaction even when the iframe doesn't yet have
-// focus (avoids the "have to click twice inside the modal" issue).
+// Helper: register a control with pointerdown trigger for first-click response.
 function tap(el, fn){
   var fired = false;
   var handler = function(e){
@@ -377,7 +317,6 @@ function tap(el, fn){
 }
 
 function bindFullCards(){
-  // Swift-style toggle: react on the inner checkbox `change` event.
   document.querySelectorAll('label.toggle').forEach(function(lbl){
     var input = lbl.querySelector('input.power-input');
     var id = lbl.getAttribute('data-id');
@@ -417,14 +356,12 @@ function bindFullCards(){
       if(sw) sendCmd(c.getAttribute('data-id'), {swing_v: sw.v, swing_h: sw.h});
     });
   });
-  // Grab focus immediately so the very first chip click registers
-  // without an extra "click to focus iframe" round-trip.
   try { window.focus(); } catch(_) {}
 }
 
 // ── load + render ───────────────────────────────────────────────────────
 function load(){
-  api('/rooms').then(function(res){
+  apiGet('/rooms').then(function(res){
     var rooms = res.rooms || {};
     var keys = Object.keys(rooms);
     DEVICES = {};
@@ -458,22 +395,20 @@ function load(){
     reportModalSize();
   }).catch(function(e){
     $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    showToast(e.message || 'Error', 'error');
     reportModalSize();
   });
 }
 
 function sendCmd(id, state){
-  api('/device/'+encodeURIComponent(id)+'/command', {method:'POST', body:{state:state}})
+  apiPost('/device/'+encodeURIComponent(id)+'/command', {state:state})
     .then(function(){ load(); })
-    .catch(function(e){ toast(t('cmd_failed')+': '+e.message, true); });
+    .catch(function(e){ showToast(t('cmd_failed')+': '+e.message, 'error'); });
 }
 
-// In modal mode, ask the parent SPA to size its panel to fit our content
-// instead of using the default near-fullscreen layout. We measure the
-// natural content height once it's rendered.
+// In modal mode, ask the parent SPA to size its panel to fit our content.
 function reportModalSize(){
   if(!IS_MODAL || !inFrame) return;
-  // Use rAF so the browser has finished layout before we measure.
   requestAnimationFrame(function(){
     var root = $('root');
     if(!root) return;
@@ -503,12 +438,16 @@ if(IS_MODAL){
   }
 }
 
+// Additional 'refresh' postMessage handler (shared listener handles lang_changed)
+window.addEventListener('message', function(e){
+  if(e.data && e.data.type === 'refresh') load();
+});
+
 // ── boot ─────────────────────────────────────────────────────────────────
 applyLang();
 load();
 setInterval(load, IS_MODAL ? 5000 : 10000);
 window.addEventListener('focus', load);
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})();</script>
 </body>
 </html>

@@ -7,17 +7,9 @@
     <title>Notification Router Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--tx);
+            max-width: 700px;
+            margin: 0 auto;
             padding: 24px;
             min-height: 100%;
             overflow-y: auto;
@@ -26,7 +18,6 @@
         h1 {
             font-size: 1.4rem;
             margin-bottom: 24px;
-            color: var(--tx);
         }
 
         .section {
@@ -49,33 +40,6 @@
             margin-bottom: 4px;
         }
 
-        input,
-        select {
-            width: 100%;
-            background: var(--bg);
-            border: 1px solid var(--b2);
-            border-radius: 8px;
-            color: var(--tx);
-            padding: 10px 12px;
-            font-size: 0.95rem;
-            margin-bottom: 12px;
-        }
-
-        button {
-            background: var(--ac);
-            color: var(--tx);
-            border: none;
-            border-radius: 8px;
-            padding: 10px 20px;
-            font-size: 0.95rem;
-            cursor: pointer;
-            margin-right: 8px;
-        }
-
-        button:hover {
-            background: var(--ac);
-        }
-
         .msg {
             margin-top: 10px;
             padding: 8px 12px;
@@ -91,24 +55,6 @@
         .msg.err {
             background: rgba(220, 50, 50, 0.15);
             color: var(--rd);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.82rem;
-        }
-
-        th,
-        td {
-            border: 1px solid var(--b2);
-            padding: 6px 10px;
-            text-align: left;
-        }
-
-        th {
-            background: var(--sf2);
-            color: var(--tx2);
         }
     </style>
 </head>
@@ -126,7 +72,7 @@
             <option value="push" data-i18n="opt_push">Web Push</option>
         </select>
         <div id="ch-fields"></div>
-        <button onclick="addChannel()" data-i18n="add_channel_btn"></button>
+        <button class="btn btn-primary" id="btn-add-channel" data-i18n="add_channel_btn"></button>
         <div id="ch-msg"></div>
     </div>
 
@@ -148,7 +94,7 @@
             <option value="warning">warning</option>
             <option value="critical">critical</option>
         </select>
-        <button onclick="addRule()" data-i18n="add_rule_btn"></button>
+        <button class="btn btn-primary" id="btn-add-rule" data-i18n="add_rule_btn"></button>
         <div id="rule-msg"></div>
     </div>
 
@@ -180,99 +126,99 @@
         </table>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: { title: '🔔 Notification Router Settings', add_channel: 'Add Channel', channel_type: 'Channel type', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (voice)', opt_push: 'Web Push', add_channel_btn: 'Add Channel', add_rule: 'Add Routing Rule', channel_lbl: 'Channel', priority_lbl: 'Priority (lower = first)', level_filter: 'Level filter (blank = all)', opt_all: 'All', add_rule_btn: 'Add Rule', active_channels: 'Active Channels', col_name: 'Name', col_sent: 'Sent', active_rules: 'Active Rules', col_priority: 'Priority', col_channel: 'Channel', col_level: 'Level', col_events: 'Events', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Channel added', rule_added: '✓ Rule added', no_channels: 'No channels', no_rules: 'No rules', saving: 'Saving…', deleted: 'Deleted', error: 'Error', adding: 'Adding…' },
             uk: { title: '🔔 Налаштування маршрутизації сповіщень', add_channel: 'Додати канал', channel_type: 'Тип каналу', opt_telegram: 'Telegram', opt_webhook: 'Webhook', opt_tts: 'TTS (голос)', opt_push: 'Web Push', add_channel_btn: 'Додати канал', add_rule: 'Додати правило маршрутизації', channel_lbl: 'Канал', priority_lbl: 'Пріоритет (Менший = перший)', level_filter: 'Фільтр рівня (пусто = усі)', opt_all: 'Усі', add_rule_btn: 'Додати правило', active_channels: 'Активні канали', col_name: 'Назва', col_sent: 'Надіслано', active_rules: 'Активні правила', col_priority: 'Пріоритет', col_channel: 'Канал', col_level: 'Рівень', col_events: 'Події', tg_token: 'Bot Token', tg_chat: 'Chat ID', wh_url: 'Webhook URL', ch_added: '✓ Канал додано', rule_added: '✓ Правило додано', no_channels: 'Немає каналів', no_rules: 'Немає правил', saving: 'Збереження…', deleted: 'Видалено', error: 'Помилка', adding: 'Додавання…' }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); } });
 
-        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-
-        document.getElementById('ch-type').addEventListener('change', renderChFields);
+        $('ch-type').addEventListener('change', renderChFields);
 
         function renderChFields() {
-            const type = document.getElementById('ch-type').value;
-            const f = document.getElementById('ch-fields');
+            var type = $('ch-type').value;
+            var f = $('ch-fields');
             if (type === 'telegram') {
-                f.innerHTML = `
-      <label>${t('tg_token')}</label><input id="tg-token" type="password" placeholder="1234:ABCD...">
-      <label>${t('tg_chat')}</label><input id="tg-chat" placeholder="-1001234567890">
-    `;
+                f.innerHTML =
+                    '<label>' + t('tg_token') + '</label><input id="tg-token" type="password" placeholder="1234:ABCD...">' +
+                    '<label>' + t('tg_chat') + '</label><input id="tg-chat" placeholder="-1001234567890">';
             } else if (type === 'webhook') {
-                f.innerHTML = `<label>${t('wh_url')}</label><input id="wh-url" placeholder="https://...">`;
+                f.innerHTML = '<label>' + t('wh_url') + '</label><input id="wh-url" placeholder="https://...">';
             } else {
                 f.innerHTML = '';
             }
         }
         renderChFields();
 
-        async function addChannel() {
-            var btn = document.querySelector('[onclick="addChannel()"]');
-            btn.disabled = true;
-            var origText = btn.textContent;
-            btn.textContent = t('adding');
-            const name = document.getElementById('ch-type').value;
-            let config = {};
-            if (name === 'telegram') {
-                config = { bot_token: document.getElementById('tg-token').value, chat_id: document.getElementById('tg-chat').value };
-            } else if (name === 'webhook') {
-                config = { url: document.getElementById('wh-url').value };
-            }
-            try {
-                const r = await fetch(`${base}/channels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, config }) });
-                const d = await r.json();
-                if (r.ok) { showMsg('ch-msg', t('ch_added'), 'ok'); await loadStatus(); }
-                else showMsg('ch-msg', d.detail || 'Error', 'err');
-            } catch (e) { showMsg('ch-msg', e.message, 'err'); } finally {
-                btn.disabled = false;
-                btn.textContent = origText;
-            }
-        }
+        $('btn-add-channel').addEventListener('click', function () {
+            var btn = this;
+            withLoading(btn, async function () {
+                var name = $('ch-type').value;
+                var config = {};
+                if (name === 'telegram') {
+                    config = { bot_token: $('tg-token').value, chat_id: $('tg-chat').value };
+                } else if (name === 'webhook') {
+                    config = { url: $('wh-url').value };
+                }
+                var r = await fetch(BASE + '/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, config: config }) });
+                var d = await r.json();
+                if (r.ok) {
+                    showMsg('ch-msg', t('ch_added'), 'ok');
+                    await loadStatus();
+                } else {
+                    throw new Error(d.detail || 'Error');
+                }
+            });
+        });
 
-        async function addRule() {
-            const body = {
-                channel: document.getElementById('rule-channel').value,
-                priority: parseInt(document.getElementById('rule-priority').value) || 100,
-                level: document.getElementById('rule-level').value || null,
-            };
-            try {
-                const r = await fetch(`${base}/rules`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-                const d = await r.json();
-                if (r.ok) { showMsg('rule-msg', t('rule_added'), 'ok'); await loadStatus(); }
-                else showMsg('rule-msg', d.detail || 'Error', 'err');
-            } catch (e) { showMsg('rule-msg', e.message, 'err'); }
-        }
+        $('btn-add-rule').addEventListener('click', function () {
+            var btn = this;
+            withLoading(btn, async function () {
+                var body = {
+                    channel: $('rule-channel').value,
+                    priority: parseInt($('rule-priority').value) || 100,
+                    level: $('rule-level').value || null,
+                };
+                var r = await fetch(BASE + '/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                var d = await r.json();
+                if (r.ok) {
+                    showMsg('rule-msg', t('rule_added'), 'ok');
+                    await loadStatus();
+                } else {
+                    throw new Error(d.detail || 'Error');
+                }
+            });
+        });
 
         async function loadStatus() {
             try {
-                const [chs, rules] = await Promise.all([
-                    fetch(`${base}/channels`).then(r => r.json()),
-                    fetch(`${base}/rules`).then(r => r.json()),
+                var results = await Promise.all([
+                    fetch(BASE + '/channels').then(function (r) { return r.json(); }),
+                    fetch(BASE + '/rules').then(function (r) { return r.json(); }),
                 ]);
-                document.getElementById('channels-body').innerHTML = Object.entries(chs.channels || {})
-                    .map(([n, v]) => `<tr><td>${n}</td><td>${v.stats || 0}</td></tr>`).join('') ||
+                var chs = results[0];
+                var rules = results[1];
+                $('channels-body').innerHTML = Object.entries(chs.channels || {})
+                    .map(function (e) { return '<tr><td>' + esc(e[0]) + '</td><td>' + esc(e[1].stats || 0) + '</td></tr>'; }).join('') ||
                     '<tr><td colspan="2" style="color:var(--tx3)">' + t('no_channels') + '</td></tr>';
-                document.getElementById('rules-body').innerHTML = (rules.rules || [])
-                    .map(r => `<tr><td>${r.priority}</td><td>${r.channel}</td><td>${r.level || 'all'}</td><td>${(r.event_types || []).join(',') || 'all'}</td></tr>`)
+                $('rules-body').innerHTML = (rules.rules || [])
+                    .map(function (r) { return '<tr><td>' + esc(r.priority) + '</td><td>' + esc(r.channel) + '</td><td>' + esc(r.level || 'all') + '</td><td>' + esc((r.event_types || []).join(',') || 'all') + '</td></tr>'; })
                     .join('') || '<tr><td colspan="4" style="color:var(--tx3)">' + t('no_rules') + '</td></tr>';
-            } catch (e) { }
+            } catch (e) {
+                showToast(e.message || 'Error', 'error');
+            }
         }
 
         function showMsg(id, text, type) {
-            const el = document.getElementById(id);
+            var el = $(id);
             el.className = 'msg ' + type;
             el.textContent = text;
-            setTimeout(() => { el.textContent = ''; el.className = ''; }, 4000);
+            setTimeout(function () { el.textContent = ''; el.className = ''; }, 4000);
         }
 
         applyLang();
         loadStatus();
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

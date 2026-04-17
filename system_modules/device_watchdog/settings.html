@@ -7,66 +7,22 @@
     <title>Device Watchdog — Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-
         body {
-            font-family: system-ui, sans-serif;
             max-width: 600px;
             margin: 0 auto;
             padding: 20px;
-            background: var(--bg);
-            color: var(--tx);
             min-height: 100%;
             overflow-y: auto;
         }
 
-        h1 {
-            font-size: 1.4rem;
-        }
+        h1 { font-size: 1.4rem; }
 
-        h2 {
-            font-size: 1.1rem;
-            color: var(--tx2);
-            margin-top: 20px;
-        }
-
-        .form-group {
-            margin-bottom: 12px;
-        }
-
-        label {
+        .form-group { margin-bottom: 12px; }
+        .form-group label {
             display: block;
             font-size: 0.85rem;
             color: var(--tx2);
             margin-bottom: 4px;
-        }
-
-        input[type=number],
-        input[type=checkbox] {
-            padding: 7px 10px;
-            background: var(--sf);
-            border: 1px solid var(--b2);
-            border-radius: 6px;
-            color: var(--tx);
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        input[type=checkbox] {
-            width: auto;
-        }
-
-        button {
-            padding: 8px 18px;
-            background: var(--ac);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-right: 8px;
-        }
-
-        button.secondary {
-            background: var(--b2);
         }
 
         #msg {
@@ -84,100 +40,75 @@
     <h2 data-i18n="scan_settings"></h2>
     <div class="form-group">
         <label data-i18n="check_interval"></label>
-        <input type="number" id="check_interval_sec" min="10" max="3600" />
+        <input type="number" id="check_interval_sec" min="10" max="3600" style="width:100%" />
     </div>
     <div class="form-group">
         <label data-i18n="ping_timeout"></label>
-        <input type="number" id="ping_timeout_sec" min="0.5" max="10" step="0.5" />
+        <input type="number" id="ping_timeout_sec" min="0.5" max="10" step="0.5" style="width:100%" />
     </div>
     <div class="form-group">
         <label data-i18n="mqtt_timeout"></label>
-        <input type="number" id="mqtt_timeout_sec" min="30" />
+        <input type="number" id="mqtt_timeout_sec" min="30" style="width:100%" />
     </div>
     <div class="form-group">
         <label data-i18n="protocol_timeout"></label>
-        <input type="number" id="protocol_timeout_sec" min="60" />
+        <input type="number" id="protocol_timeout_sec" min="60" style="width:100%" />
     </div>
     <div class="form-group">
         <label data-i18n="offline_threshold"></label>
-        <input type="number" id="offline_threshold" min="1" max="10" />
+        <input type="number" id="offline_threshold" min="1" max="10" style="width:100%" />
     </div>
     <div class="form-group">
         <label><input type="checkbox" id="notify_on_offline" /> <span data-i18n="notify_offline"></span></label>
     </div>
-    <button onclick="saveConfig()" data-i18n="save"></button>
-    <button class="secondary" onclick="scanNow()" data-i18n="scan_now"></button>
+    <button class="btn btn-primary" id="btnSave" data-i18n="save"></button>
+    <button class="btn btn-secondary" id="btnScan" data-i18n="scan_now"></button>
     <div id="msg"></div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
-            en: { title: '🔍 Device Watchdog', scan_settings: 'Scan Settings', check_interval: 'Check interval (seconds)', ping_timeout: 'Ping timeout (seconds)', mqtt_timeout: 'MQTT offline threshold (seconds)', protocol_timeout: 'Zigbee/Z-Wave offline threshold (seconds)', offline_threshold: 'Consecutive failures before marking offline', notify_offline: 'Publish device.offline event', save: 'Save', scan_now: 'Scan Now', saved: '✓ Saved', scan_done: 'Scan done: ', online_suffix: ' online, ', offline_suffix: ' offline', saving: 'Saving…', scanning: 'Scanning…', error: 'Error' },
-            uk: { title: '🔍 Моніторинг пристроїв', scan_settings: 'Налаштування сканування', check_interval: 'Інтервал перевірки (секунди)', ping_timeout: 'Таймаут пінгу (секунди)', mqtt_timeout: 'Поріг MQTT офлайн (секунди)', protocol_timeout: 'Поріг Zigbee/Z-Wave офлайн (секунди)', offline_threshold: 'Послідовних помилок до позначення офлайн', notify_offline: 'Публікувати подію device.offline', save: 'Зберегти', scan_now: 'Сканувати зараз', saved: '✓ Збережено', scan_done: 'Скан завершено: ', online_suffix: ' онлайн, ', offline_suffix: ' офлайн', saving: 'Збереження…', scanning: 'Сканування…', error: 'Помилка' }
+            en: { title: 'Device Watchdog', scan_settings: 'Scan Settings', check_interval: 'Check interval (seconds)', ping_timeout: 'Ping timeout (seconds)', mqtt_timeout: 'MQTT offline threshold (seconds)', protocol_timeout: 'Zigbee/Z-Wave offline threshold (seconds)', offline_threshold: 'Consecutive failures before marking offline', notify_offline: 'Publish device.offline event', save: 'Save', scan_now: 'Scan Now', saved: 'Saved', scan_done: 'Scan done: ', online_suffix: ' online, ', offline_suffix: ' offline', error: 'Error' },
+            uk: { title: 'Моніторинг пристроїв', scan_settings: 'Налаштування сканування', check_interval: 'Інтервал перевірки (секунди)', ping_timeout: 'Таймаут пінгу (секунди)', mqtt_timeout: 'Поріг MQTT офлайн (секунди)', protocol_timeout: 'Поріг Zigbee/Z-Wave офлайн (секунди)', offline_threshold: 'Послідовних помилок до позначення офлайн', notify_offline: 'Публікувати подію device.offline', save: 'Зберегти', scan_now: 'Сканувати зараз', saved: 'Збережено', scan_done: 'Скан завершено: ', online_suffix: ' онлайн, ', offline_suffix: ' офлайн', error: 'Помилка' }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
 
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
         async function loadConfig() {
-            const r = await fetch(BASE + '/config');
-            const d = await r.json();
-            for (const [k, v] of Object.entries(d)) {
-                const el = document.getElementById(k);
-                if (!el) continue;
-                if (el.type === 'checkbox') el.checked = v;
-                else el.value = v;
+            try {
+                var d = await apiGet('/config');
+                for (var k in d) {
+                    var el = $(k);
+                    if (!el) continue;
+                    if (el.type === 'checkbox') el.checked = d[k];
+                    else el.value = d[k];
+                }
+            } catch (e) {
+                showToast(t('error') + ': ' + e.message, 'error');
             }
         }
 
-        async function saveConfig() {
-            var btn = document.querySelector('[onclick="saveConfig()"]');
-            btn.disabled = true;
-            var origText = btn.textContent;
-            btn.textContent = t('saving');
-            const body = {};
-            ['check_interval_sec', 'ping_timeout_sec', 'mqtt_timeout_sec', 'protocol_timeout_sec', 'offline_threshold'].forEach(k => {
-                body[k] = parseFloat(document.getElementById(k).value);
+        $('btnSave').addEventListener('click', function () {
+            withLoading(this, async function () {
+                var body = {};
+                ['check_interval_sec', 'ping_timeout_sec', 'mqtt_timeout_sec', 'protocol_timeout_sec', 'offline_threshold'].forEach(function (k) {
+                    body[k] = parseFloat($(k).value);
+                });
+                body.notify_on_offline = $('notify_on_offline').checked;
+                await apiPost('/config', body);
+                showToast(t('saved'));
             });
-            body.notify_on_offline = document.getElementById('notify_on_offline').checked;
-            try {
-                await fetch(BASE + '/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-                document.getElementById('msg').textContent = t('saved');
-                document.getElementById('msg').style.color = 'var(--gr)';
-            } catch (e) {
-                document.getElementById('msg').textContent = t('error') + ': ' + e.message;
-                document.getElementById('msg').style.color = 'var(--rd)';
-            } finally {
-                btn.disabled = false;
-                btn.textContent = origText;
-            }
-            setTimeout(() => document.getElementById('msg').textContent = '', 3000);
-        }
+        });
 
-        async function scanNow() {
-            var btn = document.querySelector('[onclick="scanNow()"]');
-            btn.disabled = true;
-            var origText = btn.textContent;
-            btn.textContent = t('scanning');
-            try {
-                const r = await fetch(BASE + '/scan', { method: 'POST' });
-                const d = await r.json();
-                document.getElementById('msg').textContent = t('scan_done') + d.online + '/' + d.checked + t('online_suffix') + d.offline + t('offline_suffix');
-                document.getElementById('msg').style.color = 'var(--gr)';
-            } catch (e) {
-                document.getElementById('msg').textContent = t('error') + ': ' + e.message;
-                document.getElementById('msg').style.color = 'var(--rd)';
-            } finally {
-                btn.disabled = false;
-                btn.textContent = origText;
-            }
-        }
+        $('btnScan').addEventListener('click', function () {
+            withLoading(this, async function () {
+                var d = await apiPost('/scan');
+                var msg = t('scan_done') + d.online + '/' + d.checked + t('online_suffix') + d.offline + t('offline_suffix');
+                showToast(msg, 'info');
+            });
+        });
 
         applyLang();
         loadConfig();
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

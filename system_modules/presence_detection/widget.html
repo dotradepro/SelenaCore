@@ -5,25 +5,8 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <meta charset="UTF-8" />
     <style>
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: system-ui, sans-serif;
-        }
-
-        html,
-        body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
         body {
             background: transparent;
-            color: var(--tx);
-            font-size: 13px;
         }
 
         .widget {
@@ -146,8 +129,8 @@
             </div>
         </div>
     </div>
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
                 presence: 'Presence', users_home: 'users home', away: 'Away', total_tracked: 'Total tracked', users_title: 'Users', loading: 'Loading…', no_users: 'No users tracked.',
@@ -158,51 +141,40 @@
                 state_home: 'вдома', state_away: 'відсутній', state_unknown: 'невідомо', not_seen: 'не видно', away_in: 'відїде ч/з'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); refresh(); } });
-
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         async function refresh() {
             try {
-                const [sr, ur] = await Promise.all([
-                    fetch(BASE + "/status"),
-                    fetch(BASE + "/users"),
+                const [s, d] = await Promise.all([
+                    apiGet("/status"),
+                    apiGet("/users"),
                 ]);
-                if (sr.ok) {
-                    const s = await sr.json();
-                    document.getElementById("home-count").textContent = s.users_home ?? 0;
-                    document.getElementById("away-count").textContent = s.users_away ?? 0;
-                    document.getElementById("total-count").textContent = s.users_total ?? 0;
-                }
-                if (ur.ok) {
-                    const d = await ur.json();
-                    const list = document.getElementById("users-list");
-                    const users = d.users ?? [];
-                    if (users.length === 0) {
-                        list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + t('no_users') + '</div>';
-                    } else {
-                        list.innerHTML = users.slice(0, 6).map(u => {
-                            // Dot class: if detected=false but state=home → amber (Deep Sleep)
-                            var dotClass = u.state;
-                            if (u.state === 'home' && u.detected === false) dotClass = 'pending';
-                            // Sub-label: show countdown or "not seen"
-                            var subLabel = '';
-                            if (u.state === 'home' && u.detected === false) {
-                                subLabel = u.away_in_sec != null
-                                    ? '<span class="sub-warn">' + t('away_in') + ' ' + u.away_in_sec + 's</span>'
-                                    : '<span class="sub-warn">' + t('not_seen') + '</span>';
-                            }
-                            var stateLabel = t('state_' + u.state) || u.state;
-                            return '<div class="user-item"><div class="dot ' + dotClass + '"></div><span class="user-name">' + u.name + '</span>' + subLabel + '<span class="user-state">' + stateLabel + '</span></div>';
-                        }).join("");
-                    }
+                $("home-count").textContent = s.users_home ?? 0;
+                $("away-count").textContent = s.users_away ?? 0;
+                $("total-count").textContent = s.users_total ?? 0;
+
+                const list = $("users-list");
+                const users = d.users ?? [];
+                if (users.length === 0) {
+                    list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + esc(t('no_users')) + '</div>';
                 } else {
-                    document.getElementById("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">users: ' + ur.status + ' ' + (await ur.text()).substring(0, 60) + '</div>';
+                    list.innerHTML = users.slice(0, 6).map(u => {
+                        // Dot class: if detected=false but state=home → amber (Deep Sleep)
+                        var dotClass = u.state;
+                        if (u.state === 'home' && u.detected === false) dotClass = 'pending';
+                        // Sub-label: show countdown or "not seen"
+                        var subLabel = '';
+                        if (u.state === 'home' && u.detected === false) {
+                            subLabel = u.away_in_sec != null
+                                ? '<span class="sub-warn">' + esc(t('away_in')) + ' ' + esc(u.away_in_sec) + 's</span>'
+                                : '<span class="sub-warn">' + esc(t('not_seen')) + '</span>';
+                        }
+                        var stateLabel = t('state_' + u.state) || u.state;
+                        return '<div class="user-item"><div class="dot ' + esc(dotClass) + '"></div><span class="user-name">' + esc(u.name) + '</span>' + subLabel + '<span class="user-state">' + esc(stateLabel) + '</span></div>';
+                    }).join("");
                 }
             } catch (err) {
-                document.getElementById("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">ERR: ' + (err.message || 'fetch error') + '</div>';
+                showToast(err.message || 'Error', 'error');
+                $("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">ERR: ' + esc(err.message || 'fetch error') + '</div>';
             }
         }
 
@@ -210,7 +182,6 @@
         refresh();
         setInterval(refresh, 15000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

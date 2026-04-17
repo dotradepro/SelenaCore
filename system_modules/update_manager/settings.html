@@ -6,8 +6,7 @@
     <title>Update Manager Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--tx); padding: 20px; min-height: 100%; overflow-y: auto; }
+        body { padding: 20px; min-height: 100%; overflow-y: auto; }
         h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; }
         .section { background: var(--sf); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
         .section h2 { font-size: 0.95rem; color: var(--tx2); margin-bottom: 14px; font-weight: 600; }
@@ -18,12 +17,6 @@
         .ver-label { font-size: 0.82rem; color: var(--tx2); }
         .ver-value { font-size: 0.9rem; font-weight: 600; color: var(--tx); }
         .ver-value.big { font-size: 1.2rem; color: var(--ac); }
-        /* Badges */
-        .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; }
-        .badge-ok    { background: rgba(46,201,138,.15); color: var(--gr); }
-        .badge-warn  { background: rgba(245,169,58,.15);  color: var(--am); }
-        .badge-err   { background: rgba(224,84,84,.15);   color: var(--rd); }
-        .badge-info  { background: rgba(79,140,247,.15);  color: var(--ac); }
         /* Available banner */
         .update-banner { border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
         .update-banner.available { background: rgba(46,201,138,.1); border: 1px solid rgba(46,201,138,.3); }
@@ -31,16 +24,10 @@
         .update-banner .ico { font-size: 1.4rem; }
         .update-banner .text .head { font-weight: 700; font-size: 0.95rem; }
         .update-banner .text .sub  { font-size: 0.8rem; color: var(--tx2); margin-top: 2px; }
-        /* Buttons */
-        .btn { background: var(--ac); color: #fff; border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; margin-right: 8px; margin-bottom: 8px; }
-        .btn:hover { opacity: 0.85; }
-        .btn:disabled { opacity: 0.4; cursor: default; }
-        .btn-danger { background: rgba(224,84,84,.2); color: var(--rd); border: 1px solid rgba(224,84,84,.3); }
-        .btn-sec { background: var(--sf3); color: var(--tx); }
         .msg { font-size: 0.85rem; margin-top: 8px; min-height: 18px; }
         .ok-msg { color: var(--gr); } .err-msg { color: var(--rd); } .info-msg { color: var(--am); }
         .progress { height: 4px; background: var(--sf3); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
-        .progress-bar { height: 100%; background: var(--ac); width: 0; transition: width 0.3s; border-radius: 2px; }
+        .progress .fill { height: 100%; background: var(--ac); width: 0; transition: width 0.3s; border-radius: 2px; }
     </style>
 </head>
 <body>
@@ -85,15 +72,15 @@
     <!-- Actions -->
     <div class="section">
         <h2 data-i18n="h_actions"></h2>
-        <button class="btn btn-sec" onclick="doCheck()" id="btn-check" data-i18n="check_btn"></button>
-        <button class="btn" onclick="doDownload()" id="btn-download" disabled data-i18n="download_btn"></button>
-        <button class="btn btn-danger" onclick="doRollback()" id="btn-rollback" data-i18n="rollback_btn"></button>
-        <div class="progress"><div class="progress-bar" id="prog-bar"></div></div>
+        <button class="btn btn-sec" id="btn-check" data-i18n="check_btn"></button>
+        <button class="btn btn-primary" id="btn-download" disabled data-i18n="download_btn"></button>
+        <button class="btn btn-danger" id="btn-rollback" data-i18n="rollback_btn"></button>
+        <div class="progress"><div class="fill" id="prog-bar"></div></div>
         <div class="msg" id="action-msg"></div>
     </div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
                 title: '🔄 Update Manager',
@@ -130,11 +117,6 @@
                 never: 'Ніколи', loading: 'Завантаження…'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); loadStatus(); } });
-
-        const base = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
 
         function stateLabel(state) {
             var map = { idle: 'state_idle', update_available: 'state_update_available', downloading: 'state_downloading', applying: 'state_applying', rolling_back: 'state_rolling_back', error: 'state_error' };
@@ -151,96 +133,101 @@
             try {
                 var d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
                 return d.toLocaleString();
-            } catch (e) { return ts; }
+            } catch (e) { return String(ts); }
+        }
+
+        function showMsg(text, cls) {
+            var el = $('action-msg');
+            el.textContent = text;
+            el.className = 'msg ' + (cls || '');
         }
 
         async function loadStatus() {
             try {
-                var s = await fetch(base + '/update/status').then(function (r) { return r.json(); });
-                document.getElementById('v-current').textContent = s.current_version || '—';
-                document.getElementById('v-latest').textContent = s.latest_version || '—';
-                document.getElementById('v-last-check').textContent = fmtDate(s.last_check);
+                var s = await apiGet('/update/status');
+                $('v-current').textContent = s.current_version || '—';
+                $('v-latest').textContent = s.latest_version || '—';
+                $('v-last-check').textContent = fmtDate(s.last_check);
 
                 var stateKey = s.update_available ? 'update_available' : (s.state || 'idle');
-                document.getElementById('v-state').innerHTML = '<span class="badge ' + stateBadgeClass(stateKey) + '">' + stateLabel(stateKey) + '</span>';
+                $('v-state').innerHTML = '<span class="badge ' + stateBadgeClass(stateKey) + '">' + esc(stateLabel(stateKey)) + '</span>';
 
                 if (s.downloaded_version) {
-                    document.getElementById('v-downloaded').textContent = s.downloaded_version;
-                    document.getElementById('row-downloaded').style.display = '';
+                    $('v-downloaded').textContent = s.downloaded_version;
+                    show('row-downloaded');
                 } else {
-                    document.getElementById('row-downloaded').style.display = 'none';
+                    hide('row-downloaded');
                 }
 
                 // Banner
-                var banner = document.getElementById('upd-banner');
-                var head = document.getElementById('banner-head');
-                var sub = document.getElementById('banner-sub');
+                var banner = $('upd-banner');
+                var head = $('banner-head');
+                var sub = $('banner-sub');
                 if (s.update_available) {
                     banner.className = 'update-banner available';
-                    document.querySelector('#upd-banner .ico').textContent = '🆕';
+                    banner.querySelector('.ico').textContent = '🆕';
                     head.textContent = t('update_avail');
                     sub.textContent = t('new_version') + s.latest_version;
                 } else {
                     banner.className = 'update-banner current';
-                    document.querySelector('#upd-banner .ico').textContent = '✅';
+                    banner.querySelector('.ico').textContent = '✅';
                     head.textContent = t('state_idle');
                     sub.textContent = s.current_version || '';
                 }
 
                 // Enable download button only if update is available
-                document.getElementById('btn-download').disabled = !s.update_available;
+                $('btn-download').disabled = !s.update_available;
             } catch (e) {
-                document.getElementById('banner-head').textContent = '⚠ ' + e.message;
+                showToast(e.message, 'error');
             }
         }
 
-        function showMsg(text, cls) {
-            var el = document.getElementById('action-msg');
-            el.textContent = text;
-            el.className = 'msg ' + (cls || '');
-        }
-
-        async function doCheck() {
-            showMsg(t('checking_msg'), 'info-msg');
-            document.getElementById('btn-check').disabled = true;
-            try {
-                var r = await fetch(base + '/update/check', { method: 'POST' }).then(function (res) { return res.json(); });
+        $('btn-check').addEventListener('click', function () {
+            var btn = this;
+            withLoading(btn, async function () {
+                showMsg(t('checking_msg'), 'info-msg');
+                var r = await apiPost('/update/check');
                 showMsg(r.update_available ? t('update_avail') + ' — ' + r.version : t('up_to_date'), r.update_available ? 'info-msg' : 'ok-msg');
-                loadStatus();
-            } catch (e) { showMsg('⚠️ ' + e.message, 'err-msg'); }
-            document.getElementById('btn-check').disabled = false;
-        }
+                await loadStatus();
+            });
+        });
 
-        async function doDownload() {
+        $('btn-download').addEventListener('click', function () {
+            var btn = this;
             showMsg(t('downloading'), 'info-msg');
-            document.getElementById('btn-download').disabled = true;
-            document.querySelector('.progress').style.display = 'block';
-            var bar = document.getElementById('prog-bar');
+            var progWrap = document.querySelector('.progress');
+            var bar = $('prog-bar');
+            progWrap.style.display = 'block';
             var pct = 0;
             var prog = setInterval(function () { pct = Math.min(pct + 5, 90); bar.style.width = pct + '%'; }, 300);
-            try {
-                var r = await fetch(base + '/update/download', { method: 'POST' }).then(function (res) { return res.json(); });
-                clearInterval(prog); bar.style.width = '100%';
+            withLoading(btn, async function () {
+                var r = await apiPost('/update/download');
+                clearInterval(prog);
+                bar.style.width = '100%';
                 showMsg(r.ok !== false ? t('downloaded') : t('failed'), r.ok !== false ? 'ok-msg' : 'err-msg');
-                loadStatus();
-            } catch (e) { clearInterval(prog); showMsg('⚠️ ' + e.message, 'err-msg'); }
-            setTimeout(function () { document.querySelector('.progress').style.display = 'none'; bar.style.width = '0'; }, 1500);
-        }
+                await loadStatus();
+                setTimeout(function () { progWrap.style.display = 'none'; bar.style.width = '0'; }, 1500);
+            }).catch(function (e) {
+                clearInterval(prog);
+                progWrap.style.display = 'none';
+                bar.style.width = '0';
+            });
+        });
 
-        async function doRollback() {
+        $('btn-rollback').addEventListener('click', function () {
             if (!confirm(t('rollback_confirm'))) return;
-            showMsg(t('rolling_back'), 'info-msg');
-            try {
-                var r = await fetch(base + '/update/rollback', { method: 'POST' }).then(function (res) { return res.json(); });
+            var btn = this;
+            withLoading(btn, async function () {
+                showMsg(t('rolling_back'), 'info-msg');
+                await apiPost('/update/rollback');
                 showMsg(t('rolled_back'), 'ok-msg');
-                loadStatus();
-            } catch (e) { showMsg('⚠️ ' + e.message, 'err-msg'); }
-        }
+                await loadStatus();
+            });
+        });
 
         applyLang();
         loadStatus();
         setInterval(loadStatus, 30000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")); } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 </html>

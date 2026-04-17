@@ -5,25 +5,8 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <meta charset="UTF-8" />
     <style>
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: system-ui, sans-serif;
-        }
-
-        html,
-        body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
         body {
             background: transparent;
-            color: var(--tx);
-            font-size: 13px;
         }
 
         .widget {
@@ -135,51 +118,43 @@
             </div>
         </div>
     </div>
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: { panel_bridge: 'Protocol Bridge', lbl_bridged: 'Bridged devices', lbl_msgrate: 'Messages/min', lbl_errors: 'Errors', panel_events: 'Recent Events', loading: 'Loading…', no_events: 'No events yet', connected: 'Connected', disconnected: 'Disconnected', pollers_suffix: ' pollers' },
             uk: { panel_bridge: 'Міст протоколів', lbl_bridged: 'Пристроїв', lbl_msgrate: 'Повід./хв', lbl_errors: 'Помилки', panel_events: 'Недавні події', loading: 'Завантаження…', no_events: 'Подій немає', connected: 'Підключено', disconnected: 'Відключено', pollers_suffix: ' опитувачів' }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); refresh(); } });
-
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        const TOKEN = window.SELENA_TOKEN || "";
-        const headers = { "Authorization": "Bearer " + TOKEN };
 
         async function refresh() {
             try {
-                const r = await fetch(BASE + "/status", { headers });
-                if (!r.ok) return;
-                const d = await r.json();
+                const d = await apiGet("/status");
 
                 const mqttOk = d.mqtt?.connected;
-                document.getElementById("mqtt-dot").className = "dot " + (mqttOk ? "ok" : "error");
-                document.getElementById("mqtt-status").textContent = mqttOk ? t('connected') : t('disconnected');
-                document.getElementById("http-count").textContent = (d.http_pollers ?? 0) + t('pollers_suffix');
-                document.getElementById("bridged-count").textContent = d.bridged_devices ?? 0;
-                document.getElementById("msg-rate").textContent = d.messages_per_min ?? 0;
-                document.getElementById("err-count").textContent = d.error_count ?? 0;
+                $("mqtt-dot").className = "dot " + (mqttOk ? "ok" : "error");
+                $("mqtt-status").textContent = mqttOk ? t('connected') : t('disconnected');
+                $("http-count").textContent = (d.http_pollers ?? 0) + t('pollers_suffix');
+                $("bridged-count").textContent = d.bridged_devices ?? 0;
+                $("msg-rate").textContent = d.messages_per_min ?? 0;
+                $("err-count").textContent = d.error_count ?? 0;
 
                 const events = d.recent_events ?? [];
-                const el = document.getElementById("events-list");
+                const el = $("events-list");
                 if (events.length === 0) {
-                    el.innerHTML = '<div class="event-item" style="color:var(--tx3)">' + t('no_events') + '</div>';
+                    el.innerHTML = '<div class="event-item" style="color:var(--tx3)">' + esc(t('no_events')) + '</div>';
                 } else {
                     el.innerHTML = events.slice(0, 6).map(e =>
-                        `<div class="event-item"><span>${e.type}</span> — ${e.device_id ?? ""}</div>`
+                        `<div class="event-item"><span>${esc(e.type)}</span> — ${esc(e.device_id ?? "")}</div>`
                     ).join("");
                 }
-            } catch { }
+            } catch (e) {
+                showToast(e.message || 'Error', 'error');
+            }
         }
 
         applyLang();
         refresh();
         setInterval(refresh, 5000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>

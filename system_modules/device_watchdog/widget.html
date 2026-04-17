@@ -5,18 +5,7 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <meta charset="UTF-8" />
     <style>
-
-        html,
         body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-        }
-
-        body {
-            font-family: system-ui, sans-serif;
-            background: var(--bg);
-            color: var(--tx);
             padding: 12px;
             text-align: center;
             display: flex;
@@ -25,7 +14,7 @@
             justify-content: center;
         }
 
-        .pulse {
+        .pulse-ico {
             width: 40px;
             height: 40px;
             border-radius: 50%;
@@ -36,11 +25,11 @@
             font-size: 20px;
         }
 
-        .online {
+        .pulse-ico.online {
             background: rgba(52,214,147,.15);
         }
 
-        .warning {
+        .pulse-ico.warning {
             background: rgba(245,169,58,.15);
         }
 
@@ -50,7 +39,7 @@
             margin-top: 4px;
         }
 
-        .label {
+        .label-bottom {
             font-size: 0.75rem;
             color: var(--tx2);
         }
@@ -58,34 +47,30 @@
 </head>
 
 <body>
-    <div class="pulse" id="indicator">💓</div>
+    <div class="pulse-ico" id="indicator">♥</div>
     <div class="count" id="count">—</div>
-    <div class="label" data-i18n="online"></div>
+    <div class="label-bottom" data-i18n="online"></div>
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: { online: 'online' },
             uk: { online: 'онлайн' }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() { document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t(el.getAttribute('data-i18n')); }); }
-        window.addEventListener('message', function (e) { if (e.data && e.data.type === 'lang_changed') { try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) { } applyLang(); } });
 
-        const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-        async function refresh() {
-            try {
-                const r = await fetch(BASE + '/status');
-                const d = await r.json();
-                const ok = d.offline === 0;
-                document.getElementById('indicator').className = 'pulse ' + (ok ? 'online' : 'warning');
-                document.getElementById('count').textContent = d.online + '/' + d.total;
-            } catch { }
+        function refresh() {
+            apiGet('/status')
+                .then(function (d) {
+                    var ok = d.offline === 0;
+                    $('indicator').className = 'pulse-ico ' + (ok ? 'online' : 'warning');
+                    $('count').textContent = d.online + '/' + d.total;
+                })
+                .catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }
-        refresh();
+
         applyLang();
+        refresh();
         setInterval(refresh, 30000);
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>
