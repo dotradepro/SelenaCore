@@ -99,6 +99,30 @@ def _ensure_ctranslate2() -> bool:
         return False
 
 
+_cuda_available: bool | None = None
+
+
+def _cuda_device_available() -> bool:
+    """Probe once whether ctranslate2 sees a CUDA device.
+
+    ``int8_float16`` is the recommended compute_type for int8-quantized
+    models on CUDA — weights stay int8, math runs in fp16. ~3-4x faster
+    than CPU int8 on discrete NVIDIA. Benchmarked against the
+    opus-mt-tc-big-* models shipped via ct2-transformers-converter.
+    """
+    global _cuda_available
+    if _cuda_available is not None:
+        return _cuda_available
+    try:
+        import ctranslate2
+        _cuda_available = ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        _cuda_available = False
+    if _cuda_available:
+        logger.info("Helsinki: CUDA device detected — translators will load on GPU")
+    return _cuda_available
+
+
 def _layout_ok(d: Path) -> bool:
     """Check that a model directory has every file CT2 + spm need."""
     return (
@@ -138,13 +162,20 @@ class _BaseHelsinki:
         import ctranslate2
         import sentencepiece as spm
 
-        translator = ctranslate2.Translator(
-            str(d),
-            device="cpu",
-            compute_type="int8",
-            inter_threads=1,
-            intra_threads=2,
-        )
+        if _cuda_device_available():
+            translator = ctranslate2.Translator(
+                str(d),
+                device="cuda",
+                compute_type="int8_float16",
+            )
+        else:
+            translator = ctranslate2.Translator(
+                str(d),
+                device="cpu",
+                compute_type="int8",
+                inter_threads=1,
+                intra_threads=2,
+            )
         src_sp = spm.SentencePieceProcessor()
         src_sp.Load(str(d / "source.spm"))
         tgt_sp = spm.SentencePieceProcessor()
