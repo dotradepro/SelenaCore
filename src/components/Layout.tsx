@@ -141,11 +141,24 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fetchStats = useStore((s) => s.fetchStats);
   const voiceStatus = useStore((s) => s.voiceStatus);
 
+  const showToast = useStore((s) => s.showToast);
+
   useEffect(() => {
     // Initial fetch for full stats (includes Ollama/LLM probes not in WS snapshot).
     // No polling — HW metrics arrive via WebSocket monitor.metrics events.
     fetchStats();
   }, [fetchStats]);
+
+  // Bridge: receive toast messages from iframe settings/widget pages
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'selena-toast' && typeof e.data.message === 'string') {
+        showToast(e.data.message, e.data.level || 'info');
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [showToast]);
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);

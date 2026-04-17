@@ -131,7 +131,7 @@ export default function ModuleDetail() {
             <div style={{ flex: 1, overflow: 'hidden' }}>
                 {isRunning && hasSettings ? (
                     <iframe
-                        src={`/api/ui/modules/${mod.name}/settings`}
+                        src={`/api/ui/modules/${mod.name}/settings?_=${Date.now()}`}
                         style={{
                             width: '100%', height: '100%', border: 'none',
                             display: 'block', background: '#0a0a0a',

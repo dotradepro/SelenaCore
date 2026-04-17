@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Volume2, Network, Users, Activity, RefreshCw, Play, Download, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid } from 'lucide-react';
+import { Volume2, Network, Users, Activity, RefreshCw, Play, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -1291,7 +1291,7 @@ function SystemModulesSettings() {
           {selected && selected.ui?.settings ? (
             <iframe
               key={selected.name}
-              src={`/api/ui/modules/${selected.name}/settings`}
+              src={`/api/ui/modules/${selected.name}/settings?_=${Date.now()}`}
               style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
               title={`${selected.name} settings`}
               allow="geolocation"
@@ -1316,3 +1316,4 @@ function SystemModulesSettings() {
     </div>
   );
 }
+
