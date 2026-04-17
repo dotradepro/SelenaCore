@@ -201,7 +201,7 @@ const uk = {
             theme: 'Режим',
             mode: 'Режим',
             themeAuto: 'Авто',
-            themeAutoDesc: 'За часом доби',
+            themeAutoDesc: 'За системною темою',
             themeDark: 'Темна',
             themeDarkDesc: 'Завжди темна тема',
             themeLight: 'Світла',

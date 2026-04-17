@@ -138,17 +138,17 @@ function loadTheme(): ThemeMode {
 
 function applyThemeClass(mode: ThemeMode) {
   const root = document.documentElement;
-  if (mode === 'auto') {
-    const h = new Date().getHours();
-    root.classList.toggle('light', h >= 7 && h < 20);
-  } else {
-    root.classList.toggle('light', mode === 'light');
-  }
+  const effectiveLight =
+    mode === 'auto'
+      ? !window.matchMedia('(prefers-color-scheme: dark)').matches
+      : mode === 'light';
+  root.classList.toggle('light', effectiveLight);
 }
 
 function broadcastThemeToIframes() {
+  const theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
   document.querySelectorAll('iframe').forEach(f => {
-    try { f.contentWindow?.postMessage({ type: 'theme_changed' }, '*'); } catch (_) { /* cross-origin */ }
+    try { f.contentWindow?.postMessage({ type: 'theme_changed', theme }, '*'); } catch (_) { /* cross-origin */ }
   });
 }
 
@@ -440,16 +440,16 @@ export const useStore = create<AppState>((set, get) => ({
     }).catch(() => { });
   },
   initThemeListener: () => {
-    const theme = get().theme;
-    applyThemeClass(theme);
-    // Periodic re-check for time-of-day auto theme (every 60s)
-    const interval = setInterval(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    applyThemeClass(get().theme);
+    const onChange = () => {
       if (get().theme === 'auto') {
         applyThemeClass('auto');
         broadcastThemeToIframes();
       }
-    }, 60_000);
-    return () => clearInterval(interval);
+    };
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
   },
 
   fetchWizardStatus: async () => {

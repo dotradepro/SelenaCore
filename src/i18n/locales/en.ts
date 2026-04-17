@@ -201,7 +201,7 @@ const en = {
             theme: 'Mode',
             mode: 'Mode',
             themeAuto: 'Auto',
-            themeAutoDesc: 'Follow time of day',
+            themeAutoDesc: 'Follow system preference',
             themeDark: 'Dark',
             themeDarkDesc: 'Always dark mode',
             themeLight: 'Light',
