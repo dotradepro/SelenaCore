@@ -236,26 +236,58 @@ voice:
 | `PIPER_GPU_URL` | `http://localhost:5100` | Native Piper server URL |
 | `PIPER_DEVICE` | `auto` | Piper device mode: `auto`, `cpu`, `gpu` |
 
-### llm
+### voice.llm_provider + voice.providers.*
+
+LLM connectivity is owned by the `voice` section — Ollama is a provider on
+equal footing with OpenAI / Anthropic / Groq / Google. Selena does not
+install or manage any Ollama server; install it yourself from
+[ollama.ai](https://ollama.ai), `ollama pull <model>` the weights you
+want, and point Selena at the URL through the wizard's **LLM Provider**
+step or **System → Engines**.
+
+```yaml
+voice:
+  llm_provider: "ollama"      # "ollama" | "openai" | "anthropic" | "groq" | "google"
+  llm_model: "llama3.2"       # active model id for the selected provider
+  providers:
+    ollama:
+      url: "http://localhost:11434"
+      # api_key: "optional-bearer-token"   # only needed for remote/proxied Ollama
+      model: "llama3.2"
+    openai:
+      api_key: "sk-..."
+      model: "gpt-4o-mini"
+    # anthropic, groq, google — same shape
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `voice.llm_provider` | `str` | *(unset)* | Active provider. Missing/empty → LLM disabled; novel voice phrases fall through to the deterministic fallback. |
+| `voice.llm_model`    | `str` | *(unset)* | Shortcut for the active provider's model. Takes priority over provider-specific `model`. |
+| `voice.providers.ollama.url`     | `str` | `http://localhost:11434` | HTTP endpoint of any reachable Ollama instance (local or remote). |
+| `voice.providers.ollama.api_key` | `str` | *(unset)* | Optional Bearer token for proxied / hosted Ollama deployments. Local Ollama needs no key. |
+| `voice.providers.{cloud}.api_key`| `str` | — | Cloud-provider API key. Required for non-Ollama providers. |
+| `voice.providers.{id}.model`     | `str` | — | Per-provider model id. |
+
+### llm (inference tuning)
 
 ```yaml
 llm:
   enabled: true
-  provider: "ollama"
-  ollama_url: "http://localhost:11434"
-  default_model: "phi-3-mini"
   min_ram_gb: 5
   timeout_sec: 30
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | `bool` | `true` | Enable the local LLM subsystem. |
-| `provider` | `str` | `ollama` | LLM inference provider. Currently supported: `ollama`. |
-| `ollama_url` | `str` | `http://localhost:11434` | Base URL of the Ollama API. |
-| `default_model` | `str` | `phi-3-mini` | Default model for intent classification and conversational responses. |
-| `min_ram_gb` | `int` | `5` | Minimum available RAM (in GB) required before loading a model. |
+| `enabled` | `bool` | `true` | Enable the LLM subsystem. |
+| `min_ram_gb` | `int` | `5` | Minimum available RAM (in GB) required before dispatching a request. |
 | `timeout_sec` | `int` | `30` | Request timeout in seconds for LLM inference calls. |
+
+> **Migrated key:** older `core.yaml` files used `llm.ollama_url` and
+> `llm.default_model`. The one-shot migration in `core.config.
+> migrate_ollama_url_key` moves `llm.ollama_url` →
+> `voice.providers.ollama.url` on first boot and prunes the old key.
 
 ### platform
 
@@ -313,7 +345,8 @@ These variables are not part of `CoreSettings` but are used by supporting servic
 | `GEMINI_API_KEY` | API key for Google Gemini, used as a cloud LLM fallback when local inference is unavailable. |
 | `APP_URL` | Base URL of the core API (e.g., `http://localhost`). Used by external services that need to call back into SelenaCore. |
 | `HOST_UID` | Host user ID, passed into containers for PulseAudio socket permissions. |
-| `OLLAMA_MODELS_DIR` | Override directory where Ollama stores downloaded models. |
+| `OLLAMA_URL` | Override `voice.providers.ollama.url` (useful for one-off env-var-driven tests). |
+| `OLLAMA_API_KEY` | Override `voice.providers.ollama.api_key` at runtime. |
 | `DEV_MODULE_TOKEN` | A static bearer token accepted during development for module API testing. Do not use in production. |
 
 ---

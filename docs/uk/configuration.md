@@ -236,26 +236,58 @@ voice:
 | `PIPER_GPU_URL` | `http://localhost:5100` | URL нативного сервера Piper |
 | `PIPER_DEVICE` | `auto` | Режим пристрою Piper: `auto`, `cpu`, `gpu` |
 
-### llm
+### voice.llm_provider + voice.providers.*
+
+Підключення LLM живе в секції `voice` — Ollama є рівноправним провайдером
+поруч з OpenAI / Anthropic / Groq / Google. Selena не встановлює і не
+керує Ollama-сервером: встановіть його самостійно з
+[ollama.ai](https://ollama.ai), завантажте модель через
+`ollama pull <model>` і вкажіть URL у кроці майстра **LLM Provider** або
+у **Система → Engines**.
+
+```yaml
+voice:
+  llm_provider: "ollama"      # "ollama" | "openai" | "anthropic" | "groq" | "google"
+  llm_model: "llama3.2"       # активна модель обраного провайдера
+  providers:
+    ollama:
+      url: "http://localhost:11434"
+      # api_key: "optional-bearer-token"   # лише для віддаленого/проксі Ollama
+      model: "llama3.2"
+    openai:
+      api_key: "sk-..."
+      model: "gpt-4o-mini"
+    # anthropic, groq, google — ідентична структура
+```
+
+| Ключ | Тип | За замовчуванням | Опис |
+|------|-----|-----------------|------|
+| `voice.llm_provider` | `str` | *(не встановлено)* | Активний провайдер. Відсутній/порожній → LLM вимкнений; нові голосові фрази падатимуть на детермінований fallback. |
+| `voice.llm_model`    | `str` | *(не встановлено)* | Шорткат для моделі активного провайдера. Має пріоритет над specific `model`. |
+| `voice.providers.ollama.url`     | `str` | `http://localhost:11434` | HTTP endpoint будь-якого доступного Ollama (локальний чи віддалений). |
+| `voice.providers.ollama.api_key` | `str` | *(не встановлено)* | Опціональний Bearer-токен для віддаленого / за проксі Ollama. Локальний не вимагає. |
+| `voice.providers.{cloud}.api_key`| `str` | — | API-ключ хмарного провайдера. Обов'язковий для не-Ollama. |
+| `voice.providers.{id}.model`     | `str` | — | Ідентифікатор моделі провайдера. |
+
+### llm (налаштування інференсу)
 
 ```yaml
 llm:
   enabled: true
-  provider: "ollama"
-  ollama_url: "http://localhost:11434"
-  default_model: "phi-3-mini"
   min_ram_gb: 5
   timeout_sec: 30
 ```
 
 | Ключ | Тип | За замовчуванням | Опис |
 |------|-----|-----------------|------|
-| `enabled` | `bool` | `true` | Увімкнення локальної підсистеми LLM. |
-| `provider` | `str` | `ollama` | Провайдер інференсу LLM. Наразі підтримується: `ollama`. |
-| `ollama_url` | `str` | `http://localhost:11434` | Базова URL-адреса API Ollama. |
-| `default_model` | `str` | `phi-3-mini` | Модель за замовчуванням для класифікації інтентів та розмовних відповідей. |
-| `min_ram_gb` | `int` | `5` | Мінімальний обсяг доступної RAM (у ГБ), необхідний перед завантаженням моделі. |
-| `timeout_sec` | `int` | `30` | Тайм-аут запиту у секундах для викликів інференсу LLM. |
+| `enabled` | `bool` | `true` | Увімкнути підсистему LLM. |
+| `min_ram_gb` | `int` | `5` | Мінімальний обсяг вільної RAM (ГБ), потрібний перед виконанням запиту. |
+| `timeout_sec` | `int` | `30` | Тайм-аут запиту у секундах. |
+
+> **Міграція ключа:** старіші `core.yaml` використовували
+> `llm.ollama_url` / `llm.default_model`. Одноразова міграція у
+> `core.config.migrate_ollama_url_key` на першому старті переносить
+> `llm.ollama_url` → `voice.providers.ollama.url` і прибирає старий ключ.
 
 ### platform
 
@@ -313,7 +345,8 @@ system:
 | `GEMINI_API_KEY` | API-ключ для Google Gemini, використовується як хмарний резервний LLM, коли локальний інференс недоступний. |
 | `APP_URL` | Базова URL-адреса API core (наприклад, `http://localhost`). Використовується зовнішніми сервісами, яким потрібно робити зворотні виклики до SelenaCore. |
 | `HOST_UID` | UID користувача хоста, передається у контейнери для дозволів сокета PulseAudio. |
-| `OLLAMA_MODELS_DIR` | Альтернативний каталог, де Ollama зберігає завантажені моделі. |
+| `OLLAMA_URL` | Оверрайд `voice.providers.ollama.url` (зручно для env-driven тестів). |
+| `OLLAMA_API_KEY` | Оверрайд `voice.providers.ollama.api_key` у рантаймі. |
 | `DEV_MODULE_TOKEN` | Статичний bearer-токен, що приймається під час розробки для тестування API модулів. Не використовуйте у продакшені. |
 
 ---

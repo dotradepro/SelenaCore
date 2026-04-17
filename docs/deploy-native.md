@@ -40,12 +40,17 @@ The installer:
 2. Installs base packages (curl, git, Python, ffmpeg, arp-scan, NetworkManager,
    build toolchain, …).
 3. Installs Docker Engine + Compose plugin.
-4. Installs native AI runtimes (Ollama + Piper TTS) on the host.
-5. Sets up the `selena` system user and directory layout.
-6. Starts the docker stack (`core`, `agent`) on port 80.
-7. Prints `http://<lan-ip>/` — open it in a browser to finish via the wizard.
+4. Sets up the `selena` system user and directory layout.
+5. Starts the docker stack (`core`, `agent`) on port 80.
+6. Prints `http://<lan-ip>/` — open it in a browser to finish via the wizard.
 
-The wizard then downloads STT/TTS/LLM models, creates the admin user,
+Note: Piper TTS now runs inside the `smarthome-core` container; the
+host is no longer seeded with a `piper-tts.service` systemd unit. Ollama
+is user-managed — install it yourself if you want a local LLM (see the
+next section) or point the wizard's **LLM Provider** step at a cloud
+provider / remote Ollama instance.
+
+The wizard then downloads STT/TTS models, creates the admin user,
 registers the device with the platform, and enables the systemd services.
 
 ## Session user & kiosk binding
@@ -168,32 +173,35 @@ curl -fsSL https://get.docker.com | sh
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER"
 
-# 3. Install Ollama (host service, all distros)
+# 3. (Optional) Install Ollama yourself if you want a local LLM.
+#    Selena no longer installs or manages Ollama — pick a URL, point the
+#    wizard's "LLM Provider" step at it. Use a cloud provider instead
+#    (OpenAI / Anthropic / Groq / Google) and skip this step entirely.
 curl -fsSL https://ollama.com/install.sh | sh
 sudo systemctl enable --now ollama
+ollama pull llama3.2   # or whichever model fits your hardware
 
-# 4. Install Piper TTS Python package (as non-root user)
-pip install --user piper-tts aiohttp
-
-# 5. Create directories
+# 4. Create directories (Piper / Vosk — Piper runs inside the container
+#    now; Vosk models still volume-mounted from the host)
 sudo install -d -m 0755 /var/lib/selena/models/{piper,vosk,whisper} \
     /var/lib/selena/speaker_embeddings /var/log/selena
 sudo install -d -m 0750 /secure
 
-# 6. Clone and configure
+# 5. Clone and configure
 git clone https://github.com/dotradepro/SelenaCore.git /opt/selena-core
 cd /opt/selena-core
 cp config/core.yaml.example config/core.yaml
 cp .env.example .env
 
-# 7. Build frontend + start stack
+# 6. Build frontend + start stack (add --build-arg TARGET=jetson on Jetson)
 npx vite build
-docker compose up -d --build
+docker compose build --build-arg TARGET=cpu core
+docker compose up -d
 
-# 8. Stage systemd units (wizard will enable them)
+# 7. Stage systemd units (wizard will enable them)
 sudo bash scripts/install-systemd.sh
 
-# 9. Open http://<ip>/ and run the wizard
+# 8. Open http://<ip>/ and run the wizard
 ```
 
 ## Troubleshooting
@@ -206,6 +214,9 @@ Use the **Manual install** section above, adapting package names by hand.
 
 ### Ollama does not start
 
+Ollama is user-managed — Selena only talks to it over HTTP. Check the
+service you installed:
+
 ```bash
 systemctl status ollama
 journalctl -u ollama -n 50
@@ -213,16 +224,22 @@ journalctl -u ollama -n 50
 
 Most common cause: GPU driver missing or port 11434 taken. Override with
 `OLLAMA_HOST=127.0.0.1:11435` in `/etc/systemd/system/ollama.service.d/override.conf`
-and update `llm.ollama_url` in `config/core.yaml`.
+and set `voice.providers.ollama.url: http://127.0.0.1:11435` in
+`config/core.yaml` (or enter it in the wizard's LLM Provider step).
 
-### Piper TTS service fails
+### Piper TTS is unhealthy
 
-`scripts/piper-tts.service` is templated with `__USER__`, `__HOME__`,
-`__PYTHON__`. If Piper fails, re-run:
+Piper now runs inside `smarthome-core` as a subprocess on `:5100`. Check
+the container log:
 ```bash
-sudo bash scripts/install-systemd.sh
+docker compose logs core | grep -i piper
+curl -s http://localhost:5100/health
 ```
-which re-substitutes the placeholders based on current config.
+If the log says the voice `.onnx` is missing, download one via the
+wizard's TTS step or drop a Piper voice pair into
+`/var/lib/selena/models/piper/` and restart the container.
+Upgrading from the old host-side `piper-tts.service`? Run
+`sudo bash scripts/migrate_piper_to_container.sh` once.
 
 ### Container cannot access PulseAudio
 

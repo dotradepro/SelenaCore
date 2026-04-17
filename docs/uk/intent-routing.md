@@ -1,417 +1,248 @@
-# Маршрутизація інтентів — Поглиблений огляд архітектури
+# Маршрутизація інтентів — поглиблений огляд
 
-> Доповнення до [voice-settings.md](voice-settings.md), [architecture.md](architecture.md)
-> та [system-module-development.md](system-module-development.md). Цей файл — єдине джерело
-> істини для того, ЯК SelenaCore перетворює голосову команду на дію модуля.
-> Інші доки посилаються сюди замість дублювання.
+> Доповнення до `CLAUDE.md §20` та [voice-settings.md](voice-settings.md).
+> Єдине джерело істини для того, як SelenaCore класифікує та диспетчеризує
+> голосові / текстові команди користувача.
 >
 > English version: [docs/intent-routing.md](../intent-routing.md)
+>
+> Застарілі FastMatcher (regex), pattern-рядки у `IntentCompiler`, IntentCache,
+> composite device patterns та LLM-як-класифікатор **повністю прибрані**.
+> Кожен запит класифікується заново на живому стані БД.
 
 ## 1. Пайплайн коротко
 
 ```
-  audio (arecord)
-       │
-       ▼
-  Vosk STT  ────►  text + stt_lang
-       │
-       ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  IntentRouter.route(text, lang)                              │
-  │                                                              │
-  │  Tier 1   FastMatcher (regex з БД, тільки English)  ~0 мс   │
-  │  Tier 2   Module Bus (модулі користувача, WS)       ~мс     │
-  │  Cache    IntentCache (SQLite, попередні LLM hits)  ~10 мс  │
-  │  Tier 3   Local LLM (Ollama, один виклик)           300-800 │
-  │  Tier 4   Cloud LLM (OpenAI-сумісний, опціонально)  1-3 сек │
-  │  Fallback "не зрозумів"                                     │
-  └─────────────────────────────────────────────────────────────┘
-       │
-       ▼  EventBus: voice.intent { intent, params, source }
-  Модуль-власник інтенту виконує
-       │
-       ▼
-  Dual Piper TTS  →  динамік
+                                        ┌────────────────────┐
+ Звук ─► Vosk / Whisper ─► текст ─► ── │ InputTranslator    │ ─► англ. текст
+                                        │ (Argos / Helsinki) │
+                                        └────────────────────┘
+
+ ┌────────────────────────────────────────────────────────────┐
+ │                        IntentRouter                        │
+ │                                                            │
+ │  Tier 0   Module Bus (WebSocket → user modules)    ~50 мс  │
+ │  Tier 1   Embedding classifier (MiniLM-L6-v2)      ~50 мс  │
+ │           cosine над per-utterance каталогом               │
+ │  Tier 2   Assistant LLM (chat prompt, БЕЗ каталогу) 300-800 │
+ │           розмовна відповідь, intent="unknown"             │
+ │  Fallback детермінована фраза "Я не зрозуміла"             │
+ └────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    publish("voice.intent", payload)
+                              │
+                ┌─────────────┴─────────────┐
+                ▼                           ▼
+        System-модуль                 VoiceCore озвучує
+        виконує дію                   assistant / fallback відповідь
+        + self.speak_action()
 ```
 
-**Ключові інваріанти**
+**Ключові файли:**
 
-- **Уся pipeline працює англійською** внутрішньо. Починаючи з v0.4
-  переклад виконується [Argos Translate](translation.md) на краях
-  пайплайну (після Vosk STT, перед Piper TTS), а не LLM.
-- IntentRouter отримує **вже англійський текст** і випускає англійський
-  `intent` + англійський `params.location` / `params.entity` +
-  англійський `response`. Українських / російських / німецьких
-  FastMatcher-патернів немає і не буде (`IntentCompiler.match()` за
-  дизайном ходить тільки по `patterns["en"]`).
-- Мова *відповіді* TTS обробляється `OutputTranslator` (en→target_lang)
-  безпосередньо перед `preprocess_for_tts` і Piper.
-- Усі рівні маршрутизації проходять через `IntentRouter` і випускають
-  один `voice.intent` event з уніфікованим payload.
+- `system_modules/llm_engine/intent_router.py` — оркестрація 0/1/2 рівнів
+- `system_modules/llm_engine/embedding_classifier.py` — MiniLM-L6-v2 ONNX cosine
+- `system_modules/llm_engine/intent_compiler.py` — живий кеш рядків `intent_definitions`
+- `core/module_loader/system_module.py::_claim_intent_ownership` — реєстрація статичних інтентів
+- `core/api/helpers.py::on_entity_changed` — invalidation hook на CRUD пристроїв / станцій / сцен
 
-**Переклад можна вимкнути.** Коли `translation.enabled=false` або
-користувач використовує тільки англійську (Vosk EN + Piper EN), обидва
-перекладачі замикаються накоротко (~0 мс passthrough). Тоді система
-очікує текст англійською напряму від Vosk.
+**Інтенти класифікує embedding-модель, а НЕ LLM.** LLM — розмовний fallback для висловлювань, які класифікатор помітив як `unknown`. Він не бачить каталог інтентів і повертає лише natural-language відповідь, ніколи не intent-мітку.
 
 ## 2. Звідки беруться інтенти
 
-Існує рівно два типи інтентів:
+### 2.1 Статичні — `OWNED_INTENTS` + `_OWNED_INTENT_META`
 
-| Тип | Власник | Lifecycle | Приклад |
-|-----|---------|-----------|---------|
-| **Жорсткі (hard)** | Модуль декларує при старті | Перевстановлюються при кожному `module.start()` | `device.on`, `device.set_temperature`, `media.pause`, `clock.set_alarm` |
-| **Динамічні** | `PatternGenerator` будує з рядків реєстру | Перебудовуються на CRUD entity | `media.play_radio_name` для «Hit FM», composite `device.on` для живого списку пристроїв |
-
-**Центрального seed-файлу для жорстких інтентів немає.** Скрипт `scripts/seed_intents_to_db.py` сидить кілька legacy weather / privacy правил і поступово виводиться з ужитку — модулі є джерелом істини для того, що вони вміють.
-
-### 2.1 Жорсткі інтенти — як модуль їх декларує
-
-Кожен системний модуль експонує `_OWNED_INTENT_META` словник і метод `_claim_intent_ownership()`. На `start()` модуль:
-
-1. Оновлює `intent_definitions.module = <self.name>` для кожного імені у `OWNED_INTENTS` (claim'ить існуючі рядки)
-2. **Вставляє відсутні рядки** з метаданими з `_OWNED_INTENT_META` (description, noun_class, verb, priority)
-
-Це робить модуль повністю самодостатнім — видалення і перевстановлення відновлює його каталог. Канонічна реалізація — у [system_modules/device_control/module.py](../../system_modules/device_control/module.py).
+Кожен системний модуль оголошує свої інтенти на класі:
 
 ```python
-# system_modules/device_control/module.py (фрагмент)
-_OWNED_INTENT_META: dict[str, dict] = {
-    INTENT_QUERY_TEMPERATURE: dict(
-        noun_class="CLIMATE", verb="query", priority=100,
-        description=(
-            "Read the CURRENT temperature reported by an indoor climate "
-            "device (air conditioner / thermostat) in a specific room. "
-            "Returns the live sensor value, NOT the outdoor weather forecast."
+class WeatherServiceModule(SystemModule):
+    name = "weather-service"
+
+    OWNED_INTENTS = [
+        "weather.current",
+        "weather.forecast",
+        "weather.temperature",
+    ]
+
+    _OWNED_INTENT_META: dict[str, dict] = {
+        "weather.current": dict(
+            noun_class="WEATHER", verb="query", priority=100,
+            description=(
+                "Report the CURRENT outdoor weather conditions "
+                "(temperature + summary). Use for 'what's the weather' "
+                "style questions. NOT for indoor AC / thermostat readings."
+            ),
         ),
-    ),
-    ...
-}
+        # ... по одному запису на кожен інтент
+    }
+
+    async def start(self) -> None:
+        self.subscribe(["voice.intent"], self._on_event)
+        await self._claim_intent_ownership()   # idempotent
 ```
 
-Жорсткий інтент **не потребує жодного FastMatcher-патерну**. Достатньо щоб він був у `intent_definitions` — LLM-tier (Tier 3) побачить його у динамічному каталозі (`IntentCompiler.get_all_intents()` повертає рядки з нульовою кількістю скомпільованих патернів) і обере його для природньомовних висловлювань. Саме так працює сьогодні `device.query_temperature`.
+`SystemModule._claim_intent_ownership()` (у `core/module_loader/system_module.py`):
 
-### 2.2 Динамічні інтенти — composite-патерни пристроїв
+1. `UPDATE intent_definitions SET module=self.name WHERE intent IN OWNED_INTENTS` — «привласнює» вже існуючі рядки.
+2. `UPDATE description, entity_types` з `_OWNED_INTENT_META` — модуль є єдиним джерелом істини для формулювання, яке бачить класифікатор.
+3. `INSERT` відсутні рядки з `_OWNED_INTENT_META`.
 
-Для реєстру пристроїв `PatternGenerator.rebuild_composite_device_patterns()` створює **максимум 5 рядків** на весь реєстр, незалежно від кількості пристроїв:
+Виконується у кожному `start()` модуля — свіжий boot контейнера перереєстровує весь каталог за секунду. Змінили `description` у коді, перезапустили контейнер — наступний embedding classify бачить нову формулу.
 
-| Рядок | Дієслова | Пристрої |
-|-------|----------|----------|
-| `device.on` composite | turn on, switch on, enable | усі пристрої з `meta.name_en` |
-| `device.off` composite | turn off, switch off, disable | усі пристрої з `meta.name_en` |
-| `device.set_temperature` composite | set X to N | тільки клімат (`thermostat` / `air_conditioner`) |
-| `device.lock` composite | lock, secure, shut | тільки замки (`lock` / `door_lock`) |
-| `device.unlock` composite | unlock, open | тільки замки |
+### 2.2 Динамічні — пристрої / радіостанції / сцени
 
-Кожен composite-патерн використовує **named-group alternation** з усіма відомими іменами пристроїв, відсортовану longest-first щоб багатослівні імена вигравали над їхніми префіксами:
+**Динамічних інтентів нема.** Сутності — це *слоти* на існуючих статичних інтентах, не нові intent-мітки.
 
-```regex
-^(?:turn\s+on|switch\s+on|enable)
- \s+(?:the\s+)?
- (?P<name>air\ conditioner|kitchen\ light|bedroom\ lamp|...)
- (?:\s+(?:in|on)\s+(?:the\s+)?(?P<location>living\ room|kitchen|...))?
- \s*\??$
+- `device.on` + `params.name="спальня лампа"` — НЕ новий `device.turn_on_bedroom_light`
+- `media.play_radio_name` + `params.station_name="Радіо Релакс"` — НЕ новий `media.play_radio_relax`
+
+Коли пристрій / станцію додано через `POST /api/v1/devices` або `POST /api/ui/modules/media-player/radio`, роут викликає `core.api.helpers.on_entity_changed(entity_type, id, action)`, який:
+
+1. `IntentCompiler.full_reload()` — перебудовує in-memory intent catalog. Наступний embedding classify бачить повний свіжий набір інтентів.
+2. Для `entity_type == "device"`: `PatternGenerator.rebuild()` оновлює індекс `name_en → device_id`, який device-control використовує для перетворення `params.name` від класифікатора на реальний пристрій.
+3. Публікує `REGISTRY_ENTITY_CHANGED` на EventBus для інших модулів.
+
+## 3. Tier 1 — Embedding-класифікатор
+
+### 3.1 Per-utterance фільтр каталогу
+
+`IntentRouter._build_filtered_catalog(user_text, native_text)` збирає кандидатів на один запит:
+
+```
+tokens = tokenize(user_text) ∪ tokenize(native_text)    # Unicode \w{3,}
+
+Intents:
+  для кожного інтенту з IntentCompiler.get_all_intents():
+    якщо tokens ∩ (tokenize(description) ∪ tokenize(intent_name)) != ∅:
+      включити інтент з description обрізаним до 120 символів
+  завжди додати "unknown" як bail-out
+
+Devices:
+  для кожного пристрою у registry:
+    якщо tokens ∩ tokenize(name_en, name, location_en, location) != ∅:
+      включити рядок пристрою (білінгвально)
+
+Radio stations:
+  для кожної станції:
+    якщо tokens збігаються з name_user / name_en / genre_*:
+      включити рядок станції
+
+→ повертає (catalog_text, allowed_intent_set)
 ```
 
-Старі per-device рядки витираються при кожному rebuild, тому додавання чи видалення пристрою — це одна SQL-транзакція. Радіостанції та сцени все ще використовують per-entity патерни — їх текст більш різноманітний і вони не страждають від того ж row explosion.
+Фільтр білінгвальний: токени ЯК з англійського пост-Argos тексту, ТАК і з оригінального native тексту, йдуть в match-set. Команда «вимкни лампу у спальні» все одно включить "bedroom light" у filtered catalog — «спальня» потрапляє в українське поле `meta.location` пристрою.
 
-### 2.3 Резолв збігнутого пристрою
+### 3.2 Cosine similarity + пороги впевненості
 
-Коли FastMatcher знаходить composite-рядок, захоплена `(?P<name>...)` група резолвиться у конкретний `device_id` за O(1) через in-memory індекс, побудований під час rebuild:
+`_parse_catalog_to_candidates(catalog_text)` витягає блок `Intents:` у список `{"name", "description"}`. `EmbeddingIntentClassifier.classify(query, candidates)` робить один forward pass MiniLM-L6-v2 над `[query, desc1, desc2, ...]` і повертає `(intent, score, runner_up, margin, params)`.
 
-```python
-gen = get_pattern_generator()
-device_id = gen.get_device_id_by_name("air conditioner")  # → uuid або None
-```
+Два пороги з конфігу (ключі під `intent.*`):
 
-Два пристрої з однаковим `meta.name_en` (наприклад, дві `lamp`-и в різних кімнатах) **колізують**. Колізія детектується на rebuild:
-
-- `_device_name_index` містить тільки **унікальні** імена → `get_device_id_by_name()` повертає `None`
-- `_ambiguous_names` (set) тримає колізіонуючі імена
-- `is_ambiguous_name(name)` повідомляє чи потрібна дисамбігуація
-
-`device-control._on_voice_intent` перевіряє обидва. Для унікальних імен ін'єктить `params["device_id"]` і йде швидким шляхом `_resolve_device`. Для ambiguous імен ін'єктить `params["name_en"]`, і **tier-0** шлях `_resolve_device` шукає у реєстрі за `meta.name_en == name AND (location збігається з user-language АБО meta.location_en)`. Якщо все ще ambiguous, резолвер повертає `None` і користувач чує «Не знайшов кліматичний пристрій у спальні».
-
-## 3. FastMatcher (Tier 1) — `IntentCompiler`
-
-Джерело: [system_modules/llm_engine/intent_compiler.py](../../system_modules/llm_engine/intent_compiler.py)
-
-`IntentCompiler` читає `intent_definitions` + `intent_patterns` зі SQLite, компілює кожен патерн у `re.Pattern`, експонує `match(text, lang)` для роутера.
-
-### 3.1 Порядок патернів — `(priority DESC, specificity DESC)`
-
-Раніше патерни з однаковим `priority` матчилися в невизначеному порядку. Тепер компілятор оцінює кожен патерн через `_pattern_specificity()`:
-
-| Властивість | Бал |
-|-------------|-----|
-| Довжина | +1 за символ |
-| Named group `(?P<...>...)` | +50 кожна |
-| End anchor `$` / `\Z` | +30 |
-| Start anchor `^` / `\A` | +30 |
-| Word boundary `\b` | +20 |
-| Non-capturing group `(?:...)` | +10 |
-| Greedy wildcard `.*` / `.+` | -5 |
-
-Усі англійські патерни сплющуються у `_flat_en` відсортований за `(-priority, -specificity)`. Це означає що параметризований патерн `set\s+...\s+(?P<level>\d+)$` завжди виграє над голим `set\s+...` навіть коли обидва мають priority 100.
-
-### 3.2 Verb-bucket pre-filter
-
-Типова голосова команда починається з одного з ~20 дієслів (`turn`, `set`, `play`, `what`, `how`, `lock`, …). `_VERB_BUCKETS` мапить кожне дієслово до його кандидатних інтентів:
-
-```python
-_VERB_BUCKETS = {
-    "turn":   ("device.on", "device.off"),
-    "switch": ("device.on", "device.off", "device.set_mode"),
-    "set":    ("device.set_temperature", "device.set_fan_speed",
-               "device.set_mode", "clock.set_alarm", "clock.set_timer"),
-    "what":   ("weather.current", "weather.temperature",
-               "device.query_temperature", "media.whats_playing"),
-    ...
-}
-```
-
-`_async_load()` будує `_buckets_en[verb] → list[(prio, spec, intent, entry)]` одноразово. `match()` читає перше слово вводу, пробує матчинг bucket'а спочатку (типовий розмір: 3-15 патернів) і падає назад на повний `_flat_en` walk (107+ патернів) тільки якщо bucket промахнувся.
-
-Реальні виміри на реєстрі з 46 інтентів / 107 патернів:
-
-| Перше слово | Розмір bucket'а | Старий scan |
+| Ключ | Default | Сенс |
 |---|---|---|
-| `turn` | 4 | 107 |
-| `set` | 11 | 107 |
-| `play` | 14 | 107 |
-| `what` | 14 | 107 |
+| `embedding_score_threshold` | `0.30` | Абсолютний cosine floor (query vs winner) |
+| `embedding_margin_threshold` | `0.05` | Переможець − runner-up |
 
-Слова, відсутні у `_VERB_BUCKETS`, проходять до повного scan — тобто пропуски коштують лише в продуктивності, ніколи в коректності.
+Нижче будь-якого → `_embedding_classify` повертає `None` → роутер падає у Tier 2.
 
-### 3.3 Інтенти без патернів все одно у каталозі
+**Allowed-set guard** відкидає будь-який інтент, якого нема у filtered `allowed` set — захист від MiniLM, що повертає якусь фразу, якої не було у списку кандидатів.
 
-Жорсткі інтенти на кшталт `device.query_temperature` можуть мати нуль скомпільованих патернів. `IntentCompiler` тримає їх у `_compiled` (і відповідно у `get_all_intents()`) щоб LLM-tier бачив їх у своєму динамічному каталозі. Вони просто відсутні у `_flat_en` і `_buckets_en` — FastMatcher їх ніколи не пробує, але LLM пробує.
+### 3.3 Post-processing для імперативів
 
-## 3.5. Embedding Classifier (Tier 1.5) — `EmbeddingIntentClassifier`
+`device.set_mode` / `device.set_temperature` інколи вигравали cosine у `device.on` / `device.off` на прикордонних фразах ("turn on the air conditioning"). Коротка евристика переключає відповідь класифікатора назад на `device.on` / `device.off` коли користувач сказав голу on/off-команду БЕЗ параметра mode / value. Дивися `_ON_VERBS` / `_OFF_VERBS` у `intent_router.py::_embedding_classify`.
 
-Джерело: [system_modules/llm_engine/embedding_classifier.py](../../system_modules/llm_engine/embedding_classifier.py)
+### 3.4 Чому MiniLM а не LLM
 
-Додано 2026-04-12. Запускається **після** побудови відфільтрованого
-каталогу, але **перед** LLM-тиром. Використовує
-`sentence-transformers/all-MiniLM-L6-v2` (22 МБ, encoder-only) для
-порівняння запиту з попередньо обчисленими якірними центроїдами
-кожного кандидата. Впевнені хіти обходять LLM-виклик повністю.
+| | MiniLM-L6-v2 (ONNX) | Local LLM (phi-3-mini / qwen 1.5b) |
+|---|---|---|
+| Затримка | ~50 мс | 300-2000 мс |
+| Пам'ять | ~30 MB | ~1-5 GB |
+| Детермінованість | так — обирає зі списку кандидатів | ні — галюцинує intent-імена |
+| Не-англійські мови | через translator + білінгвальний фільтр | кошмар prompt engineering |
+| Запускається на | будь-який Pi / x86 / Jetson | GPU-only для розумної затримки |
 
-### 3.5.1 Позиція в пайплайні
+Класифікатор не намагається *розуміти* — він міряє семантичну схожість між висловлюванням і текстом опису. Цього достатньо щоб обрати правильний інтент і уникнути всіх пасток prompt-engineering маленьких моделей.
 
-```
-Vosk STT (будь-яка мова)
-  → Helsinki translator → англійський текст
-  → Token filter         → 3-15 кандидатів
-  → Embedding classifier → cosine по anchor центроїдах   ← ЦЕЙ ТИР
-      ↓ впевнений хіт (score ≥ 0.30, margin ≥ 0.02)
-      → return IntentResult(source="embedding")          ~50-200 мс
-      ↓ низький score / margin / повертає None
-  → Локальний LLM qwen     (Tier 2 fallback)            ~2-5 с
-```
+### 3.5 Що писати в `description`
 
-### 3.5.2 Як працює
+Текст опису — єдине, що бачить MiniLM. Два правила:
 
-1. **Warmup** (раз при старті, ~15 с на Jetson, ~30 с на Pi 5):
-   попередньо обчислити середній embedding центроїд для кожного
-   інтенту з `INTENT_ANCHORS` + закешувати.
+1. **Почніть з дієслова + іменника, які скаже користувач.** `"Turn a device on (light, switch, AC, curtain, vacuum)..."` б'є `"Powers a device on."` — фраза "turn on" ближча до "Turn" у embedding-просторі.
+2. **Додавайте негативи для близьких пар інтентів.** `device.query_temperature` і `weather.temperature` cosine-близькі до "what's the temperature". Фраза *"Returns the live sensor value, NOT the outdoor weather forecast"* їх розділяє.
 
-2. **На запит** (~40-150 мс):
-   - Закодувати запит через MiniLM
-   - Для кожного кандидата: комбінувати кешований anchor-центроїд
-     з live description-ембеддингом
-   - Обрати інтент з найвищою cosine-подібністю
-   - Якщо `score >= 0.30` і `margin >= 0.02` → повернути
-   - Інакше → передати LLM
+Описи обрізаються до 120 символів у filtered prompt block — стисло краще за багатослівно.
 
-3. **Виділення командного сегменту**: для довгих фраз (>8 слів)
-   `_extract_command_segment()` розбиває по сполучниках і бере
-   клаузу з командним дієсловом. Це запобігає розбавленню сигналу
-   контекстним шумом ("я щойно прийшов додому і мені холодно").
+## 4. Tier 0 — Module Bus
 
-4. **Параметри**: лексичний `extract_params()` з entity map,
-   room keywords, value keywords, word-to-number конвертацією та
-   genre list. Обробляє артефакти Helsinki
-   (`"air conditioning"` → `air_conditioner`).
+Користувацькі модулі (type=UI / INTEGRATION / DRIVER) реєструють свої інтенти через WebSocket Module Bus. `IntentRouter.route()` питає bus ПЕРЕД запуском embedding-класифікатора — якщо якийсь user module каже `handled=true`, він перемагає, і класифікатор не запускається. Це дає user-модулям змогу перекривати built-in поведінку (наприклад, кастомний weather-модуль може забрати `weather.current` у `weather-service`).
 
-### 3.5.3 Стратегія якорів
+Див. `core/module_bus/` і доку SDK модулів для деталей протоколу.
 
-`INTENT_ANCHORS` — єдине джерело правди для того, що embedding модель
-вважає репрезентативним для кожного інтенту. Два правила:
+## 5. Tier 2 — Assistant LLM
 
-1. **Включати реальні Helsinki outputs**, не лише чистий англійський.
-   Класифікатор бачить production translation шум, не ідеалізований
-   текст. Приклад: `"вмикни джазове радіо"` → Helsinki → `"Turn on the
-   jazz radio."` — саме цей рядок має бути якорем `media.play_genre`.
+`IntentRouter._ask_as_assistant(text)` — ОСТАННІЙ рівень. Викликається лише коли:
 
-2. **Включати негативні якорі для `unknown`**. Без них класифікатор
-   не має поняття "дивний ввід". Якорі типу `"xyzzy plover quux"`,
-   `"tell me a joke"`, `"who are you"` виштовхують unknown-центроїд
-   у окрему область embedding простору.
-
-### 3.5.4 Конфігурація
-
-```yaml
-intent:
-  embedding_enabled: true           # головний перемикач
-  embedding_score_threshold: 0.30   # нижче → передати LLM
-  embedding_margin_threshold: 0.02  # winner - runner_up нижче → передати
-```
-
-### 3.5.5 Результати бенчмарків
-
-Тестовано на 40-case канонічному корпусі + 40-case шумному корпусі
-(filler words, STT stutter, довгі контекстні речення, друкарські
-помилки):
-
-| Платформа | Канонічний | Шумний | Embedding % | LLM % |
-|---|---|---|---|---|
-| Jetson Orin (8 ГБ) | **40/40 (100%)** p50=111мс | **35/40 (87.5%)** | 95% | 2.5% |
-| Raspberry Pi 5 (16 ГБ) | **38/40 (95%)** p50=78мс | **33/40 (82.5%)** | 82% | 1.25% |
-
-LLM викликається для <3% запитів. Решта ~15-20% які embedding не
-обробляє — це `unknown` випадки що коректно розв'язуються через
-детермінований fallback (LLM не потрібен).
-
-### 3.5.6 Повне порівняння моделей (40-case канонічний, Jetson Orin)
-
-| Конфігурація | Accuracy | p50 | Розмір моделі |
-|---|---|---|---|
-| tinyllama 1.1b | 50.0% | 1103 мс | 600 МБ |
-| qwen 0.5b | 50.0% | 2131 мс | 400 МБ |
-| qwen 1.5b + prompt opt | 87.5% | 2548 мс | 1 ГБ |
-| qwen 3b | 90.0% | 2854 мс | 2 ГБ |
-| gemini-2.5-flash-lite (cloud) | 92.5% | 856 мс | — |
-| **MiniLM-L6-v2 embedding + LLM fallback** | **100%** | **111 мс** | **22 МБ** |
-
-## 4. IntentCache (між Tier 2 і Tier 3)
-
-Джерело: [system_modules/llm_engine/intent_cache.py](../../system_modules/llm_engine/intent_cache.py)
-
-Кожна успішна LLM-класифікація зберігається в SQLite-таблицю з ключем `(text, lang)` і `hit_count`. На наступне ідентичне висловлювання кеш повертає закешовані `intent` + `params` напряму, минаючи LLM round-trip повністю (~10 мс vs 300-800 мс).
-
-### 4.1 Промоція гарячих фраз
-
-Як тільки запис було hit'нуто `>= 5` разів, **promotion-loop** перетворює його на справжній FastMatcher-рядок:
-
-- `IntentCache.promote_frequent_to_patterns()` запускається з `core/main.py` раз на годину
-- Кожен promoted рядок використовує `source='auto_learned'` та `entity_ref='cache:promoted'`, відокремлений namespace від `auto_entity` щоб PatternGenerator-композитні rebuild'и їх не чіпали
-- Патерн — anchored literal: `^<re.escape(text)>\??$`
-- Після промоції викликається `IntentCompiler.full_reload()` і наступне висловлювання потрапляє на Tier 1 за ~0 мс
-
-**Тільки англійською за дизайном.** Кеш все ще записує не-ASCII висловлювання для кеш-hit'ів, але крок промоції їх пропускає з лог-повідомленням — FastMatcher все одно б їх не читав. Українські / російські / німецькі запити продовжують платити LLM cost при першому зустрічі, потім IntentCache cost (~10 мс) при наступних.
-
-## 5. LLM-tier (Tier 3) — динамічний registry context
-
-Джерело: [system_modules/llm_engine/intent_router.py](../../system_modules/llm_engine/intent_router.py) — `_load_db_catalog()` і `_build_intent_catalog()`.
-
-Локальний LLM (Ollama) промпт перебудовується при кожному device CRUD. Він містить:
-
-1. **Зареєстровані інтенти** — кожен рядок у `intent_definitions` з ім'ям, описом, params schema. Включає інтенти без патернів.
-2. **Підключені модулі** — display name і список інтентів кожного user / system модуля.
-3. **Devices by room** — згруповані за `meta.location_en` з `entity_type: name_en` на пристрій:
-   ```
-   Devices by room (use the room name to scope intents):
-     bedroom: light: bedside lamp, light: ceiling light
-     kitchen: outlet: kettle, light: kitchen light
-     living room: air_conditioner: air conditioner
-   ```
-4. **Known indoor rooms** — окремий список з правилом маршрутизації:
-   > "If the user names any of these rooms, choose an intent that acts on or reads from a device in that room. Pick a non-room/global intent only when the user does NOT name any known room or explicitly says 'outside' / 'outdoor' / 'globally'."
-5. **Радіостанції / сцени** — для media-player і automation-engine.
-6. **TTS language directive** — `Response MUST be in <lang>`.
-
-### 5.1 Обмеження розміру промпту
-
-Дві модульні константи запобігають безмежному росту промпту:
+- Tier 0 Module Bus промазав, AND
+- Tier 1 Embedding повернув `unknown` або low confidence, AND
+- `intent.llm_assistant_enabled` = `true` (default), AND
+- Провайдер налаштований (`voice.llm_provider` встановлений), AND
+- Вільна RAM ≥ `llm.min_ram_gb` (default 5)
 
 ```python
-_DEVICES_PER_ROOM_LIMIT = 10
-_ROOMS_LIMIT = 30
+reply = await llm_call(
+    text,
+    prompt_key="chat",        # з PromptStore
+    temperature=0.7,
+    max_tokens=100,
+    num_ctx=2048,
+)
+→ IntentResult(intent="unknown", response=reply, source="assistant")
 ```
 
-Будинок з 60 пристроями у 35 кімнатах продукує:
-- До 30 видимих кімнат × 10 пристроїв на кожну = 300 entries
-- `... (5 more rooms omitted)` футер для решти
-- Кожен рядок кімнати скорочується з `(+N more)` якщо там більше 10 пристроїв
+**LLM ніколи не бачить intent catalog.** chat-prompt — це системний prompt на кшталт "You are a helpful home-assistant. Keep answers short..." — користувач отримує людську відповідь замість роботизованого "Я не зрозуміла", але жодного нового інтенту не створюється.
 
-Це cap'ить каталог приблизно на 3-5 КБ тексту промпту — комфортно для 4K-context моделі типу `phi-3-mini`, з запасом для `gemma2:9b` яка тримає ~150 інтентів повністю.
+Якщо LLM повернув порожньо або рівень вимкнено, роутер повертає `IntentResult(intent="unknown", response="<детермінована фраза>", source="fallback")`.
 
-### 5.2 Чому цього достатньо — без жорсткого мапу кімнат
+## 6. Доставка через EventBus
 
-У попередній ітерації існувала явна мапа `_OUTDOOR_TO_INDOOR_INTENT = {"weather.temperature": "device.query_temperature"}` плюс український morphology heuristic. Обидва видалено: з registry-aware промптом LLM сам обирає правильний інтент.
+`IntentRouter.route()` публікує `voice.intent` з результатом класифікації. Кожен system-модуль, що володіє інтентами у цьому namespace, підписаний на цю подію і виконує свою дію:
 
-Перевірено end-to-end на тестовому стенді з Ollama:
-
-| Ввід | Результат |
-|-------|--------|
-| «Яка температура у вітальні?» (uk) | `device.query_temperature` + `location=living room` |
-| «Яка температура надворі?» (uk) | `weather.temperature` |
-| «увімкни кондиціонер у вітальні» (uk) | `device.on` + `location=living room` + `entity=air_conditioner` |
-| "what is the temperature in the bedroom" (en) | `device.query_temperature` + `location=bedroom` |
-| "what is the temperature outside" (en) | `weather.temperature` |
-
-Жодного хардкоду. LLM читає реєстр, бачить що `living room` має `air_conditioner`, і маршрутизує відповідно.
-
-## 6. Lifecycle: голос → дія
-
-```
-1. Vosk:           audio → "Яка температура у вітальні?"
-2. IntentRouter.route(text, lang="uk")
-   ├─ Tier 1 FastMatcher       → miss (немає UK-патернів)
-   ├─ Tier 2 Module Bus        → miss
-   ├─ IntentCache              → miss (перший раз)
-   ├─ Tier 3 Local LLM         → {"intent":"device.query_temperature",
-   │                              "entity":"air_conditioner",
-   │                              "location":"living room"}
-   └─ IntentCache.put()        → закешовано на наступний раз
-3. EventBus publish "voice.intent" з payload IntentResult
-4. device-control._on_voice_intent
-   ├─ intent = "device.query_temperature" → branch на _handle_query_temperature
-   ├─ _resolve_device(entity_filter=("air_conditioner","thermostat"),
-   │                  params={location:"living room"})
-   ├─ device.state["current_temp"] = 22
-   └─ speak_action("device.query_temperature",
-                   {result:"ok", temperature:22, location:"living room"})
-5. VoiceCore rephrase LLM      → «У вітальні зараз 22 градуси»
-6. Piper TTS                   → audio
+```python
+async def _on_voice_intent(self, event):
+    payload = event.payload or {}
+    if payload.get("intent") not in self.OWNED_INTENTS:
+        return
+    # ... виконуємо дію, потім:
+    await self.speak_action(payload["intent"], {"result": "ok", ...})
 ```
 
-Та сама фраза на другому виклику йде Tier 1 → IntentCache hit (~10 мс) → device-control. Після 5 hit'ів і години аптайму у БД з'являється відповідний `auto_learned` рядок, і Tier 1 FastMatcher відповідає на третю зустріч за ~0 мс (тільки англійською).
+`speak_action()` делегує TTS-формулювання rephrase-LLM у VoiceCore, щоб відповідь потрапила до користувача рідною мовою, попри те, що класифікатор бігав над англійською.
 
-## 7. Межі масштабування
+## 7. Резолюція сутностей
 
-| Метрика | Комфортно | Практичний ліміт |
-|---------|-----------|-------------------|
-| Жорстких інтентів у каталозі | 100 | 150 (бюджет LLM context) |
-| Пристроїв у реєстрі | 150 | 300-500 з `gemma2:9b` |
-| Кімнат у будинку | 30 | 50 з підвищеними лімітами |
-| Пристроїв на кімнату | 10 | 15 |
-| Унікальних `name_en` | 50 | 200 (час компіляції regex) |
-| FastMatcher патернів загалом | 200 | 1000 |
-| Latency на FastMatcher hit | ~0 мс | ~5 мс |
-| Latency на cache hit | ~10 мс | ~30 мс |
-| Latency на LLM hit | ~500 мс | ~1500 мс (cloud) |
+Для інтентів, що діють на конкретну сутність (пристрій, станція, сцена), `params.name` від класифікатора виходить прямо з висловлювання ("bedroom light"). `device-control::_resolve_device()` використовує `PatternGenerator.get_device_id_by_name()` для мепу ім'я → `device_id` за O(1). Неоднозначні імена (два пристрої з однаковим `name_en`) fallback'аться на диспет за `params.location`.
 
-Понад ~500 пристроїв архітектура потребує hierarchical routing (per-floor sharding) — це enterprise / building-automation scope, не single-house smart-home.
+Радіостанції / сцени йдуть через `IntentRouter._resolve_entity_ref()`, який шукає `RadioStation` / `Scene` за `name_user` чи `name_en` і інжектить `params.entity_ref` для хендлера.
 
-## 8. Як додати голосову команду до свого модуля
+## 8. Що прибрано
 
-1. Оберіть унікальне ім'я інтенту в namespace вашого модуля: `mymodule.do_thing`.
-2. Додайте його у `OWNED_INTENTS` і `_OWNED_INTENT_META` у класі модуля.
-3. Підпишіться на `voice.intent` у `start()` і dispatch'те ім'я інтенту в обробнику.
-4. Використовуйте `self.speak_action(intent, context)` щоб VoiceCore rephrase LLM створив природньомовну відповідь мовою TTS користувача.
-5. **НЕ** додавайте патерни у seed-script. **НЕ** створюйте файли під `config/intents/` (цей шлях мертвий). Жорсткі інтенти живуть у модулі-власнику.
+Стара архітектура мала 5 рівнів. Усе крім Module Bus і LLM-як-чату **прибрано**:
 
-Якщо також хочете 0 мс FastMatcher shortcut для англійських команд — впишіть regex у `intent_patterns` з `source='manual'` і вашим intent_id, але це опційно. LLM-tier обробляє природню мову (будь-якою мовою) без жодних патернів.
+| Прибрано | Замінено на |
+|---|---|
+| FastMatcher regex (`IntentCompiler.match()`, `_flat_en`, verb buckets, pattern specificity) | Embedding classifier |
+| `intent_patterns` regex-рядки, composite device patterns | Embedding classifier читає `intent_definitions.description` напряму |
+| `PatternGenerator.rebuild_composite_device_patterns()` | `PatternGenerator.rebuild()` — звичайний name → device_id індекс |
+| IntentCache + `auto_learned` hot-phrase promotion | Свіжий classify на кожен запит (жодного stale вказівника на віддалену сутність) |
+| LLM-як-класифікатор з dynamic registry-aware prompt | LLM — лише chat-fallback, каталогу в prompt немає |
+| `config/intents/`, `definitions.yaml`, `vocab/*.yaml` | `OWNED_INTENTS` + `_OWNED_INTENT_META` на класі кожного модуля |
+| `scripts/seed_intents_to_db.py` | `_claim_intent_ownership()` у базовому `SystemModule` |
+| `intent_cache.db`, hourly promotion loop у lifespan | — |
 
-Див. [system-module-development.md](system-module-development.md) для робочого прикладу зі шляхами файлів і повним кодом.
+Що вижило:
 
-## 9. Посилання
-
-- Джерело: [system_modules/llm_engine/intent_router.py](../../system_modules/llm_engine/intent_router.py)
-- Джерело: [system_modules/llm_engine/intent_compiler.py](../../system_modules/llm_engine/intent_compiler.py)
-- Джерело: [system_modules/llm_engine/intent_cache.py](../../system_modules/llm_engine/intent_cache.py)
-- Джерело: [system_modules/llm_engine/pattern_generator.py](../../system_modules/llm_engine/pattern_generator.py)
-- Джерело: [system_modules/device_control/module.py](../../system_modules/device_control/module.py) — канонічний hard-intent + composite resolver
-- Пов'язані доки: [voice-settings.md](voice-settings.md), [architecture.md](architecture.md), [system-module-development.md](system-module-development.md), [climate-and-gree.md](climate-and-gree.md)
+- Таблиця `intent_definitions`: статичний каталог, пишеться `_claim_intent_ownership()`, читається `IntentCompiler.get_all_intents()`.
+- `IntentCompiler`: зведено до живого кеша рядків `intent_definitions`.
+- `PatternGenerator`: зведено до name → device_id lookup index для резолюції сутностей.
+- `on_entity_changed`: незмінна точка тригера на CRUD — тепер лише оновлює кеш IntentCompiler та індекс PatternGenerator.
