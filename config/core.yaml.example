@@ -86,9 +86,10 @@ ai:
 
 llm:
   enabled: true
-  provider: "ollama"
-  ollama_url: "http://localhost:11434"
-  default_model: "phi-3-mini"
+  # Legacy keys `provider`, `ollama_url`, `default_model` used to live
+  # here. They're now inside `voice.llm_provider` / `voice.providers.*`
+  # — the wizard's "LLM Provider" step writes them. Any `llm.ollama_url`
+  # in an older core.yaml is migrated automatically on first boot.
   min_ram_gb: 5
   timeout_sec: 30
   llm_two_step: false              # two-step LLM: classify noun_class → extract intent (faster)

@@ -92,3 +92,82 @@ def get_yaml_config() -> dict[str, Any]:
         )
         _yaml_config = _load_yaml_config(config_path)
     return _yaml_config
+
+
+def migrate_ollama_url_key(config_path: str | os.PathLike | None = None) -> bool:
+    """One-shot migration: llm.ollama_url → voice.providers.ollama.url.
+
+    Atomic: writes the new YAML to a tmpfile and replaces the original in
+    one ``os.replace`` call. On any exception the original file is left
+    untouched — the container boots on the legacy key (ollama_client.py
+    still reads ``llm.ollama_url`` as a transition fallback).
+
+    Returns True if the file was rewritten, False otherwise (nothing to
+    do, or an error we swallowed). Idempotent: running it twice is safe.
+
+    Deleted once the transition fallback in ollama_client.py is removed
+    (see CHANGELOG: the legacy key won't be read past version 0.5.x).
+    """
+    import logging
+    import tempfile
+
+    logger = logging.getLogger(__name__)
+
+    path = Path(config_path or os.environ.get(
+        "SELENA_CONFIG", "/opt/selena-core/config/core.yaml"
+    ))
+    if not path.is_file():
+        return False
+
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    except Exception as exc:
+        logger.warning("ollama_url migration: could not read %s: %s", path, exc)
+        return False
+
+    if not isinstance(raw, dict):
+        return False
+
+    llm_section = raw.get("llm") if isinstance(raw.get("llm"), dict) else None
+    llm_url = llm_section.get("ollama_url") if llm_section else None
+
+    voice = raw.setdefault("voice", {})
+    providers = voice.setdefault("providers", {})
+    ollama_cfg = providers.setdefault("ollama", {})
+    voice_url = ollama_cfg.get("url")
+
+    changed = False
+    if llm_url and not voice_url:
+        ollama_cfg["url"] = llm_url
+        changed = True
+
+    # Unconditional cleanup — kills the old key even if both coexisted
+    # (hand-merge / partial migration). Saves us a second release to prune.
+    if llm_section is not None and "ollama_url" in llm_section:
+        llm_section.pop("ollama_url", None)
+        if not llm_section:
+            raw.pop("llm", None)
+        changed = True
+
+    if not changed:
+        return False
+
+    try:
+        # Atomic write: tmp → os.replace
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(path.parent), suffix=".tmp", prefix=".core_yaml_mig_"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                yaml.safe_dump(raw, f, default_flow_style=False, allow_unicode=True)
+            os.replace(tmp_path, str(path))
+            logger.info("Migrated llm.ollama_url → voice.providers.ollama.url")
+            return True
+        except Exception:
+            try: os.unlink(tmp_path)
+            except OSError: pass
+            raise
+    except Exception as exc:
+        logger.warning("ollama_url migration: write failed: %s", exc)
+        return False

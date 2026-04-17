@@ -231,6 +231,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _setup_logging()
     logger.info("SelenaCore starting up...")
 
+    # One-shot config migration: llm.ollama_url → voice.providers.ollama.url.
+    # Runs before settings/yaml cache reads so downstream code sees the
+    # canonical key. Failure is logged but non-fatal — the container keeps
+    # booting on the legacy fallback read inside OllamaClient.
+    try:
+        from core.config import migrate_ollama_url_key
+        migrate_ollama_url_key()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("ollama_url migration skipped: %s", exc)
+
     settings = get_settings()
 
     # Setup database
