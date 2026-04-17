@@ -6,25 +6,41 @@ import { Check, ChevronRight, Wifi, Globe, Mic, User, Cloud, Download, Activity,
 import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
 import ProvisionProgress from './ProvisionProgress';
+import { LlmProviderStep } from './LlmProviderStep';
 
 function HomeIcon(props: any) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
 }
 
-const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, User, Smartphone, Cloud, Download];
+const STEP_ICONS = [Globe, Wifi, HomeIcon, Globe, Mic, Mic, Cloud, User, Smartphone, Cloud, Download];
 
 // Map frontend step number to backend step name + data builder
-const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Record<string, string> }> = {
+const STEP_MAP: Record<number, { name: string; buildData: (f: FormData) => Record<string, string | boolean> }> = {
   1: { name: 'language', buildData: (f) => ({ language: f.lang }) },
   2: { name: 'wifi', buildData: (f) => ({ ssid: f.wifi, password: f.wifiPassword }) },
   3: { name: 'device_name', buildData: (f) => ({ name: f.name }) },
   4: { name: 'timezone', buildData: (f) => ({ timezone: f.timezone }) },
   5: { name: 'stt_model', buildData: (f) => ({ model: f.stt }) },
-  6: { name: 'tts_voice', buildData: (f) => ({ voice: f.tts }) },
-  7: { name: 'admin_user', buildData: (f) => ({ username: f.username, pin: f.pin }) },
-  8: { name: 'home_devices', buildData: (f) => ({ device_name: f.kiosk_name }) },
-  9: { name: 'platform', buildData: (f) => ({ device_hash: f.platformHash }) },
-  10: { name: 'import', buildData: (f) => ({ source: f.importSource }) },
+  6: { name: 'tts_voice', buildData: (f) => ({ voice: f.tts, cuda: f.ttsDevice === 'gpu' }) },
+  7: {
+    name: 'llm_provider',
+    buildData: (f) => {
+      if (!f.llmProvider || f.llmProvider === 'skip') return { provider: 'skip' };
+      const out: Record<string, string | boolean> = { provider: f.llmProvider };
+      if (f.llmProvider === 'ollama') {
+        out.url = f.llmUrl || 'http://localhost:11434';
+        if (f.llmApiKey) out.api_key = f.llmApiKey;
+      } else if (f.llmApiKey) {
+        out.api_key = f.llmApiKey;
+      }
+      if (f.llmModel) out.model = f.llmModel;
+      return out;
+    },
+  },
+  8: { name: 'admin_user', buildData: (f) => ({ username: f.username, pin: f.pin }) },
+  9: { name: 'home_devices', buildData: (f) => ({ device_name: f.kiosk_name }) },
+  10: { name: 'platform', buildData: (f) => ({ device_hash: f.platformHash }) },
+  11: { name: 'import', buildData: (f) => ({ source: f.importSource }) },
 };
 
 interface FormData {
@@ -35,6 +51,11 @@ interface FormData {
   timezone: string;
   stt: string;
   tts: string;
+  ttsDevice: 'gpu' | 'cpu';
+  llmProvider: '' | 'skip' | 'ollama' | 'openai' | 'anthropic' | 'groq' | 'google';
+  llmUrl: string;
+  llmApiKey: string;
+  llmModel: string;
   username: string;
   pin: string;
   kiosk_name: string;
@@ -114,6 +135,8 @@ export default function Wizard() {
   };
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gpuAvailable, setGpuAvailable] = useState(false);
+  const [gpuType, setGpuType] = useState<string>('none');
   const setConfigured = useStore((state) => state.setConfigured);
   const fetchWizardStatus = useStore((state) => state.fetchWizardStatus);
   const fetchWizardRequirements = useStore((state) => state.fetchWizardRequirements);
@@ -187,6 +210,11 @@ export default function Wizard() {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Kyiv',
       stt: 'small',
       tts: 'uk_UA-ukrainian_tts-medium',
+      ttsDevice: 'cpu',  // overwritten by GPU auto-detect in step 6
+      llmProvider: '',
+      llmUrl: 'http://localhost:11434',
+      llmApiKey: '',
+      llmModel: '',
       username: 'admin',
       pin: '',
       kiosk_name: t('wizard.kioskDefaultName'),
@@ -227,6 +255,18 @@ export default function Wizard() {
         if (!resp.ok) return;
         const info = await resp.json();
         const backendId = String(info?.install_id || '');
+        // Prime TTS device toggle from auto-detected GPU presence
+        // (start.sh writes hardware.gpu_detected on container boot). User
+        // can still flip it in step 6 to save GPU RAM for the LLM.
+        const gpuDetected = Boolean(info?.hardware?.gpu_detected);
+        const detectedType = String(info?.hardware?.gpu_type || 'none');
+        if (!cancelled) {
+          setGpuAvailable(gpuDetected);
+          setGpuType(detectedType);
+          setFormData(prev => prev.ttsDevice === 'cpu' && gpuDetected
+            ? { ...prev, ttsDevice: 'gpu' }
+            : prev);
+        }
         if (!backendId) return;
         const cachedId = localStorage.getItem(INSTALL_ID_KEY);
         if (cachedId && cachedId !== backendId) {
@@ -313,7 +353,7 @@ export default function Wizard() {
 
   // Start QR session when entering step 8
   useEffect(() => {
-    if (step === 8 && !phoneRegistered) {
+    if (step === 9 && !phoneRegistered) {
       startPhoneQrSession();
     }
     return () => { if (step !== 8) stopPhoneQrPolling(); };
@@ -792,13 +832,13 @@ export default function Wizard() {
       }
       const body = await resp.json().catch(() => ({}));
       // Step 8: store session_token for wizard browser (temporary session, not persistent device)
-      if (step === 8 && body?.session_token) {
+      if (step === 9 && body?.session_token) {
         try {
           sessionStorage.setItem('selena_session', body.session_token);
           document.cookie = `selena_device=${body.session_token}; max-age=600; path=/; samesite=strict`;
         } catch { /* ignore storage errors */ }
       }
-      if (step === 10) {
+      if (step === 11) {
         setUser({ name: formData.username, role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
@@ -823,7 +863,7 @@ export default function Wizard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ step: mapping.name, data: {} }),
       });
-      if (step === 10) {
+      if (step === 11) {
         setUser({ name: formData.username || 'Admin', role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
@@ -831,7 +871,7 @@ export default function Wizard() {
       }
     } catch {
       // skip anyway
-      if (step === 10) {
+      if (step === 11) {
         setUser({ name: formData.username || 'Admin', role: 'owner', user_id: null, device_id: null, authenticated: true });
         startProvision();
       } else {
@@ -1323,6 +1363,40 @@ export default function Wizard() {
                       <h2 className="text-base font-medium">{t('wizard.ttsTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.ttsDesc')}</p>
 
+                      {/* GPU/CPU toggle — shown only when GPU detected on host */}
+                      {gpuAvailable && (
+                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800">
+                          <div className="flex-1">
+                            <div className="text-xs text-zinc-200">{t('wizard.ttsDeviceLabel')}</div>
+                            <div className="text-[10px] text-zinc-500">
+                              {t('wizard.ttsDeviceHint', { type: gpuType })}
+                            </div>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, ttsDevice: 'gpu' })}
+                              className={cn(
+                                "px-3 py-1.5 text-xs rounded border transition-colors",
+                                formData.ttsDevice === 'gpu'
+                                  ? "bg-emerald-500/20 border-emerald-500 text-emerald-300"
+                                  : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                              )}
+                            >GPU</button>
+                            <button
+                              type="button"
+                              onClick={() => setFormData({ ...formData, ttsDevice: 'cpu' })}
+                              className={cn(
+                                "px-3 py-1.5 text-xs rounded border transition-colors",
+                                formData.ttsDevice === 'cpu'
+                                  ? "bg-emerald-500/20 border-emerald-500 text-emerald-300"
+                                  : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                              )}
+                            >CPU</button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Filters */}
                       <div className="flex flex-wrap items-center gap-2">
                         <select
@@ -1443,6 +1517,13 @@ export default function Wizard() {
                   )}
 
                   {step === 7 && (
+                    <LlmProviderStep
+                      formData={formData}
+                      setFormData={setFormData}
+                    />
+                  )}
+
+                  {step === 8 && (
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.userTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.userDesc')}</p>
@@ -1491,7 +1572,7 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {step === 8 && (
+                  {step === 9 && (
                     <div className="space-y-4">
                       <h2 className="text-base font-medium">{t('wizard.homeDevicesTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.homeDevicesDesc')}</p>
@@ -1557,7 +1638,7 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {step === 9 && (
+                  {step === 10 && (
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.platformTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.platformDesc')}</p>
@@ -1575,7 +1656,7 @@ export default function Wizard() {
                     </div>
                   )}
 
-                  {step === 10 && (
+                  {step === 11 && (
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.importTitle')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.importDesc')}</p>
@@ -1624,7 +1705,7 @@ export default function Wizard() {
                     {t('common.back')}
                   </button>
                   <div className="flex items-center gap-2">
-                    {(step === 8 || step === 9 || step === 10) && (
+                    {(step === 9 || step === 10 || step === 11) && (
                       <button
                         onClick={skipStep}
                         disabled={submitting}
@@ -1647,7 +1728,7 @@ export default function Wizard() {
                       disabled={
                         submitting ||
                         (step === 2 && !hasInternet && !(wifiConnected && wifiConnectedSsid === formData.wifi)) ||
-                        (step === 7 && (!formData.username || formData.pin.length < 4))
+                        (step === 8 && (!formData.username || formData.pin.length < 4))
                       }
                       className="px-5 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-zinc-950 hover:bg-emerald-400 transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed min-w-[80px] justify-center"
                     >
@@ -1655,7 +1736,7 @@ export default function Wizard() {
                         <div className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
                       ) : (
                         <>
-                          {step === 10 ? t('common.finish') : t('common.next')}
+                          {step === 11 ? t('common.finish') : t('common.next')}
                           {step !== 10 && <ChevronRight size={16} />}
                         </>
                       )}

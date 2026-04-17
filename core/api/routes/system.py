@@ -134,6 +134,8 @@ async def system_info() -> dict[str, Any]:
 
     install_id = _get_or_create_install_id()
 
+    hw_cfg = yaml_cfg.get("hardware", {}) if isinstance(yaml_cfg, dict) else {}
+
     from core.version import VERSION
     return {
         "initialized": system_cfg.get("initialized", False),
@@ -145,6 +147,8 @@ async def system_info() -> dict[str, Any]:
             "ram_total_mb": ram_total_mb,
             "has_hdmi": _detect_hdmi_connected(),
             "has_camera": False,
+            "gpu_detected": bool(hw_cfg.get("gpu_detected", False)),
+            "gpu_type": hw_cfg.get("gpu_type", "none"),
         },
         "audio": {
             "inputs": [],   # filled by voice_core
