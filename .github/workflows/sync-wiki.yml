@@ -1,0 +1,60 @@
+name: Sync Wiki from docs/
+
+# Mirrors docs/ (EN) + docs/uk/ (UK) into the GitHub Wiki on every change
+# to the Markdown sources. Delegates to scripts/sync-wiki.sh — same
+# script maintainers run locally, so behaviour stays identical in both
+# paths.
+#
+# Token — secrets.WIKI_SYNC_TOKEN is REQUIRED. GitHub's built-in
+# GITHUB_TOKEN cannot push to the wiki repo (<repo>.wiki.git is a
+# separate git repo and the default token's scope does not cover it).
+# Provision:
+#   1. github.com → Settings → Developer settings → Personal access tokens →
+#      Fine-grained tokens → Generate new token.
+#   2. Resource owner = your user / org; Repository access = "Only select
+#      repositories" → SelenaCore.
+#   3. Repository permissions → Contents: Read and write.
+#   4. Copy the token ONCE (GitHub won't show it again).
+#   5. Repo → Settings → Secrets and variables → Actions → New repository
+#      secret → Name: WIKI_SYNC_TOKEN, Value: <paste>.
+# The secret is never logged — GitHub auto-masks any string matching the
+# registered secret in job output, and sync-wiki.sh only embeds it inside
+# a URL passed to git clone (git suppresses the URL from its own output).
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docs/**'
+      - 'scripts/sync-wiki.sh'
+      - '.github/workflows/sync-wiki.yml'
+  workflow_dispatch:   # manual trigger from the Actions tab
+
+permissions:
+  contents: read       # only the repo; wiki write comes via WIKI_SYNC_TOKEN
+
+concurrency:
+  # Coalesce multiple pushes into a single wiki sync run — the wiki
+  # replicates the full docs/ tree each run, so intermediate pushes
+  # are redundant.
+  group: sync-wiki
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo (with docs/)
+        uses: actions/checkout@v4
+
+      - name: Fail fast if WIKI_SYNC_TOKEN is missing
+        if: ${{ secrets.WIKI_SYNC_TOKEN == '' }}
+        run: |
+          echo "::error::WIKI_SYNC_TOKEN secret is not set — see .github/workflows/sync-wiki.yml comment for provisioning steps." >&2
+          exit 1
+
+      - name: Run sync
+        env:
+          WIKI_SYNC_TOKEN: ${{ secrets.WIKI_SYNC_TOKEN }}
+        run: bash scripts/sync-wiki.sh
