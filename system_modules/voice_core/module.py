@@ -1940,6 +1940,7 @@ class VoiceCoreModule(SystemModule):
             svc._last_intent = result.intent
 
             tts_done = False
+            translated_response = None
 
             # Privacy mode is owned by voice-core itself — apply inline
             if result.intent in ("privacy_on", "privacy_off"):
@@ -1948,6 +1949,7 @@ class VoiceCoreModule(SystemModule):
                     from system_modules.voice_core.tts import sanitize_for_tts
                     tts_text_en = format_action_context(result.intent, {})
                     tts_text = await svc._to_tts_lang(tts_text_en)
+                    translated_response = tts_text
                     tts_text = sanitize_for_tts(tts_text).lower()
                     if tts_text:
                         try:
@@ -1964,6 +1966,7 @@ class VoiceCoreModule(SystemModule):
                     "lang": lang,
                     "intent": result.intent,
                     "response": result.response,
+                    "translated_response": translated_response,
                     "source": result.source,
                     "latency_ms": result.latency_ms,
                     "duration_ms": duration_ms,
@@ -1982,6 +1985,7 @@ class VoiceCoreModule(SystemModule):
                 try:
                     await asyncio.wait_for(svc._system_speak_done.wait(), timeout=30.0)
                     tts_done = True
+                    translated_response = svc._last_spoken
                 except asyncio.TimeoutError:
                     pass
             elif req.speak:
@@ -1995,6 +1999,7 @@ class VoiceCoreModule(SystemModule):
                     from system_modules.voice_core.action_phrasing import format_action_context
                     tts_text_en = format_action_context(result.intent, {})
                 tts_text = await svc._to_tts_lang(tts_text_en)
+                translated_response = tts_text
                 tts_text = preprocess_for_tts(tts_text, tts_lang)
                 await svc.publish("voice.response", {"text": tts_text, "query": text})
                 try:
@@ -2026,6 +2031,7 @@ class VoiceCoreModule(SystemModule):
                 "lang": lang,
                 "intent": result.intent,
                 "response": result.response,
+                "translated_response": translated_response,
                 "source": result.source,
                 "latency_ms": result.latency_ms,
                 "duration_ms": duration_ms,

@@ -8,227 +8,18 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* Module-specific styles only — shared styles in /api/shared/theme.css */
 
-        body {
-            font-family: "DM Sans", system-ui, sans-serif;
-            background: var(--bg);
-            color: var(--tx);
-            font-size: 13px;
-            line-height: 1.5;
-            padding: 16px;
-            min-height: 100%;
-            overflow-y: auto;
-        }
+        body { padding: 16px; min-height: 100%; overflow-y: auto; }
 
-        h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-        .subtitle { font-size: 12px; color: var(--tx2); margin-bottom: 16px; }
-
-        .card {
-            background: var(--sf);
-            border: 1px solid var(--b);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 12px;
-        }
-
-        .card-inner {
-            background: var(--sf2);
-            border: 1px solid var(--b2);
-            border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 12px;
-        }
-
-        .section-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--tx);
-            margin-bottom: 2px;
-        }
-
-        .section-sub {
-            font-size: 12px;
-            color: var(--tx2);
-            margin-top: 2px;
-            margin-bottom: 12px;
-        }
-
-        .label-sm { font-size: 12px; font-weight: 500; color: var(--tx2); margin-bottom: 6px; }
-        .label-xs { font-size: 11px; color: var(--tx3); margin-bottom: 4px; }
-
-        .row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-
-        .flex { display: flex; align-items: center; }
-        .gap4 { gap: 4px; }
-        .gap6 { gap: 6px; }
-        .gap8 { gap: 8px; }
-        .gap12 { gap: 12px; }
-        .wrap { flex-wrap: wrap; }
-        .mb8 { margin-bottom: 8px; }
-        .mb12 { margin-bottom: 12px; }
-        .mb16 { margin-bottom: 16px; }
-        .mt8 { margin-top: 8px; }
-        .mt12 { margin-top: 12px; }
-        .mt14 { margin-top: 14px; }
-        .flex1 { flex: 1; }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 500;
-            white-space: nowrap;
-        }
-        .badge-ok { background: rgba(46, 201, 138, .12); color: var(--gr); }
-        .badge-off { background: rgba(224, 84, 84, .12); color: var(--rd); }
-        .badge-warn { background: rgba(245, 169, 58, .12); color: var(--am); }
-        .badge-ac { background: rgba(79, 140, 247, .12); color: var(--ac); }
-        .badge-pr { background: rgba(168, 85, 247, .12); color: var(--pr); }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 6px 12px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            transition: .15s;
-            white-space: nowrap;
-        }
-        .btn:disabled { opacity: .4; cursor: not-allowed; }
-        .btn-green { background: var(--gr); color: #fff; }
-        .btn-green:hover:not(:disabled) { opacity: .85; }
-        .btn-blue { background: var(--ac); color: #fff; }
-        .btn-blue:hover:not(:disabled) { opacity: .85; }
-        .btn-red { background: rgba(224, 84, 84, .15); color: var(--rd); }
-        .btn-red:hover:not(:disabled) { background: rgba(224, 84, 84, .25); }
-        .btn-amber { background: rgba(245, 169, 58, .15); color: var(--am); }
-        .btn-amber:hover:not(:disabled) { background: rgba(245, 169, 58, .25); }
-        .btn-ghost { background: transparent; color: var(--tx3); }
-        .btn-ghost:hover:not(:disabled) { color: var(--tx); }
-        .btn-secondary { background: var(--sf3); color: var(--tx); border: 1px solid var(--b2); }
-        .btn-secondary:hover:not(:disabled) { background: var(--sf2); }
-        .btn-purple { background: var(--pu, #7c3aed); color: #fff; }
-        .btn-purple:hover:not(:disabled) { opacity: .85; }
-        .btn-link { background: none; border: none; color: var(--ac); cursor: pointer; font-size: 12px; padding: 0; }
-        .btn-link:hover { opacity: .8; }
-
-        input[type="text"], input[type="password"], textarea, select {
-            background: var(--sf2);
-            color: var(--tx);
-            border: 1px solid var(--b2);
-            border-radius: 8px;
-            padding: 7px 10px;
-            font-size: 12px;
-            outline: none;
-            font-family: inherit;
-        }
-        input:focus, textarea:focus, select:focus { border-color: var(--ac); }
-        textarea { resize: vertical; line-height: 1.5; }
-
-        input[type="range"] {
-            width: 100%;
-            height: 6px;
-            cursor: pointer;
-            accent-color: var(--ac);
-        }
-
-        .progress-bar {
-            height: 4px;
-            background: var(--sf3);
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 4px;
-        }
-        .progress-bar .fill {
-            height: 100%;
-            background: var(--ac);
-            border-radius: 2px;
-            transition: width .3s;
-        }
-
-        .model-item {
-            padding: 10px 12px;
-            border-radius: 8px;
-            border: 1px solid var(--b2);
-            background: var(--sf2);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            transition: .15s;
-        }
-        .model-item.active {
-            border-color: var(--gr);
-            background: rgba(46, 201, 138, .08);
-        }
         .model-name { font-size: 13px; font-weight: 500; }
         .model-meta { font-size: 11px; color: var(--tx3); margin-top: 1px; }
 
-        .provider-tabs {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 16px;
-            overflow-x: auto;
-            padding-bottom: 4px;
-        }
-        .provider-tab {
-            padding: 6px 12px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            background: var(--sf3);
-            color: var(--tx3);
-            transition: .15s;
-        }
+        .provider-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+        .provider-tab { padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--sf3); color: var(--tx3); transition: .15s; font-family: inherit; }
         .provider-tab:hover { color: var(--tx); }
         .provider-tab.active { background: var(--ac); color: #fff; }
 
-        /* ── Settings tabs ── */
-        .settings-tabs {
-            display: flex;
-            gap: 2px;
-            margin-bottom: 16px;
-            background: var(--sf);
-            border: 1px solid var(--b);
-            border-radius: 10px;
-            padding: 3px;
-            overflow-x: auto;
-        }
-        .settings-tab {
-            flex: 1;
-            padding: 8px 12px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            background: transparent;
-            color: var(--tx3);
-            transition: .15s;
-            text-align: center;
-        }
-        .settings-tab:hover { color: var(--tx); }
-        .settings-tab.active { background: var(--ac); color: #fff; }
-        .tab-panel { display: none; }
-        .tab-panel.active { display: block; }
         .intent-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .intent-table th { text-align: left; padding: 8px 10px; color: var(--tx2); font-weight: 500; border-bottom: 1px solid var(--b2); font-size: 11px; }
         .intent-table td { padding: 6px 10px; border-bottom: 1px solid var(--b); }
@@ -236,54 +27,10 @@
         .intent-module { font-size: 11px; color: var(--tx3); }
         .intent-name { font-family: monospace; font-size: 11px; color: var(--ac); }
 
-        .slider-row { margin-bottom: 12px; }
-        .slider-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-        }
-        .slider-label { font-size: 11px; color: var(--tx2); }
-        .slider-value { font-size: 11px; color: var(--tx); font-family: monospace; }
-        .slider-hints {
-            display: flex;
-            justify-content: space-between;
-            font-size: 10px;
-            color: var(--tx3);
-        }
-
-        .mono { font-family: monospace; }
-        .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
         .steps-list { margin-bottom: 12px; }
         .step-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; font-size: 12px; }
         .step-done { color: var(--gr); }
         .step-active { color: var(--ac); }
-
-        .hidden { display: none !important; }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--b2); border-top-color: var(--ac); border-radius: 50%; animation: spin .6s linear infinite; }
-
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
-        .pulse { animation: pulse 1.5s infinite; }
-
-        .toast {
-            position: fixed;
-            top: 12px;
-            right: 12px;
-            background: var(--gr);
-            color: var(--bg);
-            padding: 8px 16px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            opacity: 0;
-            transform: translateY(-8px);
-            transition: opacity .3s, transform .3s;
-            z-index: 100;
-            pointer-events: none;
-        }
-        .toast.show { opacity: 1; transform: translateY(0); }
 
         .stt-snack {
             position: fixed; bottom: 16px; right: 16px; z-index: 200;
@@ -398,31 +145,18 @@
 <!--  Tab Navigation                                                   -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="settings-tabs" id="settingsTabs">
-    <button class="settings-tab active" data-tab="engines" data-i18n="tab_engines"></button>
-    <button class="settings-tab" data-tab="translate" data-i18n="tab_translate"></button>
-    <button class="settings-tab" data-tab="prompts" data-i18n="tab_prompts"></button>
-    <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
+    <button class="settings-tab active" data-tab="stt" data-i18n="tab_stt"></button>
     <button class="settings-tab" data-tab="patterns" data-i18n="tab_voices"></button>
+    <button class="settings-tab" data-tab="engines" data-i18n="tab_engines"></button>
+    <button class="settings-tab" data-tab="translate" data-i18n="tab_translate"></button>
+    <button class="settings-tab" data-tab="intents" data-i18n="tab_intents"></button>
     <button class="settings-tab" data-tab="test" data-i18n="tab_test"></button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Engines (STT, Wake Word, TTS, LLM)                         -->
+<!--  TAB: STT (Vosk, Wake Word, Endpointer, STT Test)                -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="tab-panel active" id="tabEngines">
-
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  GPU / Hardware Status                                           -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<div id="gpuBar" class="row hidden" style="background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:10px 16px;margin-bottom:12px">
-    <div class="flex gap8">
-        <span id="gpuIcon" style="font-size:14px">&#9889;</span>
-        <span id="gpuLabel" style="font-size:12px"></span>
-        <span id="gpuBadge" class="badge"></span>
-        <span id="onnxBadge" class="badge badge-ac hidden">ONNX CUDA</span>
-    </div>
-    <button id="gpuToggleBtn" class="btn btn-secondary hidden" style="font-size:11px"></button>
-</div>
+<div class="tab-panel active" id="tabStt">
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  VOSK — Speech-to-Text                                            -->
@@ -446,28 +180,6 @@
         <div id="voskModelLang" style="font-size:11px;color:var(--tx2)"></div>
     </div>
 
-    <!-- Model catalog (collapsible) -->
-    <div class="mb12">
-        <button id="voskCatalogToggle" class="btn btn-secondary" style="width:100%;font-size:12px" data-i18n="vosk_browse_models"></button>
-    </div>
-    <div id="voskCatalogSection" class="hidden">
-        <div class="flex gap8 mb8">
-            <input type="text" id="voskCatalogSearch" style="flex:1;font-size:12px" data-placeholder-i18n="vosk_search_placeholder">
-            <select id="voskCatalogLang" style="font-size:12px;width:auto">
-                <option value="" data-i18n="all_languages"></option>
-            </select>
-        </div>
-        <div id="voskCatalogList" style="max-height:300px;overflow-y:auto"></div>
-        <div class="flex gap8 mt8" style="justify-content:center">
-            <button id="voskCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
-            <span id="voskCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
-            <button id="voskCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
-        </div>
-        <div style="text-align:right;margin-top:8px">
-            <button id="voskDeleteInactiveBtn" class="btn btn-ghost" style="font-size:11px;color:var(--rd)" data-i18n="vosk_delete_inactive"></button>
-        </div>
-    </div>
-
     <!-- Download progress -->
     <div id="voskDownloadSection" class="hidden mb12">
         <div class="label-xs" data-i18n="vosk_downloading"></div>
@@ -478,49 +190,32 @@
         <div id="voskDownloadPercent" style="font-size:11px;color:var(--tx2);margin-top:4px">0%</div>
     </div>
 
-    <!-- Voice Pipeline Test -->
-    <div id="voskTestSection" class="card-inner">
-        <div style="font-size:13px;font-weight:600;margin-bottom:12px" data-i18n="pipeline_test"></div>
-
-        <!-- Record & recognize -->
-        <div class="mb12">
-            <div class="label-xs">1. <span data-i18n="stt_test"></span></div>
-            <div class="flex gap8">
-                <button id="sttTestBtn" class="btn btn-blue" data-i18n="test_stt"></button>
-                <div id="sttPeakBar" class="hidden flex1" style="height:6px;background:var(--sf3);border-radius:3px;overflow:hidden">
-                    <div id="sttPeakFill" style="height:100%;border-radius:3px;transition:width .3s"></div>
-                </div>
-            </div>
+    <!-- 1. Installed Vosk models (always visible) -->
+    <div class="card-inner">
+        <div class="row mb8">
+            <div class="label-sm" data-i18n="vosk_installed_title"></div>
+            <button id="voskDeleteInactiveBtn" class="btn btn-ghost" style="font-size:11px;color:var(--rd)" data-i18n="vosk_delete_inactive"></button>
         </div>
+        <div id="voskInstalledList"></div>
+    </div>
+</div>
 
-        <!-- Recognized text -->
-        <div id="sttResult" class="hidden mb12">
-            <div class="label-xs" data-i18n="recognized_text"></div>
-            <div id="sttRecognizedText" style="padding:10px 12px;background:var(--sf);border:1px solid var(--b);border-radius:8px;font-size:14px;min-height:36px"></div>
-            <div id="sttDetectedLang" style="font-size:11px;color:var(--tx2);margin-top:4px"></div>
-            <div class="flex gap8 mt8" id="sttResultActions"></div>
-        </div>
-
-        <!-- Manual AI query -->
-        <div class="mb12">
-            <div class="label-xs">2. <span data-i18n="manual_ai"></span></div>
-            <div class="flex gap8">
-                <input type="text" id="manualAiInput" style="flex:1" data-placeholder-i18n="ai_placeholder">
-                <button id="manualAiBtn" class="btn btn-purple" disabled data-i18n="send_to_ai"></button>
-            </div>
-        </div>
-
-        <!-- AI Response -->
-        <div id="aiResponseSection" class="hidden">
-            <div class="flex gap6 mb4">
-                <span style="font-size:11px;color:var(--tx3)">3. <span data-i18n="ai_response"></span></span>
-                <span id="aiProviderLabel" style="font-size:11px;color:var(--tx2)"></span>
-            </div>
-            <div id="aiResponseText" style="padding:10px 12px;background:var(--sf);border:1px solid var(--ac);border-radius:8px;font-size:13px;line-height:1.5;white-space:pre-wrap"></div>
-            <div class="mt8">
-                <button id="speakAiBtn" class="btn btn-green" data-i18n="speak_response"></button>
-            </div>
-        </div>
+<!-- Legacy hidden shell — keeps voice pipeline test JS from crashing on null
+     element refs. Real test UI is on the Test tab. -->
+<div class="hidden" id="voskTestSection">
+    <button id="sttTestBtn"></button>
+    <div id="sttPeakBar"><div id="sttPeakFill"></div></div>
+    <div id="sttResult">
+        <div id="sttRecognizedText"></div>
+        <div id="sttDetectedLang"></div>
+        <div id="sttResultActions"></div>
+    </div>
+    <input type="text" id="manualAiInput">
+    <button id="manualAiBtn"></button>
+    <div id="aiResponseSection">
+        <span id="aiProviderLabel"></span>
+        <div id="aiResponseText"></div>
+        <button id="speakAiBtn"></button>
     </div>
 </div>
 
@@ -607,6 +302,53 @@
     <button id="wakeWordSaveBtn" class="btn btn-green" data-i18n="save"></button>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  3. Vosk — available for download                                 -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="voskAvailableCard">
+    <div class="mb12">
+        <span class="section-title" data-i18n="vosk_available_title"></span>
+    </div>
+    <div class="flex gap8 mb8 wrap">
+        <input type="text" id="voskCatalogSearch" style="flex:1;min-width:140px;font-size:12px" data-placeholder-i18n="vosk_search_placeholder">
+        <select id="voskCatalogLang" style="font-size:12px;width:auto">
+            <option value="" data-i18n="all_languages"></option>
+        </select>
+        <select id="voskCatalogQuality" style="font-size:12px;width:auto">
+            <option value="" data-i18n="all_qualities"></option>
+            <option value="big">big</option>
+            <option value="big-lgraph">big-lgraph</option>
+            <option value="small">small</option>
+        </select>
+    </div>
+    <div id="voskCatalogList"></div>
+    <div class="flex gap8 mt8" style="justify-content:center">
+        <button id="voskCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
+        <span id="voskCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
+        <button id="voskCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
+    </div>
+</div>
+
+</div><!-- /tabStt -->
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  TAB: LLM (GPU bar + Ollama/cloud providers)                     -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabEngines">
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  GPU / Hardware Status                                           -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div id="gpuBar" class="row hidden" style="background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:10px 16px;margin-bottom:12px">
+    <div class="flex gap8">
+        <span id="gpuIcon" style="font-size:14px">&#9889;</span>
+        <span id="gpuLabel" style="font-size:12px"></span>
+        <span id="gpuBadge" class="badge"></span>
+        <span id="onnxBadge" class="badge badge-ac hidden">ONNX CUDA</span>
+    </div>
+    <button id="gpuToggleBtn" class="btn btn-secondary hidden" style="font-size:11px"></button>
+</div>
+
 <!-- PIPER TTS moved to the Voices tab (see #tabPatterns).
      Kept as a hidden shell so legacy JS refs (#piperCard, #piperStatus,
      #piperActions, #piperProgress, #dualVoiceSection) still resolve. -->
@@ -618,8 +360,10 @@
     </div>
 </div>
 
-<!-- Dual voice block relocated by JS into #voicesSlotSettings on load. -->
-<div id="dualVoiceSection">
+<!-- Dual voice block relocated by JS into #voicesSlotSettings on load.
+     Hidden by default so it never flashes in the LLM tab on page load —
+     relocatePiperBlocks() unhides after moving into #voicesSlotSettings. -->
+<div id="dualVoiceSection" class="hidden">
         <div class="card-inner mb12" id="primaryVoiceCard">
             <div class="row mb8">
                 <div>
@@ -631,7 +375,10 @@
                     <div class="label-xs mono" id="primaryVoiceName" style="margin-top:2px">—</div>
                     <div class="label-xs" id="primaryModelInfo" style="color:var(--tx3);margin-top:2px"></div>
                 </div>
-                <select id="primaryVoiceSelect" style="max-width:200px;font-size:12px"></select>
+                <!-- Active voice is picked via the "Installed voices" list above
+                     (activateVoice). Select is kept hidden so existing JS
+                     (populate + test button) still works without a rewrite. -->
+                <select id="primaryVoiceSelect" style="display:none"></select>
             </div>
             <div class="slider-row">
                 <div class="slider-header"><span class="slider-label" data-i18n="tts_speed"></span><span class="slider-value" id="priSpeedVal">1.00</span></div>
@@ -710,21 +457,7 @@
         <div id="dualTestResult" class="hidden label-xs mono mb8" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
     </div>
 
-    <!-- Catalog toggle -->
-    <button id="piperCatalogToggle" class="btn-link" data-i18n="show_catalog"></button>
-    <div id="piperCatalog" class="hidden mt8">
-        <div class="flex gap8 mb12 wrap">
-            <input type="text" id="piperSearch" style="flex:1;min-width:150px" data-placeholder-i18n="search_voices">
-            <select id="piperLangFilter"><option value="" data-i18n="all_languages"></option></select>
-            <select id="piperQualityFilter"><option value="" data-i18n="all_qualities"></option></select>
-        </div>
-        <div id="piperCatalogList" class="catalog-list"></div>
-        <div id="piperPagination" class="flex gap8 mt8 hidden" style="justify-content:center;align-items:center">
-            <button id="piperCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
-            <span id="piperCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
-            <button id="piperCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
-        </div>
-    </div>
+<!-- (piper catalog moved into tabPatterns /Voices/ tab as inline card) -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  LLM Router                                                      -->
@@ -815,13 +548,26 @@
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabTranslate">
 
-<div class="card">
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  1. Translation settings (global — applies to all engines)         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="translateSettingsCard">
     <div class="mb12">
-        <span class="section-title" data-i18n="translation_title"></span>
+        <span class="section-title" data-i18n="translation_settings_title"></span>
         <div class="section-sub" data-i18n="translation_desc"></div>
     </div>
 
-    <!-- Settings -->
+    <!-- Active model display -->
+    <div class="card-inner mb12" id="translateActiveBox">
+        <div class="label-xs mb4" data-i18n="translation_active_label"></div>
+        <div class="flex gap8" style="flex-wrap:wrap;align-items:center">
+            <span id="translateActiveLang" style="font-size:14px;font-weight:600">—</span>
+            <span id="translateActiveEngine" class="badge badge-ac">—</span>
+            <span id="translateActiveIn" class="badge badge-off">lang→en</span>
+            <span id="translateActiveOut" class="badge badge-off">en→lang</span>
+        </div>
+    </div>
+
     <div class="card-inner mb12">
         <label class="flex gap8" style="align-items:center;cursor:pointer">
             <input type="checkbox" id="translateEnabled">
@@ -837,89 +583,109 @@
         </label>
         <div class="label-xs mt4" style="opacity:.6" data-i18n="translation_fallback_desc"></div>
     </div>
-    <button id="translateSaveBtn" class="btn btn-green mb12" data-i18n="save"></button>
+    <button id="translateSaveBtn" class="btn btn-green" data-i18n="save"></button>
 </div>
 
-<!-- Model catalog -->
-<div class="card">
-    <div class="mb12">
-        <span class="section-title" data-i18n="translation_models_title"></span>
-        <div class="section-sub" data-i18n="translation_models_desc"></div>
+<!-- Download progress (visible during Argos download) -->
+<div id="translateDownloadSection" class="card-inner mb12 hidden">
+    <div class="label-xs mb4" data-i18n="translation_downloading"></div>
+    <div id="translateDownloadName" style="font-size:12px;font-weight:600;margin-bottom:4px"></div>
+    <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
+        <div id="translateDownloadBar" style="height:100%;background:var(--ac);width:0;transition:width .3s;border-radius:4px"></div>
     </div>
+    <div id="translateDownloadPercent" class="label-xs mt4" style="opacity:.6">0%</div>
+</div>
 
-    <!-- Download progress -->
-    <div id="translateDownloadSection" class="card-inner mb12 hidden">
-        <div class="label-xs mb4" data-i18n="translation_downloading"></div>
-        <div id="translateDownloadName" style="font-size:12px;font-weight:600;margin-bottom:4px"></div>
-        <div style="height:8px;background:var(--b);border-radius:4px;overflow:hidden">
-            <div id="translateDownloadBar" style="height:100%;background:var(--ac);width:0;transition:width .3s;border-radius:4px"></div>
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  2. Engine sub-tabs: Argos (online download) / Helsinki (upload) -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="settings-tabs" id="translateEngineTabs" style="margin-bottom:12px">
+    <button class="settings-tab active" data-trengine="argos">Argos</button>
+    <button class="settings-tab" data-trengine="helsinki">Helsinki</button>
+</div>
+
+<!-- ── ARGOS pane ────────────────────────────────────────────────────── -->
+<div id="trPaneArgos" class="tr-pane">
+    <!-- Installed Argos models -->
+    <div class="card">
+        <div class="mb12">
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="translation_title"></span>
+                <span class="badge badge-ac" id="argosInstalledCount">0</span>
+            </div>
         </div>
-        <div id="translateDownloadPercent" class="label-xs mt4" style="opacity:.6">0%</div>
+        <div id="argosInstalledList"></div>
     </div>
 
-    <!-- Model list -->
-    <div id="translateModelList"></div>
+    <!-- Available Argos models for download -->
+    <div class="card">
+        <div class="mb12">
+            <span class="section-title" data-i18n="translation_available_title"></span>
+        </div>
+        <div class="flex gap8 mb8 wrap">
+            <input type="text" id="argosSearch" style="flex:1;min-width:140px;font-size:12px" data-placeholder-i18n="translation_search_placeholder">
+        </div>
+        <div id="argosAvailableList"></div>
+    </div>
+</div>
 
-    <!-- Custom Helsinki upload (ad-hoc any language). The /translate/catalog
-         response only lists languages in HELSINKI_CATALOG, so when the
-         operator converts an opus-mt pair on Jetson/Colab for a language
-         not in that list, they would have no place to upload it without
-         this form. Same endpoint the per-row upload uses. -->
-    <div class="mt16" style="border-top:1px solid var(--bd);padding-top:12px">
-        <div class="section-title" data-i18n="helsinki_upload_title">Upload custom Helsinki model</div>
-        <div class="section-sub" data-i18n="helsinki_upload_desc">Drop a Colab-converted .tar.gz for any language (ISO 639-1 code). Upload both directions to activate.</div>
-        <div class="flex gap8 mt8" style="flex-wrap:wrap;align-items:center">
+<!-- ── HELSINKI pane ─────────────────────────────────────────────────── -->
+<div id="trPaneHelsinki" class="tr-pane" style="display:none">
+    <!-- Installed Helsinki models (paired by language) -->
+    <div class="card">
+        <div class="mb12">
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="helsinki_installed_title"></span>
+                <span class="badge badge-ac" id="helsinkiInstalledCount">0</span>
+            </div>
+            <div class="section-sub" data-i18n="helsinki_installed_desc"></div>
+        </div>
+        <div id="helsinkiInstalledList"></div>
+    </div>
+
+    <!-- Upload new Helsinki pair -->
+    <div class="card">
+        <div class="mb12">
+            <div class="section-title" data-i18n="helsinki_upload_title">Upload custom Helsinki model</div>
+            <div class="section-sub" data-i18n="helsinki_upload_pair_desc"></div>
+        </div>
+        <div class="mb8">
+            <div class="label-sm mb4" data-i18n="helsinki_lang_label"></div>
             <input type="text" id="helsinkiCustomLang" placeholder="uk" maxlength="5"
-                   style="width:60px;padding:6px 8px;font-family:monospace;text-transform:lowercase" />
-            <select id="helsinkiCustomDirection" style="padding:6px 8px">
-                <option value="input" data-i18n="helsinki_dir_input">lang → en (input)</option>
-                <option value="output" data-i18n="helsinki_dir_output">en → lang (output)</option>
-            </select>
-            <input type="file" id="helsinkiCustomFile" accept=".tar.gz,.tgz,application/gzip,application/x-gzip"
-                   style="flex:1;min-width:140px;font-size:12px" />
-            <button id="helsinkiCustomUploadBtn" class="btn btn-primary btn-sm" data-i18n="translation_install">Install</button>
+                   style="width:80px;padding:6px 8px;font-family:monospace;text-transform:lowercase" />
         </div>
-        <div id="helsinkiCustomStatus" class="label-xs mt4" style="opacity:.7"></div>
+        <div class="mb8">
+            <label class="flex gap6" style="align-items:center">
+                <span class="label-sm" style="min-width:100px" data-i18n="helsinki_input_label"></span>
+                <input type="file" id="helsinkiInputFile" accept=".tar.gz,.tgz,application/gzip,application/x-gzip"
+                       style="flex:1;min-width:140px;font-size:12px" />
+            </label>
+        </div>
+        <div class="mb8">
+            <label class="flex gap6" style="align-items:center">
+                <span class="label-sm" style="min-width:100px" data-i18n="helsinki_output_label"></span>
+                <input type="file" id="helsinkiOutputFile" accept=".tar.gz,.tgz,application/gzip,application/x-gzip"
+                       style="flex:1;min-width:140px;font-size:12px" />
+            </label>
+        </div>
+        <button id="helsinkiCustomUploadBtn" class="btn btn-primary" data-i18n="helsinki_upload_pair_btn">Upload pair</button>
+        <div id="helsinkiCustomStatus" class="label-xs mt8" style="opacity:.7"></div>
     </div>
 </div>
+
+<!-- Legacy hidden aliases so any stray JS references still resolve. -->
+<div class="hidden" id="translateModelList"></div>
+<div class="hidden" id="translateInstalledList"></div>
+<div class="hidden" id="translateAvailableList"></div>
+<div class="hidden" id="translateInstalledCount">0</div>
+<input type="hidden" id="translateSearch">
+<select id="translateEngineFilter" style="display:none"></select>
+<select id="helsinkiCustomDirection" style="display:none"><option value="input"></option></select>
+<input type="file" id="helsinkiCustomFile" style="display:none">
 
 </div><!-- /tabTranslate -->
 
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Prompts (editable unified system prompt)                    -->
-<!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="tab-panel" id="tabPrompts">
-<div class="card">
-    <div class="mb12">
-        <span class="section-title" data-i18n="tab_prompts"></span>
-        <div class="section-sub" data-i18n="prompts_tab_desc"></div>
-    </div>
-
-    <div class="mb8 flex gap8" style="align-items:center">
-        <span class="label-sm" data-i18n="prompts_unified_label"></span>
-        <span id="promptsCustomBadge" class="badge badge-pr" style="display:none" data-i18n="custom"></span>
-        <span style="flex:1"></span>
-        <span class="label-xs" style="opacity:.55" id="promptsCharCount">0 chars</span>
-    </div>
-
-    <textarea id="promptsTextarea"
-              style="width:100%;min-height:320px;font-family:monospace;font-size:11px;line-height:1.45;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--c2);color:var(--tx);resize:vertical"
-              spellcheck="false"
-              data-placeholder-i18n="prompts_textarea_placeholder"></textarea>
-
-    <div class="flex gap8 mt8">
-        <button class="btn btn-primary" id="promptsSaveBtn" data-i18n="common_save"></button>
-        <button class="btn btn-ghost" id="promptsResetBtn" data-i18n="prompts_reset_default"></button>
-        <span style="flex:1"></span>
-        <span class="label-xs" style="opacity:.55" data-i18n="prompts_catalog_note"></span>
-    </div>
-
-    <details class="mt12">
-        <summary class="label-xs" style="cursor:pointer;opacity:.7" data-i18n="prompts_preview_label"></summary>
-        <pre id="promptsPreview" style="background:var(--c2);border:1px solid var(--b);border-radius:8px;padding:8px 10px;font-size:10px;line-height:1.35;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;color:var(--tx3);margin:6px 0 0"></pre>
-    </details>
-</div>
-</div><!-- /tabPrompts -->
+<!-- (Prompts tab merged into Test tab — see tabTest below) -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <!--  TAB: Intents                                                     -->
@@ -968,20 +734,74 @@
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabPatterns">
 
-<!-- Installed voices list -->
-<div class="card">
-    <div class="mb12">
-        <div class="flex gap8">
-            <span class="section-title" data-i18n="voices_installed_title"></span>
-            <span class="badge badge-ac" id="voicesInstalledCount">0</span>
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  1. Installed Piper voices                                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="piperInstalledCard">
+    <div class="row">
+        <div>
+            <div class="flex gap8">
+                <span class="section-title" data-i18n="voices_installed_title"></span>
+                <span class="badge badge-ac">Piper</span>
+                <span class="badge badge-ac" id="voicesInstalledCount">0</span>
+            </div>
+            <div class="section-sub" data-i18n="voices_installed_desc"></div>
         </div>
-        <div class="section-sub" data-i18n="voices_installed_desc"></div>
     </div>
-    <div id="voicesInstalledList" class="catalog-list"></div>
+
+    <!-- Download progress (visible during download) -->
+    <div id="piperDownloadSection" class="hidden mb12">
+        <div class="label-xs" data-i18n="voices_downloading"></div>
+        <div id="piperDownloadName" style="font-size:12px;font-weight:600"></div>
+        <div style="height:8px;background:var(--sf3);border-radius:4px;overflow:hidden;margin-top:6px">
+            <div id="piperDownloadBar" style="height:100%;background:var(--ac);border-radius:4px;width:0;transition:width .3s"></div>
+        </div>
+        <div id="piperDownloadPercent" style="font-size:11px;color:var(--tx2);margin-top:4px">0%</div>
+    </div>
+
+    <div id="voicesInstalledList"></div>
 </div>
 
-<!-- Upload new voice -->
-<div class="card">
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  2. Active voice settings (sliders)                                -->
+<!--     dualVoiceSection is relocated here by JS                       -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="voicesSettingsCard">
+    <div class="mb12">
+        <div class="section-title" data-i18n="voices_settings_title"></div>
+        <div class="section-sub" data-i18n="voices_settings_desc"></div>
+    </div>
+    <div id="voicesSlotSettings"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  3. Available for download                                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="piperAvailableCard">
+    <div class="mb12">
+        <span class="section-title" data-i18n="voices_available_title"></span>
+    </div>
+    <div class="flex gap8 mb8 wrap">
+        <input type="text" id="piperSearch" style="flex:1;min-width:140px;font-size:12px" data-placeholder-i18n="search_voices">
+        <select id="piperLangFilter" style="font-size:12px;width:auto">
+            <option value="" data-i18n="all_languages"></option>
+        </select>
+        <select id="piperQualityFilter" style="font-size:12px;width:auto">
+            <option value="" data-i18n="all_qualities"></option>
+        </select>
+    </div>
+    <div id="piperCatalogList"></div>
+    <div id="piperPagination" class="flex gap8 mt8 hidden" style="justify-content:center;align-items:center">
+        <button id="piperCatalogPrev" class="btn btn-ghost" disabled>&larr;</button>
+        <span id="piperCatalogPage" style="font-size:12px;line-height:30px">1/1</span>
+        <button id="piperCatalogNext" class="btn btn-ghost" disabled>&rarr;</button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  4. Upload custom voice                                            -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card" id="piperUploadCard">
     <div class="mb12">
         <div class="section-title" data-i18n="voices_upload_title"></div>
         <div class="section-sub" data-i18n="voices_upload_desc"></div>
@@ -1002,45 +822,52 @@
     <div id="voiceUploadStatus" class="label-xs mono hidden" style="padding:8px;background:var(--sf2);border-radius:6px"></div>
 </div>
 
-<!-- Slot: existing #dualVoiceSection gets relocated here by JS -->
-<div class="card" id="voicesSettingsCard">
-    <div class="mb12">
-        <div class="section-title" data-i18n="voices_settings_title"></div>
-        <div class="section-sub" data-i18n="voices_settings_desc"></div>
-    </div>
-    <div id="voicesSlotSettings"></div>
-</div>
-
-<!-- Slot: HF catalog relocated here by JS -->
-<div class="card" id="voicesCatalogCard">
-    <div class="mb12">
-        <div class="section-title" data-i18n="voices_catalog_title"></div>
-        <div class="section-sub" data-i18n="voices_catalog_desc"></div>
-    </div>
-    <div id="voicesSlotCatalog"></div>
-</div>
-
 </div><!-- /tabPatterns (Voices) -->
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  TAB: Test Console                                                -->
+<!--  TAB: Test Console + Prompts                                       -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tabTest">
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  STT Settings                                                      -->
+<!--  Active engines status — 4 cards (Vosk / Piper / Translate / LLM) -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<div class="card mb12">
-    <div class="section-title mb8" data-i18n="vosk_status_title"></div>
-
-    <div class="mb8">
-        <div class="label-xs" data-i18n="vosk_provider_status"></div>
-        <span id="testVoskReady" class="badge badge-off">—</span>
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:12px">
+    <div class="card-inner" style="margin-bottom:0">
+        <div class="flex gap8 mb8" style="align-items:center">
+            <span class="label-sm" style="font-weight:600">STT (Vosk)</span>
+            <span id="testVoskReady" class="badge badge-off">—</span>
+        </div>
+        <div class="label-xs mono" id="testStatusVoskName" style="color:var(--tx2);margin-bottom:2px">—</div>
+        <div class="label-xs" id="testStatusVoskLang" style="color:var(--tx3)">—</div>
+        <div class="label-xs" id="testVoskGrammar" style="color:var(--tx3);margin-top:4px">—</div>
     </div>
 
-    <div class="mb8">
-        <div class="label-xs" data-i18n="vosk_grammar_status"></div>
-        <div id="testVoskGrammar" style="font-size:12px;color:var(--tx2)">—</div>
+    <div class="card-inner" style="margin-bottom:0">
+        <div class="flex gap8 mb8" style="align-items:center">
+            <span class="label-sm" style="font-weight:600">TTS (Piper)</span>
+            <span id="testStatusPiperBadge" class="badge badge-off">—</span>
+        </div>
+        <div class="label-xs mono" id="testStatusPiperName" style="color:var(--tx2);margin-bottom:2px">—</div>
+        <div class="label-xs" id="testStatusPiperLang" style="color:var(--tx3)">—</div>
+    </div>
+
+    <div class="card-inner" style="margin-bottom:0">
+        <div class="flex gap8 mb8" style="align-items:center">
+            <span class="label-sm" style="font-weight:600" data-i18n="translate_card_title"></span>
+            <span id="testStatusTranslateBadge" class="badge badge-off">—</span>
+        </div>
+        <div class="label-xs" id="testStatusTranslatePair" style="color:var(--tx2);margin-bottom:2px">—</div>
+        <div class="label-xs" id="testStatusTranslateDirs" style="color:var(--tx3)">—</div>
+    </div>
+
+    <div class="card-inner" style="margin-bottom:0">
+        <div class="flex gap8 mb8" style="align-items:center">
+            <span class="label-sm" style="font-weight:600">LLM</span>
+            <span id="testStatusLlmBadge" class="badge badge-off">—</span>
+        </div>
+        <div class="label-xs mono" id="testStatusLlmModel" style="color:var(--tx2);margin-bottom:2px">—</div>
+        <div class="label-xs" id="testStatusLlmProvider" style="color:var(--tx3)">—</div>
     </div>
 </div>
 
@@ -1067,9 +894,9 @@
     <div id="audioDebugPanel" style="display:none;margin-bottom:10px">
         <div class="flex gap8 mb8">
             <select id="liveSttMode" style="font-size:12px;width:auto">
-                <option value="both">Partial + Final</option>
-                <option value="partial">Partial only</option>
-                <option value="final">Final only</option>
+                <option value="both" data-i18n="stt_mode_both">Partial + Final</option>
+                <option value="partial" data-i18n="stt_mode_partial">Partial only</option>
+                <option value="final" data-i18n="stt_mode_final">Final only</option>
             </select>
             <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
                 <input type="checkbox" id="liveSttGrammar"> <span data-i18n="vosk_grammar_on"></span>
@@ -1117,7 +944,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════ -->
-<!--  Command Test Console                                             -->
+<!--  Command Test Console  (moved above Prompts per UX)               -->
 <!-- ══════════════════════════════════════════════════════════════════ -->
 <div class="card" id="testCommandCard">
     <div class="mb16">
@@ -1177,6 +1004,9 @@
         <div class="card-inner mb8">
             <div class="label-xs mb4" data-i18n="test_cmd_response"></div>
             <div id="testResText" style="font-size:13px;white-space:pre-wrap;word-break:break-word"></div>
+            <div id="testResOriginalRow" class="hidden" style="margin-top:4px">
+                <span id="testResOriginal" style="font-size:11px;color:var(--tx3);font-style:italic"></span>
+            </div>
         </div>
 
         <!-- Action / Params -->
@@ -1203,20 +1033,54 @@
     </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!--  System prompt editor  (below test console per UX)                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+    <div class="mb12">
+        <span class="section-title" data-i18n="tab_prompts"></span>
+        <div class="section-sub" data-i18n="prompts_tab_desc"></div>
+    </div>
+
+    <div class="mb8 flex gap8" style="align-items:center">
+        <span class="label-sm" data-i18n="prompts_unified_label"></span>
+        <span id="promptsCustomBadge" class="badge badge-pr" style="display:none" data-i18n="custom"></span>
+        <span style="flex:1"></span>
+        <span class="label-xs" style="opacity:.55" id="promptsCharCount">0 chars</span>
+    </div>
+
+    <textarea id="promptsTextarea"
+              style="width:100%;min-height:240px;font-family:monospace;font-size:11px;line-height:1.45;padding:10px;border:1px solid var(--b);border-radius:8px;background:var(--c2);color:var(--tx);resize:vertical"
+              spellcheck="false"
+              data-placeholder-i18n="prompts_textarea_placeholder"></textarea>
+
+    <div class="flex gap8 mt8">
+        <button class="btn btn-primary" id="promptsSaveBtn" data-i18n="common_save"></button>
+        <button class="btn btn-ghost" id="promptsResetBtn" data-i18n="prompts_reset_default"></button>
+        <span style="flex:1"></span>
+        <span class="label-xs" style="opacity:.55" data-i18n="prompts_catalog_note"></span>
+    </div>
+
+    <details class="mt12">
+        <summary class="label-xs" style="cursor:pointer;opacity:.7" data-i18n="prompts_preview_label"></summary>
+        <pre id="promptsPreview" style="background:var(--c2);border:1px solid var(--b);border-radius:8px;padding:8px 10px;font-size:10px;line-height:1.35;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto;color:var(--tx3);margin:6px 0 0"></pre>
+    </details>
+</div>
+
 </div><!-- /tabTest -->
 
-<div class="toast" id="toast"></div>
+<!-- Toast handled by widget-common.js -->
 
-<!-- Model switch snackbar -->
+<!-- Model switch snackbar — shared for STT (Vosk) + TTS (Piper) activations.
+     Single box because only one activation runs at a time in practice. -->
 <div id="sttSnackbar" class="stt-snack">
     <div class="stt-snack-title" id="sttSnackTitle"></div>
     <div id="sttSteps"></div>
 </div>
 
+<script src="/api/shared/widget-common.js"></script>
 <script>
-(function() {
-    // ── i18n ──────────────────────────────────────────────────────
-    var LANG = (function(){ try { return localStorage.getItem('selena-lang') || 'en'; } catch(e) { return 'en'; } })();
+    // L must be global for widget-common.js t() to work
     var L = {
         en: {
             title: 'Voice & AI Settings',
@@ -1257,6 +1121,12 @@
             vosk_live_stop: 'Stop',
             vosk_live_clear: 'Clear',
             vosk_delete_inactive: 'Delete inactive models',
+            vosk_installed_title: 'Installed models',
+            vosk_available_title: 'Available for download',
+            vosk_no_installed: 'No models installed yet.',
+            vosk_no_matches: 'No models match your filters.',
+            active: 'Active',
+            delete: 'Delete',
             installed_voices: 'Installed Voices',
             activate: 'Activate',
             show_catalog: 'Show catalog',
@@ -1349,14 +1219,17 @@
             privacy_on: 'Privacy ON',
             privacy_off: 'Privacy OFF',
 
-            tab_engines: 'Engines',
+            tab_stt: 'STT',
+            tab_engines: 'LLM',
             tab_prompts: 'Prompts',
             tab_intents: 'Intents',
             tab_patterns: 'Patterns',
             tab_voices: 'Voices',
             voices_installed_title: 'Installed voices',
             voices_installed_desc: 'Piper voice models found on disk. Activate switches the primary voice; Delete removes the .onnx + .onnx.json pair.',
-            voices_upload_title: 'Upload a voice manually',
+            voices_available_title: 'Available for download',
+            voices_downloading: 'Downloading voice',
+            voices_upload_title: 'Custom Piper voice (manual upload)',
             voices_upload_desc: 'Drop a Piper voice pair: the .onnx weights and the paired .onnx.json config. File stems must match.',
             voices_upload_btn: 'Upload',
             voices_choose_onnx: 'Choose .onnx',
@@ -1378,7 +1251,7 @@
             tts_gpu_on: 'running on GPU',
             tts_gpu_off: 'running on CPU',
             tts_gpu_switching: 'switching…',
-            tab_test: 'Test Console',
+            tab_test: 'Live Monitor & Prompts',
             prompts_tab_desc: 'This is the user-editable identity shell: name, tone, high-level rules. Keep it short (100-500 chars). Everything structural — JSON schema, filtered intents, matching devices — is assembled on every voice command and appended automatically. The LLM is a pure classifier; spoken replies are composed in code.',
             prompts_unified_label: 'System prompt (English only)',
             prompts_textarea_placeholder: 'You are {name}, a smart home assistant...',
@@ -1388,8 +1261,28 @@
             prompts_empty: 'Prompt cannot be empty',
             prompts_too_short: 'Prompt too short — keep core identity and rules',
             tab_translate: 'Translate',
-            translation_title: 'Local Translator',
+            translation_title: 'Installed translation models',
             translation_desc: 'Core works in English. Local models translate at STT output and TTS input (~50ms).',
+            translation_settings_title: 'Translator settings',
+            translation_available_title: 'Available for download',
+            translation_search_placeholder: 'Search language…',
+            translation_no_installed: 'No translation models installed yet.',
+            translation_active_label: 'Active translator',
+            translation_none_active: 'No active model',
+            translate_card_title: 'Translator',
+            all_engines: 'All engines',
+            no_matches: 'No matches',
+            helsinki_installed_title: 'Installed Helsinki pairs',
+            helsinki_installed_desc: 'Each row is a language pair (lang↔en) with both directions required for activation.',
+            helsinki_no_installed: 'No Helsinki pairs installed. Upload one below.',
+            helsinki_upload_pair_desc: 'Helsinki models are not downloadable from a catalog — upload two Colab-converted .tar.gz archives (one per direction) at once.',
+            helsinki_lang_label: 'Language code (ISO 639-1)',
+            helsinki_input_label: 'lang → en file',
+            helsinki_output_label: 'en → lang file',
+            helsinki_upload_pair_btn: 'Upload pair (both files)',
+            helsinki_err_lang: 'Enter a valid language code (e.g. uk, de, fr)',
+            helsinki_err_both_files: 'Pick BOTH .tar.gz files — input (lang→en) and output (en→lang)',
+            helsinki_install_done: 'Pair installed',
             translation_models_title: 'Translation Models',
             translation_models_desc: 'Download and activate a translation model. Dedicated pairs are faster, multilingual covers more languages.',
             translation_ready: 'Ready',
@@ -1450,6 +1343,18 @@
             test_cmd_params: 'Params',
             test_cmd_raw_llm: 'Raw LLM Response',
             test_cmd_spoken: 'Spoken Text (after rephrase)',
+            no_response: '(no response)',
+            rebuild_failed: 'Failed to rebuild LLM prompts',
+            poll_failed: 'Lost connection to download status',
+            load_failed: 'Load failed',
+            save_failed: 'Save failed',
+            loading: 'Loading…',
+            gpu_toggle_failed: 'GPU toggle failed',
+            stt_start_failed: 'Failed to start live STT',
+            test_timeout: 'Request timed out',
+            stt_mode_both: 'Partial + Final',
+            stt_mode_partial: 'Partial only',
+            stt_mode_final: 'Final only',
 
             stt_switch_title: 'Switching STT model',
             stt_step_check: 'Checking model file',
@@ -1459,6 +1364,14 @@
             stt_step_verify: 'Verifying server',
             stt_switch_done: 'Model activated',
             stt_switch_error: 'Switch failed',
+
+            tts_switch_title: 'Switching TTS voice',
+            tts_switch_done: 'Voice activated',
+            tts_switch_error: 'Voice switch failed',
+            piper_step_config: 'Saving configuration',
+            piper_step_reload: 'Reloading voice',
+            piper_step_verify: 'Verifying voice',
+            deleted: 'Deleted',
         },
         uk: {
             title: 'Голос та AI',
@@ -1499,6 +1412,12 @@
             vosk_live_stop: 'Стоп',
             vosk_live_clear: 'Очистити',
             vosk_delete_inactive: 'Видалити неактивнi моделi',
+            vosk_installed_title: 'Встановленi моделi',
+            vosk_available_title: 'Доступнi для завантаження',
+            vosk_no_installed: 'Немає встановлених моделей.',
+            vosk_no_matches: 'Немає моделей за вашими фільтрами.',
+            active: 'Активна',
+            delete: 'Видалити',
             installed_voices: 'Встановленi голоси',
             activate: 'Активувати',
             show_catalog: 'Показати каталог',
@@ -1591,14 +1510,17 @@
             privacy_on: 'Приватнiсть УВIМК',
             privacy_off: 'Приватнiсть ВИМК',
 
-            tab_engines: 'Движки',
+            tab_stt: 'STT',
+            tab_engines: 'LLM',
             tab_prompts: 'Промпти',
             tab_intents: 'Iнтенти',
             tab_patterns: 'Патерни',
             tab_voices: 'Голоси',
             voices_installed_title: 'Встановлені голоси',
             voices_installed_desc: 'Моделі Piper, знайдені на диску. «Активувати» — зміна основного голосу; «Видалити» — прибирає пару .onnx + .onnx.json.',
-            voices_upload_title: 'Завантажити голос вручну',
+            voices_available_title: 'Доступнi для завантаження',
+            voices_downloading: 'Завантаження голосу',
+            voices_upload_title: 'Власний голос Piper (ручне завантаження)',
             voices_upload_desc: 'Файли Piper: .onnx (ваги) + парний .onnx.json (конфіг). Імена без розширень мають збігатися.',
             voices_upload_btn: 'Завантажити',
             voices_choose_onnx: 'Обрати .onnx',
@@ -1629,7 +1551,7 @@
             patterns_col_intent: 'Iнтент',
             patterns_col_pattern: 'Патерн',
             patterns_col_source: 'Джерело',
-            tab_test: 'Тест консоль',
+            tab_test: 'Монiтор i промпти',
             prompts_tab_desc: 'Це редагована оболонка ідентичності: ім\'я, тон, загальні правила. Тримайте коротко (100-500 символів). Усе структурне — JSON-схема, відфільтровані інтенти, відповідні пристрої — збирається на кожну голосову команду і додається автоматично. LLM лише класифікатор; відповіді будуються в коді.',
             prompts_unified_label: 'Системний промпт (лише англійська)',
             prompts_textarea_placeholder: 'You are {name}, a smart home assistant...',
@@ -1639,8 +1561,28 @@
             prompts_empty: 'Промпт не може бути порожнім',
             prompts_too_short: 'Промпт занадто короткий — залиште ідентичність і правила',
             tab_translate: 'Переклад',
-            translation_title: 'Локальний перекладач',
+            translation_title: 'Встановлені моделі перекладу',
             translation_desc: 'Ядро працює англійською. Локальні моделі перекладають на виході STT та вході TTS (~50мс).',
+            translation_settings_title: 'Налаштування перекладача',
+            translation_available_title: 'Доступнi для завантаження',
+            translation_search_placeholder: 'Пошук мови…',
+            translation_no_installed: 'Моделей перекладу ще немає.',
+            translation_active_label: 'Активний перекладач',
+            translation_none_active: 'Немає активної моделі',
+            translate_card_title: 'Перекладач',
+            all_engines: 'Усi двигуни',
+            no_matches: 'Немає збігів',
+            helsinki_installed_title: 'Встановлені пари Helsinki',
+            helsinki_installed_desc: 'Кожен рядок — мовна пара (lang↔en), потрібні обидва напрямки для активації.',
+            helsinki_no_installed: 'Пар Helsinki немає. Завантажте нижче.',
+            helsinki_upload_pair_desc: 'Helsinki моделі не завантажуються з каталогу — завантажте два .tar.gz архіви (один на кожен напрямок) одночасно.',
+            helsinki_lang_label: 'Код мови (ISO 639-1)',
+            helsinki_input_label: 'Файл lang → en',
+            helsinki_output_label: 'Файл en → lang',
+            helsinki_upload_pair_btn: 'Завантажити пару (обидва файли)',
+            helsinki_err_lang: 'Введіть коректний код мови (наприклад uk, de, fr)',
+            helsinki_err_both_files: 'Оберіть ОБИДВА .tar.gz — input (lang→en) та output (en→lang)',
+            helsinki_install_done: 'Пара встановлена',
             translation_models_title: 'Моделі перекладу',
             translation_models_desc: 'Завантажте та активуйте модель перекладу. Спеціалізовані пари швидші, мультимовні покривають більше мов.',
             translation_ready: 'Готово',
@@ -1701,6 +1643,18 @@
             test_cmd_params: 'Параметри',
             test_cmd_raw_llm: 'Вiдповiдь LLM (raw)',
             test_cmd_spoken: 'Озвучений текст (пiсля rephrase)',
+            no_response: '(немає вiдповiдi)',
+            rebuild_failed: 'Не вдалося перебудувати промпти LLM',
+            poll_failed: 'Втрачено звʼязок зі статусом завантаження',
+            load_failed: 'Не вдалося завантажити',
+            save_failed: 'Не вдалося зберегти',
+            loading: 'Завантаження…',
+            gpu_toggle_failed: 'Не вдалося переключити GPU',
+            stt_start_failed: 'Не вдалося запустити STT',
+            test_timeout: 'Час очікування вичерпано',
+            stt_mode_both: 'Частково + остаточно',
+            stt_mode_partial: 'Тільки частково',
+            stt_mode_final: 'Тільки остаточно',
 
             stt_switch_title: 'Змiна STT моделi',
             stt_step_check: 'Перевiрка файлу моделi',
@@ -1710,25 +1664,21 @@
             stt_step_verify: 'Перевiрка сервера',
             stt_switch_done: 'Модель активована',
             stt_switch_error: 'Помилка змiни моделi',
+
+            tts_switch_title: 'Змiна TTS голосу',
+            tts_switch_done: 'Голос активовано',
+            tts_switch_error: 'Помилка змiни голосу',
+            piper_step_config: 'Збереження конфiгурацiї',
+            piper_step_reload: 'Перезавантаження голосу',
+            piper_step_verify: 'Перевiрка голосу',
+            deleted: 'Видалено',
         }
     };
 
-    function t(k) { return (L[LANG] || L.en)[k] || (L.en)[k] || k; }
-    function applyLang() {
-        document.querySelectorAll('[data-i18n]').forEach(function(el) { el.textContent = t(el.getAttribute('data-i18n')); });
-        document.querySelectorAll('[data-placeholder-i18n]').forEach(function(el) { el.placeholder = t(el.getAttribute('data-placeholder-i18n')); });
-    }
+    // t(), applyLang(), $(), show(), hide(), esc(), showToast(), withLoading()
+    // — provided by widget-common.js (loaded above)
 
-    // ── Helpers ───────────────────────────────────────────────────
-    var $ = function(id) { return document.getElementById(id); };
-
-    function showToast(msg, ms) {
-        var el = $('toast');
-        el.textContent = msg;
-        el.classList.add('show');
-        setTimeout(function() { el.classList.remove('show'); }, ms || 2000);
-    }
-
+    // ── Module-specific API helpers (use /api/ui prefix for setup routes) ──
     async function api(path, opts) {
         var resp = await fetch('/api/ui' + path, opts);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1741,8 +1691,7 @@
         return api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     }
 
-    function show(el) { if (typeof el === 'string') el = $(el); el.classList.remove('hidden'); }
-    function hide(el) { if (typeof el === 'string') el = $(el); el.classList.add('hidden'); }
+    // show(), hide() — provided by widget-common.js
 
     function formatSize(bytes) {
         if (!bytes) return '';
@@ -1808,17 +1757,23 @@
 
     // Rebuild LLM prompts after any settings change (name, language, etc.)
     function rebuildPrompts() {
-        return api('/setup/llm/rebuild', { method: 'POST' }).catch(function() {});
+        return api('/setup/llm/rebuild', { method: 'POST' }).catch(function(e) {
+            showToast(t('rebuild_failed') + ': ' + (e && e.message ? e.message : e), 'error');
+        });
     }
 
     $('gpuToggleBtn').onclick = async function() {
         if (!state.hw) return;
-        this.disabled = true;
+        var btn = this;
+        btn.disabled = true;
         try {
             await postJson('/setup/hardware/gpu-override', { force_cpu: !state.hw.force_cpu });
             await loadHardware();
-        } catch(e) { /* ignore */ }
-        this.disabled = false;
+        } catch(e) {
+            showToast((t('gpu_toggle_failed') || 'GPU toggle failed') + ': ' + (e && e.message || e), 'error');
+        } finally {
+            btn.disabled = false;
+        }
     };
 
     // ══════════════════════════════════════════════════════════════
@@ -1957,92 +1912,251 @@
                 $('testVoskReady').textContent = res.ready ? 'Ready' : (res.loading ? 'Loading...' : 'Not loaded');
                 $('testVoskReady').className = 'badge ' + (res.ready ? 'badge-ok' : 'badge-off');
             }
+            renderTestStatusGrid();
         } catch(e) { /* ignore */ }
     }
 
-    // ── Vosk Catalog ──
-    var _voskCatalogOpen = false;
-    if ($('voskCatalogToggle')) $('voskCatalogToggle').onclick = function() {
-        _voskCatalogOpen = !_voskCatalogOpen;
-        if (_voskCatalogOpen) { show('voskCatalogSection'); loadVoskCatalog(); }
-        else hide('voskCatalogSection');
-    };
+    // Compact status row per engine on the Test tab. Reads from cached state
+    // that's populated by various loaders — see refreshTestStatus() for the
+    // bulk re-fetch path used on tab activation.
+    function renderTestStatusGrid() {
+        // ── Vosk ─────────────────────────────────────────────────────
+        var vName = $('testStatusVoskName'); if (vName) vName.textContent = state.voskModel || '—';
+        var vLang = $('testStatusVoskLang'); if (vLang) vLang.textContent = state.voskLang ? state.voskLang.toUpperCase() : '—';
+
+        // ── Piper — dualVoice.primary is the authoritative source ─────
+        var dv = state.dualVoice || {};
+        var prim = dv.primary || {};
+        var pipVoice = prim.voice || state.piperActive || '';
+        var pipInstalled = prim.installed != null ? !!prim.installed : !!state.piperInstalled;
+        var pipCuda = !!prim.cuda;
+        var pName = $('testStatusPiperName');
+        var pLang = $('testStatusPiperLang');
+        var pBadge = $('testStatusPiperBadge');
+        if (pName) pName.textContent = pipVoice || '—';
+        if (pLang) {
+            var lang = '';
+            if (pipVoice) {
+                var first = pipVoice.split('-')[0];
+                lang = (first || '').split('_')[0].toUpperCase();
+            }
+            pLang.textContent = lang || '—';
+        }
+        if (pBadge) {
+            if (!pipVoice) {
+                pBadge.textContent = 'Off'; pBadge.className = 'badge badge-off';
+            } else if (!pipInstalled) {
+                pBadge.textContent = t('not_installed') || 'Not installed';
+                pBadge.className = 'badge badge-warn';
+            } else {
+                pBadge.textContent = pipCuda ? 'GPU' : 'CPU';
+                pBadge.className = 'badge badge-ok';
+            }
+        }
+
+        // ── Translator (/setup/translate/status) ──────────────────────
+        var ts = state._translateStatus || {};
+        var tBadge = $('testStatusTranslateBadge');
+        var tPair = $('testStatusTranslatePair');
+        var tDirs = $('testStatusTranslateDirs');
+        if (tBadge) {
+            if (!ts.enabled && !ts.active_lang) {
+                tBadge.textContent = 'Off'; tBadge.className = 'badge badge-off';
+            } else {
+                var engLabel = ts.engine === 'helsinki' ? 'Helsinki' : (ts.engine === 'argos' ? 'Argos' : '—');
+                tBadge.textContent = engLabel;
+                tBadge.className = 'badge ' + (ts.engine === 'helsinki' ? 'badge-ok' : (ts.engine === 'argos' ? 'badge-ac' : 'badge-off'));
+            }
+        }
+        if (tPair) tPair.textContent = ts.active_lang ? (ts.active_lang.toUpperCase() + ' ↔ EN') : '—';
+        if (tDirs) {
+            if (!ts.active_lang) tDirs.textContent = '—';
+            else {
+                var dirs = [];
+                if (ts.input_available) dirs.push(ts.active_lang + '→en');
+                if (ts.output_available) dirs.push('en→' + ts.active_lang);
+                tDirs.textContent = dirs.length ? dirs.join(' · ') : (t('not_installed') || 'no models');
+            }
+        }
+
+        // ── LLM ──────────────────────────────────────────────────────
+        var lBadge = $('testStatusLlmBadge');
+        var lModel = $('testStatusLlmModel');
+        var lProv = $('testStatusLlmProvider');
+        var prov = state.activeProvider || '';
+        var model = state._activeLlmModel || '';
+        if (lBadge) {
+            lBadge.textContent = prov || 'Off';
+            lBadge.className = 'badge ' + (prov ? 'badge-ac' : 'badge-off');
+        }
+        if (lModel) lModel.textContent = model || '—';
+        if (lProv) lProv.textContent = prov || '—';
+    }
+
+    // Re-fetch everything the status grid depends on. Runs on Test tab open
+    // and whenever the user wants a forced refresh.
+    async function refreshTestStatus() {
+        try {
+            var [vosk, dual, trStatus, providers] = await Promise.all([
+                api('/vosk/status').catch(function() { return null; }),
+                api('/setup/tts/dual-status').catch(function() { return null; }),
+                api('/setup/translate/status').catch(function() { return null; }),
+                api('/setup/llm/providers').catch(function() { return null; }),
+            ]);
+            if (vosk) {
+                state.voskReady = vosk.ready;
+                state.voskModel = vosk.active_model || '';
+                state.voskLang = vosk.lang || 'en';
+            }
+            if (dual) state.dualVoice = dual;
+            if (trStatus) state._translateStatus = trStatus;
+            if (providers) {
+                state.activeProvider = providers.active || state.activeProvider || '';
+                var ap = (providers.providers || []).find(function(p) { return p.id === state.activeProvider; });
+                state._activeLlmModel = ap ? (ap.model || ap.active_model || '') : '';
+            }
+            renderTestStatusGrid();
+        } catch(e) { /* silent */ }
+    }
+
+    // ── Vosk Catalog (always visible: installed list + available list) ──
+
+    // Fetch entire Vosk catalog once (~200 entries), cache, filter/paginate client-side.
+    state._voskAllModels = [];
+    state._voskAllLanguages = [];
+    var _VOSK_PER_PAGE = 10;
 
     async function loadVoskCatalog() {
-        var lang = $('voskCatalogLang') ? $('voskCatalogLang').value : '';
-        var q = $('voskCatalogSearch') ? $('voskCatalogSearch').value : '';
+        var installedEl = $('voskInstalledList');
+        var availEl = $('voskCatalogList');
+        if (installedEl && !state._voskAllModels.length) {
+            installedEl.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px">' + t('loading') + '</div>';
+        }
+        if (availEl && !state._voskAllModels.length) {
+            availEl.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px">' + t('loading') + '</div>';
+        }
         try {
-            var res = await api('/vosk/catalog?lang=' + encodeURIComponent(lang) + '&q=' + encodeURIComponent(q) + '&page=' + state.voskCatalogPage + '&per_page=10');
-            state.voskCatalog = res.models || [];
-            renderVoskCatalog(res);
+            var res = await api('/vosk/catalog?per_page=1000');
+            state._voskAllModels = res.models || [];
+            state._voskAllLanguages = res.languages || [];
+            populateVoskLangOptions();
+            renderVoskInstalled();
+            renderVoskAvailable();
         } catch(e) {
-            $('voskCatalogList').innerHTML = '<div class="label-xs" style="color:var(--rd)">Error loading catalog</div>';
+            if (installedEl) installedEl.innerHTML = '<div class="label-xs" style="color:var(--rd);padding:8px">Error loading catalog: ' + (e && e.message || e) + '</div>';
+            if (availEl) availEl.innerHTML = '';
         }
     }
 
-    function renderVoskCatalog(res) {
-        var list = $('voskCatalogList');
-        if (!list) return;
-        // Populate language dropdown dynamically from API facets
-        if (res.languages && res.languages.length) {
-            var sel = $('voskCatalogLang');
-            if (sel) {
-                var cur = sel.value;
-                var opts = '<option value="">' + t('all_languages') + '</option>';
-                res.languages.forEach(function(l) {
-                    opts += '<option value="' + l.code + '"' +
-                        (l.code === cur ? ' selected' : '') + '>' +
-                        (l.label || l.code) + ' (' + l.count + ')</option>';
-                });
-                sel.innerHTML = opts;
-            }
+    function populateVoskLangOptions() {
+        var sel = $('voskCatalogLang');
+        if (!sel || !state._voskAllLanguages.length) return;
+        var cur = sel.value;
+        var opts = '<option value="">' + t('all_languages') + '</option>';
+        state._voskAllLanguages.forEach(function(l) {
+            opts += '<option value="' + l.code + '"' +
+                (l.code === cur ? ' selected' : '') + '>' +
+                esc(l.label || l.code) + ' (' + l.count + ')</option>';
+        });
+        sel.innerHTML = opts;
+    }
+
+    function _voskModelRow(m, actions) {
+        var sizeMb = m.size ? Math.round(m.size / (1024 * 1024)) : (m.size_mb || '?');
+        var langLabel = m.lang_text || m.lang || '?';
+        var werLabel = '';
+        if (m.wer) {
+            var wer = parseFloat(m.wer);
+            if (wer <= 10) werLabel = '<span class="badge badge-ok" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
+            else if (wer <= 20) werLabel = '<span class="badge badge-warn" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
+            else werLabel = '<span class="badge badge-off" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
         }
-        if (!res.models || !res.models.length) {
-            list.innerHTML = '<div class="label-xs" style="padding:12px;text-align:center">No models found</div>';
+        var typeLabel = m.type ? ' <span style="opacity:.6">' + esc(m.type) + '</span>' : '';
+        return '<div class="model-item">' +
+            '<div style="flex:1;min-width:0">' +
+                '<div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.name) + ' ' + werLabel + '</div>' +
+                '<div style="font-size:11px;color:var(--tx2)">' + esc(langLabel) + ' · ' + sizeMb + ' MB' + typeLabel + '</div>' +
+            '</div>' +
+            '<div class="flex gap6">' + actions + '</div>' +
+            '</div>';
+    }
+
+    function renderVoskInstalled() {
+        var list = $('voskInstalledList');
+        if (!list) return;
+        var installed = state._voskAllModels.filter(function(m) { return m.installed; });
+        if (!installed.length) {
+            list.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + t('vosk_no_installed') + '</div>';
             return;
         }
-        list.innerHTML = res.models.map(function(m) {
-            var sizeMb = m.size ? Math.round(m.size / (1024 * 1024)) : (m.size_mb || '?');
-            var langLabel = m.lang || '?';
-            // WER quality label
-            var werLabel = '';
-            if (m.wer) {
-                var wer = parseFloat(m.wer);
-                if (wer <= 10) werLabel = '<span class="badge badge-ok" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
-                else if (wer <= 20) werLabel = '<span class="badge" style="font-size:10px;background:var(--am-bg,rgba(255,165,0,.15));color:var(--am,orange)">WER ' + wer.toFixed(1) + '%</span>';
-                else werLabel = '<span class="badge badge-off" style="font-size:10px">WER ' + wer.toFixed(1) + '%</span>';
-            }
-            var typeLabel = m.type ? ' <span style="opacity:.6">' + m.type + '</span>' : '';
-            var status = '';
-            if (m.active) status = '<span class="badge badge-ok">Active</span>';
-            else if (m.installed) status = '<button class="btn btn-secondary" style="font-size:11px" onclick="window._voskActivate(\'' + m.name + '\')">' + t('activate') + '</button>' +
-                ' <button class="btn btn-ghost" style="font-size:11px;color:var(--rd)" onclick="window._voskDelete(\'' + m.name + '\')">&#10005;</button>';
-            else status = '<button class="btn btn-blue" style="font-size:11px" onclick="window._voskDownload(\'' + m.name + '\')">' + t('install') + '</button>';
-            return '<div class="model-item" style="padding:8px 0;border-bottom:1px solid var(--b)">' +
-                '<div style="flex:1"><div style="font-size:13px;font-weight:500">' + m.name + ' ' + werLabel + '</div>' +
-                '<div style="font-size:11px;color:var(--tx2)">' + langLabel + ' · ' + sizeMb + ' MB' + typeLabel + '</div></div>' +
-                '<div>' + status + '</div></div>';
+        list.innerHTML = installed.map(function(m) {
+            var actions = m.active
+                ? '<span class="badge badge-ok">' + t('active') + '</span>'
+                : '<button class="btn btn-primary btn-sm" onclick="window._voskActivate(\'' + m.name + '\')">' + t('activate') + '</button>' +
+                  ' <button class="btn btn-ghost btn-sm" style="color:var(--rd)" onclick="window._voskDelete(\'' + m.name + '\')" title="' + t('delete') + '">&#10005;</button>';
+            return _voskModelRow(m, actions);
         }).join('');
-        // Pagination
-        $('voskCatalogPage').textContent = res.page + '/' + res.pages;
-        $('voskCatalogPrev').disabled = res.page <= 1;
-        $('voskCatalogNext').disabled = res.page >= res.pages;
     }
 
-    if ($('voskCatalogPrev')) $('voskCatalogPrev').onclick = function() { if (state.voskCatalogPage > 1) { state.voskCatalogPage--; loadVoskCatalog(); } };
-    if ($('voskCatalogNext')) $('voskCatalogNext').onclick = function() { state.voskCatalogPage++; loadVoskCatalog(); };
-    if ($('voskCatalogSearch')) $('voskCatalogSearch').oninput = function() { state.voskCatalogPage = 1; loadVoskCatalog(); };
-    if ($('voskCatalogLang')) $('voskCatalogLang').onchange = function() { state.voskCatalogPage = 1; loadVoskCatalog(); };
+    function renderVoskAvailable() {
+        var list = $('voskCatalogList');
+        if (!list) return;
+        var lang = ($('voskCatalogLang') || {}).value || '';
+        var quality = ($('voskCatalogQuality') || {}).value || '';
+        var q = (($('voskCatalogSearch') || {}).value || '').toLowerCase();
+        // Keep only STT-relevant types; exclude installed (they're in the other list)
+        var STT_TYPES = { 'big': 1, 'small': 1, 'big-lgraph': 1 };
+        var filtered = state._voskAllModels.filter(function(m) {
+            if (m.installed) return false;
+            if (!STT_TYPES[m.type || '']) return false;
+            if (lang && (m.lang || '') !== lang) return false;
+            if (quality && (m.type || '') !== quality) return false;
+            if (q) {
+                var hay = (m.name + ' ' + (m.lang_text || '') + ' ' + (m.lang || '')).toLowerCase();
+                if (hay.indexOf(q) === -1) return false;
+            }
+            return true;
+        });
+        var total = filtered.length;
+        var pages = Math.max(1, Math.ceil(total / _VOSK_PER_PAGE));
+        if (state.voskCatalogPage > pages) state.voskCatalogPage = pages;
+        if (state.voskCatalogPage < 1) state.voskCatalogPage = 1;
+        var start = (state.voskCatalogPage - 1) * _VOSK_PER_PAGE;
+        var page = filtered.slice(start, start + _VOSK_PER_PAGE);
+
+        if (!total) {
+            list.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + t('vosk_no_matches') + '</div>';
+        } else {
+            list.innerHTML = page.map(function(m) {
+                var actions = '<button class="btn btn-green btn-sm" onclick="window._voskDownload(\'' + m.name + '\')">' + t('download') + '</button>';
+                return _voskModelRow(m, actions);
+            }).join('');
+        }
+        $('voskCatalogPage').textContent = state.voskCatalogPage + '/' + pages + ' · ' + total;
+        $('voskCatalogPrev').disabled = state.voskCatalogPage <= 1;
+        $('voskCatalogNext').disabled = state.voskCatalogPage >= pages;
+    }
+
+    // Kept as alias for legacy callers (e.g. after download/activate/delete completes)
+    function renderVoskCatalog() { renderVoskInstalled(); renderVoskAvailable(); }
+
+    if ($('voskCatalogPrev')) $('voskCatalogPrev').onclick = function() { if (state.voskCatalogPage > 1) { state.voskCatalogPage--; renderVoskAvailable(); } };
+    if ($('voskCatalogNext')) $('voskCatalogNext').onclick = function() { state.voskCatalogPage++; renderVoskAvailable(); };
+    if ($('voskCatalogSearch')) $('voskCatalogSearch').oninput = function() { state.voskCatalogPage = 1; renderVoskAvailable(); };
+    if ($('voskCatalogLang')) $('voskCatalogLang').onchange = function() { state.voskCatalogPage = 1; renderVoskAvailable(); };
+    if ($('voskCatalogQuality')) $('voskCatalogQuality').onchange = function() { state.voskCatalogPage = 1; renderVoskAvailable(); };
 
     window._voskDownload = async function(name) {
         try {
             await postJson('/vosk/download', { name: name });
             show('voskDownloadSection');
             $('voskDownloadName').textContent = name;
-            // Poll progress
+            // Poll progress — with retry counter so we don't silently abort on transient errors
+            var pollErrors = 0;
             var pollId = setInterval(async function() {
                 try {
                     var s = await api('/vosk/download/status');
+                    pollErrors = 0;
                     $('voskDownloadBar').style.width = s.progress + '%';
                     $('voskDownloadPercent').textContent = Math.round(s.progress) + '%';
                     if (s.done || s.error || !s.active) {
@@ -2053,22 +2167,83 @@
                             loadVoskCatalog();
                             loadVoskStatus();
                         } else if (s.error) {
-                            showToast('Error: ' + s.error, 5000);
+                            showToast('Error: ' + s.error, 'error');
                             hide('voskDownloadSection');
                         }
                     }
-                } catch(e) { clearInterval(pollId); hide('voskDownloadSection'); }
+                } catch(e) {
+                    pollErrors++;
+                    if (pollErrors >= 5) {
+                        clearInterval(pollId);
+                        hide('voskDownloadSection');
+                        showToast(t('poll_failed') + ': ' + (e && e.message || e), 'error');
+                    }
+                }
             }, 1000);
-        } catch(e) { showToast('Error: ' + e.message, 3000); }
+        } catch(e) { showToast('Error: ' + e.message, 'error'); }
     };
 
+    // ── STT Switch Snackbar (shows step-by-step progress during activate) ──
+    function _sttSnackStart(title) {
+        var box = $('sttSnackbar');
+        if (!box) return;
+        $('sttSnackTitle').textContent = title;
+        var steps = [
+            { key: 'config', label: t('stt_step_config') },
+            { key: 'restart', label: t('stt_step_restart') },
+            { key: 'verify', label: t('stt_step_verify') },
+        ];
+        $('sttSteps').innerHTML = steps.map(function(s) {
+            return '<div class="stt-step" id="sttStep_' + s.key + '">' +
+                '<span class="stt-step-icon">○</span>' +
+                '<span>' + esc(s.label) + '</span>' +
+                '</div>';
+        }).join('');
+        box.classList.add('visible');
+    }
+    function _sttSnackMark(key, state) {
+        var el = document.getElementById('sttStep_' + key);
+        if (!el) return;
+        el.classList.remove('active', 'done', 'error');
+        if (state) el.classList.add(state);
+        var icon = el.querySelector('.stt-step-icon');
+        if (!icon) return;
+        if (state === 'active') icon.innerHTML = '<span class="spinner"></span>';
+        else if (state === 'done') icon.innerHTML = '&#10003;';
+        else if (state === 'error') icon.innerHTML = '&#10005;';
+        else icon.textContent = '○';
+    }
+    function _sttSnackFinish(ok, msg) {
+        var box = $('sttSnackbar');
+        if (!box) return;
+        if (msg) $('sttSnackTitle').textContent = msg;
+        setTimeout(function() { box.classList.remove('visible'); }, ok ? 1500 : 4000);
+    }
+
     window._voskActivate = async function(name) {
+        _sttSnackStart(t('stt_switch_title') + ': ' + name);
+        _sttSnackMark('config', 'active');
         try {
-            await postJson('/vosk/activate', { name: name });
-            showToast(t('saved'));
+            // The backend call saves config + reloads the model (can take 5-30s
+            // for big models). We mark steps sequentially so the user sees
+            // something moving even though we only get one response at the end.
+            var req = postJson('/vosk/activate', { name: name });
+            // Simulated step advance — gives user visual feedback while model loads
+            setTimeout(function() { _sttSnackMark('config', 'done'); _sttSnackMark('restart', 'active'); }, 300);
+            setTimeout(function() { _sttSnackMark('restart', 'done'); _sttSnackMark('verify', 'active'); }, 1500);
+            await req;
+            _sttSnackMark('verify', 'done');
+            _sttSnackFinish(true, t('stt_switch_done'));
+            showToast(t('stt_switch_done'));
             loadVoskStatus();
             loadVoskCatalog();
-        } catch(e) { showToast('Error: ' + (e.message || 'failed'), 3000); }
+        } catch(e) {
+            _sttSnackMark('config', 'error');
+            _sttSnackMark('restart', 'error');
+            _sttSnackMark('verify', 'error');
+            _sttSnackFinish(false, t('stt_switch_error') + ': ' + (e && e.message || e));
+            showToast(t('stt_switch_error') + ': ' + (e && e.message || e), 'error');
+        }
     };
 
     window._voskDelete = async function(name) {
@@ -2306,6 +2481,11 @@
             state.piperVoices = res.voices || [];
             state.piperActive = res.active || '';
             renderPiperVoices();
+            // Re-render available catalog so installed voices disappear from it
+            if (typeof renderPiperCatalog === 'function' && state._piperAllVoices && state._piperAllVoices.length) {
+                renderPiperCatalog();
+            }
+            if (typeof renderTestStatusGrid === 'function') renderTestStatusGrid();
         } catch(e) { /* ignore */ }
     }
 
@@ -2400,127 +2580,170 @@
         } catch(e) { state.piperInstalling = false; hide('piperProgress'); renderPiperActions(); }
     }
 
-    // ── Piper Catalog ─────────────────────────────────────────────
-    $('piperCatalogToggle').onclick = function() {
-        if (state.piperCatalogOpen) {
-            state.piperCatalogOpen = false;
-            hide('piperCatalog');
-            this.textContent = t('show_catalog');
-        } else {
-            state.piperCatalogOpen = true;
-            show('piperCatalog');
-            this.textContent = t('hide_catalog');
-            loadPiperCatalog();
-        }
-    };
-
+    // ── Piper Catalog (always visible: installed list + available list) ──
     state.piperCatalogPage = 1;
+    state._piperAllVoices = [];
+    state._piperLangFacets = [];
+    state._piperQualityFacets = [];
+    var _PIPER_PER_PAGE = 10;
 
     async function loadPiperCatalog() {
-        $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
-        var lang = $('piperLangFilter') ? $('piperLangFilter').value : '';
-        var quality = $('piperQualityFilter') ? $('piperQualityFilter').value : '';
-        var q = $('piperSearch') ? $('piperSearch').value : '';
+        var list = $('piperCatalogList');
+        if (list && !state._piperAllVoices.length) {
+            list.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px">' + t('fetching_catalog') + ' <span class="spinner"></span></div>';
+        }
         try {
-            var res = await api('/setup/tts/catalog?lang=' + encodeURIComponent(lang) +
-                '&quality=' + encodeURIComponent(quality) +
-                '&q=' + encodeURIComponent(q) +
-                '&page=' + state.piperCatalogPage + '&per_page=20');
-            state.piperCatalog = res.voices || [];
-            renderPiperCatalog(res);
-        } catch(e) { $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>'; }
+            // Fetch entire catalog once (~150 voices), filter/paginate client-side
+            var res = await api('/setup/tts/catalog?per_page=1000');
+            state._piperAllVoices = res.voices || [];
+            state._piperLangFacets = res.languages || [];
+            state._piperQualityFacets = res.qualities || [];
+            populatePiperFilterOptions();
+            renderPiperCatalog();
+        } catch(e) {
+            if (list) list.innerHTML = '<div class="label-xs" style="color:var(--rd);padding:8px">' + t('no_voices_found') + ': ' + (e && e.message || e) + '</div>';
+        }
     }
 
-    function renderPiperCatalog(res) {
-        // Populate language dropdown from API facets (full catalog, not just current page)
-        if (res && res.languages && res.languages.length) {
-            var sel = $('piperLangFilter');
-            if (sel) {
-                var curLang = sel.value;
-                var langOpts = '<option value="">' + t('all_languages') + '</option>';
-                res.languages.forEach(function(l) {
-                    langOpts += '<option value="' + l.code + '"' +
-                        (l.code === curLang ? ' selected' : '') + '>' +
-                        (l.label || l.code) + ' (' + l.count + ')</option>';
-                });
-                sel.innerHTML = langOpts;
-            }
+    function populatePiperFilterOptions() {
+        var sel = $('piperLangFilter');
+        if (sel && state._piperLangFacets.length) {
+            var cur = sel.value;
+            var opts = '<option value="">' + t('all_languages') + '</option>';
+            state._piperLangFacets.forEach(function(l) {
+                opts += '<option value="' + l.code + '"' +
+                    (l.code === cur ? ' selected' : '') + '>' +
+                    esc(l.label || l.code) + ' (' + l.count + ')</option>';
+            });
+            sel.innerHTML = opts;
         }
-        // Populate quality dropdown
-        if (res && res.qualities && res.qualities.length) {
-            var qsel = $('piperQualityFilter');
-            if (qsel) {
-                var curQ = qsel.value;
-                var qualOpts = '<option value="">' + t('all_qualities') + '</option>';
-                res.qualities.forEach(function(q) {
-                    qualOpts += '<option value="' + q + '"' + (q === curQ ? ' selected' : '') + '>' + q + '</option>';
-                });
-                qsel.innerHTML = qualOpts;
-            }
+        var qsel = $('piperQualityFilter');
+        if (qsel && state._piperQualityFacets.length) {
+            var curQ = qsel.value;
+            var qopts = '<option value="">' + t('all_qualities') + '</option>';
+            state._piperQualityFacets.forEach(function(q) {
+                qopts += '<option value="' + q + '"' + (q === curQ ? ' selected' : '') + '>' + esc(q) + '</option>';
+            });
+            qsel.innerHTML = qopts;
         }
+    }
 
+    function renderPiperCatalog() {
+        var list = $('piperCatalogList');
+        if (!list) return;
+        var lang = ($('piperLangFilter') || {}).value || '';
+        var quality = ($('piperQualityFilter') || {}).value || '';
+        var q = (($('piperSearch') || {}).value || '').toLowerCase();
+
+        // Build set of installed IDs — exclude them from "available" list
         var installedIds = {};
         state.piperVoices.forEach(function(v) { installedIds[v.id] = true; });
 
-        var voices = state.piperCatalog.filter(function(v) {
-            return !installedIds[v.id];
+        var filtered = state._piperAllVoices.filter(function(v) {
+            if (installedIds[v.id]) return false;
+            if (lang && (v.lang || '') !== lang) return false;
+            if (quality && (v.quality || '') !== quality) return false;
+            if (q) {
+                var hay = (v.id + ' ' + (v.lang_label || '') + ' ' + (v.country || '')).toLowerCase();
+                if (hay.indexOf(q) === -1) return false;
+            }
+            return true;
         });
 
-        if (voices.length === 0) {
-            $('piperCatalogList').innerHTML = '<div class="label-xs">' + t('no_voices_found') + '</div>';
+        var total = filtered.length;
+        var pages = Math.max(1, Math.ceil(total / _PIPER_PER_PAGE));
+        if (state.piperCatalogPage > pages) state.piperCatalogPage = pages;
+        if (state.piperCatalogPage < 1) state.piperCatalogPage = 1;
+        var start = (state.piperCatalogPage - 1) * _PIPER_PER_PAGE;
+        var page = filtered.slice(start, start + _PIPER_PER_PAGE);
+
+        if (!total) {
+            list.innerHTML = '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + t('no_voices_found') + '</div>';
             $('piperPagination').classList.add('hidden');
             return;
         }
 
-        $('piperCatalogList').innerHTML = voices.map(function(v) {
-            var meta = (v.lang_label || v.lang || '') +
-                (v.country ? ' (' + v.country + ')' : '') +
-                (v.quality ? ' &middot; ' + v.quality : '') +
+        list.innerHTML = page.map(function(v) {
+            var meta = esc(v.lang_label || v.lang || '') +
+                (v.country ? ' (' + esc(v.country) + ')' : '') +
+                (v.quality ? ' &middot; ' + esc(v.quality) : '') +
                 (v.size_bytes ? ' &middot; ' + formatSize(v.size_bytes) : '');
             return '<div class="model-item">' +
-                '<div><div class="model-name">' + v.id + '</div>' +
+                '<div style="flex:1;min-width:0"><div class="model-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(v.id) + '</div>' +
                 '<div class="model-meta">' + meta + '</div></div>' +
-                '<button class="btn btn-secondary" onclick="window._piperDownload(\'' + v.id + '\',this)">' + t('download') + '</button>' +
+                '<button class="btn btn-green btn-sm" onclick="window._piperDownload(\'' + v.id + '\',this)">' + t('download') + '</button>' +
                 '</div>';
         }).join('');
 
-        // Pagination
-        if (res && res.pages > 1) {
+        if (pages > 1) {
             $('piperPagination').classList.remove('hidden');
-            $('piperCatalogPage').textContent = res.page + '/' + res.pages;
-            $('piperCatalogPrev').disabled = res.page <= 1;
-            $('piperCatalogNext').disabled = res.page >= res.pages;
+            $('piperCatalogPage').textContent = state.piperCatalogPage + '/' + pages + ' · ' + total;
+            $('piperCatalogPrev').disabled = state.piperCatalogPage <= 1;
+            $('piperCatalogNext').disabled = state.piperCatalogPage >= pages;
         } else {
             $('piperPagination').classList.add('hidden');
         }
     }
 
     var _piperSearchTimer;
-    $('piperSearch').oninput = function() { clearTimeout(_piperSearchTimer); _piperSearchTimer = setTimeout(function(){ state.piperCatalogPage = 1; loadPiperCatalog(); }, 300); };
-    $('piperLangFilter').onchange = function() { state.piperCatalogPage = 1; loadPiperCatalog(); };
-    $('piperQualityFilter').onchange = function() { state.piperCatalogPage = 1; loadPiperCatalog(); };
-    if ($('piperCatalogPrev')) $('piperCatalogPrev').onclick = function() { if (state.piperCatalogPage > 1) { state.piperCatalogPage--; loadPiperCatalog(); } };
-    if ($('piperCatalogNext')) $('piperCatalogNext').onclick = function() { state.piperCatalogPage++; loadPiperCatalog(); };
+    if ($('piperSearch')) $('piperSearch').oninput = function() { clearTimeout(_piperSearchTimer); _piperSearchTimer = setTimeout(function(){ state.piperCatalogPage = 1; renderPiperCatalog(); }, 200); };
+    if ($('piperLangFilter')) $('piperLangFilter').onchange = function() { state.piperCatalogPage = 1; renderPiperCatalog(); };
+    if ($('piperQualityFilter')) $('piperQualityFilter').onchange = function() { state.piperCatalogPage = 1; renderPiperCatalog(); };
+    if ($('piperCatalogPrev')) $('piperCatalogPrev').onclick = function() { if (state.piperCatalogPage > 1) { state.piperCatalogPage--; renderPiperCatalog(); } };
+    if ($('piperCatalogNext')) $('piperCatalogNext').onclick = function() { state.piperCatalogPage++; renderPiperCatalog(); };
 
     window._piperDownload = async function(id, btn) {
-        btn.disabled = true;
-        btn.textContent = t('downloading');
+        if (btn) { btn.disabled = true; btn.textContent = t('downloading'); }
+        var section = $('piperDownloadSection');
+        if (section) {
+            show('piperDownloadSection');
+            $('piperDownloadName').textContent = id;
+            $('piperDownloadBar').style.width = '0%';
+            $('piperDownloadPercent').textContent = t('downloading') + '…';
+        }
         try {
             await postJson('/setup/tts/download', { voice: id });
+            var pollErrors = 0;
+            var ticks = 0;
             var poll = setInterval(async function() {
                 try {
                     var res = await api('/setup/tts/download-progress/' + encodeURIComponent(id));
-                    if (res.progress) btn.textContent = res.progress;
+                    pollErrors = 0;
+                    ticks++;
+                    // progress is a free-form string from backend (e.g. "idle", "downloading")
+                    // Use a simulated bar since no real % is available.
+                    var fake = Math.min(90, 5 + ticks * 6);
+                    if (section) {
+                        $('piperDownloadBar').style.width = fake + '%';
+                        $('piperDownloadPercent').textContent = res.progress || t('downloading');
+                    }
                     if (!res.running) {
                         clearInterval(poll);
-                        btn.textContent = t('download');
-                        btn.disabled = false;
+                        if (section) {
+                            $('piperDownloadBar').style.width = '100%';
+                            $('piperDownloadPercent').textContent = t('saved');
+                            setTimeout(function() { hide('piperDownloadSection'); }, 1200);
+                        }
+                        if (btn) { btn.disabled = false; btn.textContent = t('download'); }
+                        showToast(t('saved'));
                         loadPiperVoices();
                         renderPiperCatalog();
                     }
-                } catch(e) { /* ignore */ }
+                } catch(e) {
+                    pollErrors++;
+                    if (pollErrors >= 5) {
+                        clearInterval(poll);
+                        if (section) hide('piperDownloadSection');
+                        if (btn) { btn.disabled = false; btn.textContent = t('download'); }
+                        showToast(t('poll_failed') + ': ' + (e && e.message || e), 'error');
+                    }
+                }
             }, 2000);
-        } catch(e) { btn.disabled = false; btn.textContent = t('download'); }
+        } catch(e) {
+            if (section) hide('piperDownloadSection');
+            if (btn) { btn.disabled = false; btn.textContent = t('download'); }
+            showToast('Error: ' + (e && e.message || e), 'error');
+        }
     };
 
     // ══════════════════════════════════════════════════════════════
@@ -2531,8 +2754,12 @@
             var res = await api('/setup/llm/providers');
             state.providers = res.providers || [];
             state.activeProvider = res.active || 'ollama';
+            // Capture active model of the active provider for the status grid
+            var activeProv = state.providers.find(function(p) { return p.id === state.activeProvider; });
+            state._activeLlmModel = activeProv ? (activeProv.model || activeProv.active_model || '') : '';
             renderProviderTabs();
             showProviderPanel();
+            if (typeof renderTestStatusGrid === 'function') renderTestStatusGrid();
         } catch(e) { /* ignore */ }
     }
 
@@ -2634,6 +2861,8 @@
     }
 
     async function loadPromptsReadonly() {
+        var ta = $('promptsTextarea');
+        if (ta && !ta.value) { ta.placeholder = t('loading') || 'Loading…'; }
         try {
             var res = await api('/setup/llm/system-prompt');
             state.promptsLoaded = true;
@@ -2644,14 +2873,16 @@
             var sys = pm.system || {};
             var val = sys.value || '';
             state.promptsDefault = sys.default || val;
-            var ta = $('promptsTextarea');
-            if (ta) { ta.value = val; }
+            if (ta) { ta.value = val; ta.placeholder = ''; }
             var badge = $('promptsCustomBadge');
             if (badge) badge.style.display = sys.is_custom ? '' : 'none';
             _updatePromptCharCount();
             var pv = $('promptsPreview');
             if (pv) pv.textContent = res.full_preview || '';
-        } catch(e) { /* ignore */ }
+        } catch(e) {
+            if (ta) ta.placeholder = '';
+            showToast((t('load_failed') || 'Load failed') + ': ' + (e && e.message || e), 'error');
+        }
     }
 
     async function savePromptsUnified() {
@@ -2669,7 +2900,9 @@
             var badge = $('promptsCustomBadge');
             if (badge) badge.style.display = '';
             loadPromptsReadonly();
-        } catch(e) { showToast('Error', 'error'); }
+        } catch(e) {
+            showToast((t('save_failed') || 'Save failed') + ': ' + (e && e.message || e), 'error');
+        }
     }
 
     async function resetPromptsUnified() {
@@ -2694,84 +2927,210 @@
     // ── Translation (Argos Translate) ──────────────────────────
     state.translateLoaded = false;
 
+    // Catalog cache — used by filter handlers to re-render without re-fetching.
+    state._translateCatalog = [];
+
     async function loadTranslateCatalog() {
         try {
             var res = await api('/setup/translate/catalog');
             var status = await api('/setup/translate/status');
             state.translateLoaded = true;
+            state._translateCatalog = res.models || [];
 
+            state._translateStatus = status;
             if ($('translateEnabled')) $('translateEnabled').checked = !!status.enabled;
             if ($('translateFallback')) $('translateFallback').checked = !!status.fallback_to_llm;
+            renderTranslateActive(status);
 
-            var list = $('translateModelList');
-            list.innerHTML = '';
-            (res.models || []).forEach(function(m) {
-                var rowId = m.id || ('argos-' + m.lang_code + '-en');
-                var rowIdEsc = _esc(rowId);
-                var langEsc = _esc(m.lang_code);
-                var isHelsinki = (m.engine === 'helsinki');
-                var statusHtml = '';
-                if (m.active) {
-                    statusHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
-                } else if (m.installed) {
-                    statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + rowIdEsc + '\')">' + t('translation_activate') + '</button>' +
-                                 ' <button class="btn btn-ghost btn-sm" style="color:var(--err)" onclick="window._trDelete(\'' + rowIdEsc + '\')">' + t('common_delete') + '</button>';
-                } else if (isHelsinki) {
-                    // No GitHub-release URLs are wired up by default, so the
-                    // end-user path is to upload Colab-converted .tar.gz
-                    // archives directly from the browser. One file picker
-                    // per direction; both must be uploaded before the row
-                    // flips to "Activate".
-                    var inMissing = !m.input_installed;
-                    var outMissing = !m.output_installed;
-                    statusHtml =
-                        '<div class="flex gap6" style="flex-wrap:wrap;flex-direction:column;width:100%">' +
-                            (inMissing ?
-                              '<label class="flex gap6" style="align-items:center">' +
-                                '<span style="font-size:11px;color:var(--muted);min-width:80px">' + langEsc + ' → en:</span>' +
-                                '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
-                                  'onchange="window._trUpload(this, \'' + langEsc + '\', \'input\')" ' +
-                                  'style="font-size:11px;flex:1" />' +
-                              '</label>' : '') +
-                            (outMissing ?
-                              '<label class="flex gap6" style="align-items:center">' +
-                                '<span style="font-size:11px;color:var(--muted);min-width:80px">en → ' + langEsc + ':</span>' +
-                                '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
-                                  'onchange="window._trUpload(this, \'' + langEsc + '\', \'output\')" ' +
-                                  'style="font-size:11px;flex:1" />' +
-                              '</label>' : '') +
-                            '<div style="font-size:10px;color:var(--muted);margin-top:2px">' +
-                              'Upload Colab-converted .tar.gz (see docs/helsinki-translator.md)' +
-                            '</div>' +
-                        '</div>';
-                } else {
-                    statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + rowIdEsc + '\')">' + t('translation_install') + '</button>';
-                }
-
-                var inputBadge = m.input_installed ? '<span class="badge badge-ok">' + m.lang_code + '→en</span>' : '<span class="badge badge-off">' + m.lang_code + '→en</span>';
-                var outputBadge = m.output_installed ? '<span class="badge badge-ok">en→' + m.lang_code + '</span>' : '<span class="badge badge-off">en→' + m.lang_code + '</span>';
-
-                // Engine badge: makes Argos vs Helsinki rows distinguishable.
-                // Both engines can show the same lang_code so without this
-                // badge two rows for "Ukrainian" look identical.
-                var engineLabel = (m.engine === 'helsinki') ? 'Helsinki' : 'Argos';
-                var engineCls = (m.engine === 'helsinki') ? 'badge badge-ok' : 'badge badge-off';
-                var engineBadge = '<span class="' + engineCls + '">' + engineLabel + '</span>';
-
-                var div = document.createElement('div');
-                div.className = 'card-inner mb8';
-                div.innerHTML =
-                    '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
-                        '<span style="font-size:13px;font-weight:600">' + (m.lang_name || m.lang_code) + '</span>' +
-                        engineBadge +
-                        '<span class="badge badge-off">' + m.lang_code.toUpperCase() + ' ↔ EN</span>' +
-                        inputBadge + outputBadge +
-                    '</div>' +
-                    '<div class="flex gap6">' + statusHtml + '</div>';
-                list.appendChild(div);
-            });
-        } catch(e) { /* ignore */ }
+            renderTranslateLists();
+            if (typeof renderTestStatusGrid === 'function') renderTestStatusGrid();
+        } catch(e) {
+            showToast((t('load_failed') || 'Load failed') + ': ' + (e && e.message || e), 'error');
+        }
     }
+
+    function renderTranslateActive(status) {
+        var box = $('translateActiveBox');
+        var langEl = $('translateActiveLang');
+        var engineEl = $('translateActiveEngine');
+        var inEl = $('translateActiveIn');
+        var outEl = $('translateActiveOut');
+        if (!box || !langEl) return;
+
+        var lang = status && status.active_lang;
+        var engine = status && status.engine;
+        if (!lang) {
+            langEl.textContent = t('translation_none_active') || 'No active model';
+            langEl.style.opacity = '.6';
+            engineEl.className = 'badge badge-off';
+            engineEl.textContent = '—';
+            inEl.className = 'badge badge-off';
+            inEl.textContent = 'lang→en';
+            outEl.className = 'badge badge-off';
+            outEl.textContent = 'en→lang';
+            return;
+        }
+        langEl.style.opacity = '1';
+        langEl.textContent = lang.toUpperCase() + ' ↔ EN';
+        engineEl.className = 'badge ' + (engine === 'helsinki' ? 'badge-ok' : 'badge-ac');
+        engineEl.textContent = (engine === 'helsinki') ? 'Helsinki' : 'Argos';
+        inEl.className = 'badge ' + (status.input_available ? 'badge-ok' : 'badge-off');
+        inEl.textContent = lang + '→en';
+        outEl.className = 'badge ' + (status.output_available ? 'badge-ok' : 'badge-off');
+        outEl.textContent = 'en→' + lang;
+    }
+
+    function _translateRowHtml(m) {
+        var rowId = m.id || ('argos-' + m.lang_code + '-en');
+        var rowIdEsc = _esc(rowId);
+        var langEsc = _esc(m.lang_code);
+        var isHelsinki = (m.engine === 'helsinki');
+        var statusHtml = '';
+        if (m.active) {
+            statusHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
+        } else if (m.installed) {
+            statusHtml = '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + rowIdEsc + '\')">' + t('translation_activate') + '</button>' +
+                         ' <button class="btn btn-ghost btn-sm" style="color:var(--rd)" onclick="window._trDelete(\'' + rowIdEsc + '\')">' + t('common_delete') + '</button>';
+        } else if (isHelsinki) {
+            var inMissing = !m.input_installed;
+            var outMissing = !m.output_installed;
+            statusHtml =
+                '<div class="flex gap6" style="flex-wrap:wrap;flex-direction:column;width:100%">' +
+                    (inMissing ?
+                      '<label class="flex gap6" style="align-items:center">' +
+                        '<span style="font-size:11px;color:var(--tx3);min-width:80px">' + langEsc + ' → en:</span>' +
+                        '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
+                          'onchange="window._trUpload(this, \'' + langEsc + '\', \'input\')" ' +
+                          'style="font-size:11px;flex:1" />' +
+                      '</label>' : '') +
+                    (outMissing ?
+                      '<label class="flex gap6" style="align-items:center">' +
+                        '<span style="font-size:11px;color:var(--tx3);min-width:80px">en → ' + langEsc + ':</span>' +
+                        '<input type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip" ' +
+                          'onchange="window._trUpload(this, \'' + langEsc + '\', \'output\')" ' +
+                          'style="font-size:11px;flex:1" />' +
+                      '</label>' : '') +
+                '</div>';
+        } else {
+            statusHtml = '<button class="btn btn-primary btn-sm" onclick="window._trDownload(\'' + rowIdEsc + '\')">' + t('translation_install') + '</button>';
+        }
+
+        var inputBadge = m.input_installed ? '<span class="badge badge-ok">' + m.lang_code + '→en</span>' : '<span class="badge badge-off">' + m.lang_code + '→en</span>';
+        var outputBadge = m.output_installed ? '<span class="badge badge-ok">en→' + m.lang_code + '</span>' : '<span class="badge badge-off">en→' + m.lang_code + '</span>';
+        var engineLabel = (m.engine === 'helsinki') ? 'Helsinki' : 'Argos';
+        var engineCls = (m.engine === 'helsinki') ? 'badge badge-ok' : 'badge badge-ac';
+        var engineBadge = '<span class="' + engineCls + '">' + engineLabel + '</span>';
+
+        return '<div class="card-inner mb8">' +
+            '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
+                '<span style="font-size:13px;font-weight:600">' + _esc(m.lang_name || m.lang_code) + '</span>' +
+                engineBadge +
+                '<span class="badge badge-off">' + m.lang_code.toUpperCase() + ' ↔ EN</span>' +
+                inputBadge + outputBadge +
+            '</div>' +
+            '<div class="flex gap6">' + statusHtml + '</div>' +
+            '</div>';
+    }
+
+    function _helsinkiPairRowHtml(lang_code, lang_name, rows) {
+        // rows = array of helsinki catalog entries for the same lang_code
+        // (usually 1 row with both input/output flags). Collapse to a single
+        // paired display showing which direction is installed and an Activate
+        // / Delete pair that acts on the language, not on a single direction.
+        var row = rows[0];
+        var rowId = 'helsinki-' + lang_code + '-en';
+        var inBadge = row.input_installed ? '<span class="badge badge-ok">' + lang_code + '→en</span>' : '<span class="badge badge-off">' + lang_code + '→en</span>';
+        var outBadge = row.output_installed ? '<span class="badge badge-ok">en→' + lang_code + '</span>' : '<span class="badge badge-off">en→' + lang_code + '</span>';
+        var actionHtml;
+        if (row.active) {
+            actionHtml = '<span class="badge badge-ok">' + t('translation_active') + '</span>';
+        } else {
+            actionHtml =
+                '<button class="btn btn-secondary btn-sm" onclick="window._trActivate(\'' + rowId + '\')">' + t('translation_activate') + '</button>' +
+                ' <button class="btn btn-ghost btn-sm" style="color:var(--rd)" onclick="window._trDelete(\'' + rowId + '\')">' + t('common_delete') + '</button>';
+        }
+        return '<div class="card-inner mb8">' +
+            '<div class="flex gap8 mb4" style="align-items:center;flex-wrap:wrap">' +
+                '<span style="font-size:13px;font-weight:600">' + _esc(lang_name || lang_code) + '</span>' +
+                '<span class="badge badge-ok">Helsinki</span>' +
+                inBadge + outBadge +
+            '</div>' +
+            '<div class="flex gap6">' + actionHtml + '</div>' +
+            '</div>';
+    }
+
+    function renderTranslateLists() {
+        var search = (($('argosSearch') || {}).value || '').toLowerCase();
+
+        var catalog = state._translateCatalog;
+        var argosInstalled = catalog.filter(function(m) { return m.engine === 'argos' && m.installed; });
+        var argosAvail = catalog.filter(function(m) {
+            if (m.engine !== 'argos' || m.installed) return false;
+            if (search) {
+                var hay = ((m.lang_name || '') + ' ' + (m.lang_code || '')).toLowerCase();
+                if (hay.indexOf(search) === -1) return false;
+            }
+            return true;
+        });
+
+        // Helsinki: group by lang_code so pairs show as ONE row with both
+        // direction badges (not two rows per language).
+        var helsinkiByLang = {};
+        catalog.forEach(function(m) {
+            if (m.engine !== 'helsinki') return;
+            // Installed = at least one direction present on disk
+            if (!(m.input_installed || m.output_installed)) return;
+            var k = m.lang_code;
+            (helsinkiByLang[k] = helsinkiByLang[k] || { lang_code: k, lang_name: m.lang_name, rows: [] }).rows.push(m);
+        });
+        var helsinkiInstalled = Object.keys(helsinkiByLang)
+            .sort()
+            .map(function(k) { return helsinkiByLang[k]; });
+
+        // Counts
+        if ($('argosInstalledCount')) $('argosInstalledCount').textContent = argosInstalled.length;
+        if ($('helsinkiInstalledCount')) $('helsinkiInstalledCount').textContent = helsinkiInstalled.length;
+
+        // Argos installed
+        var argInst = $('argosInstalledList');
+        if (argInst) {
+            argInst.innerHTML = argosInstalled.length
+                ? argosInstalled.map(_translateRowHtml).join('')
+                : '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + (t('translation_no_installed') || 'No Argos models installed yet') + '</div>';
+        }
+
+        // Argos available
+        var argAvail = $('argosAvailableList');
+        if (argAvail) {
+            argAvail.innerHTML = argosAvail.length
+                ? argosAvail.map(_translateRowHtml).join('')
+                : '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + (t('no_matches') || 'No matches') + '</div>';
+        }
+
+        // Helsinki installed (paired)
+        var helInst = $('helsinkiInstalledList');
+        if (helInst) {
+            helInst.innerHTML = helsinkiInstalled.length
+                ? helsinkiInstalled.map(function(g) { return _helsinkiPairRowHtml(g.lang_code, g.lang_name, g.rows); }).join('')
+                : '<div class="label-xs" style="color:var(--tx3);padding:8px;text-align:center">' + (t('helsinki_no_installed') || 'No Helsinki models installed. Upload a pair below.') + '</div>';
+        }
+    }
+
+    // Argos search — client-side re-render, no network fetch
+    if ($('argosSearch')) $('argosSearch').oninput = function() { renderTranslateLists(); };
+
+    // Engine sub-tab switcher
+    document.querySelectorAll('#translateEngineTabs .settings-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('#translateEngineTabs .settings-tab').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            var engine = btn.getAttribute('data-trengine');
+            var argosPane = $('trPaneArgos');
+            var helPane = $('trPaneHelsinki');
+            if (argosPane) argosPane.style.display = (engine === 'argos') ? '' : 'none';
+            if (helPane) helPane.style.display = (engine === 'helsinki') ? '' : 'none';
+        });
+    });
 
     // Parse a catalog row id ("helsinki-uk-en" / "argos-uk-en") into
     // {engine, lang}. Backwards-compatible with bare lang codes.
@@ -2791,9 +3150,11 @@
             await postJson('/setup/translate/download', { id: rowId });
             show('translateDownloadSection');
             $('translateDownloadName').textContent = p.engine + ':' + p.lang + ' ↔ en';
+            var pollErrors = 0;
             var pollId = setInterval(async function() {
                 try {
                     var s = await api('/setup/translate/download/status');
+                    pollErrors = 0;
                     var pct = Math.round(s.progress || 0);
                     $('translateDownloadBar').style.width = pct + '%';
                     $('translateDownloadPercent').textContent = pct + '% — ' + (s['package'] || '');
@@ -2804,9 +3165,18 @@
                         else showToast(t('saved'));
                         loadTranslateCatalog();
                     }
-                } catch(e) { /* retry */ }
+                } catch(e) {
+                    pollErrors++;
+                    if (pollErrors >= 5) {
+                        clearInterval(pollId);
+                        hide('translateDownloadSection');
+                        showToast(t('poll_failed') + ': ' + (e && e.message || e), 'error');
+                    }
+                }
             }, 1500);
-        } catch(e) { showToast('Error', 'error'); }
+        } catch(e) {
+            showToast('Error: ' + (e && e.message ? e.message : e), 'error');
+        }
     };
 
     window._trActivate = async function(rowId) {
@@ -2873,44 +3243,61 @@
         };
     }
 
-    // Custom Helsinki upload — any language code the user has converted
-    // on Jetson/Colab, without waiting for the static catalog to grow.
+    // Custom Helsinki upload — paired (both directions at once).
+    // User picks TWO .tar.gz files (lang→en + en→lang) and one language code.
+    // We POST them sequentially and only report success once both land.
     if ($('helsinkiCustomUploadBtn')) {
         $('helsinkiCustomUploadBtn').onclick = async function() {
+            var btn = this;
             var lang = ($('helsinkiCustomLang').value || '').trim().toLowerCase();
-            var direction = $('helsinkiCustomDirection').value || 'input';
-            var fileInput = $('helsinkiCustomFile');
-            var f = fileInput && fileInput.files && fileInput.files[0];
+            var inputFileEl = $('helsinkiInputFile');
+            var outputFileEl = $('helsinkiOutputFile');
+            var fIn = inputFileEl && inputFileEl.files && inputFileEl.files[0];
+            var fOut = outputFileEl && outputFileEl.files && outputFileEl.files[0];
             var statusEl = $('helsinkiCustomStatus');
+
             if (!lang || !/^[a-z]{2,5}$/.test(lang)) {
-                showToast('Enter a valid language code (e.g. uk, de, fr)', 'error');
+                showToast(t('helsinki_err_lang') || 'Enter a valid language code (e.g. uk, de, fr)', 'error');
                 return;
             }
-            if (!f) {
-                showToast('Pick a .tar.gz file first', 'error');
+            if (!fIn || !fOut) {
+                showToast(t('helsinki_err_both_files') || 'Pick BOTH .tar.gz files — input (lang→en) and output (en→lang)', 'error');
                 return;
             }
-            try {
+
+            btn.disabled = true;
+            btn.classList.add('btn-loading');
+
+            async function uploadOne(f, direction) {
                 var fd = new FormData();
                 fd.append('engine', 'helsinki');
                 fd.append('lang', lang);
                 fd.append('direction', direction);
                 fd.append('file', f);
-                statusEl.textContent = 'Uploading ' + direction + ' for ' + lang + '… (' + formatSize(f.size) + ')';
-                var resp = await fetch('/api/ui/setup/translate/upload', {
-                    method: 'POST', body: fd,
-                });
+                var resp = await fetch('/api/ui/setup/translate/upload', { method: 'POST', body: fd });
                 if (!resp.ok) {
                     var j = await resp.json().catch(function(){ return {}; });
                     throw new Error(j.detail || ('HTTP ' + resp.status));
                 }
-                statusEl.textContent = 'Installed ' + lang + ' ' + direction;
+            }
+
+            try {
+                statusEl.textContent = '1/2: ' + lang + ' → en (' + formatSize(fIn.size) + ')';
+                await uploadOne(fIn, 'input');
+                statusEl.textContent = '2/2: en → ' + lang + ' (' + formatSize(fOut.size) + ')';
+                await uploadOne(fOut, 'output');
+                statusEl.textContent = '✓ ' + (t('helsinki_install_done') || 'Pair installed') + ': ' + lang;
                 showToast(t('saved'));
-                fileInput.value = '';
+                inputFileEl.value = '';
+                outputFileEl.value = '';
+                $('helsinkiCustomLang').value = '';
                 loadTranslateCatalog();
             } catch(e) {
                 statusEl.textContent = 'Error: ' + (e.message || e);
                 showToast(String(e.message || e), 'error');
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('btn-loading');
             }
         };
     }
@@ -3185,18 +3572,39 @@
     // ══════════════════════════════════════════════════════════════
     //  Tab Navigation
     // ══════════════════════════════════════════════════════════════
-    var tabMap = { engines: 'tabEngines', translate: 'tabTranslate', prompts: 'tabPrompts', intents: 'tabIntents', patterns: 'tabPatterns', test: 'tabTest' };
-    document.querySelectorAll('.settings-tab').forEach(function(btn) {
+    var tabMap = { stt: 'tabStt', engines: 'tabEngines', translate: 'tabTranslate', intents: 'tabIntents', patterns: 'tabPatterns', test: 'tabTest' };
+
+    // Safety: if Vosk/Wake cards ever drift outside tabStt (old cache, stray
+    // DOM operation, etc.), force them back. Runs on every tab switch.
+    function _enforceSttCardHome() {
+        var home = $('tabStt');
+        if (!home) return;
+        ['voskCard', 'wakeWordCard'].forEach(function(cid) {
+            var el = $(cid);
+            if (el && !home.contains(el)) home.appendChild(el);
+        });
+    }
+    _enforceSttCardHome();  // run once on script init as well
+
+    // Only top-level tabs live inside #settingsTabs. Sub-tabs (e.g. Translate
+    // Argos/Helsinki) reuse the same .settings-tab class for styling but
+    // belong to their own container — skip them here.
+    document.querySelectorAll('#settingsTabs .settings-tab').forEach(function(btn) {
         btn.addEventListener('click', function() {
-            document.querySelectorAll('.settings-tab').forEach(function(b) { b.classList.remove('active'); });
+            document.querySelectorAll('#settingsTabs .settings-tab').forEach(function(b) { b.classList.remove('active'); });
             document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
             btn.classList.add('active');
             var panel = $(tabMap[btn.getAttribute('data-tab')]);
             if (panel) panel.classList.add('active');
+            _enforceSttCardHome();
             if (btn.getAttribute('data-tab') === 'translate' && !state.translateLoaded) loadTranslateCatalog();
-            if (btn.getAttribute('data-tab') === 'prompts' && !state.promptsLoaded) loadPromptsReadonly();
             if (btn.getAttribute('data-tab') === 'intents' && !state.intentsLoaded) loadIntents();
             if (btn.getAttribute('data-tab') === 'patterns') loadVoicesTab();
+            // Test tab: load prompts + refresh the status grid with fresh data
+            if (btn.getAttribute('data-tab') === 'test') {
+                if (!state.promptsLoaded) loadPromptsReadonly();
+                if (typeof refreshTestStatus === 'function') refreshTestStatus();
+            }
         });
     });
 
@@ -3287,13 +3695,13 @@
     function relocatePiperBlocks() {
         if (state.voicesRelocated) return;
         var section = $('dualVoiceSection');
-        var catToggle = $('piperCatalogToggle');
-        var cat = $('piperCatalog');
         var slotSettings = $('voicesSlotSettings');
-        var slotCatalog = $('voicesSlotCatalog');
-        if (slotSettings && section) slotSettings.appendChild(section);
-        if (slotCatalog && catToggle) slotCatalog.appendChild(catToggle);
-        if (slotCatalog && cat) slotCatalog.appendChild(cat);
+        if (slotSettings && section) {
+            slotSettings.appendChild(section);
+            section.classList.remove('hidden'); // was hidden to prevent LLM-tab flash
+        }
+        // piperCatalog controls now live directly inside tabPatterns HTML —
+        // no relocation needed for them (removed: catToggle + catalog wrapper).
         state.voicesRelocated = true;
     }
 
@@ -3346,17 +3754,70 @@
         }
     }
 
+    // Piper activate — same step-by-step snackbar UX as Vosk. Reuses the
+    // shared #sttSnackbar box (only one activation happens at a time).
+    function _piperSnackStart(title) {
+        var box = $('sttSnackbar');
+        if (!box) return;
+        $('sttSnackTitle').textContent = title;
+        var steps = [
+            { key: 'config', label: t('piper_step_config') },
+            { key: 'reload', label: t('piper_step_reload') },
+            { key: 'verify', label: t('piper_step_verify') },
+        ];
+        $('sttSteps').innerHTML = steps.map(function(s) {
+            return '<div class="stt-step" id="piperStep_' + s.key + '">' +
+                '<span class="stt-step-icon">○</span>' +
+                '<span>' + esc(s.label) + '</span>' +
+                '</div>';
+        }).join('');
+        box.classList.add('visible');
+    }
+    function _piperSnackMark(key, state) {
+        var el = document.getElementById('piperStep_' + key);
+        if (!el) return;
+        el.classList.remove('active', 'done', 'error');
+        if (state) el.classList.add(state);
+        var icon = el.querySelector('.stt-step-icon');
+        if (!icon) return;
+        if (state === 'active') icon.innerHTML = '<span class="spinner"></span>';
+        else if (state === 'done') icon.innerHTML = '&#10003;';
+        else if (state === 'error') icon.innerHTML = '&#10005;';
+        else icon.textContent = '○';
+    }
+    function _piperSnackFinish(ok, msg) {
+        var box = $('sttSnackbar');
+        if (!box) return;
+        if (msg) $('sttSnackTitle').textContent = msg;
+        setTimeout(function() { box.classList.remove('visible'); }, ok ? 1500 : 4000);
+    }
+
     async function activateVoice(voiceId) {
+        _piperSnackStart(t('tts_switch_title') + ': ' + voiceId);
+        _piperSnackMark('config', 'active');
         try {
             var lang = (voiceId.split('-')[0] || '').split('_')[0] || 'en';
-            await postJson('/setup/tts/dual-config', {
+            var req = postJson('/setup/tts/dual-config', {
                 primary: { voice: voiceId, lang: lang },
             });
-            showToast(t('saved'), 'ok');
+            // Simulated step progression — dual-config saves config + flushes
+            // LLM caches; the actual Piper voice reload happens on next TTS
+            // request (lazy). Steps are for user feedback only.
+            setTimeout(function() { _piperSnackMark('config', 'done'); _piperSnackMark('reload', 'active'); }, 300);
+            setTimeout(function() { _piperSnackMark('reload', 'done'); _piperSnackMark('verify', 'active'); }, 900);
+            await req;
+            _piperSnackMark('verify', 'done');
+            _piperSnackFinish(true, t('tts_switch_done'));
+            showToast(t('tts_switch_done'));
             await loadInstalledVoices();
             if (typeof loadDualVoiceStatus === 'function') await loadDualVoiceStatus();
+            if (typeof renderPiperCatalog === 'function') renderPiperCatalog();
         } catch (e) {
-            showToast('Error: ' + (e.message || 'failed'), 'error');
+            _piperSnackMark('config', 'error');
+            _piperSnackMark('reload', 'error');
+            _piperSnackMark('verify', 'error');
+            _piperSnackFinish(false, t('tts_switch_error') + ': ' + (e && e.message || e));
+            showToast(t('tts_switch_error') + ': ' + (e && e.message || e), 'error');
         }
     }
 
@@ -3364,7 +3825,9 @@
         if (!confirm(t('voices_confirm_delete') + ': ' + voiceId + '?')) return;
         try {
             await postJson('/setup/tts/delete', { voice: voiceId });
+            showToast(t('deleted') || 'Deleted');
             await loadInstalledVoices();
+            if (typeof renderPiperCatalog === 'function') renderPiperCatalog();
         } catch (e) {
             showToast('Error: ' + (e.message || 'failed'), 'error');
         }
@@ -3425,101 +3888,7 @@
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Legacy Patterns table (unused — tab repurposed as Voices)
-    // ══════════════════════════════════════════════════════════════
-    state.patterns = [];
-    state.patternsLoaded = false;
-    state.patternsPage = 0;
-    var PATTERNS_PER_PAGE = 25;
-
-    async function loadPatterns() {
-        $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">Loading...</td></tr>';
-        try {
-            var res = await api('/modules/voice-core/patterns');
-            state.patterns = res.patterns || [];
-            state.patternsLoaded = true;
-            $('patternsCountBadge').textContent = state.patterns.length;
-            // Populate module filter
-            var modules = [];
-            state.patterns.forEach(function(p) {
-                var mod = p.module || '';
-                if (mod && modules.indexOf(mod) === -1) modules.push(mod);
-            });
-            modules.sort();
-            $('patternsModuleFilter').innerHTML = '<option value="">' + t('patterns_all_modules') + '</option>' +
-                modules.map(function(m) { return '<option value="' + m + '">' + m + '</option>'; }).join('');
-            // Populate source filter
-            var sources = [];
-            state.patterns.forEach(function(p) {
-                var s = p.source || '';
-                if (s && sources.indexOf(s) === -1) sources.push(s);
-            });
-            sources.sort();
-            $('patternsSourceFilter').innerHTML = '<option value="">' + t('patterns_all_sources') + '</option>' +
-                sources.map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
-            state.patternsPage = 0;
-            renderPatterns();
-        } catch(e) {
-            $('patternsBody').innerHTML = '<tr><td colspan="4" style="color:var(--rd)">Error: ' + e.message + '</td></tr>';
-        }
-    }
-
-    function getFilteredPatterns() {
-        var search = ($('patternsSearch').value || '').toLowerCase();
-        var modFilter = $('patternsModuleFilter').value;
-        var srcFilter = $('patternsSourceFilter').value;
-        return state.patterns.filter(function(p) {
-            if (modFilter && (p.module || '') !== modFilter) return false;
-            if (srcFilter && (p.source || '') !== srcFilter) return false;
-            if (search) {
-                var hay = ((p.module || '') + ' ' + p.intent + ' ' + p.pattern + ' ' + p.source).toLowerCase();
-                return hay.indexOf(search) !== -1;
-            }
-            return true;
-        });
-    }
-
-    function renderPatterns() {
-        var filtered = getFilteredPatterns();
-        var totalPages = Math.max(1, Math.ceil(filtered.length / PATTERNS_PER_PAGE));
-        if (state.patternsPage >= totalPages) state.patternsPage = totalPages - 1;
-        if (state.patternsPage < 0) state.patternsPage = 0;
-        var start = state.patternsPage * PATTERNS_PER_PAGE;
-        var page = filtered.slice(start, start + PATTERNS_PER_PAGE);
-
-        if (page.length === 0) {
-            $('patternsBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--tx3)">No patterns found</td></tr>';
-            $('patternsPageInfo').textContent = '';
-            $('patternsPrev').disabled = true;
-            $('patternsNext').disabled = true;
-            return;
-        }
-
-        $('patternsBody').innerHTML = page.map(function(p) {
-            var srcBadge = p.source === 'auto_entity' ? '<span class="badge badge-ac">auto</span>' :
-                           p.source === 'system' ? '<span class="badge badge-ok">system</span>' :
-                           '<span class="badge">' + (p.source || '—') + '</span>';
-            return '<tr>' +
-                '<td class="intent-module">' + (p.module || '—') + '</td>' +
-                '<td style="font-weight:500;white-space:nowrap">' + p.intent + '</td>' +
-                '<td style="font-family:monospace;font-size:11px;word-break:break-all;max-width:400px">' + _esc(p.pattern) + '</td>' +
-                '<td>' + srcBadge + '</td>' +
-                '</tr>';
-        }).join('');
-
-        // Pagination controls
-        $('patternsPageInfo').textContent = (start + 1) + '–' + Math.min(start + PATTERNS_PER_PAGE, filtered.length) + ' / ' + filtered.length;
-        $('patternsPrev').disabled = state.patternsPage <= 0;
-        $('patternsNext').disabled = state.patternsPage >= totalPages - 1;
-    }
-
-    function _esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-    if ($('patternsSearch')) $('patternsSearch').addEventListener('input', function() { state.patternsPage = 0; renderPatterns(); });
-    if ($('patternsModuleFilter')) $('patternsModuleFilter').addEventListener('change', function() { state.patternsPage = 0; renderPatterns(); });
-    if ($('patternsSourceFilter')) $('patternsSourceFilter').addEventListener('change', function() { state.patternsPage = 0; renderPatterns(); });
-    if ($('patternsPrev')) $('patternsPrev').addEventListener('click', function() { state.patternsPage--; renderPatterns(); });
-    if ($('patternsNext')) $('patternsNext').addEventListener('click', function() { state.patternsPage++; renderPatterns(); });
+    //  (Legacy Patterns table removed — tab repurposed as Voices)
 
     // ══════════════════════════════════════════════════════════════
     //  Command Test Console
@@ -3555,12 +3924,23 @@
         btn.disabled = true;
         btn.textContent = t('test_cmd_sending');
         hide('testCmdResult');
+        // 30s timeout — if backend hangs, user gets clear feedback instead of infinite spinner
+        var ctrl = new AbortController();
+        var timeoutId = setTimeout(function() { ctrl.abort(); }, 30000);
         try {
             var speak = $('testCmdSpeak').checked;
             var langSel = $('testCmdLang').value || undefined;
             var payload = { text: text, speak: speak };
             if (langSel) payload.lang = langSel;
-            var res = await postJson('/modules/voice-core/test-command', payload);
+            var resp = await fetch('/api/ui/modules/voice-core/test-command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: ctrl.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            var res = await resp.json();
 
             // Input
             $('testResInput').textContent = res.input_text || text;
@@ -3575,8 +3955,15 @@
             $('testResLatency').textContent = (res.duration_ms || 0) + ' ms';
             $('testResTts').textContent = res.tts_played ? 'TTS &#10004;' : 'TTS off';
 
-            // Response
-            $('testResText').textContent = res.response || '(no response)';
+            // Response — show translated if available, English original as secondary
+            var mainResponse = res.translated_response || res.response || t('no_response');
+            $('testResText').textContent = mainResponse;
+            if (res.translated_response && res.response && res.translated_response !== res.response) {
+                $('testResOriginal').textContent = '(EN: ' + res.response + ')';
+                show('testResOriginalRow');
+            } else {
+                hide('testResOriginalRow');
+            }
 
             // Action
             if (res.action) {
@@ -3612,7 +3999,12 @@
 
             show('testCmdResult');
         } catch(e) {
-            showToast('Error: ' + e.message, 3000);
+            clearTimeout(timeoutId);
+            if (e.name === 'AbortError') {
+                showToast(t('test_timeout'), 'error');
+            } else {
+                showToast('Error: ' + (e && e.message || e), 'error');
+            }
         }
         btn.disabled = false;
         btn.textContent = t('test_cmd_send');
@@ -3625,22 +4017,23 @@
     // ══════════════════════════════════════════════════════════════
     //  Init
     // ══════════════════════════════════════════════════════════════
-    window.addEventListener('message', function(e) {
-        if (e.data && e.data.type === 'lang_changed') {
-            try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch(ex) {}
-            applyLang(); init();
-        }
-    });
+    // lang_changed handled by widget-common.js — it calls refresh() if defined
+    window.refresh = function() { init(); };
 
     async function init() {
         applyLang();
+        // Relocate Piper/dual-voice blocks into the Voices tab BEFORE anything
+        // renders — otherwise they briefly appear under LLM tab (legacy slot).
+        relocatePiperBlocks();
         await Promise.all([
             loadHardware(),
             loadWakeWordStatus(),
             loadVoskStatus(),
+            loadVoskCatalog(),
             checkWakeLangMismatch(),
             loadPiperStatus(),
             loadPiperVoices(),
+            loadPiperCatalog(),
             loadDualVoiceStatus(),
             loadProviders(),
             loadOllamaStatus(),
@@ -3650,6 +4043,13 @@
         renderPiperVoices();
         renderPiperActions();
         renderDualVoice();
+        // Fetch translate status once so the Test-tab status grid has data
+        // even before the user opens the Translate tab.
+        try {
+            var ts = await api('/setup/translate/status');
+            state._translateStatus = ts;
+        } catch(e) { /* keep defaults */ }
+        renderTestStatusGrid();
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -3662,6 +4062,7 @@
             var res = await api('/setup/tts/dual-status');
             state.dualVoice = res;
             renderDualVoice();
+            if (typeof renderTestStatusGrid === 'function') renderTestStatusGrid();
         } catch(e) { /* ignore */ }
     }
 
@@ -3995,11 +4396,13 @@
     }
 
     var _pollBusy = false;
+    var _livePollOk = false;
     async function pollLive() {
         if (_pollBusy) return;
         _pollBusy = true;
         try {
             var res = await moduleApi('/live-log?since=' + liveSince);
+            _livePollOk = true;
             var term = $('liveTerminal');
             $('liveStateBadge').textContent = res.state || 'idle';
             $('liveStateBadge').className = 'badge ' + (res.state === 'listening' ? 'badge-ok' : res.state === 'processing' ? 'badge-am' : 'badge-off');
@@ -4033,21 +4436,37 @@
     }
 
     $('liveToggleBtn').onclick = function() {
+        var btn = this;
         if (liveRunning) {
             clearInterval(liveTimer);
             liveTimer = null;
             liveRunning = false;
-            this.textContent = t('live_start');
-            this.className = 'btn btn-green';
+            _livePollOk = false;
+            btn.textContent = t('live_start');
+            btn.className = 'btn btn-green';
             $('audioDebugPanel').style.display = 'none';
             $('liveSttPartial').textContent = '';
         } else {
-            liveRunning = true;
-            this.textContent = t('live_stop');
-            this.className = 'btn btn-red';
-            $('audioDebugPanel').style.display = '';
-            pollLive();
-            liveTimer = setInterval(pollLive, 300);
+            try {
+                liveRunning = true;
+                _livePollOk = false;
+                btn.textContent = t('live_stop');
+                btn.className = 'btn btn-red';
+                $('audioDebugPanel').style.display = '';
+                pollLive();
+                liveTimer = setInterval(pollLive, 300);
+                // After 3 sec, check that polling is actually receiving data
+                setTimeout(function() {
+                    if (liveRunning && !_livePollOk) {
+                        showToast(t('stt_start_failed'), 'error');
+                    }
+                }, 3000);
+            } catch(e) {
+                liveRunning = false;
+                btn.textContent = t('live_start');
+                btn.className = 'btn btn-green';
+                showToast(t('stt_start_failed') + ': ' + (e && e.message || e), 'error');
+            }
         }
     };
 
@@ -4070,9 +4489,8 @@
     };
 
     init();
-})();
 </script>
-<script>(function(){try{var p=window.parent.document.documentElement;function s(){document.documentElement.classList.toggle("light",p.classList.contains("light"));document.documentElement.classList.toggle("has-wallpaper",p.classList.contains("has-wallpaper"))}s();new MutationObserver(s).observe(p,{attributes:true,attributeFilter:["class"]});}catch(e){}})()</script>
+<!-- Theme sync now handled by widget-common.js -->
 </body>
 
 </html>

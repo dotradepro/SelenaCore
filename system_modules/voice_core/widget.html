@@ -7,12 +7,8 @@
     <title>Voice Core</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box }
-
+        /* Widget-specific overrides on top of shared theme.css */
         html, body {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
             background: transparent;
         }
 
@@ -157,9 +153,6 @@
             animation: spin 1.1s linear infinite;
         }
         body.state-processing .caption { color: var(--ac) }
-        @keyframes spin {
-            to { transform: rotate(360deg) }
-        }
 
         /* SPEAKING — faster purple/orange ripples */
         body.state-speaking .mic-btn {
@@ -213,8 +206,8 @@
     </button>
     <div class="caption" id="caption" data-i18n="idle"></div>
 
+    <script src="/api/shared/widget-common.js"></script>
     <script>
-        var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
         var L = {
             en: {
                 idle: 'Ready', listening: 'Listening…', processing: 'Thinking…',
@@ -227,16 +220,8 @@
                 toggle_privacy: 'Перемкнути режим приватності'
             }
         };
-        function t(k) { return (L[LANG] || L.en)[k] || k; }
-        function applyLang() {
-            document.querySelectorAll('[data-i18n]').forEach(function (el) {
-                el.textContent = t(el.getAttribute('data-i18n'));
-            });
-        }
 
         (function () {
-            var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-            var $ = function (id) { return document.getElementById(id); };
             var currentState = 'idle';
             var privacyMode = false;
 
@@ -263,15 +248,18 @@
                 btn.setAttribute('aria-label', t('toggle_privacy'));
             }
 
+            // Expose refresh so widget-common.js's lang_changed re-renders the caption
+            window.refresh = function () { applyState(currentState, privacyMode); };
+
             // ── Initial sync via /config (in case sync replay misses) ──────
             function loadInitial() {
-                fetch(BASE + '/config')
-                    .then(function (r) { return r.json(); })
+                apiGet('/config')
                     .then(function (cfg) {
                         applyState(cfg.state || 'idle', !!cfg.privacy_mode);
                     })
-                    .catch(function () {
+                    .catch(function (e) {
                         applyState('idle', false);
+                        showToast(String(e && e.message || e), 'error');
                     });
             }
 
@@ -323,23 +311,15 @@
             $('micButton').addEventListener('click', function () {
                 var btn = this;
                 btn.disabled = true;
-                fetch(BASE + '/privacy/toggle', { method: 'POST' })
-                    .then(function (r) { return r.json(); })
+                apiPost('/privacy/toggle')
                     .then(function (data) {
                         // Optimistic update — voice.state from sync will follow
                         applyState(data.privacy_mode ? 'privacy' : 'idle', !!data.privacy_mode);
                     })
-                    .catch(function () { /* ignore */ })
+                    .catch(function (e) {
+                        showToast(String(e && e.message || e), 'error');
+                    })
                     .then(function () { btn.disabled = false; });
-            });
-
-            // ── i18n live re-render on language change ─────────────────────
-            window.addEventListener('message', function (e) {
-                if (e.data && e.data.type === 'lang_changed') {
-                    try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
-                    applyLang();
-                    applyState(currentState, privacyMode);
-                }
             });
 
             applyLang();
@@ -347,7 +327,6 @@
             connectSync();
         })();
     </script>
-    <script>(function () { try { var p = window.parent.document.documentElement; function s() { document.documentElement.classList.toggle("light", p.classList.contains("light")); document.documentElement.classList.toggle("has-wallpaper", p.classList.contains("has-wallpaper")) } s(); new MutationObserver(s).observe(p, { attributes: true, attributeFilter: ["class"] }); } catch (e) { } })();</script>
 </body>
 
 </html>
