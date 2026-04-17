@@ -51,6 +51,142 @@ html.has-wallpaper.light{
   --sf2:rgba(0,0,0,.03);--sf3:rgba(0,0,0,.06);--card:transparent
 }
 html.has-wallpaper body{background:transparent!important;background-image:none!important}
+
+/* ── Shared Component Library ─────────────────────────────────────────── */
+/* Unified styles for all settings.html / widget.html iframes.
+   Module-specific styles should go in <style> blocks per file.          */
+
+/* ── Typography ───────────────────────────────────────────────────────── */
+h2{font-size:16px;font-weight:600;margin-bottom:4px}
+.subtitle{font-size:12px;color:var(--tx2);margin-bottom:16px}
+.section-title{font-size:15px;font-weight:600;color:var(--tx);margin-bottom:2px}
+.section-sub{font-size:12px;color:var(--tx2);margin-top:2px;margin-bottom:12px}
+.label-sm{font-size:12px;font-weight:500;color:var(--tx2);margin-bottom:6px}
+.label-xs{font-size:11px;color:var(--tx3);margin-bottom:4px}
+.mono{font-family:monospace}
+.truncate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Cards / Sections ─────────────────────────────────────────────────── */
+.card{background:var(--sf);border:1px solid var(--b);border-radius:12px;padding:16px;margin-bottom:12px}
+.card-inner{background:var(--sf2);border:1px solid var(--b2);border-radius:10px;padding:14px;margin-bottom:12px}
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:4px;padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:.15s;white-space:nowrap;font-family:inherit;position:relative}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary,.btn-blue{background:var(--ac);color:#fff}
+.btn-primary:hover:not(:disabled),.btn-blue:hover:not(:disabled){opacity:.85}
+.btn-green{background:var(--gr);color:#fff}
+.btn-green:hover:not(:disabled){opacity:.85}
+.btn-danger,.btn-red{background:rgba(224,84,84,.15);color:var(--rd)}
+.btn-danger:hover:not(:disabled),.btn-red:hover:not(:disabled){background:rgba(224,84,84,.25)}
+.btn-danger-solid{background:var(--rd);color:#fff}
+.btn-danger-solid:hover:not(:disabled){opacity:.85}
+.btn-amber{background:rgba(245,169,58,.15);color:var(--am)}
+.btn-amber:hover:not(:disabled){background:rgba(245,169,58,.25)}
+.btn-ghost{background:transparent;color:var(--tx3)}
+.btn-ghost:hover:not(:disabled){color:var(--tx)}
+.btn-secondary,.btn-sec{background:var(--sf3);color:var(--tx);border:1px solid var(--b2)}
+.btn-secondary:hover:not(:disabled),.btn-sec:hover:not(:disabled){background:var(--sf2)}
+.btn-outline{background:none;border:1px solid var(--b2);color:var(--tx)}
+.btn-outline:hover:not(:disabled){background:var(--sf2)}
+.btn-link{background:none;border:none;color:var(--ac);cursor:pointer;font-size:12px;padding:0}
+.btn-link:hover{opacity:.8}
+.btn-sm{padding:5px 10px;font-size:11px}
+.btn-xs{padding:3px 8px;font-size:10px}
+/* Loading state — spinner overlay */
+.btn-loading{pointer-events:none;opacity:.7}
+.btn-loading::after{content:'';position:absolute;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;margin-left:4px}
+
+/* ── Form Elements ────────────────────────────────────────────────────── */
+input[type="text"],input[type="number"],input[type="password"],textarea,select{background:var(--sf2);color:var(--tx);border:1px solid var(--b2);border-radius:8px;padding:7px 10px;font-size:12px;outline:none;font-family:inherit}
+input:focus,textarea:focus,select:focus{border-color:var(--ac)}
+textarea{resize:vertical;line-height:1.5}
+input[type="range"]{width:100%;height:6px;cursor:pointer;accent-color:var(--ac)}
+
+/* ── Badges ───────────────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-ok,.badge-on{background:rgba(46,201,138,.12);color:var(--gr)}
+.badge-err,.badge-off{background:rgba(224,84,84,.12);color:var(--rd)}
+.badge-warn{background:rgba(245,169,58,.12);color:var(--am)}
+.badge-info,.badge-ac{background:rgba(79,140,247,.12);color:var(--ac)}
+.badge-pr{background:rgba(168,85,247,.12);color:var(--pr,#a855f7)}
+
+/* ── Tables ───────────────────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:var(--tx3);font-weight:500;padding:6px 8px;text-align:left;border-bottom:1px solid var(--b2);font-size:11px}
+td{padding:6px 8px;border-bottom:1px solid var(--b);vertical-align:top}
+tr:hover td{background:var(--sf2)}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────── */
+.settings-tabs{display:flex;gap:2px;margin-bottom:16px;background:var(--sf);border:1px solid var(--b);border-radius:10px;padding:3px;overflow-x:auto}
+.settings-tab{flex:1;padding:8px 12px;border-radius:8px;border:none;cursor:pointer;font-size:12px;font-weight:500;white-space:nowrap;background:transparent;color:var(--tx3);transition:.15s;text-align:center;font-family:inherit}
+.settings-tab:hover{color:var(--tx)}
+.settings-tab.active{background:var(--ac);color:#fff}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ── Progress Bar ─────────────────────────────────────────────────────── */
+.progress-bar{height:4px;background:var(--sf3);border-radius:2px;overflow:hidden;margin-top:4px}
+.progress-bar .fill{height:100%;background:var(--ac);border-radius:2px;transition:width .3s}
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+.toast{position:fixed;top:12px;right:12px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;opacity:0;transform:translateY(-8px);transition:opacity .3s,transform .3s;z-index:9999;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast-success{background:var(--gr);color:#fff}
+.toast-error{background:var(--rd);color:#fff}
+.toast-info{background:var(--ac);color:#fff}
+
+/* ── Modal ─────────────────────────────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;justify-content:center;align-items:center;z-index:1000;backdrop-filter:blur(3px)}
+.modal{background:var(--sf);border:1px solid var(--b);border-radius:16px;padding:24px;max-width:400px;width:90%;box-shadow:var(--shadow-lg)}
+.modal h3{font-size:15px;font-weight:600;margin-bottom:12px}
+
+/* ── Stat Grid ────────────────────────────────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+.stat-card{background:var(--sf2);border-radius:10px;padding:14px;text-align:center;border:1px solid var(--b)}
+.stat-card .num{font-size:20px;font-weight:700;color:var(--ac)}
+.stat-card .desc{font-size:11px;color:var(--tx3);margin-top:2px}
+
+/* ── Row / Layout ─────────────────────────────────────────────────────── */
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.flex{display:flex;align-items:center}
+.flex-col{display:flex;flex-direction:column}
+.flex1{flex:1}
+.wrap{flex-wrap:wrap}
+
+/* ── Spacing Utilities ────────────────────────────────────────────────── */
+.gap4{gap:4px}.gap6{gap:6px}.gap8{gap:8px}.gap10{gap:10px}.gap12{gap:12px}.gap16{gap:16px}
+.mb4{margin-bottom:4px}.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt14{margin-top:14px}.mt16{margin-top:16px}
+
+/* ── Animations ───────────────────────────────────────────────────────── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--b2);border-top-color:var(--ac);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.pulse{animation:pulse 1.5s infinite}
+@keyframes skeleton-pulse{0%{background-position:-200px 0}100%{background-position:200px 0}}
+.skeleton{background:linear-gradient(90deg,var(--sf2) 25%,var(--sf3) 50%,var(--sf2) 75%);background-size:400px 100%;animation:skeleton-pulse 1.5s ease-in-out infinite;border-radius:6px;min-height:16px}
+
+/* ── Visibility ───────────────────────────────────────────────────────── */
+.hidden{display:none!important}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--sf3);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--tx3)}
+
+/* ── Model Item (shared for model catalogs) ──────────────────────────── */
+.model-item{padding:10px 12px;border-radius:8px;border:1px solid var(--b2);background:var(--sf2);display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;transition:.15s}
+.model-item.active{border-color:var(--gr);background:rgba(46,201,138,.06)}
+.model-item:hover{border-color:var(--ac)}
+
+/* ── Slider ───────────────────────────────────────────────────────────── */
+.slider-row{margin-bottom:12px}
+.slider-header{display:flex;justify-content:space-between;margin-bottom:4px}
+.slider-label{font-size:11px;color:var(--tx2)}
+.slider-value{font-size:11px;color:var(--tx);font-family:monospace}
+.slider-hints{display:flex;justify-content:space-between;font-size:10px;color:var(--tx3)}
 """
 
 
@@ -68,15 +204,22 @@ async def theme_css() -> Response:
                 css += generate_override_css(theme)
     except Exception:
         pass  # graceful fallback to base theme
-    return Response(content=css, media_type="text/css")
+    return Response(
+        content=css,
+        media_type="text/css",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 # ── Widget common JS ─────────────────────────────────────────────────────
 
 WIDGET_COMMON_JS = """\
-/* Shared widget boilerplate — loaded before per-module scripts.
-   Expects the module to define:  var L = { en: {...}, uk: {...} };        */
+/* Shared widget boilerplate v2 — loaded before per-module scripts.
+   Expects the module to define:  var L = { en: {...}, uk: {...} };
+   Provides: i18n, theme sync, DOM helpers, fetch wrappers, toast,
+   tab switching, loading states.                                          */
 
+/* ── i18n ─────────────────────────────────────────────────────────────── */
 var LANG = (function () {
     try { return localStorage.getItem('selena-lang') || 'en'; }
     catch (e) { return 'en'; }
@@ -88,9 +231,140 @@ function applyLang() {
     document.querySelectorAll('[data-i18n]').forEach(function (el) {
         el.textContent = t(el.getAttribute('data-i18n'));
     });
+    document.querySelectorAll('[data-placeholder-i18n]').forEach(function (el) {
+        el.placeholder = t(el.getAttribute('data-placeholder-i18n'));
+    });
 }
 
-/* Theme sync — apply light/dark class + has-wallpaper from parent app */
+/* ── DOM Helpers ──────────────────────────────────────────────────────── */
+function $(id) { return document.getElementById(id); }
+
+function show(id) { var el = typeof id === 'string' ? $(id) : id; if (el) el.classList.remove('hidden'); }
+function hide(id) { var el = typeof id === 'string' ? $(id) : id; if (el) el.classList.add('hidden'); }
+
+function esc(s) {
+    return (s == null ? '' : String(s))
+        .replace(/[&<>"']/g, function (c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[c];
+        });
+}
+
+/* ── BASE Path (iframe-safe) ─────────────────────────────────────────── */
+var BASE = window.location.pathname.replace(/\\/(widget|settings)(\\.html)?$/, '');
+
+/* ── Fetch Wrappers ──────────────────────────────────────────────────── */
+function _apiHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    try { var dt = localStorage.getItem('selena_device'); if (dt) h['X-Device-Token'] = dt; } catch (e) {}
+    try { var et = sessionStorage.getItem('selena_elevated'); if (et) h['X-Elevated-Token'] = et; } catch (e) {}
+    return h;
+}
+
+function apiGet(path) {
+    return fetch(BASE + path, { headers: _apiHeaders() })
+        .then(function (r) {
+            if (!r.ok) return r.text().then(function (t) {
+                var msg; try { msg = JSON.parse(t).detail; } catch (e) { msg = r.statusText; }
+                return Promise.reject(new Error(msg || r.statusText));
+            });
+            return r.json();
+        });
+}
+
+function apiPost(path, body) {
+    return fetch(BASE + path, {
+        method: 'POST',
+        headers: _apiHeaders(),
+        body: body != null ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) {
+            var msg; try { msg = JSON.parse(t).detail; } catch (e) { msg = r.statusText; }
+            return Promise.reject(new Error(msg || r.statusText));
+        });
+        return r.json();
+    });
+}
+
+function apiDelete(path) {
+    return fetch(BASE + path, {
+        method: 'DELETE',
+        headers: _apiHeaders()
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) {
+            var msg; try { msg = JSON.parse(t).detail; } catch (e) { msg = r.statusText; }
+            return Promise.reject(new Error(msg || r.statusText));
+        });
+        if (r.status === 204) return null;
+        return r.json();
+    });
+}
+
+function apiPatch(path, body) {
+    return fetch(BASE + path, {
+        method: 'PATCH',
+        headers: _apiHeaders(),
+        body: body != null ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+        if (!r.ok) return r.text().then(function (t) {
+            var msg; try { msg = JSON.parse(t).detail; } catch (e) { msg = r.statusText; }
+            return Promise.reject(new Error(msg || r.statusText));
+        });
+        return r.json();
+    });
+}
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+var _toastTimer = null;
+function showToast(msg, type) {
+    type = type || 'success';
+    var el = document.getElementById('_toast');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = '_toast';
+        document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.className = 'toast toast-' + type + ' show';
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2500);
+    /* Bridge to parent React app */
+    try { window.parent.postMessage({ type: 'selena-toast', message: msg, level: type }, '*'); } catch (e) {}
+}
+
+/* ── Button Loading Wrapper ──────────────────────────────────────────── */
+function withLoading(btn, asyncFn) {
+    if (!btn || btn.disabled) return Promise.resolve();
+    var orig = btn.textContent;
+    btn.classList.add('btn-loading');
+    btn.disabled = true;
+    return Promise.resolve().then(asyncFn).then(function (r) {
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+        return r;
+    }).catch(function (e) {
+        btn.classList.remove('btn-loading');
+        btn.disabled = false;
+        showToast(String(e && e.message || e), 'error');
+    });
+}
+
+/* ── Tab Switching ────────────────────────────────────────────────────── */
+function initTabs(tabsSelector, panelPrefix) {
+    tabsSelector = tabsSelector || '.settings-tab';
+    panelPrefix = panelPrefix || 'tab';
+    document.querySelectorAll(tabsSelector).forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll(tabsSelector).forEach(function (b) { b.classList.remove('active'); });
+            document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+            btn.classList.add('active');
+            var id = btn.getAttribute('data-tab');
+            var panel = document.getElementById(panelPrefix + id.charAt(0).toUpperCase() + id.slice(1));
+            if (panel) panel.classList.add('active');
+        });
+    });
+}
+
+/* ── Theme Sync ──────────────────────────────────────────────────────── */
 (function () {
     try {
         var theme = localStorage.getItem('selena-theme') || 'dark';
@@ -98,11 +372,16 @@ function applyLang() {
     } catch (e) {}
     try {
         var p = window.parent.document.documentElement;
-        if (p.classList.contains('has-wallpaper'))
-            document.documentElement.classList.add('has-wallpaper');
+        function _syncParent() {
+            document.documentElement.classList.toggle('light', p.classList.contains('light'));
+            document.documentElement.classList.toggle('has-wallpaper', p.classList.contains('has-wallpaper'));
+        }
+        _syncParent();
+        new MutationObserver(_syncParent).observe(p, { attributes: true, attributeFilter: ['class'] });
     } catch (e) {}
 })();
 
+/* ── Message Listener (theme + lang) ─────────────────────────────────── */
 window.addEventListener('message', function (e) {
     if (!e.data) return;
     if (e.data.type === 'theme_changed') {
@@ -110,10 +389,8 @@ window.addEventListener('message', function (e) {
         document.documentElement.classList.toggle('light', theme === 'light');
     }
     if (e.data.type === 'theme_vars_changed') {
-        /* Reload theme.css to pick up new custom theme / wallpaper vars */
         var link = document.querySelector('link[href*="theme.css"]');
         if (link) link.href = '/api/shared/theme.css?t=' + Date.now();
-        /* Sync has-wallpaper class from parent */
         try {
             var p = window.parent.document.documentElement;
             document.documentElement.classList.toggle('has-wallpaper', p.classList.contains('has-wallpaper'));
@@ -122,7 +399,6 @@ window.addEventListener('message', function (e) {
     if (e.data.type === 'lang_changed') {
         try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
         applyLang();
-        /* Trigger module-specific reload if defined */
         if (typeof refresh === 'function') refresh();
         else if (typeof loadStatus === 'function') loadStatus();
         else if (typeof load === 'function') load();
@@ -133,4 +409,8 @@ window.addEventListener('message', function (e) {
 
 @router.get("/widget-common.js")
 async def widget_common_js() -> Response:
-    return Response(content=WIDGET_COMMON_JS, media_type="application/javascript")
+    return Response(
+        content=WIDGET_COMMON_JS,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )

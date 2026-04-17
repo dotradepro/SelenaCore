@@ -243,15 +243,26 @@ class SystemModule(ABC):
 
         parent = Path(module_file).parent
 
+        # No-cache headers so edits to widget.html / settings.html are picked
+        # up immediately on browser refresh (dev and prod both edit these
+        # files directly via volume-mount; stale cache hides changes).
+        _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+
         @router.get("/widget", response_class=HTMLResponse)
         async def _widget():
             f = parent / "widget.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>widget.html not found</p>")
+            return HTMLResponse(
+                f.read_text() if f.exists() else "<p>widget.html not found</p>",
+                headers=_NO_CACHE,
+            )
 
         @router.get("/settings", response_class=HTMLResponse)
         async def _settings_page():
             f = parent / "settings.html"
-            return HTMLResponse(f.read_text() if f.exists() else "<p>settings.html not found</p>")
+            return HTMLResponse(
+                f.read_text() if f.exists() else "<p>settings.html not found</p>",
+                headers=_NO_CACHE,
+            )
 
     def _register_health_endpoint(self, router: "APIRouter") -> None:
         """Register a minimal ``GET /health`` on *router*.
