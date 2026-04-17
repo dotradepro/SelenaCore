@@ -810,60 +810,109 @@ export default function Dashboard() {
       {/* ── Widget fullscreen modal ── */}
       {modalMod && createPortal(
         (() => {
-          // If the widget reported a desired size via modal_resize, honour
-          // it (clamped to viewport). Otherwise fall back to the legacy
-          // "almost fullscreen" panel for widgets that don't opt in.
+          const closeModal = () => { setModalMod(null); setModalSize({}); };
+          // Honour widget's size hint but stretch to 95vw/95vh when the hint
+          // is narrower than the viewport. On small screens (< 640px) always
+          // go full-screen — home-assistant style, no wasted space.
+          const isSmallViewport = typeof window !== 'undefined' && window.innerWidth < 640;
           const hasSize = !!(modalSize.width || modalSize.height);
-          const panelStyle: React.CSSProperties = hasSize
+          const panelStyle: React.CSSProperties = isSmallViewport
             ? {
               position: 'absolute',
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: modalSize.width
-                ? `min(${modalSize.width}px, 92vw)`
-                : 'auto',
-              height: modalSize.height
-                ? `min(${modalSize.height}px, 92vh)`
-                : 'auto',
-              maxWidth: '92vw',
-              maxHeight: '92vh',
+              inset: 0,
               background: 'var(--sf)',
-              borderRadius: 20,
-              overflow: 'auto',
-              boxShadow: '0 40px 120px rgba(0,0,0,.65)',
+              borderRadius: 0,
+              overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
-              transition: 'width .18s ease-out, height .18s ease-out',
             }
-            : {
-              position: 'absolute',
-              top: '4%', left: '5%', right: '5%', bottom: '4%',
-              background: 'var(--sf)',
-              borderRadius: 20,
-              overflow: 'auto',
-              boxShadow: '0 40px 120px rgba(0,0,0,.65)',
-              display: 'flex',
-              flexDirection: 'column',
-            };
+            : hasSize
+              ? {
+                position: 'absolute',
+                top: '50%', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: modalSize.width
+                  ? `min(${Math.max(modalSize.width, 560)}px, 95vw)`
+                  : 'min(720px, 95vw)',
+                height: modalSize.height
+                  ? `min(${Math.max(modalSize.height, 480)}px, 95vh)`
+                  : 'min(640px, 95vh)',
+                maxWidth: '95vw',
+                maxHeight: '95vh',
+                background: 'var(--sf)',
+                border: '1px solid var(--b)',
+                borderRadius: 18,
+                overflow: 'hidden',
+                boxShadow: '0 24px 80px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4)',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'width .2s ease-out, height .2s ease-out',
+              }
+              : {
+                position: 'absolute',
+                top: '50%', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 'min(900px, 95vw)',
+                height: 'min(720px, 95vh)',
+                background: 'var(--sf)',
+                border: '1px solid var(--b)',
+                borderRadius: 18,
+                overflow: 'hidden',
+                boxShadow: '0 24px 80px rgba(0,0,0,.6), 0 2px 8px rgba(0,0,0,.4)',
+                display: 'flex',
+                flexDirection: 'column',
+              };
           return (
             <div style={{ position: 'fixed', inset: 0, zIndex: 9990 }}>
               {/* Backdrop */}
               <div
-                onClick={() => { setModalMod(null); setModalSize({}); }}
+                onClick={closeModal}
                 style={{
                   position: 'absolute', inset: 0,
-                  background: 'rgba(0,0,0,.72)',
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
+                  background: 'rgba(0,0,0,.65)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
                 }}
               />
               {/* Panel */}
               <div style={panelStyle}>
                 <iframe
                   src={`/api/ui/modules/${modalMod}/widget?modal=1`}
-                  title="Widget source picker"
+                  title={`${modalMod} widget`}
                   style={{ flex: 1, border: 'none', width: '100%', height: '100%', display: 'block' }}
                 />
+                {/* Close button — native to the panel, not each widget */}
+                <button
+                  onClick={closeModal}
+                  aria-label="Close"
+                  style={{
+                    position: 'absolute',
+                    top: 12, right: 12,
+                    width: 34, height: 34,
+                    borderRadius: '50%',
+                    border: '1px solid var(--b)',
+                    background: 'var(--sf2)',
+                    color: 'var(--tx)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 18,
+                    lineHeight: 1,
+                    padding: 0,
+                    zIndex: 2,
+                    boxShadow: '0 2px 6px rgba(0,0,0,.3)',
+                    transition: 'background .15s, border-color .15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'var(--sf3)';
+                    e.currentTarget.style.borderColor = 'var(--b2)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'var(--sf2)';
+                    e.currentTarget.style.borderColor = 'var(--b)';
+                  }}
+                >×</button>
               </div>
             </div>
           );

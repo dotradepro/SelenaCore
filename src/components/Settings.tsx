@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { Volume2, Network, Users, Activity, RefreshCw, Play, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
@@ -22,19 +22,19 @@ export default function Settings() {
   const location = useLocation();
 
   const tabs = [
+    { id: 'system-info', label: t('settings.systemInfo', 'System Info'), icon: Cpu, path: '/settings/system-info' },
     { id: 'appearance', label: t('settings.appearance'), icon: Palette, path: '/settings/appearance' },
     { id: 'audio', label: t('settings.audio'), icon: Volume2, path: '/settings/audio' },
     { id: 'network', label: t('settings.networkAndVpn'), icon: Network, path: '/settings/network' },
     { id: 'users', label: t('settings.users'), icon: Users, path: '/settings/users' },
     { id: 'modules', label: t('settings.modules', 'Modules'), icon: LayoutGrid, path: '/settings/modules' },
     { id: 'system', label: t('settings.system'), icon: Activity, path: '/settings/system' },
-    { id: 'system-info', label: t('settings.systemInfo', 'System Info'), icon: Cpu, path: '/settings/system-info' },
     { id: 'system-modules', label: t('settings.systemModules'), icon: Cpu, path: '/settings/system-modules' },
   ];
 
   const activeId =
     tabs.find(tab => location.pathname === tab.path || location.pathname.startsWith(tab.path + '/'))?.id ??
-    (location.pathname === '/settings' ? 'appearance' : '');
+    (location.pathname === '/settings' ? 'system-info' : '');
 
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -72,7 +72,7 @@ export default function Settings() {
           in <FormPage> which provides the .generic-page scroller. */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <Routes>
-          <Route path="/"               element={<FormPage><AppearanceSettings /></FormPage>} />
+          <Route path="/"               element={<Navigate to="/settings/system-info" replace />} />
           <Route path="/appearance"     element={<FormPage><AppearanceSettings /></FormPage>} />
           <Route path="/audio"          element={<FormPage><AudioSettings /></FormPage>} />
           <Route path="/network"        element={<FormPage><NetworkSettings /></FormPage>} />
