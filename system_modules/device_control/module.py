@@ -45,6 +45,10 @@ INTENT_QUERY_TEMPERATURE = "device.query_temperature"
 # Lock-specific intents (target Matter / Z-Wave door locks).
 INTENT_LOCK = "device.lock"
 INTENT_UNLOCK = "device.unlock"
+# Whole-house / whole-room power control. entity + location are
+# optional filters — unset = match everything.
+INTENT_ALL_OFF = "house.all_off"
+INTENT_ALL_ON = "house.all_on"
 
 #: All voice intents owned by this module — used by _claim_intent_ownership.
 OWNED_INTENTS = [
@@ -56,6 +60,8 @@ OWNED_INTENTS = [
     INTENT_QUERY_TEMPERATURE,
     INTENT_LOCK,
     INTENT_UNLOCK,
+    INTENT_ALL_OFF,
+    INTENT_ALL_ON,
 ]
 
 def _entity_filter_for(intent: str) -> tuple[str, ...] | None:
@@ -281,6 +287,14 @@ class DeviceControlModule(SystemModule):
                 await self._handle_query_temperature(params)
                 return
 
+            # Whole-house / whole-room mass power control. Enumerates
+            # ALL registered devices (optionally filtered by entity +
+            # location) and fans an on/off command out. Bypasses the
+            # single-device resolver entirely.
+            if intent in (INTENT_ALL_OFF, INTENT_ALL_ON):
+                await self._handle_all_power(intent, params)
+                return
+
             # Build the target logical state for this intent. Climate intents
             # need parameter parsing; on/off are trivial.
             try:
@@ -289,6 +303,28 @@ class DeviceControlModule(SystemModule):
                 logger.info("device-control: bad params for %s: %s", intent, exc)
                 return
             if target_state is None:
+                return
+
+            # Ambiguous without location: IntentRouter matched N devices
+            # of this entity_type but the user didn't say a room. Refuse
+            # to act, ask for the room via TTS.
+            if params.get("ambiguous"):
+                await self.speak_action(intent, {
+                    "result": "needs_location",
+                    "entity": params.get("entity"),
+                    "count": len(params.get("candidates") or []),
+                })
+                return
+
+            # Group-action branch: IntentRouter pre-resolved N devices
+            # of this type in this room. Fan the command out — typical
+            # case is "turn off the lights in the bedroom" where there
+            # are 2-3 lights.
+            device_ids = params.get("device_ids") or []
+            if device_ids:
+                await self._apply_group(
+                    intent, target_state, params, device_ids,
+                )
                 return
 
             entity_filter = _entity_filter_for(intent)
@@ -376,6 +412,167 @@ class DeviceControlModule(SystemModule):
             await self.speak_action(intent, ack)
         except Exception as exc:
             logger.exception("device-control: voice intent handler crashed: %s", exc)
+
+    # ── Group action ────────────────────────────────────────────────────
+
+    async def _apply_group(
+        self,
+        intent: str,
+        target_state: dict,
+        params: dict,
+        device_ids: list[str],
+    ) -> None:
+        """Apply the same target_state to every device in ``device_ids``.
+
+        Driver errors on individual devices are logged and counted but
+        don't abort the group — partial success is fine. State is merged
+        and published per-device via the same path as the single-device
+        handler, so downstream listeners see N ``device.state_changed``
+        events as if the user had fired N individual commands.
+        """
+        from core.registry.models import Device
+
+        applied = 0
+        failed = 0
+        async with self._db_session() as session:
+            rows = [await session.get(Device, did) for did in device_ids]
+        rows = [r for r in rows if r is not None and bool(r.enabled)]
+
+        for row in rows:
+            device = {
+                "device_id": row.device_id,
+                "name": row.name,
+                "entity_type": row.entity_type,
+                "location": row.location,
+                "protocol": row.protocol,
+                "state": json.loads(row.state) if row.state else {},
+                "meta": json.loads(row.meta) if row.meta else {},
+            }
+            # Per-device enrichment — color/brightness keys only apply
+            # to devices whose current state supports them.
+            per_state = self._enrich_state_from_params(
+                dict(target_state), params, device,
+            )
+            try:
+                drv = await self._get_or_create_driver(device["device_id"])
+                await drv.set_state(per_state)
+            except DriverError as exc:
+                logger.warning(
+                    "device-control: group driver error for %s: %s",
+                    device["device_id"], exc,
+                )
+                failed += 1
+                continue
+
+            current = device.get("state") or {}
+            current.update(per_state)
+            await self.patch_device_state(device["device_id"], current)
+            await self.publish("device.state_changed", {
+                "device_id": device["device_id"],
+                "new_state": current,
+                "source": self.name,
+            })
+            applied += 1
+
+        ack: dict[str, Any] = {
+            "result": "group_ok" if applied else "group_error",
+            "entity": params.get("entity"),
+            "location": params.get("location"),
+            "count": applied,
+            "failed": failed,
+        }
+        if intent in (INTENT_ON, INTENT_OFF):
+            ack["state"] = "on" if intent == INTENT_ON else "off"
+        elif intent in (INTENT_LOCK, INTENT_UNLOCK):
+            ack["state"] = "locked" if intent == INTENT_LOCK else "unlocked"
+        elif intent == INTENT_SET_TEMPERATURE:
+            ack["temperature"] = target_state.get("target_temp")
+        elif intent == INTENT_SET_MODE:
+            ack["mode"] = target_state.get("mode")
+        elif intent == INTENT_SET_FAN_SPEED:
+            ack["fan_speed"] = target_state.get("fan_speed")
+        await self.speak_action(intent, ack)
+
+    # ── Whole-house power ───────────────────────────────────────────────
+
+    async def _handle_all_power(self, intent: str, params: dict) -> None:
+        """Mass on/off across every registered device.
+
+        Optional filters in ``params``:
+          - ``entity``    — restrict to entity_type (e.g. only lights)
+          - ``location``  — restrict to a room (bilingual fuzzy match)
+
+        No filters → act on every device under device-control. Climate
+        devices are EXCLUDED when turning everything on to avoid
+        unintended heating/cooling — use an explicit climate intent
+        instead. All-off has no such exclusion: a blanket "off" is safe.
+        """
+        from core.registry.service import DeviceRegistry
+
+        entity = (params.get("entity") or "").strip().lower() or None
+        location = (params.get("location") or "").strip() or None
+
+        async with self._db_session() as session:
+            registry = DeviceRegistry(session)
+            # entity_type filter: exact match. If user said a general
+            # "все"/"everything" with no entity, fetch the full inventory.
+            if entity:
+                devices = await registry.query(
+                    entity_type=entity, location=location,
+                )
+            else:
+                devices = await registry.query(location=location)
+
+        # Restrict to rows we own.
+        devices = [d for d in devices if d.module_id == self.name and bool(d.enabled)]
+
+        # For all_on without an entity filter, exclude climate devices
+        # (ac / thermostat / radiator) — "turn on everything" at 2am
+        # shouldn't spin up the heater. User must be explicit for climate.
+        if intent == INTENT_ALL_ON and not entity:
+            devices = [
+                d for d in devices
+                if (d.entity_type or "").lower() not in
+                   ("air_conditioner", "thermostat", "radiator")
+            ]
+
+        if not devices:
+            await self.speak_action(intent, {
+                "result": "not_found",
+                "entity": entity, "location": location, "count": 0,
+            })
+            return
+
+        target_state = {"on": intent == INTENT_ALL_ON}
+        applied = 0
+        failed = 0
+        for row in devices:
+            try:
+                drv = await self._get_or_create_driver(row.device_id)
+                await drv.set_state(target_state)
+            except DriverError as exc:
+                logger.warning(
+                    "device-control: all_power driver error for %s: %s",
+                    row.device_id, exc,
+                )
+                failed += 1
+                continue
+            current = (json.loads(row.state) if row.state else {}) or {}
+            current.update(target_state)
+            await self.patch_device_state(row.device_id, current)
+            await self.publish("device.state_changed", {
+                "device_id": row.device_id,
+                "new_state": current,
+                "source": self.name,
+            })
+            applied += 1
+
+        await self.speak_action(intent, {
+            "result": "group_ok" if applied else "group_error",
+            "state": "on" if intent == INTENT_ALL_ON else "off",
+            "entity": entity, "location": location,
+            "count": applied, "failed": failed,
+        })
 
     # ── Read-only query handlers ─────────────────────────────────────────
 
@@ -615,14 +812,17 @@ class DeviceControlModule(SystemModule):
                 # "not found" instead of acting on the wrong device.
                 return None
 
-            # Tier 1: both entity_type AND location.
+            # Tier 1: both entity_type AND location. Strict type filter
+            # (ilike on entity_type) + location match against the
+            # location column and meta.location_en — deliberately NOT
+            # searching the name column: a device named "Kitchen Light"
+            # must not hit when the user says location="kitchen" from a
+            # different room.
             if entity and location:
                 stmt = base.where(
                     Device.entity_type.ilike(f"%{entity}%"),
                     or_(
                         Device.location.ilike(f"%{location}%"),
-                        Device.name.ilike(f"%{location}%"),
-                        Device.meta.ilike(f'%"name_en": "%{location}%'),
                         Device.meta.ilike(f'%"location_en": "%{location}%'),
                     ),
                 )
@@ -630,24 +830,17 @@ class DeviceControlModule(SystemModule):
                 if len(rows) == 1:
                     return _row_to_dict(rows[0])
 
-            # Tier 2: location-like keyword → search location/name/name_en/location_en.
+            # Location-only tier (previously matched location against
+            # name/meta.name_en) is intentionally removed — that "name
+            # leak" let "kitchen" hit devices named "Kitchen Light" in
+            # other rooms, producing silent room switches. Primary group
+            # resolution has already happened in IntentRouter via
+            # DeviceRegistry.query(entity_type, location).
+            #
+            # If a location was given but tier 1 didn't find a unique
+            # match, don't fall through to entity-only or single-device
+            # fallback — that would silently act in a different room.
             if location:
-                stmt = base.where(
-                    or_(
-                        Device.location.ilike(f"%{location}%"),
-                        Device.name.ilike(f"%{location}%"),
-                        Device.meta.ilike(f'%"name_en": "%{location}%'),
-                        Device.meta.ilike(f'%"location_en": "%{location}%'),
-                    ),
-                )
-                rows = list((await session.execute(stmt)).scalars())
-                if len(rows) == 1:
-                    return _row_to_dict(rows[0])
-                # User explicitly specified a location but nothing matched —
-                # do NOT fall through to entity-only / single-device fallback,
-                # otherwise we'd silently switch rooms (e.g. "kitchen light"
-                # turning off the office light). Return None so the caller
-                # speaks a "not found" error for the requested location.
                 return None
 
             # Tier 3: entity-type alone.
@@ -843,9 +1036,13 @@ class DeviceControlModule(SystemModule):
         INTENT_ON: dict(
             noun_class="DEVICE", verb="on", priority=100,
             description=(
-                "Turn a device on (light, switch, AC, curtain, vacuum). "
-                "Also: start, run, launch, activate, open curtains, "
-                "bright, brighter, dim, darker, dark, make, "
+                "Turn a device on. Applies to any controllable device: "
+                "light, lamp, bulb, switch, outlet, plug, socket, fan, "
+                "air conditioner, AC, humidifier, heater, radiator, "
+                "kettle, teapot, speaker, media player, TV, curtain, "
+                "blind, shade, vacuum, robot vacuum. Also: start, run, "
+                "launch, activate, open curtains, raise blinds, boil "
+                "kettle, bright, brighter, dim, darker, make, "
                 "brightness, color, change, put, maximum, minimum."
             ),
             entity_types=None,  # any type — core decides nothing
@@ -853,8 +1050,13 @@ class DeviceControlModule(SystemModule):
         INTENT_OFF: dict(
             noun_class="DEVICE", verb="off", priority=100,
             description=(
-                "Turn a device off. Also: stop, put out, extinguish, "
-                "close curtains, shut, deactivate."
+                "Turn a device off. Applies to any controllable device: "
+                "light, lamp, bulb, switch, outlet, plug, socket, fan, "
+                "air conditioner, AC, humidifier, heater, radiator, "
+                "kettle, speaker, media player, TV, curtain, blind, "
+                "shade, vacuum, robot vacuum. Also: stop, kill, put out, "
+                "extinguish, close curtains, lower blinds, shut, "
+                "deactivate, pause vacuum."
             ),
             entity_types=None,
         ),
@@ -903,6 +1105,25 @@ class DeviceControlModule(SystemModule):
                 "'open the door'."
             ),
             entity_types=["lock", "door_lock"],
+        ),
+        INTENT_ALL_OFF: dict(
+            noun_class="HOUSE", verb="off", priority=100,
+            description=(
+                "Whole-house mass off — user said 'all' / 'everything'. "
+                "NOT for single-device off (use device.off). Only fires "
+                "when the query contains 'all', 'everything', 'все', "
+                "'всі', 'всё'."
+            ),
+            entity_types=None,
+        ),
+        INTENT_ALL_ON: dict(
+            noun_class="HOUSE", verb="on", priority=100,
+            description=(
+                "Whole-house mass on — user said 'all' / 'everything' "
+                "together with an on verb. Only fires when the query "
+                "contains 'all' / 'everything' / 'все'."
+            ),
+            entity_types=None,
         ),
     }
 

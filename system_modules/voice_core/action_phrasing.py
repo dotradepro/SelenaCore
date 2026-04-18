@@ -60,8 +60,31 @@ def _device_label(ctx: dict[str, Any]) -> str:
 # ── device-control ───────────────────────────────────────────────────────
 
 
+def _fmt_group_common(ctx: dict[str, Any], verb_present: str, verb_past: str) -> str | None:
+    """Shared phrasing for group_ok / group_error / needs_location.
+
+    Returns a sentence or None if the result isn't a group-state result.
+    ``verb_present`` is e.g. "Turning on", ``verb_past`` is "Turned on".
+    """
+    result = ctx.get("result")
+    entity = (ctx.get("entity") or "device").replace("_", " ")
+    loc = ctx.get("location")
+    count = ctx.get("count", 0)
+    if result == "needs_location":
+        return f"Which room? There's more than one {entity} I can reach."
+    if result == "group_ok":
+        suffix = "s" if count != 1 and not entity.endswith("s") else ""
+        return _with_location(f"{verb_past} {count} {entity}{suffix}", loc) + "."
+    if result == "group_error":
+        return _with_location(f"I couldn't reach any {entity}", loc) + "."
+    return None
+
+
 def _fmt_device_on(ctx: dict[str, Any]) -> str:
     result = ctx.get("result", "ok")
+    group = _fmt_group_common(ctx, "Turning on", "Turned on")
+    if group:
+        return group
     if result == "not_found":
         loc = ctx.get("location")
         entity = (ctx.get("entity") or "device").replace("_", " ")
@@ -73,6 +96,9 @@ def _fmt_device_on(ctx: dict[str, Any]) -> str:
 
 def _fmt_device_off(ctx: dict[str, Any]) -> str:
     result = ctx.get("result", "ok")
+    group = _fmt_group_common(ctx, "Turning off", "Turned off")
+    if group:
+        return group
     if result == "not_found":
         loc = ctx.get("location")
         entity = (ctx.get("entity") or "device").replace("_", " ")
@@ -83,6 +109,9 @@ def _fmt_device_off(ctx: dict[str, Any]) -> str:
 
 
 def _fmt_device_lock(ctx: dict[str, Any]) -> str:
+    group = _fmt_group_common(ctx, "Locking", "Locked")
+    if group:
+        return group
     if ctx.get("result") == "not_found":
         return "I couldn't find that lock."
     if ctx.get("result") == "driver_error":
@@ -91,6 +120,9 @@ def _fmt_device_lock(ctx: dict[str, Any]) -> str:
 
 
 def _fmt_device_unlock(ctx: dict[str, Any]) -> str:
+    group = _fmt_group_common(ctx, "Unlocking", "Unlocked")
+    if group:
+        return group
     if ctx.get("result") == "not_found":
         return "I couldn't find that lock."
     if ctx.get("result") == "driver_error":
@@ -99,6 +131,9 @@ def _fmt_device_unlock(ctx: dict[str, Any]) -> str:
 
 
 def _fmt_device_set_temperature(ctx: dict[str, Any]) -> str:
+    group = _fmt_group_common(ctx, "Setting", "Set")
+    if group:
+        return group
     if ctx.get("result") == "not_found":
         return "I couldn't find a thermostat to adjust."
     if ctx.get("result") == "driver_error":
@@ -110,11 +145,17 @@ def _fmt_device_set_temperature(ctx: dict[str, Any]) -> str:
 
 
 def _fmt_device_set_mode(ctx: dict[str, Any]) -> str:
+    group = _fmt_group_common(ctx, "Switching", "Switched")
+    if group:
+        return group
     mode = ctx.get("mode") or "the selected mode"
     return f"Setting the {_device_label(ctx)} to {mode} mode."
 
 
 def _fmt_device_set_fan_speed(ctx: dict[str, Any]) -> str:
+    group = _fmt_group_common(ctx, "Setting fan speed", "Set fan speed")
+    if group:
+        return group
     speed = ctx.get("fan_speed") or "medium"
     return f"Setting the fan speed to {speed}."
 

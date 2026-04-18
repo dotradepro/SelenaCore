@@ -541,19 +541,42 @@ class IntentRouter:
         # reclassify to device.on / device.off.
         q_low = query_for_embed.lower()
         _ON_VERBS = ("turn on", "switch on", "enable", "power on",
-                     "start", "activate", "run")
+                     "start", "activate", "run",
+                     "i want", "put on", "fire up", "kick on",
+                     "light up", "set up")
         _OFF_VERBS = ("turn off", "switch off", "disable", "power off",
                       "stop", "deactivate", "put out", "extinguish",
-                      "you can turn off", "could you turn off")
+                      "you can turn off", "could you turn off",
+                      "no need for", "don't need", "kill the",
+                      "shut down", "shut off", "cut the")
+        # Suffix-form imperatives: "AC on" / "lights off" / "heater on"
+        # end with a bare on/off particle. Check the last token(s) too.
+        _suffix_on  = q_low.rstrip(".!?").endswith(" on")
+        _suffix_off = q_low.rstrip(".!?").endswith(" off")
         if result.intent in (
             "device.set_mode", "device.set_temperature",
             "device.set_fan_speed", "device.query_temperature",
         ):
             has_mode_param = bool(result.params.get("value"))
-            is_on = any(q_low.startswith(v) or f" {v}" in q_low
-                        for v in _ON_VERBS)
-            is_off = any(q_low.startswith(v) or f" {v}" in q_low
-                         for v in _OFF_VERBS)
+            is_on = _suffix_on or any(
+                q_low.startswith(v) or f" {v}" in q_low
+                for v in _ON_VERBS
+            )
+            is_off = _suffix_off or any(
+                q_low.startswith(v) or f" {v}" in q_low
+                for v in _OFF_VERBS
+            )
+            # "turn it up" / "turn it down" are media volume idioms,
+            # not power on/off. Guard the reclassification.
+            _media_idiom = any(
+                phr in q_low for phr in (
+                    "turn it up", "turn it down",
+                    "louder", "quieter", "softer",
+                )
+            )
+            if _media_idiom:
+                is_on = False
+                is_off = False
             if not has_mode_param and (is_on or is_off):
                 new_intent = "device.off" if is_off else "device.on"
                 logger.debug(
@@ -561,6 +584,69 @@ class IntentRouter:
                     "no mode param)", result.intent, new_intent,
                 )
                 result.intent = new_intent
+
+        # TV / television — MiniLM often routes these to
+        # media.play_radio_name because "TV" looks like a proper-noun
+        # station name. Override when the extracted entity is the
+        # TV device class: this isn't a radio intent, it's a power /
+        # on-off intent for a discrete TV device.
+        if (
+            result.intent.startswith("media.play_")
+            and (result.params or {}).get("entity") == "tv"
+        ):
+            is_on = _suffix_on or any(
+                q_low.startswith(v) or f" {v}" in q_low
+                for v in _ON_VERBS
+            )
+            is_off = _suffix_off or any(
+                q_low.startswith(v) or f" {v}" in q_low
+                for v in _OFF_VERBS
+            )
+            new_intent = "device.off" if is_off else "device.on"
+            logger.debug(
+                "embedding post-proc: %s → %s (TV is a device, not a station)",
+                result.intent, new_intent,
+            )
+            result.intent = new_intent
+
+        # "turn it up" / "turn it down" — volume idioms. MiniLM
+        # sometimes routes them to device.on/off because "turn" is a
+        # strong on-verb anchor. Reclassify to volume if the query is
+        # the idiom form.
+        if result.intent in ("device.on", "device.off"):
+            if "turn it up" in q_low or "louder" in q_low:
+                result.intent = "media.volume_up"
+                logger.debug("post-proc: → media.volume_up (idiom)")
+            elif "turn it down" in q_low or "quieter" in q_low or "softer" in q_low:
+                result.intent = "media.volume_down"
+                logger.debug("post-proc: → media.volume_down (idiom)")
+
+        # Whole-house mass power — classifier usually routes "turn off
+        # everything" to device.off, but that path returns ambiguous
+        # (no entity). Convert to house.all_off/on when the query has
+        # an explicit universal quantifier. Checked on BOTH the
+        # translated EN query and the original native text so UK "все"
+        # reaches this branch even if Helsinki translated it oddly.
+        _ALL_TOKENS = (
+            " all ", " everything", " every ",
+            " все ", " всі ", " всё ", " всю ", " все.", " всі.", " всё.",
+        )
+        q_all_check = f" {q_low} "
+        native_check = f" {(native_text or text).lower()} "
+        has_all = any(
+            tok in q_all_check or tok in native_check
+            for tok in _ALL_TOKENS
+        )
+        if has_all and result.intent in ("device.on", "device.off"):
+            new_intent = (
+                "house.all_on" if result.intent == "device.on"
+                else "house.all_off"
+            )
+            logger.debug(
+                "embedding post-proc: %s → %s (all/everything quantifier)",
+                result.intent, new_intent,
+            )
+            result.intent = new_intent
 
         return IntentResult(
             intent=result.intent,
@@ -894,20 +980,45 @@ class IntentRouter:
     async def _disambiguate_device(
         self, result: IntentResult, tts_lang: str,
     ) -> IntentResult:
-        """If intent targets a device entity with >1 match, ask user to clarify.
+        """Resolve a voice intent's target device(s) by type + location.
 
-        Uses entity_type + location from params to query DeviceRegistry.
-        If exactly 1 device matches — injects device_id into params.
-        If >1 match — replaces response with a clarification question.
-        If 0 match — leaves result unchanged (module will handle).
+        Queries DeviceRegistry with ``entity_type + location`` (exact
+        match on both columns) and injects the winner(s) into params.
+
+        - 1 match          → inject ``device_id`` (single-device path)
+        - N match + room   → inject ``device_ids=[…]`` (group action;
+                             module fans the command out to each one)
+        - N match + NO room → inject ``ambiguous=True`` so the module
+                             speaks a "specify a room" prompt instead of
+                             silently acting on a random device
+        - 0 match          → pass through (module speaks "not found")
+
+        There is no ``"disambiguation"`` sentinel intent anymore — voice
+        users can't interactively answer "which one?", so the group path
+        is always preferred when a room is given. Name-matching stays in
+        device-control's own resolver for the composite-name case.
         """
         params = result.params or {}
         entity = params.get("entity")
         location = params.get("location")
 
-        # Only disambiguate device-related intents with entity info
+        # If the classifier extracted no entity word but the intent has
+        # a declared ``entity_types`` constraint (e.g. device.set_temperature
+        # allows air_conditioner / thermostat / radiator), use that list
+        # to resolve. Typical case: "set the temperature to 22 in the
+        # bedroom" — no literal device name, but intent + location are
+        # enough.
+        allowed_entity_types: list[str] = []
         if not entity:
-            return result
+            try:
+                from system_modules.llm_engine.intent_compiler import get_intent_compiler
+                defn = get_intent_compiler().get_definition(result.intent)
+                if defn and defn.entity_types:
+                    allowed_entity_types = list(defn.entity_types)
+            except Exception:
+                pass
+            if not allowed_entity_types:
+                return result
 
         try:
             from core.module_loader.sandbox import get_sandbox
@@ -920,25 +1031,59 @@ class IntentRouter:
 
             async with session_factory() as session:
                 registry = DeviceRegistry(session)
-                devices = await registry.query(
-                    entity_type=entity,
-                    location=location,
-                )
+                if entity:
+                    devices = await registry.query(
+                        entity_type=entity, location=location,
+                    )
+                else:
+                    # Entity inferred from intent's entity_types constraint.
+                    # Query once per allowed type and merge.
+                    devices = []
+                    seen: set[str] = set()
+                    for et in allowed_entity_types:
+                        for d in await registry.query(
+                            entity_type=et, location=location,
+                        ):
+                            if d.device_id not in seen:
+                                seen.add(d.device_id)
+                                devices.append(d)
+
+            # When entity was inferred (not spoken), write it back to
+            # params so downstream modules + logging can see what the
+            # resolver actually picked.
+            inferred_entity = None
+            if not entity and devices:
+                # Pick the most common entity_type among matches.
+                etypes = [d.entity_type for d in devices if d.entity_type]
+                if etypes:
+                    inferred_entity = max(set(etypes), key=etypes.count)
 
             if len(devices) == 1:
-                # Single match — inject device_id
-                result.params = {**(result.params or {}), "device_id": devices[0].device_id}
-            elif len(devices) > 1:
-                # Multiple matches — ask for clarification
-                device_names = ", ".join(d.name for d in devices[:5])
-                result.intent = "disambiguation"
-                result.response = f"Which one did you mean: {device_names}?"
-                result.action = None
                 result.params = {
                     **(result.params or {}),
+                    "device_id": devices[0].device_id,
+                    **({"entity": inferred_entity} if inferred_entity else {}),
+                }
+            elif len(devices) > 1 and location:
+                # Group action: hand every match to the module.
+                result.params = {
+                    **(result.params or {}),
+                    "device_ids": [d.device_id for d in devices],
+                    **({"entity": inferred_entity} if inferred_entity else {}),
                     "candidates": [
                         {"device_id": d.device_id, "name": d.name, "location": d.location}
-                        for d in devices[:5]
+                        for d in devices[:10]
+                    ],
+                }
+            elif len(devices) > 1:
+                # Multiple matches but no room specified — refuse to act,
+                # let the module speak "which room?" via speak_action.
+                result.params = {
+                    **(result.params or {}),
+                    "ambiguous": True,
+                    "candidates": [
+                        {"device_id": d.device_id, "name": d.name, "location": d.location}
+                        for d in devices[:10]
                     ],
                 }
         except Exception as exc:
