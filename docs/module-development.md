@@ -106,6 +106,8 @@ Intent definitions allow your module to respond to voice commands. Each intent i
 - `priority`: an integer from 0-99. Lower values mean higher priority. **User modules should use 50-99** (0-49 is reserved for core modules).
 - `description`: a human-readable explanation of what this intent handles.
 
+> **Writing intents that actually get recognized** — the `description` field is cosine-matched by the voice classifier, so the way you word it directly determines accuracy. Before adding a new intent, read [intent-authoring.md](intent-authoring.md) for the description recipe, anchor rules, Helsinki UK→EN quirks, and the PR bench gate. Skipping it typically lands a new intent at 50-70% accuracy instead of ≥ 90%.
+
 ---
 
 ## SDK Reference

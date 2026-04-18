@@ -386,6 +386,8 @@ class MyModule(SystemModule):
 
 > **Описи завжди англійською.** Вони потрапляють у LLM-промпт, який повністю англійський. Локалізація голосової відповіді обробляється rephrase LLM у VoiceCore.
 
+> **Якість `description` та якорів напряму керує точністю класифікатора.** Іграшковий description вище — лише для ілюстрації. Реальний має називати дію, контрастувати з сусідніми інтентами та містити 2-3 конкретні фрази користувача. Перед додаванням інтента в production прочитайте [intent-authoring.md](intent-authoring.md): рецепт description, правила `INTENT_ANCHORS`, канонічний список `entity_types`, особливості Helsinki UK→EN, коли зливати vs розділяти, та PR-гейт через bench (≥ 97% overall, ≥ 80% на новому інтенті, 100% на distractors). Кожне правило там — з конкретної регресії; дотримання дає новому інтенту ≥ 90% з першого PR.
+
 ### Крок 2: Claim ownership при старті
 
 Скопіюйте канонічну реалізацію з [system_modules/device_control/module.py](../../system_modules/device_control/module.py) — `_claim_intent_ownership()`. Метод:

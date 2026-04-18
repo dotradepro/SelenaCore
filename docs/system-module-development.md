@@ -384,6 +384,8 @@ class MyModule(SystemModule):
     }
 ```
 
+> **Quality of `description` and anchors directly controls classifier accuracy.** The toy description above is for illustration — a real-module description needs to name the action, contrast with neighbouring intents, and include 2-3 concrete user phrases. Before adding an intent to production, read [intent-authoring.md](intent-authoring.md): description recipe, `INTENT_ANCHORS` rules, canonical `entity_types` list, Helsinki UK→EN quirks, when to merge vs split, and the PR bench gate (≥ 97% overall, ≥ 80% on the new intent, 100% on distractors). Every rule there was learned from a specific regression — following them lands a new intent at ≥ 90% from the first PR.
+
 ### Step 2: Claim ownership on start
 
 Copy the canonical implementation from [system_modules/device_control/module.py](../system_modules/device_control/module.py) — `_claim_intent_ownership()`. The method:
