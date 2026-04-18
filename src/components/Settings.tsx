@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { Volume2, Network, Users, Activity, RefreshCw, Play, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid } from 'lucide-react';
+import { Volume2, Network, Users, Activity, RefreshCw, Play, Check, Wifi, Lock, Globe, Cpu, Palette, Plus, Trash2, Edit3, Smartphone, Bell, QrCode, Search, X, LayoutGrid, Bluetooth, Headphones, Keyboard, Mouse, Gamepad2, Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
@@ -26,6 +26,7 @@ export default function Settings() {
     { id: 'appearance', label: t('settings.appearance'), icon: Palette, path: '/settings/appearance' },
     { id: 'audio', label: t('settings.audio'), icon: Volume2, path: '/settings/audio' },
     { id: 'network', label: t('settings.networkAndVpn'), icon: Network, path: '/settings/network' },
+    { id: 'bluetooth', label: t('settings.bluetooth'), icon: Bluetooth, path: '/settings/bluetooth' },
     { id: 'users', label: t('settings.users'), icon: Users, path: '/settings/users' },
     { id: 'modules', label: t('settings.modules', 'Modules'), icon: LayoutGrid, path: '/settings/modules' },
     { id: 'system', label: t('settings.system'), icon: Activity, path: '/settings/system' },
@@ -39,7 +40,7 @@ export default function Settings() {
   return (
     <div style={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {/* Horizontal tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--b)', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
+      <div style={{ display: 'flex', background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none', marginBottom: 12 }}>
         {tabs.map((tab) => {
           const isActive = tab.id === activeId;
           return (
@@ -76,6 +77,7 @@ export default function Settings() {
           <Route path="/appearance"     element={<FormPage><AppearanceSettings /></FormPage>} />
           <Route path="/audio"          element={<FormPage><AudioSettings /></FormPage>} />
           <Route path="/network"        element={<FormPage><NetworkSettings /></FormPage>} />
+          <Route path="/bluetooth"      element={<FormPage><BluetoothSettings /></FormPage>} />
           <Route path="/users"          element={<FormPage><UsersSettings /></FormPage>} />
           <Route path="/modules"        element={<Modules />} />
           <Route path="/modules/:name"  element={<ModuleDetail />} />
@@ -999,6 +1001,484 @@ function NetworkSettings() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ================================================================ //
+//  Bluetooth Settings (iPhone-style)                                  //
+// ================================================================ //
+
+interface BtDevice {
+  mac: string;
+  name: string;
+  alias?: string;
+  icon?: string | null;
+  paired?: boolean;
+  connected?: boolean;
+  trusted?: boolean;
+}
+
+interface BtAdapterStatus {
+  available: boolean;
+  powered?: boolean;
+  discovering?: boolean;
+  pairable?: boolean;
+  address?: string;
+  name?: string;
+  alias?: string;
+  reason?: string;
+}
+
+type BtPairPhase =
+  | { phase: 'idle' }
+  | { phase: 'pairing'; mac: string; name: string }
+  | { phase: 'pin'; mac: string; name: string; prompt: string }
+  | { phase: 'confirm'; mac: string; name: string; code: string };
+
+function btIconFor(icon?: string | null): typeof Bluetooth {
+  const i = (icon || '').toLowerCase();
+  if (i.includes('audio') || i.includes('headset') || i.includes('headphone')) return Headphones;
+  if (i.includes('phone')) return Smartphone;
+  if (i.includes('keyboard')) return Keyboard;
+  if (i.includes('mouse') || i.includes('pointing')) return Mouse;
+  if (i.includes('gaming') || i.includes('joystick')) return Gamepad2;
+  return Bluetooth;
+}
+
+function BluetoothSettings() {
+  const { t } = useTranslation();
+  const showToast = useStore(s => s.showToast);
+  const [status, setStatus] = useState<BtAdapterStatus | null>(null);
+  const [paired, setPaired] = useState<BtDevice[]>([]);
+  const [discovered, setDiscovered] = useState<BtDevice[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [busyMac, setBusyMac] = useState<string | null>(null);
+  const [infoMac, setInfoMac] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [pairState, setPairState] = useState<BtPairPhase>({ phase: 'idle' });
+  const [pinDraft, setPinDraft] = useState('');
+  const sseRef = useRef<EventSource | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/bluetooth/status');
+      const data = await res.json();
+      setStatus(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  const fetchPaired = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ui/setup/bluetooth/devices');
+      if (!res.ok) { setPaired([]); return; }
+      const data = await res.json();
+      setPaired(data.devices || []);
+    } catch { /* ignore */ }
+  }, []);
+
+  const scan = useCallback(async () => {
+    setScanning(true);
+    try {
+      const res = await fetch('/api/ui/setup/bluetooth/scan?timeout=8');
+      if (res.ok) {
+        const data = await res.json();
+        setDiscovered(data.devices || []);
+      }
+    } catch { /* ignore */ }
+    setScanning(false);
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  useEffect(() => {
+    if (status?.available && status.powered) {
+      fetchPaired();
+      scan();
+    }
+    return () => {
+      if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+    };
+  }, [status?.available, status?.powered, fetchPaired, scan]);
+
+  const togglePower = async () => {
+    if (!status?.available) return;
+    setToggling(true);
+    try {
+      const res = await fetch('/api/ui/setup/bluetooth/power', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enable: !status.powered }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStatus(data.status || null);
+      }
+    } catch { showToast(t('common.error'), 'error'); }
+    setToggling(false);
+  };
+
+  const closePairStream = () => {
+    if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
+  };
+
+  const startPair = (device: BtDevice) => {
+    closePairStream();
+    setPairState({ phase: 'pairing', mac: device.mac, name: device.name });
+    setPinDraft('');
+    const es = new EventSource(`/api/ui/setup/bluetooth/pair?mac=${encodeURIComponent(device.mac)}`);
+    sseRef.current = es;
+    es.onmessage = (ev) => {
+      let msg: any;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'pin_required') {
+        setPairState({ phase: 'pin', mac: device.mac, name: device.name, prompt: msg.prompt || '' });
+      } else if (msg.type === 'confirm_code') {
+        setPairState({ phase: 'confirm', mac: device.mac, name: device.name, code: msg.code || '' });
+      } else if (msg.type === 'success') {
+        showToast(t('settings.btPaired', { name: device.name }));
+        setPairState({ phase: 'idle' });
+        closePairStream();
+        fetchPaired();
+        setDiscovered(prev => prev.filter(d => d.mac !== device.mac));
+      } else if (msg.type === 'failed') {
+        showToast(t('settings.btPairFailed') + (msg.reason ? ` (${msg.reason})` : ''), 'error');
+        setPairState({ phase: 'idle' });
+        closePairStream();
+      }
+    };
+    es.onerror = () => {
+      closePairStream();
+      setPairState({ phase: 'idle' });
+    };
+  };
+
+  const submitPin = async () => {
+    if (pairState.phase !== 'pin') return;
+    await fetch('/api/ui/setup/bluetooth/pair/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac: pairState.mac, pin: pinDraft }),
+    });
+    setPairState({ phase: 'pairing', mac: pairState.mac, name: pairState.name });
+    setPinDraft('');
+  };
+
+  const submitConfirm = async (accept: boolean) => {
+    if (pairState.phase !== 'confirm') return;
+    await fetch('/api/ui/setup/bluetooth/pair/respond', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac: pairState.mac, confirm: accept }),
+    });
+    if (accept) {
+      setPairState({ phase: 'pairing', mac: pairState.mac, name: pairState.name });
+    } else {
+      closePairStream();
+      setPairState({ phase: 'idle' });
+    }
+  };
+
+  const cancelPair = async () => {
+    if (pairState.phase === 'idle') return;
+    await fetch(`/api/ui/setup/bluetooth/pair/cancel?mac=${encodeURIComponent(pairState.mac)}`, {
+      method: 'POST',
+    }).catch(() => {});
+    closePairStream();
+    setPairState({ phase: 'idle' });
+  };
+
+  const connect = async (mac: string) => {
+    setBusyMac(mac);
+    try {
+      const res = await fetch(`/api/ui/setup/bluetooth/connect/${encodeURIComponent(mac)}`, { method: 'POST' });
+      if (!res.ok) showToast(t('settings.btConnectFailed'), 'error');
+      else fetchPaired();
+    } catch { showToast(t('common.error'), 'error'); }
+    setBusyMac(null);
+  };
+
+  const disconnect = async (mac: string) => {
+    setBusyMac(mac);
+    try {
+      await fetch(`/api/ui/setup/bluetooth/disconnect/${encodeURIComponent(mac)}`, { method: 'POST' });
+      fetchPaired();
+    } catch { /* ignore */ }
+    setBusyMac(null);
+  };
+
+  const forget = async (mac: string) => {
+    if (!confirm(t('settings.btForgetConfirm'))) return;
+    setBusyMac(mac);
+    try {
+      const res = await fetch(`/api/ui/setup/bluetooth/unpair/${encodeURIComponent(mac)}`, { method: 'POST' });
+      if (res.ok) {
+        setInfoMac(null);
+        fetchPaired();
+      } else {
+        showToast(t('settings.btUnpairFailed'), 'error');
+      }
+    } catch { showToast(t('common.error'), 'error'); }
+    setBusyMac(null);
+  };
+
+  const applyRename = async () => {
+    if (!infoMac) return;
+    const alias = renameDraft.trim();
+    if (!alias) return;
+    try {
+      const res = await fetch('/api/ui/setup/bluetooth/rename', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mac: infoMac, alias }),
+      });
+      if (res.ok) {
+        showToast(t('settings.saved'));
+        fetchPaired();
+      } else {
+        showToast(t('common.error'), 'error');
+      }
+    } catch { showToast(t('common.error'), 'error'); }
+  };
+
+  const selectedDevice = infoMac ? paired.find(d => d.mac === infoMac) : null;
+
+  if (status && !status.available) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-xl font-semibold mb-1">{t('settings.bluetooth')}</h3>
+          <p className="text-sm text-zinc-400">{t('settings.bluetoothDesc')}</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 text-sm text-zinc-400">
+          {t('settings.btAdapterUnavailable')}
+          {status.reason && <div className="mt-1 font-mono text-xs text-zinc-500">{status.reason}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-xl font-semibold mb-1">{t('settings.bluetooth')}</h3>
+        <p className="text-sm text-zinc-400">{t('settings.bluetoothDesc')}</p>
+      </div>
+
+      {/* Adapter power toggle */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Bluetooth size={18} className={status?.powered ? 'text-emerald-500' : 'text-zinc-500'} />
+            <div>
+              <div className="font-medium">{t('settings.bluetooth')}</div>
+              {status?.address && (
+                <div className="text-xs text-zinc-500 font-mono">{status.alias || status.name} · {status.address}</div>
+              )}
+            </div>
+          </div>
+          <button onClick={togglePower} disabled={toggling || !status}
+            className={cn(
+              'relative w-11 h-6 rounded-full transition-colors',
+              status?.powered ? 'bg-emerald-500' : 'bg-zinc-700',
+              (toggling || !status) && 'opacity-50',
+            )}>
+            <span className={cn(
+              'absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow-sm',
+              status?.powered && 'translate-x-5',
+            )} />
+          </button>
+        </div>
+        {status && !status.powered && (
+          <p className="mt-3 text-sm text-zinc-500">{t('settings.btOff')}</p>
+        )}
+      </div>
+
+      {status?.powered && (
+        <>
+          {/* My Devices (paired) */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium">{t('settings.btMyDevices')}</h4>
+              <button onClick={fetchPaired} className="text-xs text-zinc-400 hover:text-zinc-200">
+                <RefreshCw size={14} />
+              </button>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {paired.length === 0 && (
+                <div className="text-sm text-zinc-500 py-3">{t('settings.btNoPaired')}</div>
+              )}
+              {paired.map(d => {
+                const Icon = btIconFor(d.icon);
+                const isBusy = busyMac === d.mac;
+                return (
+                  <div key={d.mac} className="flex items-center justify-between py-3 gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon size={20} className={d.connected ? 'text-emerald-500' : 'text-zinc-400'} />
+                      <div className="min-w-0">
+                        <div className="text-sm truncate">{d.alias || d.name}</div>
+                        <div className={cn('text-xs', d.connected ? 'text-emerald-500' : 'text-zinc-500')}>
+                          {d.connected ? t('settings.btConnected') : t('settings.btNotConnected')}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {d.connected ? (
+                        <button onClick={() => disconnect(d.mac)} disabled={isBusy}
+                          className="text-xs px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50">
+                          {isBusy ? '…' : t('settings.btDisconnect')}
+                        </button>
+                      ) : (
+                        <button onClick={() => connect(d.mac)} disabled={isBusy}
+                          className="text-xs px-3 py-1.5 rounded-md bg-emerald-500 text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+                          {isBusy ? '…' : t('settings.btConnect')}
+                        </button>
+                      )}
+                      <button onClick={() => { setInfoMac(d.mac); setRenameDraft(d.alias || d.name); }}
+                        className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                        title={t('settings.btInfo')}>
+                        <Info size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Other Devices (scan) */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium">{t('settings.btOtherDevices')}</h4>
+              <button onClick={scan} disabled={scanning}
+                className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5">
+                <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
+                {scanning ? t('settings.btScanning') : t('settings.scan')}
+              </button>
+            </div>
+            <div className="divide-y divide-zinc-800">
+              {discovered.length === 0 && !scanning && (
+                <div className="text-sm text-zinc-500 py-3">{t('settings.btNoDevicesFound')}</div>
+              )}
+              {scanning && discovered.length === 0 && (
+                <div className="text-sm text-zinc-500 py-3 flex items-center gap-2">
+                  <RefreshCw size={14} className="animate-spin" />
+                  {t('settings.btScanning')}
+                </div>
+              )}
+              {discovered.map(d => {
+                const Icon = btIconFor(d.icon);
+                const isPairing = pairState.phase !== 'idle' && 'mac' in pairState && pairState.mac === d.mac;
+                return (
+                  <div key={d.mac} className="flex items-center justify-between py-3 gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon size={20} className="text-zinc-400" />
+                      <div className="min-w-0">
+                        <div className="text-sm truncate">{d.name}</div>
+                        <div className="text-xs text-zinc-500 font-mono">{d.mac}</div>
+                      </div>
+                    </div>
+                    <button onClick={() => startPair(d)} disabled={pairState.phase !== 'idle'}
+                      className="text-xs px-3 py-1.5 rounded-md bg-emerald-500 text-zinc-950 hover:bg-emerald-400 disabled:opacity-50">
+                      {isPairing ? t('settings.btPairing') : t('settings.btPair')}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Info / Rename / Forget modal */}
+      {selectedDevice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setInfoMac(null)}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-[min(420px,92vw)] space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold">{selectedDevice.alias || selectedDevice.name}</h4>
+              <button onClick={() => setInfoMac(null)} className="p-1 text-zinc-400 hover:text-zinc-200">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="text-xs text-zinc-500 font-mono">{selectedDevice.mac}</div>
+            <div>
+              <label className="text-sm text-zinc-300">{t('settings.btRename')}</label>
+              <div className="flex gap-2 mt-2">
+                <input type="text" value={renameDraft} onChange={e => setRenameDraft(e.target.value)}
+                  placeholder={t('settings.btRenamePlaceholder')}
+                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+                <button onClick={applyRename}
+                  className="px-3 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400">
+                  <Check size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="pt-3 border-t border-zinc-800">
+              <button onClick={() => forget(selectedDevice.mac)} disabled={busyMac === selectedDevice.mac}
+                className="w-full px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/20 disabled:opacity-50 flex items-center justify-center gap-2">
+                <Trash2 size={14} />
+                {t('settings.btForget')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pairing / PIN / Confirm modal */}
+      {pairState.phase !== 'idle' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-[min(420px,92vw)] space-y-4">
+            <div className="flex items-center gap-3">
+              <Bluetooth size={22} className="text-emerald-500" />
+              <div className="font-semibold">{'name' in pairState ? pairState.name : ''}</div>
+            </div>
+
+            {pairState.phase === 'pairing' && (
+              <div className="text-sm text-zinc-400 flex items-center gap-2">
+                <RefreshCw size={14} className="animate-spin" />
+                {t('settings.btPairing')}
+              </div>
+            )}
+
+            {pairState.phase === 'pin' && (
+              <>
+                <div className="text-sm text-zinc-300">{t('settings.btEnterPin')}</div>
+                {pairState.prompt && <div className="text-xs text-zinc-500">{pairState.prompt}</div>}
+                <input type="text" inputMode="numeric" autoFocus value={pinDraft}
+                  onChange={e => setPinDraft(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={e => e.key === 'Enter' && submitPin()}
+                  placeholder="••••"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-3 text-center text-xl tracking-widest font-mono focus:outline-none focus:border-emerald-500" />
+              </>
+            )}
+
+            {pairState.phase === 'confirm' && (
+              <>
+                <div className="text-sm text-zinc-300">{t('settings.btConfirmCode')}</div>
+                <div className="text-center text-3xl font-mono tracking-widest py-3 bg-zinc-950 rounded-lg border border-zinc-800">
+                  {pairState.code}
+                </div>
+              </>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button onClick={cancelPair}
+                className="flex-1 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm">
+                {t('settings.btCancel')}
+              </button>
+              {pairState.phase === 'pin' && (
+                <button onClick={submitPin} disabled={!pinDraft}
+                  className="flex-1 px-3 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50">
+                  {t('settings.btConfirm')}
+                </button>
+              )}
+              {pairState.phase === 'confirm' && (
+                <button onClick={() => submitConfirm(true)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-emerald-500 text-zinc-950 text-sm font-medium hover:bg-emerald-400">
+                  {t('settings.btPair')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
