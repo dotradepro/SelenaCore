@@ -598,6 +598,24 @@ class IntentRouter:
             return 0.0
         return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
+    # Bilingual room-name table for clarification replies. The candidate
+    # list carries ``location`` in whatever language the device was
+    # registered with (typically UK). When the user answers in EN,
+    # translate both sides through this map before comparing.
+    # LANG: add more pairs for new languages.
+    _ROOM_BILINGUAL: dict[str, str] = {
+        # en → uk
+        "bedroom":     "спальня",
+        "kitchen":     "кухня",
+        "living room": "вітальня",
+        "living_room": "вітальня",
+        "office":      "кабінет",
+        "bathroom":    "ванна",
+        "hallway":     "коридор",
+        "garage":      "гараж",
+        # mirror so UK → EN works too (added below)
+    }
+
     def _match_clarification_device(
         self,
         reply_en: str,
@@ -619,17 +637,49 @@ class IntentRouter:
                         "location": target.get("location"),
                     }
 
-        # 2. Room match — reply likely contains a room name
+        # 2. Room match — bilingual + morphology-tolerant. Candidate
+        # location is whatever was registered (typically UK native);
+        # reply may arrive in EN (Helsinki) or UK with noun cases
+        # ("у вітальні" vs registered "вітальня"). Three-pass:
+        #   a. Substring exact match against aliases
+        #   b. Token-level similarity ≥ 0.7 against any reply token
+        reply_combined = f" {reply_en} {reply_native} "
+        uk_to_en = {v: k for k, v in self._ROOM_BILINGUAL.items()}
         for c in candidates:
-            loc = (c.get("location") or "").lower()
+            loc = (c.get("location") or "").lower().strip()
             if not loc:
                 continue
-            if loc in reply_en or loc in reply_native:
+            aliases = {loc}
+            if loc in uk_to_en:
+                aliases.add(uk_to_en[loc])
+            if loc in self._ROOM_BILINGUAL:
+                aliases.add(self._ROOM_BILINGUAL[loc])
+            if any(a in reply_combined for a in aliases):
                 return {
                     "device_id": c["device_id"],
                     "entity": c.get("entity_type"),
                     "location": c.get("location"),
                 }
+            # Morphology-tolerant pass: compare each reply token to
+            # each alias via stem similarity. UK locative "вітальні"
+            # vs nominative "вітальня" differ by 1-2 trailing chars
+            # but share a long common prefix — SequenceMatcher ratio
+            # is ~0.9. Threshold 0.70 catches this while still
+            # rejecting "ванна" from "вітальні" (~0.3 similarity).
+            reply_tokens = (
+                reply_en.split() + reply_native.split()
+            )
+            for tok in reply_tokens:
+                tok = tok.strip(".,!?;:").lower()
+                if len(tok) < 4:
+                    continue
+                for alias in aliases:
+                    if self._similarity(tok, alias) >= 0.70:
+                        return {
+                            "device_id": c["device_id"],
+                            "entity": c.get("entity_type"),
+                            "location": c.get("location"),
+                        }
 
         # 3. Device-name match
         best_score = 0.0
