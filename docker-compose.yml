@@ -24,6 +24,11 @@ services:
       - /usr/bin/nsenter:/usr/bin/nsenter:ro
       - /var/log/selena:/var/log/selena
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+      # Bluez pairing DB — persist paired-device state across container
+      # restarts. Host bluetoothd owns this directory; the container shares it
+      # so `bluetoothctl pair/remove` inside the container and host see the
+      # same paired list.
+      - /var/lib/bluetooth:/var/lib/bluetooth
       - /run/user/${HOST_UID:-1000}/pulse:/run/user/${HOST_UID:-1000}/pulse
       - ${HOME}/.config/pulse/cookie:/root/.config/pulse/cookie:ro
       - ./core:/opt/selena-core/core

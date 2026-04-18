@@ -2386,3 +2386,156 @@ async def provision_models(type: str = "tts") -> dict[str, Any]:
         return {"type": "llm", "models": models}
 
     raise HTTPException(status_code=400, detail=f"Unknown type: {type}")
+
+
+# ================================================================== #
+#  Bluetooth device management                                         #
+# ================================================================== #
+
+class BluetoothPowerRequest(BaseModel):
+    enable: bool
+
+
+class BluetoothPairRespondRequest(BaseModel):
+    mac: str
+    pin: str | None = None
+    confirm: bool | None = None
+
+
+class BluetoothRenameRequest(BaseModel):
+    mac: str
+    alias: str
+
+
+@router.get("/bluetooth/status")
+async def bluetooth_status() -> dict[str, Any]:
+    from core import bluetooth as bt
+    return await bt.get_adapter_status()
+
+
+@router.post("/bluetooth/power")
+async def bluetooth_power(body: BluetoothPowerRequest) -> dict[str, Any]:
+    from core import bluetooth as bt
+    status = await bt.get_adapter_status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="bluetooth_unavailable")
+    ok = await bt.set_power(body.enable)
+    return {"ok": ok, "status": await bt.get_adapter_status()}
+
+
+@router.get("/bluetooth/devices")
+async def bluetooth_devices() -> dict[str, Any]:
+    from core import bluetooth as bt
+    status = await bt.get_adapter_status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="bluetooth_unavailable")
+    return {"devices": await bt.list_paired()}
+
+
+@router.get("/bluetooth/scan")
+async def bluetooth_scan(timeout: int = 10) -> dict[str, Any]:
+    from core import bluetooth as bt
+    status = await bt.get_adapter_status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="bluetooth_unavailable")
+    timeout = max(3, min(int(timeout), 30))
+    devices = await bt.scan(timeout)
+    return {"devices": devices}
+
+
+@router.post("/bluetooth/connect/{mac}")
+async def bluetooth_connect(mac: str) -> dict[str, Any]:
+    from core import bluetooth as bt
+    ok = await bt.connect(mac)
+    if not ok:
+        raise HTTPException(status_code=400, detail="connect_failed")
+    return {"ok": True}
+
+
+@router.post("/bluetooth/disconnect/{mac}")
+async def bluetooth_disconnect(mac: str) -> dict[str, Any]:
+    from core import bluetooth as bt
+    ok = await bt.disconnect(mac)
+    if not ok:
+        raise HTTPException(status_code=400, detail="disconnect_failed")
+    return {"ok": True}
+
+
+@router.post("/bluetooth/unpair/{mac}")
+async def bluetooth_unpair(mac: str) -> dict[str, Any]:
+    from core import bluetooth as bt
+    ok = await bt.unpair(mac)
+    if not ok:
+        raise HTTPException(status_code=400, detail="unpair_failed")
+    return {"ok": True}
+
+
+@router.post("/bluetooth/rename")
+async def bluetooth_rename(body: BluetoothRenameRequest) -> dict[str, Any]:
+    from core import bluetooth as bt
+    ok = await bt.rename(body.mac, body.alias)
+    if not ok:
+        raise HTTPException(status_code=400, detail="rename_failed")
+    return {"ok": True}
+
+
+@router.get("/bluetooth/pair")
+async def bluetooth_pair(mac: str):
+    """Start a pair session for `mac` and stream agent events via SSE.
+
+    Events (JSON per `data:` line):
+      * {"type": "started"}
+      * {"type": "pin_required", "prompt": "..."}
+      * {"type": "confirm_code", "code": "123456"}
+      * {"type": "success"}
+      * {"type": "failed", "reason": "..."}
+    """
+    from fastapi.responses import StreamingResponse
+    import json as _json
+    from core import bluetooth as bt
+
+    status = await bt.get_adapter_status()
+    if not status.get("available"):
+        raise HTTPException(status_code=503, detail="bluetooth_unavailable")
+
+    session = await bt.start_pair_session(mac)
+
+    async def _gen():
+        while True:
+            try:
+                ev = await asyncio.wait_for(session.events.get(), timeout=120.0)
+            except asyncio.TimeoutError:
+                yield f"data: {_json.dumps({'type': 'failed', 'reason': 'timeout'})}\n\n"
+                await bt.clear_pair_session(mac)
+                return
+            yield f"data: {_json.dumps(ev)}\n\n"
+            if ev.get("type") in ("success", "failed"):
+                await bt.clear_pair_session(mac)
+                return
+
+    return StreamingResponse(_gen(), media_type="text/event-stream")
+
+
+@router.post("/bluetooth/pair/respond")
+async def bluetooth_pair_respond(body: BluetoothPairRespondRequest) -> dict[str, Any]:
+    from core import bluetooth as bt
+    session = bt.get_pair_session(body.mac)
+    if not session:
+        raise HTTPException(status_code=404, detail="no_active_session")
+    if body.pin is not None:
+        await session.respond_pin(body.pin)
+    elif body.confirm is not None:
+        await session.respond_confirm(body.confirm)
+    else:
+        raise HTTPException(status_code=400, detail="missing_pin_or_confirm")
+    return {"ok": True}
+
+
+@router.post("/bluetooth/pair/cancel")
+async def bluetooth_pair_cancel(mac: str) -> dict[str, Any]:
+    from core import bluetooth as bt
+    session = bt.get_pair_session(mac)
+    if session:
+        await session.cancel()
+        await bt.clear_pair_session(mac)
+    return {"ok": True}
