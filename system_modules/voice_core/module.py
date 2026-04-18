@@ -192,6 +192,13 @@ def _numbers_to_words(text: str, lang: str) -> str:
 STATE_IDLE = "idle"            # waiting for wake phrase
 STATE_LISTENING = "listening"  # recording user command
 STATE_PROCESSING = "processing"  # LLM + TTS
+STATE_AWAITING_CLARIFICATION = "awaiting_clarification"
+# Ambient listening after the assistant asked a question. Behaves like
+# LISTENING (full recognizer, no wake-word gate) but with a deadline;
+# when speech arrives before the deadline, it's routed through
+# IntentRouter.route_clarification() against the pending context.
+# On deadline the assistant speaks clarify.timed_out and returns to
+# IDLE without acting.
 
 
 # Wake-word phonetic-variant generation was removed: Vosk grammar now
@@ -260,6 +267,14 @@ class VoiceCoreModule(SystemModule):
         self._last_intent: str = ""                # last classified intent (for rephrase context)
         self._last_query: str = ""                 # last user query text
         self._last_spoken: str = ""                # last TTS text (after rephrase, for debug)
+
+        # Pending clarification — set when the last IntentResult asked a
+        # follow-up question (ambiguous device / missing param / low
+        # margin). While non-None, the audio loop stays in
+        # AWAITING_CLARIFICATION until either the user answers or the
+        # deadline expires.
+        self._pending_clarification: dict | None = None
+        self._clarification_deadline: float = 0.0  # monotonic time
 
         # Speech queue: serializes all TTS playback (priority, timestamp, text, done_event, voice_override)
         self._speech_queue: asyncio.PriorityQueue[tuple[int, float, str, asyncio.Event | None, str | None]] = (
@@ -797,6 +812,91 @@ class VoiceCoreModule(SystemModule):
                             self._preprocessor.clear_active_speaker()
                             provider.reset_listening()
 
+                # ── STATE: AWAITING_CLARIFICATION ──
+                # Behaves like LISTENING — feed chunks to Vosk full —
+                # but the deadline is set by the router (via
+                # _pending_clarification.timeout_sec). On speech →
+                # route through route_clarification(). On deadline →
+                # speak clarify.timed_out and return to idle.
+                elif self._state == STATE_AWAITING_CLARIFICATION:
+                    # Wake-word during clarification cancels the pending
+                    # context and starts a fresh command turn. We detect
+                    # wake by feeding the IDLE grammar recognizer in
+                    # parallel and checking the wake phrase explicitly.
+                    # For MVP the simpler behaviour is: any speech here
+                    # is treated as the answer. Wake-word cancellation
+                    # covered by the deadline expiry path.
+
+                    if has_speech:
+                        self._speech_chunks_in_buffer += 1
+                        last_speech_time = time.monotonic()
+
+                    partial, final = provider.feed_listening(raw_data)
+
+                    if partial:
+                        self._log_live("partial", {
+                            "text": partial, "state": "awaiting_clarification",
+                        })
+
+                    def _dispatch_clarification(reply: str) -> None:
+                        nonlocal last_speech_time, command_dispatched
+                        if command_dispatched:
+                            return
+                        command_dispatched = True
+                        self._log_live("clarification_reply", {
+                            "text": reply, "lang": self._lang,
+                        })
+                        logger.info(
+                            "Voice: clarification reply: '%s'", reply,
+                        )
+                        self._state = STATE_PROCESSING
+                        asyncio.create_task(self._broadcast_state("processing"))
+                        self._speech_chunks_in_buffer = 0
+                        last_speech_time = 0.0
+                        self._preprocessor.clear_active_speaker()
+                        provider.reset_listening()
+                        asyncio.create_task(
+                            self._process_clarification_reply(reply),
+                        )
+
+                    if final and final.strip():
+                        _dispatch_clarification(final.strip())
+                        continue
+
+                    # Silence long enough to finalize
+                    silence_dur = (
+                        time.monotonic() - last_speech_time
+                        if last_speech_time else 0
+                    )
+                    if last_speech_time and silence_dur >= self._get_silence_timeout():
+                        text = provider.finalize_listening()
+                        if text:
+                            _dispatch_clarification(text)
+                            continue
+
+                    # Deadline: user said nothing for ``timeout_sec``
+                    if time.monotonic() >= self._clarification_deadline:
+                        logger.info(
+                            "Voice: clarification timeout — speaking canned phrase",
+                        )
+                        self._log_live("clarification_timeout", {})
+                        self._pending_clarification = None
+                        self._clarification_deadline = 0.0
+                        self._state = STATE_PROCESSING  # speak canned, then idle
+                        asyncio.create_task(self._broadcast_state("processing"))
+                        last_speech_time = 0.0
+                        command_dispatched = False
+                        provider.reset_listening()
+
+                        async def _speak_timeout_then_idle(self=self) -> None:
+                            try:
+                                tts_lang = self._config.get("tts_lang") or self._lang
+                                await self._speak_canned("clarify.timed_out", tts_lang)
+                            finally:
+                                self._state = self._idle_state()
+                                await self._broadcast_state(self._state)
+                        asyncio.create_task(_speak_timeout_then_idle())
+
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -1039,6 +1139,20 @@ class VoiceCoreModule(SystemModule):
             self._session_ts = time.monotonic()
             self._session.append({"role": "user", "content": text})
 
+            # ── Clarification branch ──
+            # Router-emitted clarification (ambiguous_device / low_margin):
+            # speak the question, park pending state, and return. The
+            # finally block promotes state to AWAITING_CLARIFICATION so
+            # the audio loop feeds the next utterance through
+            # IntentRouter.route_clarification().
+            clarification = getattr(result, "clarification", None)
+            if clarification:
+                await self._speak_clarification_question(
+                    clarification, tts_lang,
+                )
+                self._pending_clarification = clarification
+                return
+
             # Privacy mode is owned by voice-core itself — handle inline.
             # Otherwise the intent would fall into the system_module branch
             # below and hang for 15s waiting for an external module to ack.
@@ -1145,8 +1259,191 @@ class VoiceCoreModule(SystemModule):
             logger.error("Voice pipeline error: %s", exc)
         finally:
             self._pattern_response_spoken = False
-            self._state = self._idle_state()
+            # If the router requested a clarification, stay in
+            # AWAITING_CLARIFICATION instead of returning to idle. The
+            # audio loop will feed the next utterance through
+            # route_clarification() if it arrives before the deadline,
+            # or speak clarify.timed_out and reset on expiry.
+            pending = getattr(self, "_pending_clarification", None)
+            if pending:
+                logger.info(
+                    "Voice pipeline: entering AWAITING_CLARIFICATION "
+                    "(reason=%s, timeout=%.1fs)",
+                    pending.get("reason"), pending.get("timeout_sec", 10.0),
+                )
+                self._state = STATE_AWAITING_CLARIFICATION
+                self._clarification_deadline = (
+                    time.monotonic() + float(pending.get("timeout_sec", 10.0))
+                )
+                await self._broadcast_state(STATE_AWAITING_CLARIFICATION)
+            else:
+                self._state = self._idle_state()
             await self._broadcast_state(self._state)
+
+    # ── Clarification flow ───────────────────────────────────────────────
+
+    async def _speak_clarification_question(
+        self, clarification: dict, tts_lang: str,
+    ) -> None:
+        """TTS the clarification prompt using action_phrasing canned catalog."""
+        from system_modules.voice_core.action_phrasing import format_action_context
+        from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+
+        question_key = clarification.get("question_key") or "clarify.low_confidence"
+        ctx = {
+            "reason": clarification.get("reason"),
+            "hint": clarification.get("hint"),
+            "rooms": clarification.get("rooms"),
+            "choices": clarification.get("choices"),
+            "candidates": clarification.get("candidates"),
+        }
+        tts_text_en = format_action_context(question_key, ctx)
+        tts_text = await self._to_tts_lang(tts_text_en)
+        tts_text = _pp(tts_text, tts_lang)
+
+        done = asyncio.Event()
+        await self._enqueue_speech(tts_text, priority=0, done_event=done)
+        try:
+            await asyncio.wait_for(done.wait(), timeout=8.0)
+        except asyncio.TimeoutError:
+            pass
+        self._log_live("clarification", {
+            "reason": clarification.get("reason"),
+            "question": tts_text[:80],
+        })
+
+    async def _on_clarification_request(self, event) -> None:
+        """A module emitted ``voice.clarification_request`` — park state.
+
+        The module has detected a missing / ambiguous parameter and
+        wants to ask the user a follow-up. Pipeline behaviour:
+
+          1. Speak the question (via action_phrasing key)
+          2. Store pending context
+          3. The currently-executing _process_command finishes; its
+             finally block transitions state to AWAITING_CLARIFICATION
+             because _pending_clarification is non-None.
+
+        Edge case: the module publishes during its handler, which
+        itself was dispatched during _process_command. We're still
+        inside PROCESSING here — setting _pending_clarification now
+        works because the finally block runs AFTER this coroutine
+        returns (the module handler awaits on request_clarification
+        but the event is fire-and-forget from our side).
+        """
+        try:
+            payload = event.payload or {}
+            tts_lang = self._config.get("tts_lang") or self._lang
+            await self._speak_clarification_question(payload, tts_lang)
+            self._pending_clarification = payload
+            logger.info(
+                "Voice pipeline: clarification requested by module "
+                "(reason=%s, intent=%s)",
+                payload.get("reason"),
+                payload.get("pending_intent"),
+            )
+        except Exception as exc:
+            logger.error("clarification_request handler failed: %s", exc)
+
+    async def _process_clarification_reply(self, reply_text: str) -> None:
+        """Route a follow-up utterance through route_clarification()."""
+        pending = self._pending_clarification
+        if pending is None:
+            return
+        # Clear pending first so nested clarifications are a no-op — one
+        # clarification round per command, per MVP.
+        self._pending_clarification = None
+        self._clarification_deadline = 0.0
+
+        tts_lang = self._config.get("tts_lang") or self._lang
+
+        # Helsinki-translate the reply same as first-turn input. Reuse
+        # the native text for bilingual matching inside the router.
+        native_text = reply_text
+        stt_lang = self._lang
+        from core.config_writer import get_value as _cfg_get
+        text = reply_text
+        if _cfg_get("translation", "enabled", False) and stt_lang != "en":
+            from core.translation.local_translator import get_input_translator
+            _inp = get_input_translator()
+            if _inp.is_available():
+                try:
+                    text = _inp.to_english(reply_text, stt_lang)
+                except Exception:
+                    pass
+
+        from system_modules.llm_engine.intent_router import get_intent_router
+        try:
+            result = await get_intent_router().route_clarification(
+                text, pending, lang=stt_lang, tts_lang=tts_lang,
+                native_text=native_text,
+            )
+        except Exception as exc:
+            logger.error("route_clarification failed: %s", exc)
+            result = None
+
+        if result is None or result.source == "fallback":
+            # Match failed — speak canned cancel.
+            await self._speak_canned("clarify.cancelled", tts_lang)
+            return
+
+        # Match succeeded — re-fire the original intent with merged
+        # params via the normal dispatch pipeline.
+        logger.info(
+            "Voice clarification resolved: %s params=%s",
+            result.intent, result.params,
+        )
+        await self._dispatch_clarified_intent(result, tts_lang)
+
+    async def _dispatch_clarified_intent(
+        self, result, tts_lang: str,
+    ) -> None:
+        """Dispatch an intent that was resolved after clarification.
+
+        Mirrors the system-module branch of ``_process_command`` —
+        publishes the voice.intent event to the owning module and
+        waits for the module's TTS to complete. Non-system intents
+        (unknown / chat) speak a canned ack and return.
+        """
+        from core.eventbus.bus import get_event_bus
+        from core.eventbus.types import VOICE_INTENT
+
+        if self._is_system_module_intent(result.intent):
+            self._system_speak_done.clear()
+            await get_event_bus().publish(
+                type=VOICE_INTENT,
+                source="voice-core",
+                payload={
+                    "intent": result.intent,
+                    "response": "",
+                    "action": None,
+                    "params": result.params or {},
+                    "source": "clarification",
+                    "user_id": None,
+                    "latency_ms": 0,
+                    "raw_text": self._last_query,
+                },
+            )
+            try:
+                await asyncio.wait_for(self._system_speak_done.wait(), timeout=15.0)
+            except asyncio.TimeoutError:
+                logger.warning("Clarified intent TTS timeout (15s)")
+        else:
+            await self._speak_canned("clarify.cancelled", tts_lang)
+
+    async def _speak_canned(self, key: str, tts_lang: str) -> None:
+        """Speak a canned action_phrasing response by key."""
+        from system_modules.voice_core.action_phrasing import format_action_context
+        from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
+        tts_text_en = format_action_context(key, {})
+        tts_text = await self._to_tts_lang(tts_text_en)
+        tts_text = _pp(tts_text, tts_lang)
+        done = asyncio.Event()
+        await self._enqueue_speech(tts_text, priority=0, done_event=done)
+        try:
+            await asyncio.wait_for(done.wait(), timeout=8.0)
+        except asyncio.TimeoutError:
+            pass
 
     # ── Chime ────────────────────────────────────────────────────────────
 
@@ -1592,6 +1889,10 @@ class VoiceCoreModule(SystemModule):
 
         on_privacy_change(self._on_privacy_change)
         self.subscribe(["voice.speak"], self._on_voice_event)
+        self.subscribe(
+            ["voice.clarification_request"],
+            self._on_clarification_request,
+        )
 
         # Start speech queue worker (serializes all TTS playback)
         self._speech_worker_task = asyncio.create_task(

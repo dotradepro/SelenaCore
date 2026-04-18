@@ -46,6 +46,29 @@ class IntentResult:
     user_id: str | None = None
     params: dict[str, Any] | None = None
     raw_llm: str | None = None    # raw LLM response before parsing (debug)
+    # Clarification request populated by the router when a single-turn
+    # answer isn't safe. VoiceCore reads this field and, if set, enters
+    # AWAITING_CLARIFICATION mode — speaks the question, keeps mic open
+    # for ``timeout_sec``, then routes the next utterance through
+    # ``IntentRouter.route_clarification()`` with this dict as context.
+    #
+    # Schema:
+    #   {
+    #       "reason": "ambiguous_device" | "missing_param" | "low_margin",
+    #       "question_key": str,             # action_phrasing key for TTS
+    #       "hint": str | None,              # short hint for the question
+    #       "candidates": [                  # when reason=ambiguous_device
+    #           {"device_id": str, "name": str, "location": str | None, ...}
+    #       ],
+    #       "choices": [str, str, ...] | None,  # when reason=low_margin
+    #       "pending_intent": str,           # the original intent we want to
+    #                                         # retry after the answer
+    #       "pending_params": dict,          # original params to merge into
+    #       "timeout_sec": float,            # 10.0 default
+    #   }
+    #
+    # None = no clarification needed; VoiceCore proceeds as before.
+    clarification: dict[str, Any] | None = None
 
 
 # Language-agnostic tokenisation. We intentionally do not keep per-
@@ -423,6 +446,287 @@ class IntentRouter:
         await self._publish_event(result, raw_text=text, lang=lang)
         return (result, steps) if trace else result
 
+    # ── Clarification fast path ───────────────────────────────────────
+
+    async def route_clarification(
+        self,
+        text: str,
+        pending: dict[str, Any],
+        lang: str = "en",
+        *,
+        tts_lang: str | None = None,
+        native_text: str | None = None,
+    ) -> IntentResult:
+        """Resolve a follow-up utterance against a pending clarification.
+
+        VoiceCore calls this after speaking the clarification question
+        and receiving the user's reply. The reply is matched against
+        the pending context (candidates / choices / missing-value slot)
+        — NOT re-classified from scratch. Returns an IntentResult that
+        either re-fires the original intent with merged params, or
+        surfaces a clarification-failed state so VoiceCore can speak a
+        canned "didn't get that" message.
+
+        Pending schema (see IntentResult.clarification docstring):
+          - reason="ambiguous_device" → pending.candidates (list of dicts
+            with name, location, device_id). Reply is matched against
+            location / name / positional reference.
+          - reason="missing_param" → pending has ``param_name`` and
+            (optional) ``allowed_values``. Reply is parsed for a numeric
+            value or word-form number.
+          - reason="low_margin" → pending.choices is [winner, runner_up].
+            Reply is matched against either intent name or its
+            human phrasing ("the second one", "the first").
+
+        If the match succeeds, returns IntentResult with the original
+        pending_intent + merged pending_params, source="clarification".
+        On failure returns source="fallback" with intent="unknown" so
+        VoiceCore speaks the canned cancel.
+        """
+        if tts_lang is None:
+            tts_lang = lang
+        if native_text is None:
+            native_text = text
+
+        reason = pending.get("reason", "")
+        pending_intent = pending.get("pending_intent") or "unknown"
+        pending_params = dict(pending.get("pending_params") or {})
+
+        # Helsinki-translate non-English replies to English for the EN
+        # matchers. Native text is kept for bilingual room/name matching.
+        try:
+            if lang != "en":
+                from core.translation.local_translator import get_input_translator
+                text_en = get_input_translator().to_english(text, lang)
+            else:
+                text_en = text
+        except Exception:
+            text_en = text
+
+        reply_en = (text_en or "").strip().lower()
+        reply_native = (native_text or text or "").strip().lower()
+
+        matched_extra: dict[str, Any] = {}
+        match_found = False
+
+        if reason == "ambiguous_device":
+            matched_extra = self._match_clarification_device(
+                reply_en, reply_native, pending.get("candidates") or [],
+            )
+            match_found = bool(matched_extra)
+        elif reason == "missing_param":
+            matched_extra = self._match_clarification_value(
+                reply_en, reply_native, pending,
+            )
+            match_found = bool(matched_extra)
+        elif reason == "low_margin":
+            matched_extra = self._match_clarification_choice(
+                reply_en, reply_native, pending,
+            )
+            match_found = bool(matched_extra)
+
+        if not match_found:
+            # Canned cancel — VoiceCore speaks clarify.cancelled and idles.
+            return IntentResult(
+                intent="unknown",
+                response="",
+                action=None,
+                source="fallback",
+                latency_ms=0,
+                lang=lang,
+                params={"clarification_result": "cancelled"},
+            )
+
+        # Handle low_margin choice flip: if user picked the runner-up,
+        # route through the full pipeline again with the corrected intent.
+        if reason == "low_margin" and matched_extra.get("chosen_intent") != pending_intent:
+            pending_intent = matched_extra["chosen_intent"]
+            matched_extra = {
+                k: v for k, v in matched_extra.items()
+                if k != "chosen_intent"
+            }
+
+        merged_params = {**pending_params, **matched_extra}
+
+        result = IntentResult(
+            intent=pending_intent,
+            response="",
+            action=None,
+            source="clarification",
+            latency_ms=0,
+            lang=lang,
+            params=merged_params,
+        )
+        # Re-run disambiguation on the merged params so device_ids get
+        # filled if the user picked a room now.
+        try:
+            result = await self._disambiguate_device(result, tts_lang)
+        except Exception as exc:
+            logger.debug("Disambiguation after clarification failed: %s", exc)
+
+        await self._publish_event(result, raw_text=text, lang=lang)
+        return result
+
+    # Fuzzy / positional / numeric matchers for clarification replies.
+    # LANG: positional references hardcoded for en/uk — extend
+    # _POSITIONAL_MAP to add languages. Everything else (name / room /
+    # numeric) works across languages via the existing registry / Argos
+    # / numeric-word lookups.
+
+    _POSITIONAL_MAP: dict[str, int] = {
+        # EN
+        "first": 1, "1st": 1, "one": 1, "the first": 1, "the first one": 1,
+        "second": 2, "2nd": 2, "two": 2, "the second": 2, "the second one": 2,
+        "third": 3, "3rd": 3, "the third": 3,
+        "last": -1, "the last": -1,
+        # UK
+        "перший": 1, "перша": 1, "перше": 1,
+        "другий": 2, "друга": 2, "друге": 2,
+        "третій": 3, "третя": 3, "третє": 3,
+        "останній": -1, "остання": -1,
+    }
+
+    _FUZZY_THRESHOLD = 0.75  # Jaro-Winkler-ish floor. Starting value;
+                             # revisit after real-world clarification
+                             # logs (see plan §R3).
+
+    @staticmethod
+    def _similarity(a: str, b: str) -> float:
+        """Cheap string-similarity score in [0..1] using difflib."""
+        import difflib
+        if not a or not b:
+            return 0.0
+        return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+    def _match_clarification_device(
+        self,
+        reply_en: str,
+        reply_native: str,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Match reply against ambiguous-device candidates."""
+        if not candidates:
+            return {}
+
+        # 1. Positional reference
+        for phrase, idx in self._POSITIONAL_MAP.items():
+            if f" {phrase} " in f" {reply_en} " or f" {phrase} " in f" {reply_native} ":
+                target = candidates[idx - 1] if idx > 0 else candidates[-1]
+                if target:
+                    return {
+                        "device_id": target["device_id"],
+                        "entity": target.get("entity_type"),
+                        "location": target.get("location"),
+                    }
+
+        # 2. Room match — reply likely contains a room name
+        for c in candidates:
+            loc = (c.get("location") or "").lower()
+            if not loc:
+                continue
+            if loc in reply_en or loc in reply_native:
+                return {
+                    "device_id": c["device_id"],
+                    "entity": c.get("entity_type"),
+                    "location": c.get("location"),
+                }
+
+        # 3. Device-name match
+        best_score = 0.0
+        best_candidate: dict[str, Any] | None = None
+        for c in candidates:
+            name = (c.get("name") or "").lower()
+            if not name:
+                continue
+            score = max(
+                self._similarity(name, reply_en),
+                self._similarity(name, reply_native),
+            )
+            if score > best_score:
+                best_score = score
+                best_candidate = c
+        if best_candidate and best_score >= self._FUZZY_THRESHOLD:
+            return {
+                "device_id": best_candidate["device_id"],
+                "entity": best_candidate.get("entity_type"),
+                "location": best_candidate.get("location"),
+            }
+
+        return {}
+
+    def _match_clarification_value(
+        self,
+        reply_en: str,
+        reply_native: str,
+        pending: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Match reply against a missing-param slot.
+
+        Looks for a numeric value (digit or word-form) in either the
+        translated or native text. For the MVP only numeric values are
+        supported — mode / fan-speed clarifications would add a list of
+        allowed strings and fuzzy-match them.
+        """
+        from system_modules.llm_engine.embedding_classifier import (
+            _extract_numeric_value,
+        )
+
+        num = _extract_numeric_value(reply_en) or _extract_numeric_value(reply_native)
+        if num:
+            param_name = pending.get("param_name", "value")
+            return {param_name: num}
+
+        # Allowed-values fuzzy match (for set_mode etc.)
+        allowed = pending.get("allowed_values") or []
+        best_score = 0.0
+        best_value: str | None = None
+        for value in allowed:
+            score = max(
+                self._similarity(value, reply_en),
+                self._similarity(value, reply_native),
+            )
+            if score > best_score:
+                best_score = score
+                best_value = value
+        if best_value and best_score >= self._FUZZY_THRESHOLD:
+            param_name = pending.get("param_name", "value")
+            return {param_name: best_value}
+
+        return {}
+
+    def _match_clarification_choice(
+        self,
+        reply_en: str,
+        reply_native: str,
+        pending: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Low-margin: user picks winner, runner-up, or states the
+        intent directly."""
+        choices = pending.get("choices") or []
+        if len(choices) < 2:
+            return {}
+
+        # Positional — "the first" / "первый" → choices[0]
+        for phrase, idx in self._POSITIONAL_MAP.items():
+            if f" {phrase} " in f" {reply_en} " or f" {phrase} " in f" {reply_native} ":
+                if 0 < idx <= len(choices):
+                    return {"chosen_intent": choices[idx - 1]}
+
+        # Direct intent-name match
+        for c in choices:
+            # Compare against last segment of the intent name, e.g.
+            # "device.set_temperature" → "temperature"; also full name.
+            tail = c.split(".")[-1].replace("_", " ")
+            if tail.lower() in reply_en or tail.lower() in reply_native:
+                return {"chosen_intent": c}
+
+        # Yes/ok/sure — confirm winner
+        _AFFIRM = ("yes", "yeah", "sure", "ok", "okay", "так", "да", "звичайно")
+        if any(w in reply_en.split() or w in reply_native.split() for w in _AFFIRM):
+            return {"chosen_intent": choices[0]}
+
+        return {}
+
     # ── Embedding classifier (Tier 1, fast path) ─────────────────────
 
     def warmup_embedding(self) -> None:
@@ -648,6 +952,39 @@ class IntentRouter:
             )
             result.intent = new_intent
 
+        # ── Low-margin clarification trigger ──
+        # Band chosen empirically from bench margin histogram (see
+        # _private/bench_margin_histogram.txt for the analysis). When
+        # the winner is only this close to the runner-up, the classifier
+        # is on the fence — asking the user is cheaper and more
+        # deterministic than silently committing to the wrong intent.
+        #
+        # The band explicitly skips [0.015, 0.020): that range contains
+        # "confident misroutes" caused by Helsinki verb-loss (запали X
+        # → noun-only translation) where clarification cannot help
+        # because repeating the phrase keeps hitting the same wrong
+        # translation. Fix there is upstream in the translator.
+        CLARIFY_MARGIN_LOW = 0.003
+        CLARIFY_MARGIN_HIGH = 0.015
+        pending_clarification: dict[str, Any] | None = None
+        if (
+            CLARIFY_MARGIN_LOW <= result.margin < CLARIFY_MARGIN_HIGH
+            and result.intent not in ("unknown",)
+            and result.runner_up
+            and result.runner_up not in ("unknown",)
+            and result.intent != result.runner_up
+        ):
+            pending_clarification = {
+                "reason": "low_margin",
+                "question_key": "clarify.low_confidence",
+                "choices": [result.intent, result.runner_up],
+                "hint": None,
+                "pending_intent": result.intent,
+                "pending_params": dict(result.params or {}),
+                "timeout_sec": 10.0,
+                "margin": result.margin,
+            }
+
         return IntentResult(
             intent=result.intent,
             response="",
@@ -655,6 +992,7 @@ class IntentRouter:
             source="embedding",
             latency_ms=0,
             params=result.params,
+            clarification=pending_clarification,
             raw_llm=(
                 f"score={result.score:.3f} margin={result.margin:.3f} "
                 f"runner_up={result.runner_up}({result.runner_up_score:.3f})"
@@ -1076,15 +1414,40 @@ class IntentRouter:
                     ],
                 }
             elif len(devices) > 1:
-                # Multiple matches but no room specified — refuse to act,
-                # let the module speak "which room?" via speak_action.
+                # Multiple matches, no room — ask the user which room.
+                # VoiceCore reads result.clarification, speaks the
+                # prompt, keeps the mic open and routes the reply
+                # through route_clarification().
+                candidates = [
+                    {
+                        "device_id": d.device_id,
+                        "name": d.name,
+                        "location": d.location,
+                        "entity_type": d.entity_type,
+                    }
+                    for d in devices[:10]
+                ]
+                rooms = sorted({
+                    c["location"] for c in candidates if c.get("location")
+                })
+                result.clarification = {
+                    "reason": "ambiguous_device",
+                    "question_key": "clarify.which_room",
+                    "hint": (result.params or {}).get("entity") or "device",
+                    "rooms": rooms,
+                    "candidates": candidates,
+                    "pending_intent": result.intent,
+                    "pending_params": dict(result.params or {}),
+                    "timeout_sec": 10.0,
+                }
+                # Legacy mirror — existing device-control fallback code
+                # still inspects params["ambiguous"] until it's migrated
+                # to read clarification directly. Keep both signals for
+                # one release.
                 result.params = {
                     **(result.params or {}),
                     "ambiguous": True,
-                    "candidates": [
-                        {"device_id": d.device_id, "name": d.name, "location": d.location}
-                        for d in devices[:10]
-                    ],
+                    "candidates": candidates,
                 }
         except Exception as exc:
             logger.debug("Disambiguation failed: %s", exc)

@@ -301,6 +301,39 @@ class DeviceControlModule(SystemModule):
                 target_state = self._intent_to_state(intent, params)
             except ValueError as exc:
                 logger.info("device-control: bad params for %s: %s", intent, exc)
+                # Missing critical param — ask the user.
+                # set_temperature / set_mode / set_fan_speed all need a
+                # specific value; if classifier didn't capture it, emit
+                # a clarification instead of silently failing.
+                if intent == INTENT_SET_TEMPERATURE:
+                    await self.request_clarification(
+                        pending_intent=intent,
+                        pending_params=dict(params),
+                        question_key="clarify.missing_value",
+                        reason="missing_param",
+                        hint="temperature",
+                        param_name="value",
+                    )
+                elif intent == INTENT_SET_MODE:
+                    await self.request_clarification(
+                        pending_intent=intent,
+                        pending_params=dict(params),
+                        question_key="clarify.missing_value",
+                        reason="missing_param",
+                        hint="mode",
+                        param_name="value",
+                        allowed_values=["cool", "heat", "dry", "fan", "auto"],
+                    )
+                elif intent == INTENT_SET_FAN_SPEED:
+                    await self.request_clarification(
+                        pending_intent=intent,
+                        pending_params=dict(params),
+                        question_key="clarify.missing_value",
+                        reason="missing_param",
+                        hint="fan speed",
+                        param_name="value",
+                        allowed_values=["low", "medium", "high", "auto"],
+                    )
                 return
             if target_state is None:
                 return

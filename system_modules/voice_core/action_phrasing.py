@@ -469,6 +469,64 @@ def unregister_formatter(intent: str) -> None:
     _FORMATTERS_REGISTRY.pop(intent, None)
 
 
+def _fmt_clarify_which_room(ctx: dict[str, Any]) -> str:
+    """Spoken when N devices of the same type exist but no room was given."""
+    entity = (ctx.get("hint") or ctx.get("entity") or "device").replace("_", " ")
+    rooms = ctx.get("rooms") or []
+    if rooms:
+        joined = ", ".join(r.replace("_", " ") for r in rooms[:5])
+        return f"Which room? I can reach the {entity} in {joined}."
+    return f"Which room for the {entity}?"
+
+
+def _fmt_clarify_which_device(ctx: dict[str, Any]) -> str:
+    """Spoken when multiple specific devices match and user needs to pick."""
+    candidates = ctx.get("candidates") or []
+    names = [(c.get("name") or "").strip() for c in candidates[:3] if c.get("name")]
+    if len(names) >= 2:
+        return f"Which one did you mean — {', or '.join(names)}?"
+    return "Which one did you mean?"
+
+
+def _fmt_clarify_low_confidence(ctx: dict[str, Any]) -> str:
+    """Spoken when margin is borderline and runner-up is a real alternative."""
+    choices = ctx.get("choices") or []
+    if len(choices) >= 2:
+        # Turn intent names into human phrases: "device.set_temperature" →
+        # "set temperature"
+        pretty = [c.split(".", 1)[-1].replace("_", " ") for c in choices[:2]]
+        return f"I'm not sure — did you mean {pretty[0]} or {pretty[1]}?"
+    return "I'm not sure what you said. Could you repeat?"
+
+
+def _fmt_clarify_missing_value(ctx: dict[str, Any]) -> str:
+    """Spoken when a required param (temperature, duration, mode) wasn't captured."""
+    hint = ctx.get("hint") or ""
+    if hint:
+        return f"What {hint} did you want?"
+    return "I need more info — what value should I use?"
+
+
+def _fmt_clarify_cancelled(ctx: dict[str, Any]) -> str:  # noqa: ARG001
+    """Spoken when the follow-up reply couldn't be matched to the pending context."""
+    return "Sorry, I didn't get that. Cancelling."
+
+
+def _fmt_clarify_timed_out(ctx: dict[str, Any]) -> str:  # noqa: ARG001
+    """Spoken when no reply arrived within the clarification window."""
+    return "I'll stop listening."
+
+
+def _fmt_error_no_devices(ctx: dict[str, Any]) -> str:  # noqa: ARG001
+    """Spoken when the registry has no devices at all."""
+    return "There are no devices registered yet."
+
+
+def _fmt_error_provider_down(ctx: dict[str, Any]) -> str:  # noqa: ARG001
+    """Spoken when an external service (weather, LLM chat, etc.) is unreachable."""
+    return "I can't reach the service right now."
+
+
 def _register_builtins() -> None:
     """Wire the bundled formatters into the registry at import time.
 
@@ -483,6 +541,19 @@ def _register_builtins() -> None:
     register_formatter("device.set_mode", _fmt_device_set_mode)
     register_formatter("device.set_fan_speed", _fmt_device_set_fan_speed)
     register_formatter("device.query_temperature", _fmt_query_temperature)
+
+    # Clarification / error canned responses. Keys are intents shaped
+    # like "clarify.*" / "error.*" — not real voice intents, but they
+    # flow through the same format_action_context() dispatch so
+    # OutputTranslator handles EN→UK conversion transparently.
+    register_formatter("clarify.which_room", _fmt_clarify_which_room)
+    register_formatter("clarify.which_device", _fmt_clarify_which_device)
+    register_formatter("clarify.low_confidence", _fmt_clarify_low_confidence)
+    register_formatter("clarify.missing_value", _fmt_clarify_missing_value)
+    register_formatter("clarify.cancelled", _fmt_clarify_cancelled)
+    register_formatter("clarify.timed_out", _fmt_clarify_timed_out)
+    register_formatter("error.no_devices", _fmt_error_no_devices)
+    register_formatter("error.provider_down", _fmt_error_provider_down)
 
     register_namespace_fallback("clock", _fmt_clock)
     register_namespace_fallback("media", _fmt_media)

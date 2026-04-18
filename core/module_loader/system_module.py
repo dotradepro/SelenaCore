@@ -163,6 +163,53 @@ class SystemModule(ABC):
             if sub_id in self._direct_sub_ids:
                 self._direct_sub_ids.remove(sub_id)
 
+    async def request_clarification(
+        self,
+        pending_intent: str,
+        pending_params: dict[str, Any],
+        *,
+        question_key: str,
+        reason: str = "missing_param",
+        hint: str | None = None,
+        param_name: str | None = None,
+        allowed_values: list[str] | None = None,
+        candidates: list[dict[str, Any]] | None = None,
+        rooms: list[str] | None = None,
+        timeout_sec: float = 10.0,
+    ) -> None:
+        """Ask the user a clarifying question mid-command.
+
+        Modules call this from their voice-intent handler when they've
+        detected a missing/ambiguous parameter the classifier couldn't
+        supply (e.g. ``device.set_temperature`` with no numeric value).
+        Emits a ``voice.clarification_request`` event — VoiceCore reads
+        it, speaks the prompt via ``action_phrasing`` (``question_key``
+        is a key registered there, e.g. ``"clarify.missing_value"``),
+        opens the mic for ``timeout_sec`` and routes the reply through
+        ``IntentRouter.route_clarification()`` against this pending
+        context. On successful match the original intent re-fires with
+        the merged params.
+
+        Does NOT wait — the caller should ``return`` immediately so
+        VoiceCore's state machine can transition to
+        ``AWAITING_CLARIFICATION``.
+        """
+        if self._bus is None:
+            return
+        payload = {
+            "reason": reason,
+            "question_key": question_key,
+            "hint": hint,
+            "param_name": param_name,
+            "allowed_values": allowed_values,
+            "candidates": candidates,
+            "rooms": rooms,
+            "pending_intent": pending_intent,
+            "pending_params": pending_params,
+            "timeout_sec": timeout_sec,
+        }
+        await self.publish("voice.clarification_request", payload)
+
     # ── DeviceRegistry helpers ────────────────────────────────────────────────
 
     @asynccontextmanager
