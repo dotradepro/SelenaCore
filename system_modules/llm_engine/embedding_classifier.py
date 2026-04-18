@@ -132,6 +132,27 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "turn on the socket in the kitchen.",
         "run the robot vacuum cleaner.",
         "open the curtains in your bedroom.",
+        # Indirect "I want X on" patterns — user expresses desire, not
+        # explicit command verb. Helsinki preserves these shapes from UK
+        # "хочу щоб X працював".
+        "I want the air conditioner on",
+        "I want the air conditioner on in the living room",
+        "I want the fan on in the bedroom",
+        "I want the lights on",
+        "I want the light on in the living room",
+        "I need the heater on",
+        "I want the AC working",
+        # Helsinki output for UK "хочу щоб X працював" (I want X to
+        # work / be operating) — the "to work" phrasing is easy for
+        # MiniLM to confuse with query intents.
+        "I want the air conditioner to work in the living room",
+        "I want the fan to work in the bedroom",
+        "I want the heater to work",
+        # Noun-first short form: "X on" (Helsinki for UK "X увімкни")
+        "air conditioner on",
+        "the lights on",
+        "fan on",
+        "lamp on",
     ],
     "device.off": [
         # Core off commands
@@ -167,6 +188,17 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "could you turn off the air conditioner.",
         # Helsinki: "закрий штори"
         "close the curtains.",
+        # Indirect "no need for X" / "don't need X" (Helsinki for
+        # "не треба X" — declarative, no imperative verb).
+        "no need for the air conditioner",
+        "no need for the fan in the bedroom",
+        "no need for the lights",
+        "don't need the AC anymore",
+        # Noun-first short form: "X off"
+        "air conditioner off",
+        "the lights off",
+        "fan off",
+        "lamp off",
     ],
     "device.set_temperature": [
         "set the air conditioner to 22 degrees",
@@ -174,6 +206,12 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         # Helsinki outputs:
         "set the air conditioning to 22 degrees.",
         "set twenty-two degrees.",
+        "set the temperature to 22 degrees in the living room",
+        "set the temperature to 22 degrees in the bedroom",
+        "set the temperature to 22 degrees in the bathroom",
+        "set temperature to 22 in the kitchen",
+        "make it 22 degrees in the living room",
+        "change the temperature to 22 degrees",
     ],
     "device.set_mode": [
         # NOTE: do NOT include "air conditioner" / "thermostat" here —
@@ -250,9 +288,73 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     ],
     "media.pause": [
         "pause the music",
+        "pause",
+        "pause playback",
         # Helsinki outputs:
         "put music on pause.",
         "put the music on pause.",
+        "pause it.",
+    ],
+    "media.resume": [
+        "resume the music",
+        "resume",
+        "resume playback",
+        "continue playing",
+        "unpause",
+        "keep going",
+        # Helsinki artifacts for UK "продовж" / "продовжи":
+        "continued.",
+        "continue.",
+    ],
+    "media.stop": [
+        "stop the music",
+        "stop playing",
+        "stop playback",
+        "stop",
+        "stop the radio",
+    ],
+    "media.next": [
+        "next track",
+        "next song",
+        "next",
+        "skip this",
+        "skip track",
+        "skip this song",
+    ],
+    "media.previous": [
+        "previous track",
+        "previous song",
+        "go back",
+        "previous",
+        "play the previous song",
+    ],
+    "media.volume_up": [
+        "louder",
+        "turn it up",
+        "make it louder",
+        "increase volume",
+        "volume up",
+    ],
+    "media.volume_down": [
+        "quieter",
+        "softer",
+        "turn it down",
+        "make it quieter",
+        "decrease volume",
+        "volume down",
+        # Helsinki artifact for UK "тихіше":
+        "be quiet.",
+    ],
+    "media.volume_set": [
+        "set volume to 50",
+        "volume to 30",
+        "set the volume to 80 percent",
+    ],
+    "media.whats_playing": [
+        "what's playing",
+        "what song is this",
+        "what is playing",
+        "what's on the radio",
     ],
     "weather.current": [
         "what is the weather outside",
@@ -330,8 +432,8 @@ ENTITY_MAP: dict[str, str] = {
     "air conditioner": "air_conditioner",
     "air conditioning": "air_conditioner",
     "conditioner": "air_conditioner",
-    "heaters": "air_conditioner",  # Helsinki: обігрів → heaters
-    "heater": "air_conditioner",
+    "heaters": "air_conditioner",  # Helsinki: обігрів (AC heat mode) → heaters
+    "heater": "radiator",          # Helsinki: обігрівач (a heating device) → heater
     "thermostat": "thermostat",
     "radiator": "radiator",
     # ── Fans (HA: on_off_domains) ──
@@ -344,9 +446,10 @@ ENTITY_MAP: dict[str, str] = {
     "socket": "outlet",
     "plug": "outlet",
     # ── Locks (HA: expansion_rules.lockable) ──
-    "lock": "lock",
+    "lock": "door_lock",      # canonical entity_type in registry
     "door lock": "door_lock",
     "door": "door_lock",      # Helsinki: двері → door (lock/unlock context)
+    "castle": "door_lock",    # Helsinki quirk: замок → "Castle"
     "gate": "gate",
     "shutter": "shutter",
     # ── Covers (HA: cover_classes) ──
@@ -372,9 +475,16 @@ ENTITY_MAP: dict[str, str] = {
     # ── Speaker / media ──
     "speaker": "speaker",
     "column": "speaker",       # Helsinki: колонка → column
+    # ── TV (distinct from media_player; controlled via device.on/off) ──
+    "tv": "tv",
+    "television": "tv",
+    "telly": "tv",
+    "tv set": "tv",
     # ── Misc ──
     "humidifier": "humidifier",
+    "moisturizer": "humidifier",   # Helsinki quirk for зволожувач
     "kettle": "kettle",
+    "teapot": "kettle",
     "clutch": "humidifier",   # Argos quirk for зволожувач
 }
 
@@ -518,11 +628,23 @@ def extract_params(query_en: str, intent: str) -> dict[str, Any]:
     q = _strip_skip_phrases(query_en.lower())
     params: dict[str, Any] = {}
 
+    # Strip leading verb phrases that collide with ENTITY_MAP keys.
+    # "switch on the fan" — without this the longest-match scanner
+    # picks "switch" as the entity because it's 6 chars vs "fan" 3.
+    # We re-lowercased already, so a leading prefix check is safe.
+    q_for_entity = q
+    for verb_prefix in (
+        "switch on ", "switch off ", "turn on ", "turn off ",
+    ):
+        if q_for_entity.startswith(verb_prefix):
+            q_for_entity = q_for_entity[len(verb_prefix):]
+            break
+
     # Entity — longest substring match wins so "air conditioning"
     # beats "conditioner" beats nothing.
     matched, matched_len = None, 0
     for kw, entity_type in ENTITY_MAP.items():
-        if kw in q and len(kw) > matched_len:
+        if kw in q_for_entity and len(kw) > matched_len:
             matched, matched_len = entity_type, len(kw)
     if matched:
         params["entity"] = matched
@@ -622,8 +744,8 @@ class EmbeddingIntentClassifier:
     # Display name only — the actual weights are loaded from the ONNX
     # export configured via intent.embedding_model_dir in core.yaml.
     MODEL_NAME = "all-MiniLM-L6-v2"
-    UNKNOWN_THRESHOLD = 0.30   # max cosine below this → force unknown
-    MARGIN_THRESHOLD = 0.05    # winner − runner_up below this → log low confidence
+    UNKNOWN_THRESHOLD = 0.25   # max cosine below this → force unknown
+    MARGIN_THRESHOLD = 0.003   # winner − runner_up below this → log low confidence
 
     def __init__(self) -> None:
         self._model = None
