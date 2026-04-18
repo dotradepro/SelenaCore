@@ -96,9 +96,11 @@ docker compose up -d
   - `selena_data:/var/lib/selena` — база даних, голосові моделі, резервні копії
   - `selena_secure:/secure` — зашифровані токени та ключі
   - `/dev/snd` — ALSA звукові пристрої для аудіо вводу/виводу
+  - `/var/run/dbus/system_bus_socket` — DBus хоста (bluez, NetworkManager)
+  - `/var/lib/bluetooth` — база сполучень bluez, спільна з хостом, щоб сполучення переживали перезапуск контейнера (див. [Сполучення Bluetooth](#сполучення-bluetooth))
   - Директорія моделей Ollama (якщо налаштовано)
 - **Перевірка стану:** `GET /api/v1/health` кожні 30 секунд
-- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
+- **Вбудоване ПЗ:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer), **bluez / bluetoothctl** (для Налаштування → Bluetooth)
 - **Зовнішні сервіси (нативно на хості):** Piper TTS (`piper-tts.service`), Ollama
 
 ### selena-agent (агент цілісності)
@@ -164,6 +166,28 @@ curl http://localhost:11434/api/tags
 
 Хмарні LLM-провайдери (OpenAI, Anthropic, Google AI, Groq) налаштовуються через UI
 голосових налаштувань і не потребують жодного сервісу на хості.
+
+### Сполучення Bluetooth
+
+Керування Bluetooth-пристроями виконується **всередині контейнера selena-core** — пакети `bluez` / `bluez-tools` / `dbus` додані у `Dockerfile.core`, а до адаптера хоста контейнер дістається через два bind-маунти у `docker-compose.yml`:
+
+- `/var/run/dbus/system_bus_socket` — системна шина DBus
+- `/var/lib/bluetooth` — база сполучень bluez
+
+Оскільки `/var/lib/bluetooth` спільно використовується хостом і контейнером, сполучення переживають `docker compose restart` **і** залишаються сполученими з точки зору хоста.
+
+Вимоги до хоста:
+
+```bash
+# Переконайся, що bluetoothd на хості запущений (володіє радіо)
+sudo systemctl enable --now bluetooth
+# Перевір, що адаптер видно
+hciconfig -a | head
+```
+
+Адмін-інтерфейс надає сполучення в **Налаштування → Bluetooth** — сканування, сполучення (з автоматичним прийняттям "Just Works" + модалками в стилі iPhone для PIN / числового співставлення, якщо пристрій цього вимагає), під'єднання/від'єднання, перейменування та видалення. Повна документація API: див. [Довідник API → Ендпоінти налаштування Bluetooth](api-reference.md#ендпоінти-налаштування-bluetooth).
+
+> **Не** виконуй сполучення з shell хоста (`bluetoothctl` у терміналі), доки контейнер запущений — обидва агенти будуть конкурувати за один і той же адаптер. Використовуй лише UI налаштувань.
 
 ---
 

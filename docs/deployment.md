@@ -96,9 +96,11 @@ The primary container running the SelenaCore application.
   - `selena_data:/var/lib/selena` — Database, voice models, backups
   - `selena_secure:/secure` — Encrypted tokens and keys
   - `/dev/snd` — ALSA sound devices for audio input/output
+  - `/var/run/dbus/system_bus_socket` — host DBus (bluez, NetworkManager)
+  - `/var/lib/bluetooth` — bluez pairing DB shared with host so paired devices survive container restarts (see [Bluetooth Pairing](#bluetooth-pairing))
   - Ollama models directory (if configured)
 - **Health check:** `GET /api/v1/health` every 30 seconds
-- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer)
+- **Bundled software:** FFmpeg, PortAudio, VLC, ALSA utils (aplay, arecord, amixer), **bluez / bluetoothctl** (for Settings → Bluetooth)
 - **External services (native on host):** Piper TTS (`piper-tts.service`), Ollama
 
 ### selena-agent (integrity agent)
@@ -166,6 +168,39 @@ curl http://localhost:11434/api/tags
 
 Cloud LLM providers (OpenAI, Anthropic, Google AI, Groq) are configured via the
 voice settings UI and require no host-side service.
+
+### Bluetooth Pairing
+
+Bluetooth device management runs **inside the selena-core container** — the
+`bluez` / `bluez-tools` / `dbus` packages are baked into `Dockerfile.core`
+and the host controller is reached via two bind-mounts in
+`docker-compose.yml`:
+
+- `/var/run/dbus/system_bus_socket` — DBus system bus
+- `/var/lib/bluetooth` — bluez's pairing database
+
+Because `/var/lib/bluetooth` is shared between host and container, paired
+devices survive `docker compose restart` **and** stay paired from the
+host's perspective.
+
+Host requirements:
+
+```bash
+# Ensure host bluetoothd is running (owns the radio)
+sudo systemctl enable --now bluetooth
+# Verify adapter is visible
+hciconfig -a | head
+```
+
+The admin UI exposes pairing at **Settings → Bluetooth** — scan, pair
+(with Just-Works auto-accept + iPhone-style PIN / numeric-comparison
+modals for devices that require it), connect/disconnect, rename, and
+forget. Full API docs: see [API Reference → Bluetooth Setup
+Endpoints](api-reference.md#bluetooth-setup-endpoints).
+
+> **Do not** pair from the host shell (`bluetoothctl` in a terminal)
+> while the container is running — both agents compete for the same
+> adapter. Stick to the Settings UI.
 
 ---
 

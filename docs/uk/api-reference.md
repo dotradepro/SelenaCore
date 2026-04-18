@@ -541,6 +541,36 @@ WebSocket-точка доступу для комунікації з Module Bus 
 | GET | `/api/ui/setup/audio/sources` | Список аудіо-джерел → `{sources: [{module, name, volume}]}` |
 | POST | `/api/ui/setup/audio/sources/volume` | Гучність джерела `{module, volume}` |
 
+### Ендпоінти налаштування Bluetooth
+
+Обгортка над `bluetoothctl` (bluez) для адмін-інтерфейсу. `bluetoothctl` виконується **всередині контейнера** `selena-core`; DBus-сокет хоста та `/var/lib/bluetooth` прокинуті volume-ами, тож стан сполучень переживає перезапуски. Реалізація: [core/bluetooth.py](../../core/bluetooth.py).
+
+| Метод | Маршрут | Опис |
+|-------|---------|------|
+| GET  | `/api/ui/setup/bluetooth/status` | Стан адаптера → `{available, powered, discovering, pairable, address, name, alias}`. `available=false` коли немає контролера або бінарника bluetoothctl. |
+| POST | `/api/ui/setup/bluetooth/power` | Тіло `{enable: bool}` — `bluetoothctl power on/off`. 503 якщо адаптер відсутній. |
+| GET  | `/api/ui/setup/bluetooth/devices` | Список сполучених пристроїв → `{devices: [{mac, name, alias, icon, connected, trusted, paired}]}`. |
+| GET  | `/api/ui/setup/bluetooth/scan?timeout=N` | Пошук протягом N секунд (обмежено 3–30, типово 10). Повертає лише пристрої з розпізнаним ім'ям — анонсування лише MAC (iPhone з рандомізованим MAC) приховуються. |
+| POST | `/api/ui/setup/bluetooth/connect/{mac}` | Під'єднатися до вже сполученого пристрою. 400 `connect_failed` при відмові. |
+| POST | `/api/ui/setup/bluetooth/disconnect/{mac}` | Від'єднання без розривання сполучення. |
+| POST | `/api/ui/setup/bluetooth/unpair/{mac}` | `bluetoothctl remove <mac>` — прибирає сполучення. |
+| POST | `/api/ui/setup/bluetooth/rename` | Тіло `{mac, alias}` — встановлює постійний alias (Device1.Alias). Використовує bluetoothctl; fallback — `busctl set-property` для старих версій bluez. |
+| GET  | `/api/ui/setup/bluetooth/pair?mac=…` | **SSE-стрим** подій сесії сполучення (див. нижче). |
+| POST | `/api/ui/setup/bluetooth/pair/respond` | Тіло `{mac, pin?, confirm?}` — подає PIN або yes/no в активну сесію. 404 `no_active_session` якщо для цього MAC немає активної сесії. |
+| POST | `/api/ui/setup/bluetooth/pair/cancel?mac=…` | Скасовує активну сесію (вбиває stdin-пайп bluetoothctl). |
+
+**SSE-події сполучення** (один JSON-об'єкт на `data:` рядок):
+
+```text
+data: {"type": "started"}
+data: {"type": "pin_required", "prompt": "[agent] Enter PIN code:"}
+data: {"type": "confirm_code", "code": "123456"}
+data: {"type": "success"}
+data: {"type": "failed", "reason": "authentication_failed"}
+```
+
+Максимальний час сесії — 90с; стрим закривається після `success` або `failed`. Пристрої "Just Works" (більшість BT-навушників/колонок) переходять зі `started` одразу в `success` — події `pin_required` / `confirm_code` з'являються лише для клавіатур, телефонів, автомобілів тощо.
+
 ---
 
 ## Відповіді з помилками

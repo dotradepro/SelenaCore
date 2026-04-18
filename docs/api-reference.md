@@ -611,6 +611,42 @@ These routes are intended for the local web UI only. They are protected by iptab
 | GET | `/api/ui/setup/audio/sources` | List audio source modules → `{sources: [{module, name, volume}]}` |
 | POST | `/api/ui/setup/audio/sources/volume` | Set `{module, volume}` for a specific audio source |
 
+### Bluetooth Setup Endpoints
+
+Admin-UI wrapper around `bluetoothctl` (bluez). `bluetoothctl` runs
+inside the `selena-core` container; the host DBus socket and
+`/var/lib/bluetooth` are bind-mounted so paired state persists across
+restarts. Implementation: [core/bluetooth.py](../core/bluetooth.py).
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET  | `/api/ui/setup/bluetooth/status` | Adapter state → `{available, powered, discovering, pairable, address, name, alias}`. `available=false` when no controller or bluetoothctl binary. |
+| POST | `/api/ui/setup/bluetooth/power` | Body `{enable: bool}` — `bluetoothctl power on/off`. 503 if no adapter. |
+| GET  | `/api/ui/setup/bluetooth/devices` | List paired devices → `{devices: [{mac, name, alias, icon, connected, trusted, paired}]}`. |
+| GET  | `/api/ui/setup/bluetooth/scan?timeout=N` | Run discovery for N seconds (clamped 3–30, default 10). Returns only devices with resolved names — MAC-only broadcasts (iPhones with random MAC) are hidden. |
+| POST | `/api/ui/setup/bluetooth/connect/{mac}` | Connect to an already-paired device. 400 `connect_failed` on refusal. |
+| POST | `/api/ui/setup/bluetooth/disconnect/{mac}` | Disconnect without unpairing. |
+| POST | `/api/ui/setup/bluetooth/unpair/{mac}` | `bluetoothctl remove <mac>` — removes pairing. |
+| POST | `/api/ui/setup/bluetooth/rename` | Body `{mac, alias}` — sets persistent alias (Device1.Alias). Uses bluetoothctl, falls back to `busctl set-property` on older bluez. |
+| GET  | `/api/ui/setup/bluetooth/pair?mac=…` | **SSE stream** of pair-session events (see below). |
+| POST | `/api/ui/setup/bluetooth/pair/respond` | Body `{mac, pin?, confirm?}` — feeds PIN or yes/no into the active session. 404 `no_active_session` if nothing in progress for that MAC. |
+| POST | `/api/ui/setup/bluetooth/pair/cancel?mac=…` | Abort an active pair session (kills the bluetoothctl stdin pipe). |
+
+**Pair SSE events** (one JSON object per `data:` line):
+
+```text
+data: {"type": "started"}
+data: {"type": "pin_required", "prompt": "[agent] Enter PIN code:"}
+data: {"type": "confirm_code", "code": "123456"}
+data: {"type": "success"}
+data: {"type": "failed", "reason": "authentication_failed"}
+```
+
+Session lifetime is capped at 90s; the stream closes after `success`
+or `failed`. "Just Works" devices (most BT headphones/speakers) go
+from `started` straight to `success` — `pin_required` /
+`confirm_code` only appear for keyboards, phones, cars, etc.
+
 ---
 
 ## Error Responses
