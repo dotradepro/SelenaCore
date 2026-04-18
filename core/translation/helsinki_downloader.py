@@ -253,6 +253,19 @@ def install_helsinki_archive(
     except Exception:
         pass
 
+    # Auto-activate if both directions are now on disk and nothing is
+    # active yet. Without this the user uploads models, the files sit on
+    # disk, but translation.engine stays at the "argos" default with no
+    # packages — every uk→en call silently crashes inside Argos with
+    # `'NoneType' object has no attribute 'get_translation'`. Matches
+    # the behaviour of install_helsinki_pair().
+    if (
+        _layout_ok(_input_pair_dir(lang_code))
+        and _layout_ok(_output_pair_dir(lang_code))
+        and not get_nested("translation.active_lang", "")
+    ):
+        activate_helsinki_lang(lang_code)
+
 
 async def install_helsinki_pair(lang_code: str) -> None:
     """Install both directions for a Helsinki language pair."""

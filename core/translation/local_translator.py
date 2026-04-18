@@ -67,6 +67,29 @@ def _ensure_argos() -> bool:
         return False
 
 
+def _argos_pair_installed(from_code: str, to_code: str) -> bool:
+    """Check a specific Argos language pair is installed.
+
+    Argos' internal ``translate()`` does ``from_lang.get_translation(to_lang)``
+    without guarding the ``from_lang`` lookup, so a missing pair raises
+    ``AttributeError: 'NoneType' object has no attribute 'get_translation'``.
+    Checking here turns the silent crash into a graceful no-op when the
+    user hasn't installed the pair yet (common when the engine is
+    defaulted to ``argos`` but only Helsinki models are on disk).
+    """
+    if not _argos_package_available():
+        return False
+    try:
+        import argostranslate.package
+        installed = argostranslate.package.get_installed_packages()
+    except Exception:
+        return False
+    return any(
+        p.from_code == from_code and p.to_code == to_code
+        for p in installed
+    )
+
+
 def _normalize_for_mt(text: str) -> str:
     """Prep Vosk output for NMT input: capitalise + trailing punctuation.
 
@@ -114,6 +137,16 @@ class InputTranslator:
         if all(ord(c) < 128 for c in text):
             return text
         if not _ensure_argos():
+            return text
+        if not _argos_pair_installed(source_lang, "en"):
+            # Pair missing — bail loudly once and pass through. Prevents
+            # the NoneType.get_translation crash when engine defaulted to
+            # argos but the user only downloaded Helsinki.
+            logger.warning(
+                "Argos pair %s→en not installed; returning original text. "
+                "Install the pair or switch translation.engine to helsinki.",
+                source_lang,
+            )
             return text
 
         # Language-agnostic grammar normalisation before Argos.
@@ -177,6 +210,13 @@ class OutputTranslator:
         if other > latin:
             return text
         if not _ensure_argos():
+            return text
+        if not _argos_pair_installed("en", target_lang):
+            logger.warning(
+                "Argos pair en→%s not installed; returning original text. "
+                "Install the pair or switch translation.engine to helsinki.",
+                target_lang,
+            )
             return text
         try:
             import argostranslate.translate

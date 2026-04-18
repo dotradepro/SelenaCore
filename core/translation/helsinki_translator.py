@@ -35,6 +35,7 @@ the singleton in ``self._models[lang]`` and only freed by
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +251,39 @@ class _BaseHelsinki:
         self._models.clear()
 
 
+# Ukrainian attention-getter prefixes that Helsinki misconstrues as the
+# main verb — "слухай увімкни X" ends up translated as "Listen to X"
+# with the real imperative ("увімкни") dropped. Stripping them before
+# translation preserves the command.
+_UK_LISTENER_PREFIX_RE = re.compile(
+    r"^(?:"
+    r"слухай(?:-?но|те)?\s*[,\.!]?\s+"
+    r"|послухай(?:те)?\s*[,\.!]?\s+"
+    r"|дивись\s*[,\.!]?\s+"
+    r"|скажи\s+будь\s+ласка\s+"
+    r"|привіт\s*[,\.!]?\s+"
+    r")",
+    flags=re.IGNORECASE | re.UNICODE,
+)
+
+
+def _strip_uk_listener_prefix(text: str) -> str:
+    """Drop a leading "слухай," / "послухай," etc. attention-getter.
+
+    These wake-filler words never carry intent meaning but confuse
+    Helsinki into producing "Listen to the <noun>" — losing the real
+    imperative verb. Stripping them before translation is a
+    language-agnostic fix (no other change required downstream).
+    """
+    if not text:
+        return text
+    stripped = _UK_LISTENER_PREFIX_RE.sub("", text)
+    # Capitalise the new first letter if we chopped off content.
+    if stripped and stripped != text:
+        stripped = stripped[0].upper() + stripped[1:]
+    return stripped
+
+
 class HelsinkiInputTranslator(_BaseHelsinki):
     """Any language → English. Drop-in for ``InputTranslator``."""
 
@@ -269,6 +303,7 @@ class HelsinkiInputTranslator(_BaseHelsinki):
 
         from core.translation.local_translator import _normalize_for_mt
         prepared = _normalize_for_mt(text)
+        prepared = _strip_uk_listener_prefix(prepared)
         if prepared != text:
             logger.debug(
                 "IN [helsinki/%s] normalised: %r → %r",
