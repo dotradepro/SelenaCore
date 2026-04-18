@@ -48,12 +48,9 @@ class AutomationVoiceHandler:
                 engine.enable_rule(match_rule["id"], False)
                 return {"action": "disabled", "name": match_rule["name"]}
 
-            case "automation.status":
-                status = engine.get_status()
-                total = status.get("rules_total", 0)
-                enabled = status.get("rules_enabled", 0)
-                runs = status.get("run_count", 0)
-                return {"action": "status", "total": total, "enabled": enabled, "runs": runs}
+            # automation.status was merged into automation.list
+            # (2026-04-18) — list now returns both the rules array and
+            # the summary counts so one intent covers both questions.
 
             case _:
                 logger.debug("AutomationVoiceHandler: unhandled intent '%s'", intent)

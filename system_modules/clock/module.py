@@ -66,39 +66,65 @@ class ClockModule(SystemModule):
         "clock.set_timer",
         "clock.set_reminder",
         "clock.list_alarms",
-        "clock.cancel_alarm",
         "clock.stop_alarm",
         "clock.cancel_timer",
+        # clock.cancel_alarm merged into clock.stop_alarm 2026-04-18 —
+        # both verbs ("cancel the alarm" / "stop the alarm") map to the
+        # same user action (silence it AND remove from schedule).
+        # Classifier couldn't tell them apart; handler in voice_handler
+        # now covers both phrasings via stop_alarm.
     ]
 
     _OWNED_INTENT_META: dict[str, dict] = {
         "clock.set_alarm": dict(
             noun_class="CLOCK", verb="create", priority=100,
-            description="Set an alarm for a specific wall-clock time (HH:MM), optionally repeating.",
+            description=(
+                "Schedule a NEW alarm at a specific wall-clock time "
+                "('set an alarm for 7 am', 'wake me at 8'). Creates. "
+                "Opposite of stop_alarm which removes alarms."
+            ),
         ),
         "clock.set_timer": dict(
             noun_class="CLOCK", verb="create", priority=100,
-            description="Start a countdown timer for N seconds / minutes / hours.",
+            description=(
+                "Start a countdown timer for N seconds / minutes / "
+                "hours ('timer for 10 minutes', 'countdown 5 min')."
+            ),
         ),
         "clock.set_reminder": dict(
             noun_class="CLOCK", verb="create", priority=100,
-            description="Schedule a one-off reminder with a label at a specific future time.",
+            description=(
+                "Create a one-off reminder — user says 'remind me' "
+                "followed by when and what. NOT an alarm (no ringing), "
+                "NOT a timer (specific time, not duration). "
+                "Example: 'remind me at 3 pm to call mom'."
+            ),
         ),
         "clock.list_alarms": dict(
             noun_class="CLOCK", verb="query", priority=100,
-            description="Read out the list of currently-enabled alarms.",
-        ),
-        "clock.cancel_alarm": dict(
-            noun_class="CLOCK", verb="cancel", priority=100,
-            description="Cancel / delete an existing alarm by label or position.",
+            description=(
+                "Read back the list of currently-set alarms. Query, "
+                "not a command — 'what alarms do I have', 'list my "
+                "alarms'."
+            ),
         ),
         "clock.stop_alarm": dict(
             noun_class="CLOCK", verb="cancel", priority=100,
-            description="Silence the alarm that is ringing right now (snooze or dismiss).",
+            description=(
+                "Silence / cancel / dismiss an alarm — covers both "
+                "'stop the alarm' when it's ringing AND 'cancel the "
+                "morning alarm' when removing from schedule. Single "
+                "intent for both verbs (they mean the same thing to "
+                "the user)."
+            ),
         ),
         "clock.cancel_timer": dict(
             noun_class="CLOCK", verb="cancel", priority=100,
-            description="Stop a running timer before it fires.",
+            description=(
+                "Stop a running countdown timer before it fires. "
+                "Specifically for TIMER, not alarm — 'cancel the "
+                "timer', 'stop timer'."
+            ),
         ),
     }
 

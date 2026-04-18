@@ -267,6 +267,47 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         # Helsinki outputs:
         "set the timer to 10 minutes.",
     ],
+    "clock.set_alarm": [
+        "set an alarm for 7 am",
+        "set an alarm for 6 in the morning",
+        "wake me at 7 am",
+        "wake me up at 8",
+        # Helsinki outputs for UK "встанови будильник":
+        "set the alarm for 7 in the morning.",
+        "set alarm at 8.",
+    ],
+    "clock.set_reminder": [
+        "remind me at 3 pm to call mom",
+        "remind me to take medicine at 8",
+        "set a reminder for 5 pm",
+        # Helsinki outputs for UK "нагадай мені":
+        "remind me at 5 o'clock in the evening.",
+        "remind me to do something.",
+    ],
+    "clock.list_alarms": [
+        "list my alarms",
+        "what alarms do I have",
+        "show me all the alarms",
+        # Helsinki outputs for UK:
+        "which alarms have been set.",
+    ],
+    "clock.stop_alarm": [
+        "stop the alarm",
+        "cancel the alarm",
+        "dismiss the alarm",
+        "cancel the morning alarm",
+        "delete the 7am alarm",
+        # Helsinki outputs for UK "вимкни будильник" / "видали будильник":
+        "turn off the alarm.",
+        "delete the morning alarm.",
+    ],
+    "clock.cancel_timer": [
+        "cancel the timer",
+        "stop the timer",
+        "abort timer",
+        # Helsinki outputs for UK "зупини таймер":
+        "stop timer.",
+    ],
     "clock.cancel_alarm": [
         "cancel the alarm",
         "stop the alarm",
@@ -285,6 +326,13 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     "media.play_radio_name": [
         "play Radio Relax",
         "put on BBC Radio",
+    ],
+    "media.play_search": [
+        "play Pink Floyd",
+        "play The Beatles",
+        "play music by Queen",
+        "find me songs by Metallica",
+        "search for 80s rock",
     ],
     "media.pause": [
         "pause the music",
@@ -386,6 +434,47 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         # Keep only the longer, more specific forms.
         "stop listening to me",
         "don't listen to me",
+    ],
+    "automation.list": [
+        "list automations",
+        "what automations do I have",
+        "show me all rules",
+        "list all automation rules",
+        # Helsinki outputs for UK "які правила":
+        "what rules are set.",
+        "which rules are installed.",
+    ],
+    "automation.enable": [
+        "enable the bedtime automation",
+        "activate the morning routine",
+        "enable the rule",
+        "turn on the automation",
+        # Helsinki outputs:
+        "turn on the automation of the evening mode.",
+    ],
+    "automation.disable": [
+        "disable the morning routine",
+        "deactivate the bedtime automation",
+        "disable the rule",
+        "turn off the automation",
+        # Helsinki outputs:
+        "turn off the morning rule.",
+    ],
+    "presence.who_home": [
+        "who is home",
+        "who's home",
+        "is anyone home",
+        "who's here",
+    ],
+    "presence.check_user": [
+        "is Alice home",
+        "is Bob here",
+        "is Peter at home",
+    ],
+    "weather.current": [
+        "what's the weather",
+        "how is the weather outside",
+        "current weather",
     ],
     "privacy_off": [
         "disable privacy mode",

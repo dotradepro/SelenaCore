@@ -38,25 +38,40 @@ class AutomationEngineModule(SystemModule):
         "automation.list",
         "automation.enable",
         "automation.disable",
-        "automation.status",
+        # automation.status removed 2026-04-18 — redundant with list,
+        # both described as "report state of rules". Classifier
+        # couldn't distinguish and it muddied the candidate set.
     ]
 
     _OWNED_INTENT_META: dict[str, dict] = {
         "automation.list": dict(
             noun_class="AUTOMATION", verb="query", priority=100,
-            description="List configured automation rules / scenes.",
+            description=(
+                "Read back the list of configured automation rules / "
+                "scenes — their names, states, next trigger times. "
+                "Query ONLY, no side effects. Use for 'list "
+                "automations', 'what rules do I have', 'show all "
+                "automations'."
+            ),
         ),
         "automation.enable": dict(
-            noun_class="AUTOMATION", verb="set", priority=100,
-            description="Enable a named automation rule so it starts reacting to triggers.",
+            noun_class="AUTOMATION", verb="activate", priority=100,
+            description=(
+                "Turn ON a named automation rule by its label. "
+                "Activates future trigger reactions — does NOT run the "
+                "rule immediately. Use for 'enable the bedtime "
+                "automation', 'activate morning routine', 'turn on "
+                "the vacation scene rule'."
+            ),
         ),
         "automation.disable": dict(
-            noun_class="AUTOMATION", verb="set", priority=100,
-            description="Disable a named automation rule (keep it but stop reacting to triggers).",
-        ),
-        "automation.status": dict(
-            noun_class="AUTOMATION", verb="query", priority=100,
-            description="Report status of the automation engine and active rules.",
+            noun_class="AUTOMATION", verb="deactivate", priority=100,
+            description=(
+                "Turn OFF a named automation rule — keep the rule "
+                "definition but stop reacting to triggers. Use for "
+                "'disable the morning routine', 'turn off the "
+                "automation', 'pause the rule'."
+            ),
         ),
     }
 

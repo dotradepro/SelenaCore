@@ -73,17 +73,31 @@ class PresenceDetectionModule(SystemModule):
         "presence.who_home": dict(
             noun_class="PRESENCE", verb="query", priority=100,
             description=(
-                "List who is currently at home. NOT for 'who are you' "
-                "questions about the assistant itself."
+                "List WHO is currently at home — returns names of all "
+                "household members present. Open question without a "
+                "specific person. Use for 'who's home', 'who is here', "
+                "'хто в домі', 'хто вдома'. NOT for 'who are you' "
+                "(about the assistant)."
             ),
         ),
         "presence.check_user": dict(
             noun_class="PRESENCE", verb="query", priority=100,
-            description="Check whether a specific named person is at home right now.",
+            description=(
+                "Check whether ONE SPECIFIC named person is at home. "
+                "Query mentions a person's name. Use for 'is Alice "
+                "home', 'is Bob here', 'чи Петро вдома', 'Марія "
+                "вдома?'. Contains a proper name — distinguishes "
+                "from generic who_home."
+            ),
         ),
         "presence.status": dict(
             noun_class="PRESENCE", verb="query", priority=100,
-            description="Summarise the household's current presence state (counts, away list).",
+            description=(
+                "Summary of household presence state — total counts, "
+                "who's away, overall status. Use for 'house status', "
+                "'presence status', 'стан будинку', 'хто вдома а хто "
+                "ні'. Aggregate — no specific person."
+            ),
         ),
     }
 

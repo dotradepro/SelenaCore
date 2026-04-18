@@ -222,15 +222,24 @@ class VoiceCoreModule(SystemModule):
 
     _OWNED_INTENT_META: dict[str, dict] = {
         "privacy_on": dict(
-            noun_class="PRIVACY", verb="set", priority=100,
+            noun_class="PRIVACY", verb="activate", priority=100,
             description=(
-                "Enable privacy mode — pause wake-word and STT so the "
-                "microphone is muted until the user turns it back on."
+                "TURN ON privacy mode — mute the assistant microphone, "
+                "stop listening. Use for 'enable privacy mode', "
+                "'stop listening', 'mute microphone', 'privacy on', "
+                "'don't listen', 'увімкни режим приватності', "
+                "'вимкни мікрофон', 'не слухай мене'."
             ),
         ),
         "privacy_off": dict(
-            noun_class="PRIVACY", verb="set", priority=100,
-            description="Disable privacy mode — resume normal voice pipeline.",
+            noun_class="PRIVACY", verb="deactivate", priority=100,
+            description=(
+                "TURN OFF privacy mode — unmute the assistant "
+                "microphone, resume listening. Opposite of privacy_on. "
+                "Use for 'disable privacy mode', 'start listening', "
+                "'unmute', 'privacy off', 'вимкни режим приватності', "
+                "'увімкни мікрофон', 'слухай'."
+            ),
         ),
     }
 

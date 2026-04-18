@@ -78,10 +78,11 @@ class ClockVoiceHandler:
                 return await self._set_reminder(params)
             if intent == "clock.list_alarms":
                 return await self._list_alarms()
-            if intent == "clock.cancel_alarm":
-                return await self._cancel_alarm()
-            if intent == "clock.stop_alarm":
-                return await self._stop_alarm()
+            if intent in ("clock.stop_alarm", "clock.cancel_alarm"):
+                # Merged 2026-04-18: both verbs map to one intent.
+                # Handler dismisses ringing alarms first; if none are
+                # ringing, deletes the next scheduled alarm.
+                return await self._stop_or_cancel_alarm()
             if intent == "clock.cancel_timer":
                 return await self._cancel_timer()
         except Exception as exc:
@@ -137,9 +138,27 @@ class ClockVoiceHandler:
             ],
         }
 
-    async def _cancel_alarm(self) -> dict[str, Any]:
+    async def _stop_or_cancel_alarm(self) -> dict[str, Any]:
+        """Unified handler for 'stop the alarm' / 'cancel the alarm'.
+
+        Voice users use these verbs interchangeably and the classifier
+        cannot reliably tell them apart. Behaviour is context-aware:
+
+          1. If any alarm is ringing RIGHT NOW → dismiss it (primary
+             intent when user says "stop the alarm" during wake-up).
+          2. Otherwise → delete the soonest enabled alarm from the
+             schedule (primary intent when user says "cancel the
+             morning alarm" during the day).
+        """
+        # Priority 1: silence any currently-ringing alarm.
+        ringing = list(self._service._ringing_alarms)
+        if ringing:
+            for alarm_id in ringing:
+                await self._service.dismiss_alarm(alarm_id)
+            return {"action": "alarm_dismissed", "count": len(ringing)}
+
+        # Priority 2: nothing ringing → delete the next scheduled alarm.
         alarms = await self._service.list_alarms()
-        # Cancel the soonest enabled alarm — best effort
         target = next((a for a in alarms if a["enabled"]), None)
         if target is None:
             return {"action": "alarm_cancel_failed", "reason": "none"}
@@ -148,13 +167,6 @@ class ClockVoiceHandler:
             "action": "alarm_cancelled",
             "time": f"{target['hour']:02d}:{target['minute']:02d}",
         }
-
-    async def _stop_alarm(self) -> dict[str, Any]:
-        # Dismiss any currently-ringing alarm
-        ringing = list(self._service._ringing_alarms)
-        for alarm_id in ringing:
-            await self._service.dismiss_alarm(alarm_id)
-        return {"action": "alarm_dismissed", "count": len(ringing)}
 
     async def _cancel_timer(self) -> dict[str, Any]:
         timers = await self._service.list_timers()

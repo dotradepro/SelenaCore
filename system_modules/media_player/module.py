@@ -110,7 +110,10 @@ class MediaPlayerModule(SystemModule):
         "media.play_search", "media.next", "media.previous",
         "media.stop", "media.pause", "media.resume",
         "media.volume_down", "media.volume_up", "media.volume_set",
-        "media.whats_playing", "media.shuffle_toggle",
+        "media.whats_playing",
+        # media.shuffle_toggle removed 2026-04-18 — declared but no
+        # handler in voice_handler, polluted classifier candidate set.
+        # Re-add only if shuffle becomes a product priority.
     ]
 
     _OWNED_INTENT_META: dict[str, dict] = {
@@ -171,10 +174,6 @@ class MediaPlayerModule(SystemModule):
         "media.whats_playing": dict(
             noun_class="MEDIA", verb="query", priority=100,
             description="Tell what is currently playing (station, track, artist).",
-        ),
-        "media.shuffle_toggle": dict(
-            noun_class="MEDIA", verb="set", priority=100,
-            description="Toggle shuffle / random playback mode.",
         ),
     }
 

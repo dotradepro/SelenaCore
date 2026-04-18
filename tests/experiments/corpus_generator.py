@@ -535,14 +535,15 @@ CLOCK_CASES: list[dict[str, Any]] = [
     {"lang": "uk", "native": "які будильники встановлено",
      "exp_intent": "clock.list_alarms", "exp_entity": None, "exp_location": None,
      "category": "clock", "twist": None, "noise": None},
-    # cancel_alarm
+    # stop_alarm — now unified: handles both "cancel the scheduled"
+    # and "stop the ringing" semantics via one intent. Handler
+    # decides by checking if an alarm is currently ringing.
     {"lang": "en", "native": "cancel the morning alarm",
-     "exp_intent": "clock.cancel_alarm", "exp_entity": None, "exp_location": None,
+     "exp_intent": "clock.stop_alarm", "exp_entity": None, "exp_location": None,
      "category": "clock", "twist": None, "noise": None},
     {"lang": "uk", "native": "видали ранковий будильник",
-     "exp_intent": "clock.cancel_alarm", "exp_entity": None, "exp_location": None,
+     "exp_intent": "clock.stop_alarm", "exp_entity": None, "exp_location": None,
      "category": "clock", "twist": None, "noise": None},
-    # stop_alarm
     {"lang": "en", "native": "stop the alarm",
      "exp_intent": "clock.stop_alarm", "exp_entity": None, "exp_location": None,
      "category": "clock", "twist": None, "noise": None},
@@ -619,8 +620,10 @@ AUTOMATION_CASES: list[dict[str, Any]] = [
     {"lang": "uk", "native": "вимкни ранкове правило",
      "exp_intent": "automation.disable", "exp_entity": None, "exp_location": None,
      "category": "automation", "twist": None, "noise": None},
+    # automation.status folded into automation.list (2026-04-18) —
+    # "automation status" now routes to list which returns summary + rules.
     {"lang": "en", "native": "automation status",
-     "exp_intent": "automation.status", "exp_entity": None, "exp_location": None,
+     "exp_intent": "automation.list", "exp_entity": None, "exp_location": None,
      "category": "automation", "twist": None, "noise": None},
 ]
 
@@ -688,9 +691,7 @@ SYSTEM_CASES: list[dict[str, Any]] = [
     {"lang": "uk", "native": "пустити Бітлз",
      "exp_intent": "media.play_search", "exp_entity": None, "exp_location": None,
      "category": "system", "twist": None, "noise": None},
-    {"lang": "en", "native": "shuffle the tracks",
-     "exp_intent": "media.shuffle_toggle", "exp_entity": None, "exp_location": None,
-     "category": "system", "twist": None, "noise": None},
+    # media.shuffle_toggle removed from catalog (dead code) — case dropped.
 ]
 
 
