@@ -110,13 +110,47 @@ class DeviceRegistry:
     ) -> list[Device]:
         """Search devices by entity_type, location, and/or keyword.
 
-        Filters are AND-combined. keyword searches in name, keywords_en (JSON).
+        Filters are AND-combined. ``location`` matches case-insensitively
+        against both the user-language ``Device.location`` column and the
+        auto-translated ``meta.location_en`` JSON field — so a classifier
+        that extracts "bathroom" will still find a device stored as "ванна"
+        (meta.location_en="bathroom"), and vice-versa.
+        keyword searches in name, keywords_en (JSON).
         """
+        from sqlalchemy import or_
+
         stmt = select(Device)
         if entity_type:
             stmt = stmt.where(Device.entity_type == entity_type)
         if location:
-            stmt = stmt.where(Device.location == location)
+            # Normalise spaces ↔ underscores AND translate common
+            # English room names to their Ukrainian equivalents so a
+            # classifier that extracts "living room" still finds a
+            # device stored under "вітальня" (Gree / Hue imports often
+            # use the user's native-language room as meta.location_en).
+            loc = location.lower()
+            loc_variants = {loc, loc.replace(" ", "_"), loc.replace("_", " ")}
+            EN_TO_UK = {
+                "bedroom":     "спальня",
+                "kitchen":     "кухня",
+                "living room": "вітальня",
+                "living_room": "вітальня",
+                "office":      "кабінет",
+                "bathroom":    "ванна",
+            }
+            UK_TO_EN = {v: k for k, v in EN_TO_UK.items() if "_" not in k}
+            for v in list(loc_variants):
+                if v in EN_TO_UK:
+                    loc_variants.add(EN_TO_UK[v])
+                if v in UK_TO_EN:
+                    loc_variants.add(UK_TO_EN[v])
+            like_clauses = []
+            for v in loc_variants:
+                like_clauses.append(Device.location.ilike(f"%{v}%"))
+                like_clauses.append(
+                    Device.meta.ilike(f'%"location_en": "%{v}%')
+                )
+            stmt = stmt.where(or_(*like_clauses))
         if keyword:
             kw_lower = f"%{keyword.lower()}%"
             stmt = stmt.where(

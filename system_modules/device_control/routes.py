@@ -130,12 +130,45 @@ class HueImportEntry(BaseModel):
     light_id: int | str
     name: str = ""
     location: str = ""
+    hue_type: str = ""   # raw Hue API "type" string, e.g. "Extended color light"
 
 
 class HueImportBody(BaseModel):
     api_host: str
     token: str
     devices: list[HueImportEntry]
+
+
+_HUE_TYPE_TO_ENTITY: tuple[tuple[tuple[str, ...], str], ...] = (
+    # Order matters — first match wins; match is lowercase substring.
+    (("plug", "outlet"),                       "outlet"),
+    (("on/off plug", "on/off light"),          "outlet"),
+    (("dimmer switch", "smart button",
+      "tap dial", "wall switch"),              "switch"),
+    (("motion sensor", "light sensor",
+      "temperature sensor", "presence"),       "sensor"),
+    (("contact sensor", "door"),               "door_lock"),
+    # Anything that contains "light" falls through to "light" below.
+)
+
+
+def _hue_type_to_entity(hue_type: str | None) -> str:
+    """Map a Hue API ``type`` string to our canonical entity_type.
+
+    Hue's discovery endpoint reports types like "Extended color light",
+    "Dimmable light", "On/Off plug-in unit", "ZLLSwitch". Before this
+    mapping the import hardcoded ``entity_type="light"`` for every row,
+    which broke type-based voice resolution for plugs, switches and
+    sensors imported from a Hue bridge. Falls back to ``light`` because
+    that is Hue's majority type.
+    """
+    s = (hue_type or "").strip().lower()
+    if not s:
+        return "light"
+    for needles, et in _HUE_TYPE_TO_ENTITY:
+        if any(n in s for n in needles):
+            return et
+    return "light"
 
 
 class Z2mDiscoverBody(BaseModel):
@@ -777,13 +810,14 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
                 if meta.get(k) is None:
                     meta.pop(k, None)
 
+            entity_type = _hue_type_to_entity(entry.hue_type)
             async with svc._db_session() as session:
                 async with session.begin():
                     device = Device(
                         name=display,
                         type="actuator",
                         protocol="philips_hue",
-                        entity_type="light",
+                        entity_type=entity_type,
                         location=location,
                         module_id=svc.name,
                         enabled=True,
@@ -801,7 +835,7 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             await svc.publish("device.registered", {
                 "device_id": device_id,
                 "name": display,
-                "entity_type": "light",
+                "entity_type": entity_type,
                 "location": location,
                 "protocol": "philips_hue",
                 "capabilities": ["on", "off", "brightness"],
