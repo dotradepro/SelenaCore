@@ -433,3 +433,111 @@ if result.intent in ("device.on", "device.off"):
 ---
 
 **Питання / корекції?** Цей документ версіонується в репозиторії. Відкрийте issue або PR, якщо ваш інтент не попадає туди, куди каже гайд — це сигнал, що документ неповний чи неправильний, а не ви.
+
+---
+
+## 13. Уточнюючі запитання до користувача
+
+Іноді класифікатор правильно визначає інтент, але критичний параметр відсутній (`set_temperature` без значення), або в реєстрі є N пристроїв, що всі підходять (`вимкни світло` при 3 лампочках у спальні). Замість того щоб мовчки провалити чи вибрати навмання, **емітіть clarification** — асистент задає уточнююче питання, тримає мікрофон відкритим 10 секунд, потім маршрутизує відповідь проти збереженого контексту.
+
+### Коли fires clarification
+
+Три тригери, з вказівкою хто детектить:
+
+| Тригер | Детектується | Приклад |
+|---|---|---|
+| `ambiguous_device` | `IntentRouter._disambiguate_device` | 2+ пристроя одного типу, без кімнати |
+| `missing_param` | **Хендлер вашого модуля** | `set_temperature` без числа |
+| `low_margin` | `IntentRouter._try_embedding_classify` | Margin embedding у діапазоні (0.003, 0.015) |
+
+`ambiguous_device` і `low_margin` спрацьовують автоматично в роутері — нічого додатково не робіть. `missing_param` — ВАШЕ завдання.
+
+### Емісія `missing_param` з модуля
+
+Використовуйте `SystemModule.request_clarification()`:
+
+```python
+from core.module_loader.system_module import SystemModule
+
+class ClimateModule(SystemModule):
+    async def _on_voice_intent(self, event):
+        params = event.payload.get("params", {})
+        intent = event.payload.get("intent")
+
+        if intent == "climate.set_temperature":
+            if not params.get("value"):
+                await self.request_clarification(
+                    pending_intent=intent,
+                    pending_params=dict(params),
+                    question_key="clarify.missing_value",  # ключ canned-prompt'а
+                    reason="missing_param",
+                    hint="temperature",                    # вставляється у питання
+                    param_name="value",                    # slot куди піде відповідь
+                )
+                return  # ВАЖЛИВО: return одразу — VoiceCore
+                        # переходить у AWAITING_CLARIFICATION
+```
+
+Параметри:
+
+- `pending_intent`: інтент, що re-fire після відповіді користувача.
+- `pending_params`: зібрані параметри (мержаться з відповіддю на turn 2).
+- `question_key`: ключ у [action_phrasing.py](../../system_modules/voice_core/action_phrasing.py). Canned catalog: `clarify.missing_value` / `clarify.which_room` / `clarify.which_device` / `clarify.low_confidence` / `clarify.cancelled` / `clarify.timed_out`. Реєструйте свій модуль-специфічний якщо треба.
+- `hint`: вільний текст, підставляється в питання ("what `temperature`?" / "what `fan speed`?").
+- `param_name`: slot у `pending_params`, який заповнює відповідь. Default `"value"`.
+- `allowed_values`: для enum-слотів (mode / fan-speed). Fuzzy-match проти списку. Числовий парсинг йде першим.
+- `timeout_sec`: default 10.0. Зазвичай не перевизначайте.
+
+**Обов'язково `return` одразу** після виклику. VoiceCore audio loop переходить у `AWAITING_CLARIFICATION`; не блокуйте після виклику.
+
+### Як матчиться відповідь
+
+[`IntentRouter.route_clarification()`](../../system_modules/llm_engine/intent_router.py) запускає fast-path:
+
+1. **Позиційна референція** — `"first"` / `"the second"` / `"перший"` / `"друге"` → кандидат за індексом. EN + UK тільки (§R9).
+2. **Match за кімнатою** — двомовно з morphology-tolerance (UK відмінки через SequenceMatcher similarity ≥ 0.70).
+3. **Match за ім'ям пристрою** — fuzzy similarity ≥ 0.75 проти `name` кандидатів.
+4. **Числовий парсинг** — цифри (`"22"`) або слова (`"twenty-two"`).
+5. **Fuzzy-match allowed-values** — для enum-слотів.
+6. **Ствердження** — `"yes"` / `"ok"` / `"так"` → виграшник.
+
+При успіху: оригінальний інтент re-fire з merged params.
+
+При провалі: canned `clarify.cancelled` + повернення в idle.
+
+### Тестування
+
+Додайте fixture до [clarification_fixtures.py](../../tests/experiments/clarification_fixtures.py):
+
+```python
+{
+    "name": "my_module.missing_param.numeric",
+    "lang": "en",
+    "turn_2_text": "5",
+    "synthetic_pending": {
+        "reason": "missing_param",
+        "question_key": "clarify.missing_value",
+        "hint": "duration",
+        "param_name": "duration_sec",
+        "pending_intent": "my_module.start",
+        "pending_params": {},
+        "timeout_sec": 10.0,
+    },
+    "expected_final_intent": "my_module.start",
+    "expected_final_params": {"duration_sec": "5"},
+},
+```
+
+Прогін:
+
+```bash
+docker exec -t selena-core python3 /opt/selena-core/tests/experiments/run_clarification_bench.py
+```
+
+Ціль: ваша fixture pass. Додайте companion fuzzy-fail (відповідь що не матчить, `allow_cancelled: True`).
+
+### Не треба
+
+- **Не треба** реалізовувати свій "ask and wait" loop. Використовуйте `request_clarification`. State machine живе в VoiceCore і має залишатися там — кілька модулів за мікрофон одночасно зламають сесію.
+- **Не ланцюжки clarification**. MVP — один раунд на команду. "Яка кімната? спальня. Яка лампа в спальні?" поза скоупом, заплутає користувача.
+- **Не ставте `timeout_sec`** нижче 5 або вище 15. Менше 5 — надто агресивно; більше 15 — дратівна тиша.

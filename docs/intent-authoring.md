@@ -433,3 +433,111 @@ Result: `media.volume_up` / `media.volume_down` now 100%.
 ---
 
 **Questions / corrections?** This doc is versioned in the repo. Open an issue or PR if your intent doesn't land where the guide says it should — that's a signal this doc is wrong or incomplete, not you.
+
+---
+
+## 13. Asking the user a clarifying question
+
+Sometimes the classifier correctly identifies the intent but a critical parameter is missing (`set_temperature` with no value), or the registry has N devices that all match (`turn off the light` with 3 bedroom lights). Rather than fail silently or pick arbitrarily, emit a **clarification** — the assistant asks a follow-up question, keeps the mic open for 10 seconds, then routes the reply against the pending context.
+
+### When clarification fires
+
+Three triggers, listed with who detects them:
+
+| Trigger | Detected by | Example |
+|---|---|---|
+| `ambiguous_device` | `IntentRouter._disambiguate_device` | 2+ devices of the same type, no room given |
+| `missing_param` | **Your module's handler** | `set_temperature` with no numeric value |
+| `low_margin` | `IntentRouter._try_embedding_classify` | Embedding winner margin in (0.003, 0.015) |
+
+`ambiguous_device` and `low_margin` happen automatically in the router — nothing for a module author to wire up. `missing_param` is on YOU.
+
+### Emitting `missing_param` from a module
+
+Use `SystemModule.request_clarification()`:
+
+```python
+from core.module_loader.system_module import SystemModule
+
+class ClimateModule(SystemModule):
+    async def _on_voice_intent(self, event):
+        params = event.payload.get("params", {})
+        intent = event.payload.get("intent")
+
+        if intent == "climate.set_temperature":
+            if not params.get("value"):
+                await self.request_clarification(
+                    pending_intent=intent,
+                    pending_params=dict(params),
+                    question_key="clarify.missing_value",   # canned prompt key
+                    reason="missing_param",
+                    hint="temperature",                      # shown in the question
+                    param_name="value",                      # slot to fill from reply
+                )
+                return  # IMPORTANT: return immediately — VoiceCore
+                        # enters AWAITING_CLARIFICATION
+```
+
+Parameters:
+
+- `pending_intent`: the intent that should re-fire after the user answers.
+- `pending_params`: params captured so far (merged with the answer on turn 2).
+- `question_key`: a key registered in [action_phrasing.py](../system_modules/voice_core/action_phrasing.py). Canned catalog has `clarify.missing_value` / `clarify.which_room` / `clarify.which_device` / `clarify.low_confidence` / `clarify.cancelled` / `clarify.timed_out`. Register your own module-specific key if needed.
+- `hint`: free-text hint substituted into the question ("what `temperature`?" / "what `fan speed`?").
+- `param_name`: the slot name in `pending_params` that the reply fills. Defaults to `"value"`.
+- `allowed_values`: for enum-like slots (mode / fan-speed). If set, reply is fuzzy-matched against this list. Numeric parsing still runs first.
+- `timeout_sec`: 10.0 default. Rarely override.
+
+**Must `return` immediately** after calling `request_clarification`. VoiceCore's audio loop transitions to `AWAITING_CLARIFICATION` and opens the mic; don't block after the call.
+
+### How the reply is matched
+
+[`IntentRouter.route_clarification()`](../system_modules/llm_engine/intent_router.py) runs a fast-path resolver over the reply:
+
+1. **Positional reference** — `"first"` / `"the second"` / `"перший"` / `"друге"` → pick candidate by index. EN + UK only for MVP (see plan §R9).
+2. **Room match** — bilingual with morphology tolerance (UK noun cases handled via SequenceMatcher similarity ≥ 0.70).
+3. **Device-name match** — fuzzy similarity ≥ 0.75 against candidate `name` fields.
+4. **Numeric parsing** — digits (`"22"`) or word-form (`"twenty-two"`), reuses `_extract_numeric_value()`.
+5. **Allowed-values fuzzy match** — for enum slots if your intent declared them.
+6. **Affirmation** — `"yes"` / `"ok"` / `"так"` → picks the low-margin winner.
+
+On match: the original intent re-fires with merged params; module handler runs as if the full command had been given in one shot.
+
+On match failure: canned `clarify.cancelled` is spoken, back to idle.
+
+### Testing your clarification
+
+Add a fixture to [clarification_fixtures.py](../tests/experiments/clarification_fixtures.py):
+
+```python
+{
+    "name": "my_module.missing_param.numeric",
+    "lang": "en",
+    "turn_2_text": "5",
+    "synthetic_pending": {
+        "reason": "missing_param",
+        "question_key": "clarify.missing_value",
+        "hint": "duration",
+        "param_name": "duration_sec",
+        "pending_intent": "my_module.start",
+        "pending_params": {},
+        "timeout_sec": 10.0,
+    },
+    "expected_final_intent": "my_module.start",
+    "expected_final_params": {"duration_sec": "5"},
+},
+```
+
+Run:
+
+```bash
+docker exec -t selena-core python3 /opt/selena-core/tests/experiments/run_clarification_bench.py
+```
+
+Target: your fixture passes. Keep the fuzzy-fail companion too (give a reply that can't match, expect `allow_cancelled: True`).
+
+### Don't
+
+- **Don't** implement your own "ask and wait" loop. Use `request_clarification`. The state machine is in VoiceCore and needs to stay there — multiple modules racing for mic input would corrupt the session.
+- **Don't** chain clarifications. MVP is one round per command. "Which room? bedroom. Which bedroom light?" is out-of-scope and will confuse the user.
+- **Don't** set `timeout_sec` below 5 or above 15. Below 5 is too aggressive (users need think-time); above 15 is annoying silence.
