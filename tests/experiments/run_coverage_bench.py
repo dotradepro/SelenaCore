@@ -137,6 +137,13 @@ def _verdict(case: dict, got_intent: str, got_params: dict | None) -> str:
     if cat == "media":
         return "pass" if got_intent == exp_intent else "intent_wrong"
 
+    # Cross-module coverage: clock / weather / presence / automation /
+    # system — intent-match only. These are typically parameterless
+    # queries or freetext-arg commands where the classifier isn't
+    # expected to extract a specific entity from a fuzzy phrase.
+    if cat in ("clock", "weather", "presence", "automation", "system"):
+        return "pass" if got_intent == exp_intent else "intent_wrong"
+
     # Ambiguous (no location) → classifier should still pick the intent;
     # resolver should signal ambiguous via params. Pass if intent matches
     # OR if router signalled "ambiguous" in params.

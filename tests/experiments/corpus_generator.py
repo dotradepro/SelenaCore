@@ -498,6 +498,202 @@ MEDIA_CASES: list[dict[str, Any]] = [
 ]
 
 
+# ── Cross-module coverage ─────────────────────────────────────────────
+# The lists below exercise every currently-declared intent that has
+# zero hand-written test coverage. Pure intent-match scoring — no
+# entity/location expected because these intents are typically
+# parameterless queries (who_home, weather.current, automation.status,
+# energy.today), or take freetext args the classifier isn't expected
+# to extract.
+
+CLOCK_CASES: list[dict[str, Any]] = [
+    # set_alarm
+    {"lang": "en", "native": "set an alarm for 7 am",
+     "exp_intent": "clock.set_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "встанови будильник на сьому ранку",
+     "exp_intent": "clock.set_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # set_timer
+    {"lang": "en", "native": "set a timer for 10 minutes",
+     "exp_intent": "clock.set_timer", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "таймер на 10 хвилин",
+     "exp_intent": "clock.set_timer", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # set_reminder
+    {"lang": "en", "native": "remind me at 3 pm to call mom",
+     "exp_intent": "clock.set_reminder", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "нагадай мені о п'ятій вечора",
+     "exp_intent": "clock.set_reminder", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # list_alarms
+    {"lang": "en", "native": "list my alarms",
+     "exp_intent": "clock.list_alarms", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "які будильники встановлено",
+     "exp_intent": "clock.list_alarms", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # cancel_alarm
+    {"lang": "en", "native": "cancel the morning alarm",
+     "exp_intent": "clock.cancel_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "видали ранковий будильник",
+     "exp_intent": "clock.cancel_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # stop_alarm
+    {"lang": "en", "native": "stop the alarm",
+     "exp_intent": "clock.stop_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "вимкни будильник",
+     "exp_intent": "clock.stop_alarm", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    # cancel_timer
+    {"lang": "en", "native": "cancel the timer",
+     "exp_intent": "clock.cancel_timer", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+    {"lang": "uk", "native": "зупини таймер",
+     "exp_intent": "clock.cancel_timer", "exp_entity": None, "exp_location": None,
+     "category": "clock", "twist": None, "noise": None},
+]
+
+WEATHER_CASES: list[dict[str, Any]] = [
+    {"lang": "en", "native": "what's the weather",
+     "exp_intent": "weather.current", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+    {"lang": "uk", "native": "яка сьогодні погода",
+     "exp_intent": "weather.current", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+    {"lang": "en", "native": "will it rain tomorrow",
+     "exp_intent": "weather.forecast", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+    {"lang": "uk", "native": "завтра буде дощ",
+     "exp_intent": "weather.forecast", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+    {"lang": "en", "native": "what's the temperature outside",
+     "exp_intent": "weather.temperature", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+    {"lang": "uk", "native": "яка температура надворі",
+     "exp_intent": "weather.temperature", "exp_entity": None, "exp_location": None,
+     "category": "weather", "twist": None, "noise": None},
+]
+
+PRESENCE_CASES: list[dict[str, Any]] = [
+    {"lang": "en", "native": "who's home",
+     "exp_intent": "presence.who_home", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+    {"lang": "uk", "native": "хто в домі",
+     "exp_intent": "presence.who_home", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+    {"lang": "en", "native": "is Alice home",
+     "exp_intent": "presence.check_user", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+    {"lang": "uk", "native": "чи Петро вдома",
+     "exp_intent": "presence.check_user", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+    {"lang": "en", "native": "house status",
+     "exp_intent": "presence.status", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+    {"lang": "uk", "native": "стан будинку",
+     "exp_intent": "presence.status", "exp_entity": None, "exp_location": None,
+     "category": "presence", "twist": None, "noise": None},
+]
+
+AUTOMATION_CASES: list[dict[str, Any]] = [
+    {"lang": "en", "native": "list automations",
+     "exp_intent": "automation.list", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "uk", "native": "які правила встановлено",
+     "exp_intent": "automation.list", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "en", "native": "enable the bedtime automation",
+     "exp_intent": "automation.enable", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "uk", "native": "увімкни автоматизацію вечірнього режиму",
+     "exp_intent": "automation.enable", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "en", "native": "disable the morning routine",
+     "exp_intent": "automation.disable", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "uk", "native": "вимкни ранкове правило",
+     "exp_intent": "automation.disable", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+    {"lang": "en", "native": "automation status",
+     "exp_intent": "automation.status", "exp_entity": None, "exp_location": None,
+     "category": "automation", "twist": None, "noise": None},
+]
+
+SYSTEM_CASES: list[dict[str, Any]] = [
+    # device-watchdog
+    {"lang": "en", "native": "which devices are offline",
+     "exp_intent": "watchdog.status", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "які прилади офлайн",
+     "exp_intent": "watchdog.status", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "scan the devices",
+     "exp_intent": "watchdog.scan", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    # energy-monitor
+    {"lang": "en", "native": "current power usage",
+     "exp_intent": "energy.current", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "скільки зараз ват",
+     "exp_intent": "energy.current", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "energy consumed today",
+     "exp_intent": "energy.today", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "скільки електроенергії сьогодні",
+     "exp_intent": "energy.today", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    # voice-core privacy
+    {"lang": "en", "native": "enable privacy mode",
+     "exp_intent": "privacy_on", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "увімкни режим приватності",
+     "exp_intent": "privacy_on", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "disable privacy mode",
+     "exp_intent": "privacy_off", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "вимкни режим приватності",
+     "exp_intent": "privacy_off", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    # device-control gaps: query_temperature (indoor, distinct from weather.temperature)
+    {"lang": "en", "native": "what's the temperature in the living room",
+     "exp_intent": "device.query_temperature", "exp_entity": None, "exp_location": "living room",
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "how warm is it in the bedroom",
+     "exp_intent": "device.query_temperature", "exp_entity": None, "exp_location": "bedroom",
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "яка температура у вітальні",
+     "exp_intent": "device.query_temperature", "exp_entity": None, "exp_location": "living room",
+     "category": "system", "twist": None, "noise": None},
+    # device-control gaps: set_fan_speed
+    {"lang": "en", "native": "set the fan speed to high",
+     "exp_intent": "device.set_fan_speed", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "fan speed low",
+     "exp_intent": "device.set_fan_speed", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "встанови швидкість вентилятора на високу",
+     "exp_intent": "device.set_fan_speed", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    # media-player gaps: play_search, shuffle_toggle
+    {"lang": "en", "native": "play Pink Floyd",
+     "exp_intent": "media.play_search", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "uk", "native": "пустити Бітлз",
+     "exp_intent": "media.play_search", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+    {"lang": "en", "native": "shuffle the tracks",
+     "exp_intent": "media.shuffle_toggle", "exp_entity": None, "exp_location": None,
+     "category": "system", "twist": None, "noise": None},
+]
+
+
 DISTRACTORS: list[dict[str, Any]] = [
     # Pure chat / nonsense — classifier must NOT produce a device intent.
     {"lang": "en", "native": "what is the meaning of life",
@@ -560,6 +756,11 @@ async def generate() -> list[dict[str, Any]]:
     cases.extend(ALL_OFF_CASES)
     cases.extend(ALL_ON_CASES)
     cases.extend(MEDIA_CASES)
+    cases.extend(CLOCK_CASES)
+    cases.extend(WEATHER_CASES)
+    cases.extend(PRESENCE_CASES)
+    cases.extend(AUTOMATION_CASES)
+    cases.extend(SYSTEM_CASES)
     cases.extend(DISTRACTORS)
     return cases
 
