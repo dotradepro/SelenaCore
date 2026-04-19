@@ -6,16 +6,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Clock</title>
 <style>
-:root{
-  --bg:var(--sf2);
-  --card:var(--sf);
-  --fg:var(--tx);
-  --mut:var(--tx2);
-  --hint:var(--tx3);
-  --pr:var(--ac);
-}
-body{background:transparent;color:var(--fg)}
-button,input,select{font-family:inherit;color:inherit}
+/* Clock-specific styles only. Buttons, inputs, fields, sheets, toggles,
+   chips, icon-btn, fab, fs-close, empty-state, list-row outer come from
+   /api/shared/theme.css (Shared Component Library). */
+
+body{background:transparent}
 
 .wrap{padding:8px;display:flex;flex-direction:column;gap:6px;height:100vh;overflow-y:auto;min-width:0;margin:0}
 .wrap.modal{padding:18px 18px 80px;max-width:560px;margin:0 auto;gap:14px;height:100%;max-height:100vh;overflow-y:auto;min-height:0}
@@ -24,216 +19,53 @@ button,input,select{font-family:inherit;color:inherit}
 .compact{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   width:100%;height:100%;padding:6px 6px;gap:1px;
-  background:var(--card);border:1px solid var(--b);border-radius:10px;
+  background:var(--sf);border:1px solid var(--b);border-radius:10px;
   cursor:pointer;transition:border-color .15s,transform .08s;
   user-select:none;-webkit-tap-highlight-color:transparent;
   text-align:center;overflow:hidden;
 }
-.compact:hover{border-color:var(--pr)}
+.compact:hover{border-color:var(--ac)}
 .compact:active{transform:scale(.985)}
 .compact *{pointer-events:none}
-.compact .now{
-  font-size:24px;font-weight:700;color:var(--fg);
-  font-variant-numeric:tabular-nums;line-height:1.05;
-}
-.compact .date{
-  font-size:10px;color:var(--mut);
-  text-transform:uppercase;letter-spacing:.04em;
-  margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
-}
-.compact .icons{
-  display:flex;align-items:center;justify-content:center;gap:6px;
-  margin-top:3px;
-}
+.compact .now{font-size:24px;font-weight:700;color:var(--tx);font-variant-numeric:tabular-nums;line-height:1.05}
+.compact .date{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.compact .icons{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:3px}
 .compact .icons:empty{display:none;margin-top:0}
-.compact .ico{
-  display:inline-flex;align-items:center;gap:2px;
-  font-size:12px;color:var(--mut);line-height:1;
-}
+.compact .ico{display:inline-flex;align-items:center;gap:2px;font-size:12px;color:var(--tx2);line-height:1}
 .compact .ico.alarm{color:var(--am)}
-.compact .ico.timer{color:var(--pr)}
+.compact .ico.timer{color:var(--ac)}
 .compact .ico.reminder{color:var(--gr)}
 .compact .ico.ringing{color:var(--rd);animation:pulse 1s infinite}
 .compact .ico .count{font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
 
-/* ── Modal: tabs ────────────────────────────────────────────────── */
-.tabs{
-  display:flex;background:var(--card);border:1px solid var(--b);border-radius:10px;
-  padding:4px;gap:4px;flex-shrink:0;
-}
-.tabs button{
-  flex:1;padding:9px 6px;font-size:12px;font-weight:500;
-  background:transparent;border:none;border-radius:7px;color:var(--mut);
-  cursor:pointer;transition:background .15s,color .15s;
-}
-.tabs button:hover{color:var(--fg)}
-.tabs button.active{background:var(--pr);color:var(--on-accent);font-weight:600}
-
+/* Tab pane container (tab buttons themselves use shared .settings-tabs/.settings-tab). */
 .pane{display:none;flex-direction:column;gap:10px}
 .pane.active{display:flex}
 
-.empty{padding:40px 14px;text-align:center;color:var(--mut);font-size:12px}
-
-/* ── List rows (alarms / timers / reminders) — scoped to avoid
-     clashing with shared .row class. ───────────────────────────── */
-.list-row{
-  display:flex;align-items:center;gap:12px;min-width:0;
-  padding:12px 14px;background:var(--card);border:1px solid var(--b);border-radius:10px;
-  transition:border-color .15s;
-}
-.list-row:hover{border-color:var(--pr)}
-.list-row .main{flex:1;min-width:0;cursor:pointer}
-.list-row .big{font-size:24px;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.1}
-.list-row .label{font-size:12px;color:var(--mut);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.list-row .repeat{font-size:11px;color:var(--hint);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
-.list-row.off{opacity:.55}
-
-/* Swift-style sliding toggle — clock uses a smaller 46x26 variant
-   (shared /api/shared/theme.css has the default 52x30). */
-.toggle{position:relative;display:inline-block;width:46px;height:26px;flex-shrink:0;cursor:pointer}
-.toggle input{opacity:0;width:0;height:0}
-.toggle .slider{
-  position:absolute;inset:0;background:var(--sf3);border-radius:30px;
-  transition:background .22s ease,border-color .22s ease;border:1px solid var(--b2);
-}
-.toggle .slider::before{
-  content:"";position:absolute;top:1px;left:1px;
-  width:22px;height:22px;border-radius:50%;
-  background:var(--tx);box-shadow:0 2px 5px rgba(0,0,0,.25);
-  transition:transform .22s ease,background .22s ease;
-}
-.toggle input:checked + .slider{background:var(--gr);border-color:var(--gr)}
-.toggle input:checked + .slider::before{background:#fff;transform:translateX(20px)}
-
-/* Icon button (delete, pause, etc.) */
-.icon-btn{
-  width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;
-  background:transparent;border:1px solid var(--b);border-radius:8px;
-  color:var(--mut);font-size:14px;cursor:pointer;flex-shrink:0;
-  transition:border-color .15s,color .15s,background .15s;
-}
-.icon-btn:hover{border-color:var(--pr);color:var(--fg);background:var(--card)}
-.icon-btn.danger:hover{border-color:var(--rd);color:var(--rd)}
+/* List-row child slots used by alarms / timers / reminders. */
+.list-row .lr-time{font-size:24px;font-weight:600;color:var(--tx);font-variant-numeric:tabular-nums;line-height:1.1}
+.list-row .lr-clickable{flex:1;min-width:0;cursor:pointer}
+.list-row .lr-repeat{font-size:11px;color:var(--tx3);margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
 
 /* ── Big numeric display (timer / stopwatch) ────────────────────── */
-.big-display{
-  text-align:center;padding:24px 0 18px;
-  font-size:54px;font-weight:300;letter-spacing:1px;
-  font-variant-numeric:tabular-nums;color:var(--fg);
-}
+.big-display{text-align:center;padding:24px 0 18px;font-size:54px;font-weight:300;letter-spacing:1px;font-variant-numeric:tabular-nums;color:var(--tx)}
 
 .big-controls{display:flex;gap:10px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
-.big-controls button{
-  padding:10px 22px;border-radius:9px;
-  background:var(--card);border:1px solid var(--b);color:var(--fg);
-  font-size:13px;font-weight:500;cursor:pointer;
-  transition:border-color .15s,background .15s;
-}
-.big-controls button:hover{border-color:var(--pr)}
-.big-controls button.primary{background:var(--pr);border-color:var(--pr);color:var(--on-accent)}
-.big-controls button.primary:hover{filter:brightness(1.1)}
-.big-controls button.danger{background:var(--rd);border-color:var(--rd);color:var(--on-danger)}
-
 .preset-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px}
-.preset-row button{
-  padding:7px 14px;border-radius:9px;
-  background:var(--card);border:1px solid var(--b);color:var(--mut);
-  font-size:12px;font-weight:500;cursor:pointer;
-}
-.preset-row button:hover{border-color:var(--pr);color:var(--fg)}
 
 .lap-list{margin-top:14px;border-top:1px solid var(--b);padding-top:6px}
-.lap-list .lap-row{
-  display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;
-  padding:9px 4px;border-bottom:1px solid var(--b);
-  font-variant-numeric:tabular-nums;font-size:12px;color:var(--mut);
-}
+.lap-list .lap-row{display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;padding:9px 4px;border-bottom:1px solid var(--b);font-variant-numeric:tabular-nums;font-size:12px;color:var(--tx2)}
 .lap-list .lap-row:last-child{border-bottom:none}
-.lap-list .lap-row span:first-child{color:var(--hint);font-weight:600}
-.lap-list .lap-row span:last-child{text-align:right;color:var(--fg)}
+.lap-list .lap-row span:first-child{color:var(--tx3);font-weight:600}
+.lap-list .lap-row span:last-child{text-align:right;color:var(--tx)}
 
 /* ── World clock rows ───────────────────────────────────────────── */
-.city-row{
-  display:flex;align-items:center;gap:12px;min-width:0;
-  padding:12px 14px;background:var(--card);border:1px solid var(--b);border-radius:10px;
-  transition:border-color .15s;
-}
-.city-row:hover{border-color:var(--pr)}
+.city-row{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;background:var(--sf);border:1px solid var(--b);border-radius:10px;transition:border-color .15s}
+.city-row:hover{border-color:var(--ac)}
 .city-row .left{flex:1;min-width:0}
-.city-row .name{font-size:14px;font-weight:500;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.city-row .tz{font-size:11px;color:var(--hint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.city-row .ct{font-size:22px;font-weight:600;color:var(--fg);font-variant-numeric:tabular-nums;flex-shrink:0}
-
-/* ── FAB (add new) ──────────────────────────────────────────────── */
-.fab{
-  position:fixed;right:22px;bottom:22px;
-  width:52px;height:52px;border-radius:50%;
-  background:var(--pr);color:var(--on-accent);border:none;cursor:pointer;
-  font-size:26px;line-height:1;font-weight:300;
-  box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:5;
-  display:flex;align-items:center;justify-content:center;
-}
-.fab:hover{filter:brightness(1.1)}
-.fab:active{transform:scale(.95)}
-
-/* ── Editor sheet (overlay) ─────────────────────────────────────── */
-.sheet-overlay{
-  position:fixed;inset:0;background:rgba(0,0,0,.55);
-  display:none;z-index:1000;
-  align-items:flex-end;justify-content:center;
-  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
-}
-.sheet-overlay.open{display:flex}
-.sheet{
-  width:100%;max-width:480px;
-  background:var(--bg);border:1px solid var(--b);border-bottom:none;
-  border-top-left-radius:14px;border-top-right-radius:14px;
-  padding:20px 22px 26px;max-height:90vh;overflow-y:auto;
-}
-.sheet h3{margin:0 0 16px;font-size:15px;font-weight:600;color:var(--fg)}
-.sheet .field{margin-bottom:14px}
-.sheet .field label{display:block;font-size:11px;color:var(--mut);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
-.sheet .field input,
-.sheet .field select{
-  width:100%;
-  background:var(--card);border:1px solid var(--b2);border-radius:8px;
-  color:var(--fg);padding:10px 12px;font-size:13px;
-  transition:border-color .15s;
-}
-.sheet .field input:focus,
-.sheet .field select:focus{outline:none;border-color:var(--pr)}
-.sheet .row-fields{display:flex;gap:8px}
-.sheet .row-fields > *{flex:1}
-
-.day-picker{display:flex;gap:5px;flex-wrap:wrap}
-.day-picker button{
-  flex:1;min-width:38px;padding:9px 0;
-  background:var(--card);border:1px solid var(--b);border-radius:8px;
-  color:var(--mut);font-size:11px;font-weight:600;cursor:pointer;
-  text-transform:uppercase;letter-spacing:.04em;
-}
-.day-picker button.on{background:var(--pr);border-color:var(--pr);color:var(--on-accent)}
-
-.sheet-actions{display:flex;gap:8px;margin-top:18px}
-.sheet-actions button{
-  flex:1;padding:11px;border-radius:9px;
-  font-size:13px;font-weight:600;cursor:pointer;
-  transition:filter .15s,border-color .15s;
-}
-.sheet-actions .cancel{background:var(--card);border:1px solid var(--b);color:var(--fg)}
-.sheet-actions .cancel:hover{border-color:var(--pr)}
-.sheet-actions .save{background:var(--pr);border:1px solid var(--pr);color:var(--on-accent)}
-.sheet-actions .save:hover{filter:brightness(1.1)}
-.sheet-actions .delete{background:transparent;border:1px solid var(--rd);color:var(--rd)}
-.sheet-actions .delete:hover{background:rgba(224,84,84,.12)}
-
-/* ── Fullscreen modal close button ──────────────────────────────── */
-.fs-close{
-  position:fixed;top:14px;right:18px;
-  background:var(--card);border:1px solid var(--b);border-radius:50%;
-  width:36px;height:36px;cursor:pointer;color:var(--fg);font-size:18px;
-  display:none;align-items:center;justify-content:center;z-index:1001;
-}
+.city-row .name{font-size:14px;font-weight:500;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.city-row .tz{font-size:11px;color:var(--tx3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.city-row .ct{font-size:22px;font-weight:600;color:var(--tx);font-variant-numeric:tabular-nums;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -249,12 +81,12 @@ button,input,select{font-family:inherit;color:inherit}
 
 <!-- Modal body (5-tab UI) -->
 <div class="wrap modal" id="modalWrap" style="display:none">
-  <div class="tabs">
-    <button data-tab="alarms" class="active" data-i18n="tab_alarms"></button>
-    <button data-tab="timers" data-i18n="tab_timers"></button>
-    <button data-tab="reminders" data-i18n="tab_reminders"></button>
-    <button data-tab="world" data-i18n="tab_world"></button>
-    <button data-tab="stopwatch" data-i18n="tab_stopwatch"></button>
+  <div class="settings-tabs">
+    <button data-tab="alarms" class="settings-tab active" data-i18n="tab_alarms"></button>
+    <button data-tab="timers" class="settings-tab" data-i18n="tab_timers"></button>
+    <button data-tab="reminders" class="settings-tab" data-i18n="tab_reminders"></button>
+    <button data-tab="world" class="settings-tab" data-i18n="tab_world"></button>
+    <button data-tab="stopwatch" class="settings-tab" data-i18n="tab_stopwatch"></button>
   </div>
 
   <div id="paneAlarms" class="pane active">
@@ -265,10 +97,10 @@ button,input,select{font-family:inherit;color:inherit}
   <div id="paneTimers" class="pane">
     <div class="big-display" id="timerBig">00:00</div>
     <div class="preset-row">
-      <button onclick="quickTimer(60)">1m</button>
-      <button onclick="quickTimer(300)">5m</button>
-      <button onclick="quickTimer(600)">10m</button>
-      <button onclick="quickTimer(1800)">30m</button>
+      <button class="btn btn-secondary btn-sm" onclick="quickTimer(60)">1m</button>
+      <button class="btn btn-secondary btn-sm" onclick="quickTimer(300)">5m</button>
+      <button class="btn btn-secondary btn-sm" onclick="quickTimer(600)">10m</button>
+      <button class="btn btn-secondary btn-sm" onclick="quickTimer(1800)">30m</button>
     </div>
     <div id="timersList"></div>
     <button class="fab" onclick="openTimerEditor()">+</button>
@@ -287,9 +119,9 @@ button,input,select{font-family:inherit;color:inherit}
   <div id="paneStopwatch" class="pane">
     <div class="big-display" id="swDisplay">00:00.00</div>
     <div class="big-controls">
-      <button id="swStartBtn" class="primary" onclick="swStart()" data-i18n="sw_start"></button>
-      <button id="swLapBtn" onclick="swLap()" data-i18n="sw_lap"></button>
-      <button id="swResetBtn" onclick="swReset()" data-i18n="sw_reset"></button>
+      <button id="swStartBtn" class="btn btn-primary" onclick="swStart()" data-i18n="sw_start"></button>
+      <button id="swLapBtn" class="btn btn-secondary" onclick="swLap()" data-i18n="sw_lap"></button>
+      <button id="swResetBtn" class="btn btn-secondary" onclick="swReset()" data-i18n="sw_reset"></button>
     </div>
     <div id="lapList" class="lap-list"></div>
   </div>
@@ -440,7 +272,7 @@ function bindCompactClick(){
 
 // ── Modal: tabs ────────────────────────────────────────────────────────
 function selectTab(name){
-  document.querySelectorAll('.tabs button').forEach(function(b){
+  document.querySelectorAll('.settings-tab').forEach(function(b){
     b.classList.toggle('active', b.getAttribute('data-tab') === name);
   });
   document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('active');});
@@ -465,16 +297,16 @@ function loadAlarms(){
 }
 function renderAlarms(){
   var c = $('alarmsList');
-  if(!_alarmsCache.length){c.innerHTML = '<div class="empty">'+esc(t('no_alarms'))+'</div>';return;}
+  if(!_alarmsCache.length){c.innerHTML = '<div class="empty-state">'+esc(t('no_alarms'))+'</div>';return;}
   var listHtml = '<div style="display:flex;flex-direction:column;gap:8px">';
   listHtml += _alarmsCache.map(function(a){
     return '<div class="list-row '+(a.enabled?'':'off')+'">'+
-      '<div class="main" onclick="openAlarmEditor(\''+a.id+'\')">'+
-        '<div class="big">'+pad2(a.hour)+':'+pad2(a.minute)+'</div>'+
-        (a.label?'<div class="label">'+esc(a.label)+'</div>':'')+
-        '<div class="repeat">'+esc(formatRepeat(a.repeat_days))+'</div>'+
+      '<div class="lr-clickable" onclick="openAlarmEditor(\''+a.id+'\')">'+
+        '<div class="lr-time">'+pad2(a.hour)+':'+pad2(a.minute)+'</div>'+
+        (a.label?'<div class="lr-sub">'+esc(a.label)+'</div>':'')+
+        '<div class="lr-repeat">'+esc(formatRepeat(a.repeat_days))+'</div>'+
       '</div>'+
-      '<label class="toggle" onclick="event.stopPropagation()">'+
+      '<label class="toggle toggle-sm" onclick="event.stopPropagation()">'+
         '<input type="checkbox" '+(a.enabled?'checked':'')+' onchange="toggleAlarm(\''+a.id+'\',this.checked)">'+
         '<span class="slider"></span>'+
       '</label>'+
@@ -507,25 +339,25 @@ function openAlarmEditor(id){
   var dayBtns = ['day_mon','day_tue','day_wed','day_thu','day_fri','day_sat','day_sun']
     .map(function(k,i){
       var on = _editorDays.indexOf(i) !== -1 ? ' on' : '';
-      return '<button type="button" class="'+on+'" data-day="'+i+'">'+t(k)+'</button>';
+      return '<button type="button" class="chip'+on+'" data-day="'+i+'">'+t(k)+'</button>';
     }).join('');
-  var deleteBtn = id ? '<button class="delete" onclick="deleteAlarm(\''+id+'\')">'+t('btn_delete')+'</button>' : '';
+  var deleteBtn = id ? '<button class="btn btn-danger" onclick="deleteAlarm(\''+id+'\')">'+t('btn_delete')+'</button>' : '';
   var html = '<h3>'+(id?t('edit_alarm'):t('add_alarm'))+'</h3>'+
     '<div class="field"><label>'+t('lbl_time')+'</label>'+
-      '<div class="row-fields">'+
+      '<div class="field-row">'+
         '<input type="number" id="aHour" min="0" max="23" value="'+hour+'">'+
         '<input type="number" id="aMin" min="0" max="59" value="'+minute+'">'+
       '</div></div>'+
     '<div class="field"><label>'+t('lbl_label')+'</label>'+
       '<input type="text" id="aLabel" placeholder="'+t('ph_label_alarm')+'" value="'+esc(label)+'"></div>'+
     '<div class="field"><label>'+t('lbl_repeat')+'</label>'+
-      '<div class="day-picker" id="aDays">'+dayBtns+'</div></div>'+
+      '<div class="chip-picker" id="aDays">'+dayBtns+'</div></div>'+
     '<div class="field"><label>'+t('lbl_snooze')+'</label>'+
       '<input type="number" id="aSnooze" min="0" max="60" value="'+snooze+'"></div>'+
     '<div class="sheet-actions">'+
       deleteBtn+
-      '<button class="cancel" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
-      '<button class="save" onclick="saveAlarm('+(id?"'"+id+"'":'null')+')">'+t('btn_save')+'</button>'+
+      '<button class="btn btn-secondary" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
+      '<button class="btn btn-primary" onclick="saveAlarm('+(id?"'"+id+"'":'null')+')">'+t('btn_save')+'</button>'+
     '</div>';
   openSheet(html);
   document.querySelectorAll('#aDays button').forEach(function(b){
@@ -579,7 +411,7 @@ function renderTimers(){
   bigEl.textContent = running.length ? fmtDuration(running[0].remaining_sec) : '00:00';
   var c = $('timersList');
   if(!_timersCache.length){
-    c.innerHTML = '<div class="empty">'+esc(t('no_timers'))+'</div>';
+    c.innerHTML = '<div class="empty-state">'+esc(t('no_timers'))+'</div>';
     return;
   }
   var html = '<div style="display:flex;flex-direction:column;gap:8px">';
@@ -589,9 +421,9 @@ function renderTimers(){
     if(tm.state === 'running') btn = '<button class="icon-btn" onclick="pauseTimer(\''+tm.id+'\')" title="pause">||</button>';
     else if(tm.state === 'paused') btn = '<button class="icon-btn" onclick="resumeTimer(\''+tm.id+'\')" title="resume">&gt;</button>';
     return '<div class="list-row">'+
-      '<div class="main">'+
-        '<div class="big" data-tid="'+tm.id+'">'+left+'</div>'+
-        (tm.label?'<div class="label">'+esc(tm.label)+'</div>':'')+
+      '<div class="lr-main">'+
+        '<div class="lr-time" data-tid="'+tm.id+'">'+left+'</div>'+
+        (tm.label?'<div class="lr-sub">'+esc(tm.label)+'</div>':'')+
       '</div>'+
       btn+
       '<button class="icon-btn danger" onclick="deleteTimer(\''+tm.id+'\')" title="delete">×</button>'+
@@ -626,13 +458,13 @@ function openTimerEditor(){
     '<div class="field"><label>'+t('lbl_label')+'</label>'+
       '<input type="text" id="tLabel" placeholder="'+t('ph_label_timer')+'"></div>'+
     '<div class="field"><label>'+t('lbl_duration')+'</label>'+
-      '<div class="row-fields">'+
+      '<div class="field-row">'+
         '<input type="number" id="tMin" min="0" value="5" placeholder="'+t('lbl_minutes')+'">'+
         '<input type="number" id="tSec" min="0" max="59" value="0" placeholder="'+t('lbl_seconds')+'">'+
       '</div></div>'+
     '<div class="sheet-actions">'+
-      '<button class="cancel" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
-      '<button class="save" onclick="saveTimer()">'+t('btn_save')+'</button>'+
+      '<button class="btn btn-secondary" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
+      '<button class="btn btn-primary" onclick="saveTimer()">'+t('btn_save')+'</button>'+
     '</div>';
   openSheet(html);
 }
@@ -661,16 +493,16 @@ function loadReminders(){
 function renderReminders(){
   var c = $('remindersList');
   var pending = _remindersCache.filter(function(r){return !r.fired;});
-  if(!pending.length){c.innerHTML = '<div class="empty">'+esc(t('no_reminders'))+'</div>';return;}
+  if(!pending.length){c.innerHTML = '<div class="empty-state">'+esc(t('no_reminders'))+'</div>';return;}
   var html = '<div style="display:flex;flex-direction:column;gap:8px">';
   html += pending.map(function(r){
     var d = new Date(r.due_at);
     var dateStr = d.toLocaleString(LANG==='uk'?'uk-UA':'en-US',
       {weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
     return '<div class="list-row">'+
-      '<div class="main">'+
-        '<div class="label" style="font-size:14px;color:var(--fg);font-weight:500;margin-top:0">'+esc(r.label||'')+'</div>'+
-        '<div class="repeat">'+esc(dateStr)+'</div>'+
+      '<div class="lr-main">'+
+        '<div class="lr-title" style="font-size:14px;font-weight:500">'+esc(r.label||'')+'</div>'+
+        '<div class="lr-repeat">'+esc(dateStr)+'</div>'+
       '</div>'+
       '<button class="icon-btn danger" onclick="deleteReminder(\''+r.id+'\')">×</button>'+
     '</div>';
@@ -690,8 +522,8 @@ function openReminderEditor(){
     '<div class="field"><label>'+t('lbl_due')+'</label>'+
       '<input type="datetime-local" id="rDue" value="'+defaultLocal+'"></div>'+
     '<div class="sheet-actions">'+
-      '<button class="cancel" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
-      '<button class="save" onclick="saveReminder()">'+t('btn_save')+'</button>'+
+      '<button class="btn btn-secondary" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
+      '<button class="btn btn-primary" onclick="saveReminder()">'+t('btn_save')+'</button>'+
     '</div>';
   openSheet(html);
 }
@@ -721,7 +553,7 @@ function loadCities(){
 }
 function renderCities(){
   var c = $('citiesList');
-  if(!_citiesCache.length){c.innerHTML = '<div class="empty">'+esc(t('no_cities'))+'</div>';return;}
+  if(!_citiesCache.length){c.innerHTML = '<div class="empty-state">'+esc(t('no_cities'))+'</div>';return;}
   var html = '<div style="display:flex;flex-direction:column;gap:8px">';
   html += _citiesCache.map(function(city){
     return '<div class="city-row">'+
@@ -755,8 +587,8 @@ function openCityEditor(){
     '<div class="field"><label>'+t('lbl_timezone')+'</label>'+
       '<input type="text" id="cTz" placeholder="'+t('ph_tz')+'"></div>'+
     '<div class="sheet-actions">'+
-      '<button class="cancel" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
-      '<button class="save" onclick="saveCity()">'+t('btn_save')+'</button>'+
+      '<button class="btn btn-secondary" onclick="closeSheet()">'+t('btn_cancel')+'</button>'+
+      '<button class="btn btn-primary" onclick="saveCity()">'+t('btn_save')+'</button>'+
     '</div>';
   openSheet(html);
 }
@@ -853,7 +685,7 @@ function reportModalSize(){
 function refreshAll(){
   applyLang();
   if(IS_MODAL){
-    var active = document.querySelector('.tabs button.active');
+    var active = document.querySelector('.settings-tab.active');
     var name = active ? active.getAttribute('data-tab') : 'alarms';
     selectTab(name);
   } else {
@@ -870,7 +702,7 @@ applyLang();
 if(IS_MODAL){
   document.body.classList.add('modal-mode');
   $('modalWrap').style.display = 'flex';
-  document.querySelectorAll('.tabs button').forEach(function(b){
+  document.querySelectorAll('.settings-tab').forEach(function(b){
     b.onclick = function(){selectTab(b.getAttribute('data-tab'));};
   });
   if(inFrame){
@@ -887,7 +719,7 @@ if(IS_MODAL){
   }
   selectTab('alarms');
   setInterval(function(){
-    var active = document.querySelector('.tabs button.active');
+    var active = document.querySelector('.settings-tab.active');
     if(!active) return;
     var n = active.getAttribute('data-tab');
     if(n === 'alarms') loadAlarms();

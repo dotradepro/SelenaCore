@@ -113,16 +113,6 @@
             color: var(--tx3);
         }
 
-        .badge.on {
-            background: rgba(52, 211, 153, 0.15);
-            color: var(--gr);
-        }
-
-        .badge.off {
-            background: rgba(148, 163, 184, 0.15);
-            color: var(--tx2);
-        }
-
         .stat-bar {
             display: flex;
             gap: 24px;
@@ -355,7 +345,7 @@
           <div class="rule-name">' + esc(rule.name) + '</div>\
           <div class="rule-trigger">' + esc(t('trigger_lbl')) + esc(rule.trigger && rule.trigger.type ? rule.trigger.type : '?') + ' ' + esc(rule.trigger && (rule.trigger.at || rule.trigger.event_type) || '') + '</div>\
         </div>\
-        <span class="badge ' + (rule.enabled ? 'on' : 'off') + '">' + (rule.enabled ? t('on') : t('off')) + '</span>\
+        <span class="badge ' + (rule.enabled ? 'badge-on' : 'badge-off') + '">' + (rule.enabled ? t('on') : t('off')) + '</span>\
         <button class="btn btn-sm ' + (rule.enabled ? 'btn-danger' : 'btn-primary') + '"\
           onclick="toggleRule(\'' + esc(rule.id) + '\', ' + (!rule.enabled) + ')">\
           ' + (rule.enabled ? t('disable') : t('enable')) + '\

@@ -7,67 +7,25 @@
     <title>Notifications</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        body {
-            background: var(--bg);
-            padding: 16px;
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 14px;
-        }
-
-        .badge {
-            background: var(--ac);
-            color: var(--on-accent);
-            border-radius: 12px;
-            padding: 3px 10px;
-            font-size: 0.8rem;
-        }
-
-        .notif {
-            background: var(--sf);
-            border-radius: 10px;
-            padding: 10px 14px;
-            margin-bottom: 8px;
-            border-left: 3px solid var(--ac);
-        }
-
-        .notif.warning {
-            border-color: var(--am);
-        }
-
-        .notif.critical {
-            border-color: var(--rd);
-        }
-
-        .notif-msg {
-            font-size: 0.9rem;
-            margin-bottom: 4px;
-        }
-
-        .notif-meta {
-            font-size: 0.75rem;
-            color: var(--tx3);
-        }
-
-        .empty {
-            text-align: center;
-            color: var(--tx3);
-            padding: 30px;
-        }
+        /* Notification router — module-specific styles only.
+           Buttons, inputs, badges, empty-state come from /api/shared/theme.css. */
+        body{background:var(--bg);padding:16px}
+        .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+        .notif{background:var(--sf);border-radius:10px;padding:10px 14px;margin-bottom:8px;border-left:3px solid var(--ac)}
+        .notif.warning{border-color:var(--am)}
+        .notif.critical{border-color:var(--rd)}
+        .notif-msg{font-size:0.9rem;margin-bottom:4px}
+        .notif-meta{font-size:0.75rem;color:var(--tx3)}
     </style>
 </head>
 
 <body>
     <div class="header">
         <h2 data-i18n="title"></h2>
-        <span class="badge" id="count">0</span>
+        <span class="badge badge-info" id="count">0</span>
     </div>
     <div id="list">
-        <div class="empty" data-i18n="no_notifications"></div>
+        <div class="empty-state" data-i18n="no_notifications"></div>
     </div>
     <script src="/api/shared/widget-common.js"></script>
     <script>
@@ -82,7 +40,7 @@
                 const items = (data.history || []).reverse();
                 $('count').textContent = items.length;
                 if (!items.length) {
-                    $('list').innerHTML = '<div class="empty">' + esc(t('no_notifications')) + '</div>';
+                    $('list').innerHTML = '<div class="empty-state">' + esc(t('no_notifications')) + '</div>';
                     return;
                 }
                 $('list').innerHTML = items.map(n => `
@@ -93,7 +51,7 @@
     `).join('');
             } catch (e) {
                 showToast(e.message || 'Error', 'error');
-                $('list').innerHTML = `<div class="empty">⚠️ ${esc(e.message)}</div>`;
+                $('list').innerHTML = `<div class="empty-state">⚠️ ${esc(e.message)}</div>`;
             }
         }
 

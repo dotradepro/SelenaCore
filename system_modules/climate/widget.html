@@ -6,100 +6,62 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Climate</title>
 <style>
-:root{
-  --bg:var(--sf2);
-  --card:var(--sf);
-  --fg:var(--tx);
-  --mut:var(--tx2);
-  --pr:var(--ac);
-}
-body{background:transparent;color:var(--fg)}
+/* Climate — only module-specific styles. Buttons, inputs, toggles,
+   fs-close, empty-state, badges come from /api/shared/theme.css. */
+
+body{background:transparent}
+
 .wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0;margin:0}
 .wrap.modal{padding:20px 22px 28px;max-width:720px;margin:0 auto;gap:14px;height:auto;min-height:100%;overflow-y:visible}
-/* Compact mode: NO room headers (the dashboard tile is too narrow to
-   waste a row on group titles). Modal mode keeps grouped layout
-   because it has more horizontal room. */
 .room{display:flex;flex-direction:column;gap:6px;min-width:0}
 .room-title{display:none}
-.wrap.modal .room-title{display:block;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
-.list{display:flex;flex-direction:column;gap:3px;min-width:0}
+.wrap.modal .room-title{display:block;font-size:12px;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
+/* Override shared .list (gap:6px) — compact tile needs tight 3px gap. */
+.wrap .list{gap:3px;min-width:0}
 
-/* compact row (dashboard mode) — module-specific override of shared .row */
-.wrap .row{
-  display:flex;align-items:center;gap:8px;min-width:0;
-  padding:8px 10px;background:var(--card);border:1px solid var(--b);border-radius:8px;
-  cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
-  user-select:none;-webkit-user-select:none;
-  -webkit-tap-highlight-color:transparent;
-  justify-content:flex-start;margin-bottom:0;
-}
-.wrap .row:hover{border-color:var(--pr)}
+/* Compact dashboard rows — smaller variant of shared .list-row. */
+.wrap .row{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;background:var(--sf);border:1px solid var(--b);border-radius:8px;cursor:pointer;transition:border-color .15s,background .15s,transform .08s;user-select:none;-webkit-tap-highlight-color:transparent;justify-content:flex-start;margin-bottom:0}
+.wrap .row:hover{border-color:var(--ac)}
 .wrap .row:active{transform:scale(.985)}
 .wrap .row.off{opacity:.55}
-/* ALL descendants (not just direct children) pass clicks through to
-   .row so any pixel of the row is clickable. */
 .wrap .row *{pointer-events:none}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tx2);flex-shrink:0}
 .dot.on{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.5)}
-/* min-width:0 is critical: without it a flex item with white-space:nowrap
-   refuses to shrink below its intrinsic content width and ellipsis never
-   kicks in. */
 .row-name{flex:1 1 auto;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row-target{font-size:13px;font-weight:700;color:var(--pr);font-variant-numeric:tabular-nums;flex-shrink:0}
+.row-target{font-size:13px;font-weight:700;color:var(--ac);font-variant-numeric:tabular-nums;flex-shrink:0}
 
-.empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
-
-/* modal-mode card (fullscreen view) */
-.fullcard{
-  background:var(--card);border:1px solid var(--b);border-radius:14px;
-  padding:18px 20px;display:flex;flex-direction:column;gap:14px;
-}
+/* Modal full-control card. */
+.fullcard{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:14px}
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
-.fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-/* .toggle: shared implementation lives in /api/shared/theme.css */
+.fc-subtitle{font-size:11px;color:var(--tx2);margin-top:2px}
 
-.fc-temp-row{
-  display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;
-  padding:14px 18px;background:var(--bg);border-radius:10px;
-}
-.fc-now-label{font-size:11px;color:var(--mut)}
-.fc-now-val{font-size:26px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;margin-top:2px}
+.fc-temp-row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:14px 18px;background:var(--sf2);border-radius:10px}
+.fc-now-label{font-size:11px;color:var(--tx2)}
+.fc-now-val{font-size:26px;font-weight:700;color:var(--tx);font-variant-numeric:tabular-nums;margin-top:2px}
 .fc-target{display:flex;align-items:center;gap:10px}
-.temp-btn{
-  background:var(--card);border:1px solid var(--b);border-radius:8px;
-  width:38px;height:38px;cursor:pointer;color:var(--fg);font-size:18px;font-weight:600;
-  display:flex;align-items:center;justify-content:center;
-}
-.temp-btn:hover{border-color:var(--pr)}
-.temp-target-val{font-size:30px;font-weight:700;min-width:60px;text-align:center;color:var(--pr);font-variant-numeric:tabular-nums}
+.temp-btn{background:var(--sf);border:1px solid var(--b);border-radius:8px;width:38px;height:38px;cursor:pointer;color:var(--tx);font-size:18px;font-weight:600;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.temp-btn:hover{border-color:var(--ac)}
+.temp-target-val{font-size:30px;font-weight:700;min-width:60px;text-align:center;color:var(--ac);font-variant-numeric:tabular-nums}
 
 .fc-section{display:flex;flex-direction:column;gap:6px}
-.fc-section-label{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;padding:0 2px}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{
-  flex:1;min-width:60px;padding:9px 12px;border:1px solid var(--b);border-radius:9px;
-  background:var(--bg);color:var(--mut);cursor:pointer;font-size:12px;font-weight:500;text-align:center;
-}
-.chip.active{background:var(--pr);color:var(--on-accent);border-color:var(--pr)}
+.fc-section-label{font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em;padding:0 2px}
 
-.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
-.fc-meta b{color:var(--fg);font-weight:600}
+/* Mode/fan/swing segmented selector — local class to avoid clashing
+   with shared `.chip-picker / .chip` which uses uppercase text and
+   smaller padding meant for tag-style chips. */
+.cl-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cl-chip{flex:1;min-width:60px;padding:9px 12px;border:1px solid var(--b);border-radius:9px;background:var(--sf2);color:var(--tx2);cursor:pointer;font-size:12px;font-weight:500;text-align:center;font-family:inherit;transition:.15s}
+.cl-chip:hover{border-color:var(--ac);color:var(--tx)}
+.cl-chip.active{background:var(--ac);color:var(--on-accent);border-color:var(--ac)}
 
-/* fullscreen modal close button — hidden in modal mode by shared CSS
-   (parent dashboard modal provides its own close). Kept in markup for
-   out-of-iframe fullscreen uses. */
-.fs-close{
-  position:fixed;top:14px;right:18px;
-  background:var(--card);border:1px solid var(--b);border-radius:50%;
-  width:36px;height:36px;cursor:pointer;color:var(--fg);font-size:18px;
-  display:flex;align-items:center;justify-content:center;z-index:1001;
-}
+.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--tx2);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
+.fc-meta b{color:var(--tx);font-weight:600}
 </style>
 </head>
 <body>
 <div class="wrap" id="root">
-  <div class="empty" data-i18n="loading">Loading…</div>
+  <div class="empty-state" data-i18n="loading">Loading…</div>
 </div>
 <button class="fs-close" id="fsClose" style="display:none">×</button>
 
@@ -235,13 +197,13 @@ function renderFullCard(d){
     : '';
 
   var modeChips = MODES.map(function(m){
-    return '<button class="chip mode '+(mode===m?'active':'')+'" data-id="'+esc(d.device_id)+'" data-mode="'+m+'">'+esc(t('mode_'+m))+'</button>';
+    return '<button class="cl-chip mode '+(mode===m?'active':'')+'" data-id="'+esc(d.device_id)+'" data-mode="'+m+'">'+esc(t('mode_'+m))+'</button>';
   }).join('');
   var fanChips = FANS.map(function(f){
-    return '<button class="chip fan '+(fan===f?'active':'')+'" data-id="'+esc(d.device_id)+'" data-fan="'+f+'">'+esc(t('fan_'+f))+'</button>';
+    return '<button class="cl-chip fan '+(fan===f?'active':'')+'" data-id="'+esc(d.device_id)+'" data-fan="'+f+'">'+esc(t('fan_'+f))+'</button>';
   }).join('');
   var swingChips = SWINGS.map(function(sw){
-    return '<button class="chip swing '+(swingKey===sw.key?'active':'')+'" data-id="'+esc(d.device_id)+'" data-skey="'+sw.key+'">'+esc(t('swing_'+sw.key))+'</button>';
+    return '<button class="cl-chip swing '+(swingKey===sw.key?'active':'')+'" data-id="'+esc(d.device_id)+'" data-skey="'+sw.key+'">'+esc(t('swing_'+sw.key))+'</button>';
   }).join('');
 
   return '<div class="fullcard" data-card="'+esc(d.device_id)+'">'+
@@ -268,15 +230,15 @@ function renderFullCard(d){
     '</div>'+
     '<div class="fc-section">'+
       '<div class="fc-section-label">'+esc(t('mode'))+'</div>'+
-      '<div class="chips">'+modeChips+'</div>'+
+      '<div class="cl-chips">'+modeChips+'</div>'+
     '</div>'+
     '<div class="fc-section">'+
       '<div class="fc-section-label">'+esc(t('fan_speed'))+'</div>'+
-      '<div class="chips">'+fanChips+'</div>'+
+      '<div class="cl-chips">'+fanChips+'</div>'+
     '</div>'+
     '<div class="fc-section">'+
       '<div class="fc-section-label">'+esc(t('swing'))+'</div>'+
-      '<div class="chips">'+swingChips+'</div>'+
+      '<div class="cl-chips">'+swingChips+'</div>'+
     '</div>'+
     (wattsLine ? '<div class="fc-meta">'+esc(t('power_w'))+': '+wattsLine+'</div>' : '')+
   '</div>';
@@ -319,17 +281,17 @@ function bindFullCards(){
       sendCmd(id, {target_temp: Math.min(30, cur+1)});
     });
   });
-  document.querySelectorAll('.chip.mode').forEach(function(c){
+  document.querySelectorAll('.cl-chip.mode').forEach(function(c){
     tap(c, function(){
       sendCmd(c.getAttribute('data-id'), {mode: c.getAttribute('data-mode')});
     });
   });
-  document.querySelectorAll('.chip.fan').forEach(function(c){
+  document.querySelectorAll('.cl-chip.fan').forEach(function(c){
     tap(c, function(){
       sendCmd(c.getAttribute('data-id'), {fan_speed: c.getAttribute('data-fan')});
     });
   });
-  document.querySelectorAll('.chip.swing').forEach(function(c){
+  document.querySelectorAll('.cl-chip.swing').forEach(function(c){
     tap(c, function(){
       var k = c.getAttribute('data-skey');
       var sw = SWINGS.filter(function(x){return x.key===k;})[0];
@@ -348,7 +310,7 @@ function load(){
     keys.forEach(function(k){(rooms[k]||[]).forEach(function(d){DEVICES[d.device_id]=d;});});
 
     if(keys.length===0){
-      $('root').innerHTML = '<div class="empty">'+esc(t('empty'))+'</div>';
+      $('root').innerHTML = '<div class="empty-state">'+esc(t('empty'))+'</div>';
       return;
     }
     keys.sort();
@@ -374,7 +336,7 @@ function load(){
     if(IS_MODAL) bindFullCards(); else bindCompactRows();
     reportModalSize();
   }).catch(function(e){
-    $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    $('root').innerHTML = '<div class="empty-state">'+esc(e.message)+'</div>';
     showToast(e.message || 'Error', 'error');
     reportModalSize();
   });

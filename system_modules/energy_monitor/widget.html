@@ -89,17 +89,14 @@
             font-size: 0.65rem;
             font-weight: 600;
         }
-        .pill.on { background: rgba(34,197,94,.18); color: var(--gn,#22c55e); }
+        .pill.on { background: rgba(34,197,94,.18); color: var(--gr); }
         .pill.off { background: rgba(239,68,68,.18); color: var(--rd); }
 
-        .fs-close {
-            position: fixed; top: 12px; right: 16px;
-            background: var(--sf); border: 1px solid var(--b); border-radius: 50%;
-            width: 32px; height: 32px; cursor: pointer; color: var(--tx); font-size: 16px;
-            display: none; align-items: center; justify-content: center; z-index: 1001;
-            pointer-events: auto;
-        }
-        body.modal-mode .fs-close { display: flex; }
+        /* .fs-close — energy uses body.modal-mode (added by JS in IS_MODAL)
+           to gate visibility, NOT the html.in-modal class shared theme.css
+           checks. Override here so the button stays hidden in compact view. */
+        .fs-close{display:none}
+        body.modal-mode .fs-close{display:flex}
 
         .top {
             display: flex;
@@ -122,7 +119,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--gn, #22c55e);
+            background: var(--gr);
             display: inline-block;
         }
         .top .dot.idle {

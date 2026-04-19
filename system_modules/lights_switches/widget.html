@@ -6,80 +6,65 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Lights & Switches</title>
 <style>
-:root{
-  --bg:var(--sf2);
-  --card:var(--sf);
-  --fg:var(--tx);
-  --mut:var(--tx2);
-  --pr:var(--ac);
-}
-body{background:transparent;color:var(--fg)}
+/* Lights & switches — only module-specific styles. Buttons, inputs,
+   toggles, range slider thumb, fs-close, empty-state, and standard
+   range-track styling come from /api/shared/theme.css. */
+
+body{background:transparent}
+
 .wrap{padding:4px 6px;display:flex;flex-direction:column;gap:3px;height:100vh;overflow:hidden;min-width:0;margin:0}
 .wrap.modal{padding:20px 22px 28px;max-width:720px;margin:0 auto;gap:14px;height:auto;min-height:100%;overflow-y:visible}
-/* Compact mode hides room headers; modal keeps them. */
 .room{display:flex;flex-direction:column;gap:6px;min-width:0}
 .room-title{display:none}
-.wrap.modal .room-title{display:block;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
-.list{display:flex;flex-direction:column;gap:3px;min-width:0}
+/* Override shared .list (gap:6px) — compact dashboard tile needs
+   tight 3px gap and min-width:0 so long device names ellipsis-shrink. */
+.wrap .list{gap:3px;min-width:0}
+.wrap.modal .room-title{display:block;font-size:12px;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em;padding:0 4px;font-weight:600}
 
-/* compact row (dashboard) — module-specific override of shared .row */
-.wrap .row{
-  display:flex;align-items:center;gap:8px;min-width:0;
-  padding:8px 10px;background:var(--card);border:1px solid var(--b);border-radius:8px;
-  cursor:pointer;transition:border-color .15s,background .15s,transform .08s;
-  user-select:none;-webkit-user-select:none;
-  -webkit-tap-highlight-color:transparent;
-  justify-content:flex-start;margin-bottom:0;
-}
-.wrap .row:hover{border-color:var(--pr)}
+/* Compact dashboard rows (smaller variant of shared .list-row). */
+.wrap .row{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 10px;background:var(--sf);border:1px solid var(--b);border-radius:8px;cursor:pointer;transition:border-color .15s,background .15s,transform .08s;user-select:none;-webkit-tap-highlight-color:transparent;justify-content:flex-start;margin-bottom:0}
+.wrap .row:hover{border-color:var(--ac)}
 .wrap .row:active{transform:scale(.985)}
 .wrap .row.off{opacity:.55}
 .wrap .row *{pointer-events:none}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--mut);flex-shrink:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tx2);flex-shrink:0}
 .dot.on{background:var(--am);box-shadow:0 0 6px rgba(245,158,11,.55)}
 .dot.on.light{background:var(--am)}
 .dot.on.switch,.dot.on.outlet{background:var(--gr);box-shadow:0 0 6px rgba(34,197,94,.55)}
 .row-name{flex:1 1 auto;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-.empty{padding:30px 14px;text-align:center;color:var(--mut);font-size:12px}
-
-/* full-control card (modal mode) */
-.fullcard{
-  background:var(--card);border:1px solid var(--b);border-radius:14px;
-  padding:18px 20px;display:flex;flex-direction:column;gap:14px;
-}
+/* Modal full-control card. */
+.fullcard{background:var(--sf);border:1px solid var(--b);border-radius:14px;padding:18px 20px;display:flex;flex-direction:column;gap:14px}
 .fc-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .fc-title{font-size:17px;font-weight:600}
-.fc-subtitle{font-size:11px;color:var(--mut);margin-top:2px}
-/* .toggle + .toggle.light: shared implementation lives in /api/shared/theme.css */
+.fc-subtitle{font-size:11px;color:var(--tx2);margin-top:2px}
 
-.slider-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--bg);border-radius:10px;margin-bottom:0}
-.slider-label{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.slider-label b{color:var(--fg);font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
-input[type=range]{width:100%;-webkit-appearance:none;background:transparent;cursor:pointer}
-input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--b);border-radius:3px}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--pr);margin-top:-6px;cursor:pointer}
-input[type=range]::-moz-range-track{height:6px;background:var(--b);border-radius:3px}
-input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--pr);border:none;cursor:pointer}
+/* Slider container for brightness / colour-temp.
+   The input MUST opt out of native rendering with -webkit-appearance:none /
+   appearance:none, otherwise the custom thumb pseudo-elements are ignored
+   and the browser falls back to the platform slider (which the shared
+   theme.css tints via accent-color, but with the wrong size + shape). */
+.lc-slider{display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--sf2);border-radius:10px}
+.lc-slider .lc-label{display:flex;justify-content:space-between;font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em}
+.lc-slider .lc-label b{color:var(--tx);font-size:13px;font-weight:600;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
+.lc-slider input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;cursor:pointer;padding:0;margin:0}
+.lc-slider input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--b);border-radius:3px}
+.lc-slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ac);margin-top:-6px;cursor:pointer;border:none}
+.lc-slider input[type=range]::-moz-range-track{height:6px;background:var(--b);border-radius:3px}
+.lc-slider input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--ac);border:none;cursor:pointer}
 
-.color-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:10px}
-.color-row label{flex:1;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.color-row input[type=color]{width:50px;height:36px;border:none;background:transparent;cursor:pointer}
+/* Colour picker row. */
+.color-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--sf2);border-radius:10px}
+.color-row label{flex:1;font-size:10px;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em}
+.color-row input[type=color]{width:50px;height:36px;border:none;background:transparent;cursor:pointer;padding:0}
 
-.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--mut);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
-.fc-meta b{color:var(--fg);font-weight:600}
-
-.fs-close{
-  position:fixed;top:14px;right:18px;
-  background:var(--card);border:1px solid var(--b);border-radius:50%;
-  width:36px;height:36px;cursor:pointer;color:var(--fg);font-size:18px;
-  display:flex;align-items:center;justify-content:center;z-index:1001;
-}
+.fc-meta{display:flex;gap:14px;font-size:11px;color:var(--tx2);padding-top:4px;border-top:1px dashed var(--b);flex-wrap:wrap}
+.fc-meta b{color:var(--tx);font-weight:600}
 </style>
 </head>
 <body>
 <div class="wrap" id="root">
-  <div class="empty" data-i18n="loading">Loading…</div>
+  <div class="empty-state" data-i18n="loading">Loading…</div>
 </div>
 <button class="fs-close" id="fsClose" style="display:none">×</button>
 
@@ -175,14 +160,14 @@ function renderFullCard(d){
   var hasRgb = caps.indexOf('rgb_color') !== -1;
 
   var brightSection = hasBrightness ? (
-    '<div class="slider-row">'+
-      '<div class="slider-label"><span>'+esc(t('brightness'))+'</span><b>'+bright+'%</b></div>'+
+    '<div class="lc-slider">'+
+      '<div class="lc-label"><span>'+esc(t('brightness'))+'</span><b>'+bright+'%</b></div>'+
       '<input type="range" min="0" max="100" value="'+bright+'" class="slider-bright" data-id="'+esc(d.device_id)+'">'+
     '</div>'
   ) : '';
   var ctempSection = hasColourTemp ? (
-    '<div class="slider-row">'+
-      '<div class="slider-label"><span>'+esc(t('colour_temp'))+'</span><b>'+ctemp+'%</b></div>'+
+    '<div class="lc-slider">'+
+      '<div class="lc-label"><span>'+esc(t('colour_temp'))+'</span><b>'+ctemp+'%</b></div>'+
       '<input type="range" min="0" max="100" value="'+ctemp+'" class="slider-ctemp" data-id="'+esc(d.device_id)+'">'+
     '</div>'
   ) : '';
@@ -223,7 +208,7 @@ function bindFullCards(){
   function debounceCmd(el, key){
     var timer;
     el.addEventListener('input', function(){
-      var lbl = el.parentNode.querySelector('.slider-label b');
+      var lbl = el.parentNode.querySelector('.lc-label b');
       if(lbl) lbl.textContent = el.value + '%';
       clearTimeout(timer);
       timer = setTimeout(function(){
@@ -252,7 +237,7 @@ function load(){
     keys.forEach(function(k){(rooms[k]||[]).forEach(function(d){DEVICES[d.device_id]=d;});});
 
     if(keys.length===0){
-      $('root').innerHTML = '<div class="empty">'+esc(t('empty'))+'</div>';
+      $('root').innerHTML = '<div class="empty-state">'+esc(t('empty'))+'</div>';
       return;
     }
     keys.sort();
@@ -278,7 +263,7 @@ function load(){
     if(IS_MODAL) bindFullCards(); else bindCompactRows();
     reportModalSize();
   }).catch(function(e){
-    $('root').innerHTML = '<div class="empty">'+esc(e.message)+'</div>';
+    $('root').innerHTML = '<div class="empty-state">'+esc(e.message)+'</div>';
     showToast(e.message || 'Error', 'error');
     reportModalSize();
   });

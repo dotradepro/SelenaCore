@@ -235,13 +235,6 @@
             vertical-align: middle;
         }
 
-        .empty-msg {
-            color: var(--tx3);
-            font-size: 0.85rem;
-            text-align: center;
-            padding: 16px;
-        }
-
         /* QR Modal overrides */
         .modal h3 {
             font-size: 1.1rem;
@@ -338,7 +331,7 @@
             </div>
         </div>
         <div id="users-container">
-            <p class="empty-msg" data-i18n="loading"></p>
+            <p class="empty-state" data-i18n="loading"></p>
         </div>
     </div>
 
@@ -414,7 +407,7 @@
                 <button class="btn btn-sec btn-sm" id="push-copy-btn" onclick="copyVapid()"
                     data-i18n="push_copy"></button>
             </div>
-            <div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:10px">
+            <div style="margin-top:10px;border-top:1px solid var(--b);padding-top:10px">
                 <button class="btn btn-sec btn-sm" id="btn-reset-push" onclick="resetPush()" data-i18n="push_reset"></button>
                 <span style="font-size:0.75rem;color:var(--tx3);margin-left:8px" data-i18n="push_reset_hint"></span>
             </div>
@@ -485,7 +478,7 @@
                 var users = d.users || [];
                 var container = $('users-container');
                 if (users.length === 0) {
-                    container.innerHTML = '<p class="empty-msg">' + esc(t('no_users')) + '</p>';
+                    container.innerHTML = '<p class="empty-state">' + esc(t('no_users')) + '</p>';
                     return;
                 }
                 container.innerHTML = users.map(function (u) {
@@ -531,7 +524,7 @@
             var btn = $('btn-scan-net');
             $('scan-spinner').style.display = 'inline';
             $('discover-list').style.display = 'block';
-            $('discover-container').innerHTML = '<p class="empty-msg">' + esc(t('scanning')) + '</p>';
+            $('discover-container').innerHTML = '<p class="empty-state">' + esc(t('scanning')) + '</p>';
             selectedDevices = [];
             $('add-form').style.display = 'none';
 
@@ -541,7 +534,7 @@
                     renderDiscovered();
                 });
             }).catch(function (e) {
-                $('discover-container').innerHTML = '<p class="empty-msg">' + esc(t('no_devices_found')) + '</p>';
+                $('discover-container').innerHTML = '<p class="empty-state">' + esc(t('no_devices_found')) + '</p>';
                 showToast(e.message || 'Error', 'error');
             }).finally(function () {
                 $('scan-spinner').style.display = 'none';
@@ -551,7 +544,7 @@
         function renderDiscovered() {
             var container = $('discover-container');
             if (discoveredDevices.length === 0) {
-                container.innerHTML = '<p class="empty-msg">' + esc(t('no_devices_found')) + '</p>';
+                container.innerHTML = '<p class="empty-state">' + esc(t('no_devices_found')) + '</p>';
                 return;
             }
             container.innerHTML = '<p style="font-size:0.82rem;color:var(--tx2);margin-bottom:10px">' + esc(t('select_device')) + '</p>' +
