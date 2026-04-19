@@ -15,6 +15,7 @@ import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import { useElevated } from '../hooks/useElevated';
 import PinConfirmModal from './PinConfirmModal';
+import SecuritySettings from './settings/SecuritySettings';
 
 const UM = '/api/ui/modules/user-manager';
 const PD = '/api/ui/modules/presence-detection';
@@ -109,6 +110,8 @@ export default function UsersPanel() {
                 </h3>
                 <p style={{ fontSize: 13, color: 'var(--tx2)' }}>{t('usersPanel.desc')}</p>
             </div>
+
+            <SecuritySettings />
 
             <UsersList />
 

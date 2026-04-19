@@ -827,6 +827,46 @@ async def save_settings(body: SettingsBody) -> dict[str, Any]:
     return {"ok": True}
 
 
+# ---------- Security settings (v0.4.0 — Dashboard edit-mode PIN gate) ---
+
+class SecuritySettings(BaseModel):
+    # Require PIN before entering Dashboard edit mode. Default on — one
+    # swipe on the kiosk should NOT be able to rearrange widgets.
+    edit_mode_pin: bool = True
+    # Require PIN for every device toggle from the Dashboard. Default off
+    # because it makes daily use painful; enable only in very public kiosks.
+    device_toggle_pin: bool = False
+    # Kiosk mode — no editing at all until a PIN elevation happens,
+    # regardless of the two flags above. Belt-and-suspenders for shared
+    # hallway installations.
+    kiosk_mode: bool = False
+
+
+def _read_security_settings() -> SecuritySettings:
+    from core.config_writer import get_nested
+    return SecuritySettings(
+        edit_mode_pin=bool(get_nested("security.edit_mode_pin", True)),
+        device_toggle_pin=bool(get_nested("security.device_toggle_pin", False)),
+        kiosk_mode=bool(get_nested("security.kiosk_mode", False)),
+    )
+
+
+@router.get("/security")
+async def get_security_settings() -> dict[str, Any]:
+    """Return current security toggles for the Dashboard edit flow."""
+    return _read_security_settings().model_dump()
+
+
+@router.post("/security")
+async def save_security_settings(body: SecuritySettings) -> dict[str, Any]:
+    """Persist security toggles to core.yaml. No auth header here because
+    the caller is the Settings → Users panel which already runs inside
+    KioskElevationGate."""
+    from core.config_writer import update_section
+    update_section("security", body.model_dump())
+    return {"ok": True, "security": body.model_dump()}
+
+
 # ---------- WebSocket sync — versioned state + ping/pong ----------
 
 @router.websocket("/sync")

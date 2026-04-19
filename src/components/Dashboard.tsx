@@ -4,6 +4,8 @@ import type React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useStore, Module } from '../store/useStore';
+import { useElevated } from '../hooks/useElevated';
+import PinConfirmModal from './PinConfirmModal';
 
 // Fixed grid: always 5 columns × 4 rows — cells scale to fill any screen
 const GRID_COLS = 5;
@@ -344,6 +346,43 @@ export default function Dashboard() {
   const [editMode, setEditMode] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
   const [modalMod, setModalMod] = useState<string | null>(null);
+
+  // v0.4.0: edit-mode PIN gate. Flags come from /api/ui/security — read
+  // once on mount; the toggles live in Settings → Users so changes there
+  // require a refresh of the Dashboard to take effect (acceptable — it's
+  // a settings flow, not a runtime signal).
+  const { requestElevation, pinModalProps } = useElevated();
+  const [security, setSecurity] = useState<{
+    edit_mode_pin: boolean;
+    device_toggle_pin: boolean;
+    kiosk_mode: boolean;
+  }>({ edit_mode_pin: true, device_toggle_pin: false, kiosk_mode: false });
+  useEffect(() => {
+    fetch('/api/ui/security')
+      .then(r => r.ok ? r.json() : null)
+      .then(s => { if (s) setSecurity(s); })
+      .catch(() => { /* leave defaults */ });
+  }, []);
+
+  /** Toggle editMode, intercepting with a PIN prompt when configured. */
+  const toggleEditMode = useCallback(() => {
+    // Exiting edit mode is always free — you can always cancel.
+    if (editMode) {
+      setEditMode(false);
+      setShowAddDrawer(false);
+      return;
+    }
+    // Kiosk mode OR edit_mode_pin → elevation required before entering.
+    if (security.kiosk_mode || security.edit_mode_pin) {
+      requestElevation(() => {
+        setEditMode(true);
+        setShowAddDrawer(false);
+      });
+      return;
+    }
+    setEditMode(true);
+    setShowAddDrawer(false);
+  }, [editMode, security, requestElevation]);
   // Optional content-driven modal size, set by widgets that send a
   // `modal_resize` postMessage right after their first render.
   const [modalSize, setModalSize] = useState<{ width?: number; height?: number }>({});
@@ -651,11 +690,13 @@ export default function Dashboard() {
         )}
         <div
           className={`edit-toggle${editMode ? ' on' : ''}`}
-          onClick={() => { setEditMode(v => !v); setShowAddDrawer(false); }}
+          onClick={toggleEditMode}
         >
           {editMode ? t('dashboard.done', 'Done') : t('dashboard.edit', 'Edit')}
         </div>
       </div>
+      {/* PIN modal for edit-mode elevation — invisible until triggered. */}
+      <PinConfirmModal {...pinModalProps} />
 
       {/* Left arrow */}
       {currentScreen > 0 && (

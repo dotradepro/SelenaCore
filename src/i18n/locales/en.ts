@@ -653,6 +653,18 @@ const en = {
             dismiss: 'Got it',
         },
 
+        security: {
+            title: 'Interface protection',
+            desc: 'Control which Dashboard actions require PIN confirmation.',
+            editModePin: 'Require PIN for dashboard edit mode',
+            editModePinDesc: 'Rearranging widgets asks for PIN before entering edit mode.',
+            deviceTogglePin: 'Require PIN for every device toggle',
+            deviceTogglePinDesc: 'Each light / switch / thermostat click asks for PIN. Disruptive for daily use — only enable in very public installs.',
+            kioskMode: 'Kiosk mode (view-only dashboard)',
+            kioskModeDesc: 'All dashboard edits blocked until PIN. Overrides the edit-mode flag above.',
+            saveFailed: 'Could not save security settings.',
+        },
+
         ttsSuggest: {
             title: 'Voice does not match interface',
             body: 'UI language is {{ui}} but the assistant speaks in {{tts}}.',

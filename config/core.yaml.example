@@ -156,3 +156,14 @@ system:
   language: "ru"
   timezone: "Europe/Moscow"
   initialized: false
+
+# v0.4.0 — Dashboard edit-mode gating. The three flags combine as follows:
+#   edit_mode_pin=true  + kiosk_mode=false → PIN required to toggle edit mode (default)
+#   edit_mode_pin=false + kiosk_mode=false → edit mode is free to toggle (pre-v0.4.0 behavior)
+#   kiosk_mode=true                        → editing blocked entirely until elevated
+# device_toggle_pin is independent: set true to require PIN on every
+# single device-widget click. Disruptive, only for very public kiosks.
+security:
+  edit_mode_pin: true
+  device_toggle_pin: false
+  kiosk_mode: false
