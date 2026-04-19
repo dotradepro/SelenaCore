@@ -1,0 +1,218 @@
+name: Auto-translate locales
+
+# Regenerates src/i18n/locales/auto/*.auto.json from src/i18n/locales/en.ts
+# using argostranslate. Runs:
+#   - Automatically when the source locale / glossary / generator changes
+#   - On release tags (so the release artefact has fresh translations)
+#   - Manually from the Actions tab, optionally with --targets to regenerate
+#     only a subset of languages
+#
+# Output is delivered as a pull request (never committed direct to main) so
+# a human can eyeball the quality of machine translations before they ship.
+# Argos language packages are cached across runs (keyed on the target list
+# in scripts/i18n_config.py) — cold-start ~10 min, cached ~2 min.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/i18n/locales/en.ts'
+      - 'src/i18n/glossary.json'
+      - 'scripts/generate_auto_locales.py'
+      - 'scripts/i18n_backends.py'
+      - 'scripts/i18n_plurals.py'
+      - 'scripts/i18n_config.py'
+      - 'scripts/i18n_export.mjs'
+      - '.github/workflows/i18n.yml'
+  # Release-time regeneration: if you cut a tag without touching en.ts, run
+  # this workflow manually from the Actions tab with workflow_dispatch. We
+  # intentionally don't trigger on tags directly — a release after a purely
+  # doc/CI commit shouldn't redo translations that haven't changed.
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Comma-separated language codes to regenerate (empty = all 14 AUTO_LANGUAGES)'
+        required: false
+        default: ''
+      force:
+        description: 'Regenerate even if en.ts source hash is unchanged'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write       # needed for create-pull-request to push a branch
+  pull-requests: write  # needed to open the PR
+
+concurrency:
+  # Coalesce multiple pushes — the generator regenerates the full locale set
+  # from the latest en.ts every time, so queued runs would just redo work.
+  group: i18n-generate
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Python deps (argostranslate + babel + helpers)
+        # argostranslate brings its own ctranslate2 / sentencepiece chain.
+        # We install only what the generator needs — full requirements.txt
+        # pulls in torch/cuda and would blow out the CI runner disk.
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'argostranslate>=1.9' 'Babel>=2.14'
+
+      - name: Install minimal Node deps (tsx for i18n_export.mjs)
+        run: |
+          npm ci --no-audit --no-fund --ignore-scripts
+
+      - name: Cache Argos language packages
+        # The packages live under ~/.local/share/argos-translate after first
+        # download. Key on the AUTO_LANGUAGES tuple (via i18n_config.py hash)
+        # so adding/removing a language invalidates the cache cleanly.
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/argos-translate
+          key: argos-packages-v1-${{ hashFiles('scripts/i18n_config.py') }}
+          restore-keys: |
+            argos-packages-v1-
+
+      - name: Export en.ts to JSON for generator
+        # The generator can ingest either .ts (via npx tsx) or .json.
+        # Producing JSON once up-front is faster than re-parsing the TS
+        # for every target language downstream.
+        run: |
+          mkdir -p .tmp
+          npx tsx scripts/i18n_export.mjs en > .tmp/en.json
+          echo "Source size: $(wc -c < .tmp/en.json) bytes"
+
+      - name: Run generator
+        env:
+          TARGETS: ${{ inputs.targets }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          args=(--source .tmp/en.json --output src/i18n/locales/auto --backend argos)
+          if [ -n "$TARGETS" ]; then
+            args+=(--targets "$TARGETS")
+          fi
+          if [ "$FORCE" = "true" ]; then
+            args+=(--force)
+          fi
+          python scripts/generate_auto_locales.py "${args[@]}"
+
+      - name: Key-parity sanity check
+        # Every auto bundle must cover every key in en.ts (minus plural
+        # expansions, which add keys). If a translation step silently
+        # dropped keys, catch it here before the PR goes out.
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path('.tmp/en.json').read_text())
+
+          def flatten(tree, prefix=''):
+              out = {}
+              if isinstance(tree, dict):
+                  for k, v in tree.items():
+                      out.update(flatten(v, f"{prefix}.{k}" if prefix else k))
+              else:
+                  out[prefix] = tree
+              return out
+
+          src_keys = set(flatten(source))
+          failed = []
+          for path in sorted(Path('src/i18n/locales/auto').glob('*.auto.json')):
+              auto = json.loads(path.read_text())
+              auto_keys = set(flatten(auto))
+              # Strip plural suffixes before comparing
+              normalized = set()
+              for k in auto_keys:
+                  parts = k.rsplit('_', 1)
+                  if len(parts) == 2 and parts[1] in {'zero', 'one', 'two', 'few', 'many', 'other'}:
+                      normalized.add(parts[0])
+                  else:
+                      normalized.add(k)
+              missing = src_keys - normalized
+              if missing:
+                  failed.append((path.name, sorted(missing)[:5], len(missing)))
+
+          if failed:
+              print(f"\n::error::parity check failed for {len(failed)} locale(s)")
+              for name, sample, total in failed:
+                  print(f"  {name}: missing {total} key(s); first 5: {sample}")
+              raise SystemExit(1)
+          print(f"\nparity OK across {len(list(Path('src/i18n/locales/auto').glob('*.auto.json')))} locale(s)")
+          PY
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet src/i18n/locales/auto/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changed files:"
+            git diff --name-only src/i18n/locales/auto/
+          fi
+
+      - name: Create / update pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: 'i18n: regenerate auto translations'
+          branch: i18n/auto-update
+          title: 'Regenerate auto-translated locales'
+          body: |
+            Auto-generated by `.github/workflows/i18n.yml` using
+            [argostranslate](https://github.com/argosopentech/argos-translate).
+
+            **What changed:**
+            One or more files under `src/i18n/locales/auto/` were regenerated
+            because `src/i18n/locales/en.ts`, `glossary.json`, or the generator
+            pipeline changed.
+
+            **Review checklist** (eyeball a sample of keys before merging):
+            - [ ] Technical terms preserved (spot-check `SHA256`, `Ollama`,
+                  `Piper`, `Bluetooth` in a couple of locales)
+            - [ ] `{{placeholder}}` tokens intact (no `{{count}}` turned into
+                  literal words)
+            - [ ] Plural forms (`*_one`, `*_few`, `*_many`, `*_other`) present
+                  for Slavic languages (ru, pl, cs, uk)
+            - [ ] `_meta.json` updated with new `source_hash` and `generated_at`
+            - [ ] No raw English leaking into non-English locales
+
+            If Argos produced nonsense for specific keys, drop a
+            `{lang}.community.json` override — it takes precedence over auto.
+
+            ---
+
+            🤖 Generated with
+            [Claude Code](https://claude.com/claude-code) via the
+            [Auto-translate locales](.github/workflows/i18n.yml) workflow.
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ "${{ steps.diff.outputs.changed }}" = "true" ]; then
+            echo "::notice::Auto-translation PR opened / updated on branch i18n/auto-update"
+          else
+            echo "::notice::No translation changes — en.ts source hash unchanged"
+          fi
