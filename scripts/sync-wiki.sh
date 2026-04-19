@@ -72,11 +72,13 @@ rewrite_en() {
     # "(./foo.md)" or "(../docs/foo.md)". Turn them all into (en-Foo).
     # docs/uk/foo.md → (uk-Foo).
     # ../core/** or ../scripts/** → absolute blob URL.
+    # ../.github/** → governance files moved out of docs/ tree; must become absolute.
     sed -E "
         s|\]\(\.\./core/([^\)]+)\)|](https://github.com/${REPO}/tree/main/core/\1)|g
         s|\]\(\.\./scripts/([^\)]+)\)|](https://github.com/${REPO}/tree/main/scripts/\1)|g
         s|\]\(\.\./system_modules/([^\)]+)\)|](https://github.com/${REPO}/tree/main/system_modules/\1)|g
         s|\]\(\.\./agent/([^\)]+)\)|](https://github.com/${REPO}/tree/main/agent/\1)|g
+        s|\]\(\.\./\.github/([^\)]+)\)|](https://github.com/${REPO}/blob/main/.github/\1)|g
         s|\]\(\.\./\.\./core/([^\)]+)\)|](https://github.com/${REPO}/tree/main/core/\1)|g
     " | python3 -c '
 import re, sys
@@ -103,6 +105,7 @@ rewrite_uk() {
         s|\]\(\.\./\.\./scripts/([^\)]+)\)|](https://github.com/${REPO}/tree/main/scripts/\1)|g
         s|\]\(\.\./\.\./system_modules/([^\)]+)\)|](https://github.com/${REPO}/tree/main/system_modules/\1)|g
         s|\]\(\.\./\.\./agent/([^\)]+)\)|](https://github.com/${REPO}/tree/main/agent/\1)|g
+        s|\]\(\.\./\.\./\.github/([^\)]+)\)|](https://github.com/${REPO}/blob/main/.github/\1)|g
     " | python3 -c '
 import re, sys
 text = sys.stdin.read()
