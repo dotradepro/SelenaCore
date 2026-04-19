@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Search, RefreshCw } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { Device } from '../store/useStore';
+import { Button, Input, Toggle, Badge, EmptyState } from './ui';
 
 /* ── helpers ──────────────────────────────────────── */
 function deviceIsOn(device: Device): boolean | null {
@@ -28,12 +30,29 @@ function statePreview(state: Record<string, unknown>): string {
     return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(' · ');
 }
 
-const TYPE_COLOR: Record<string, { fg: string; bg: string }> = {
-    sensor: { fg: 'var(--accent)', bg: 'var(--blue-bg)' },
-    actuator: { fg: 'var(--amber)', bg: 'var(--amber-bg)' },
-    controller: { fg: 'var(--purple)', bg: 'var(--purple-bg)' },
-    virtual: { fg: 'var(--teal)', bg: 'var(--teal-bg)' },
+type Tone = 'info' | 'warn' | 'pr' | 'neutral';
+
+const TYPE_TONE: Record<string, Tone> = {
+    sensor: 'info',
+    actuator: 'warn',
+    controller: 'pr',
+    virtual: 'neutral',
 };
+
+const TYPE_ICON_BG: Record<Tone, string> = {
+    info: 'rgba(79,140,247,.14)',
+    warn: 'rgba(245,169,58,.14)',
+    pr: 'rgba(155,110,244,.16)',
+    neutral: 'var(--sf3)',
+};
+
+const TYPE_ICON_FG: Record<Tone, string> = {
+    info: 'var(--ac)',
+    warn: 'var(--am)',
+    pr: 'var(--pu)',
+    neutral: 'var(--tx3)',
+};
+
 const TYPE_ICON_PATH: Record<string, string> = {
     sensor: 'M7 2a3 3 0 00-3 3v5a3 3 0 006 0V5a3 3 0 00-3-3z M4.5 13c.8 1.2 2.2 2 3.5 2s2.7-.8 3.5-2',
     actuator: 'M7 2l1.5 3h3L9 7l1 3-3-2-3 2 1-3-2.5-2h3L7 2z',
@@ -72,144 +91,120 @@ export default function Devices() {
     });
 
     return (
-        <div className="thin-scroll" style={{ height: '100%', overflowY: 'auto', padding: 14 }}>
-
+        <div className="generic-page">
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                 <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{t('devices.title')}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)' }}>{t('devices.title')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 2 }}>
                         {t('devices.registryInfo', { count: devices.length })}
                     </div>
                 </div>
-                <button onClick={() => fetchDevices()} disabled={devicesLoading} style={{
-                    background: 'var(--surface2)', border: '1px solid var(--border)',
-                    borderRadius: 8, padding: '6px 12px', fontSize: 11, color: 'var(--text2)',
-                    cursor: devicesLoading ? 'default' : 'pointer',
-                    opacity: devicesLoading ? 0.6 : 1, transition: 'opacity .15s',
-                    display: 'flex', alignItems: 'center', gap: 4,
-                }}>
-                    <span style={{
-                        display: 'inline-block',
-                        animation: devicesLoading ? 'spin .8s linear infinite' : 'none',
-                    }}>↺</span>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={devicesLoading}
+                    onClick={() => fetchDevices()}
+                    leftIcon={<RefreshCw size={12} />}
+                >
                     {t('common.refresh')}
-                </button>
+                </Button>
             </div>
 
             {/* Filter + search row */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-                    <svg viewBox="0 0 14 14" fill="none" width="13" height="13"
-                        style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text3)' }}>
-                        <circle cx="6" cy="6" r="4" stroke="currentColor" strokeWidth="1.3" />
-                        <path d="M9 9l2.5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                    </svg>
-                    <input
-                        type="text"
+                    <Search
+                        size={13}
+                        style={{
+                            position: 'absolute', left: 9, top: '50%',
+                            transform: 'translateY(-50%)', color: 'var(--tx3)',
+                            pointerEvents: 'none',
+                        }}
+                    />
+                    <Input
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         placeholder={t('devices.searchPlaceholder')}
-                        style={{
-                            width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)',
-                            borderRadius: 8, padding: '6px 10px 6px 28px', fontSize: 11,
-                            color: 'var(--text)', outline: 'none', boxSizing: 'border-box',
-                        }}
+                        style={{ paddingLeft: 28 }}
                     />
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <div className="chip-picker" style={{ flexShrink: 0 }}>
                     {types.map((tp) => (
-                        <button key={tp} onClick={() => setTypeFilter(tp)} style={{
-                            padding: '5px 10px', borderRadius: 20, fontSize: 11, fontWeight: 500, cursor: 'pointer',
-                            background: typeFilter === tp ? 'var(--surface3)' : 'var(--surface2)',
-                            border: `1px solid ${typeFilter === tp ? 'var(--border2)' : 'var(--border)'}`,
-                            color: typeFilter === tp ? 'var(--text)' : 'var(--text2)',
-                        }}>
+                        <button
+                            key={tp}
+                            type="button"
+                            className={`chip ${typeFilter === tp ? 'on' : ''}`}
+                            onClick={() => setTypeFilter(tp)}
+                        >
                             {tp === 'all' ? t('common.all') : tp}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Empty states */}
+            {/* Empty / loading states */}
             {devicesLoading && filtered.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)', fontSize: 12 }}>
-                    {t('common.loading')}
-                </div>
+                <EmptyState>{t('common.loading')}</EmptyState>
             )}
             {!devicesLoading && filtered.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text3)', fontSize: 12 }}>
+                <EmptyState>
                     {devices.length === 0 ? t('devices.noDevicesRegistered') : t('devices.noFilterResults')}
-                </div>
+                </EmptyState>
             )}
 
             {/* Device list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="list">
                 {filtered.map((device) => {
-                    const col = TYPE_COLOR[device.type] ?? { fg: 'var(--text3)', bg: 'var(--surface3)' };
+                    const tone: Tone = TYPE_TONE[device.type] ?? 'neutral';
                     const path = TYPE_ICON_PATH[device.type] ?? TYPE_ICON_PATH.virtual;
                     const on = deviceIsOn(device);
                     const preview = statePreview(device.state as Record<string, unknown>);
                     return (
-                        <div key={device.device_id} style={{
-                            background: 'var(--surface)', border: '1px solid var(--border)',
-                            borderRadius: 'var(--radius-sm)', padding: '10px 12px',
-                            display: 'flex', alignItems: 'center', gap: 10,
-                        }}>
-                            {/* Type icon */}
-                            <div style={{
-                                width: 34, height: 34, borderRadius: 9, background: col.bg,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                            }}>
-                                <svg viewBox="0 0 14 14" fill="none" width="14" height="14" style={{ color: col.fg }}>
+                        <div key={device.device_id} className="list-row">
+                            <div
+                                style={{
+                                    width: 34, height: 34, borderRadius: 9,
+                                    background: TYPE_ICON_BG[tone],
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    flexShrink: 0,
+                                }}
+                            >
+                                <svg viewBox="0 0 14 14" fill="none" width="14" height="14" style={{ color: TYPE_ICON_FG[tone] }}>
                                     <path d={path} stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                             </div>
 
-                            {/* Info */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                    <span style={{
-                                        fontSize: 12, fontWeight: 500, color: 'var(--text)',
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                    }}>
-                                        {device.name}
-                                    </span>
-                                    <span style={{
-                                        fontSize: 9, padding: '2px 6px', borderRadius: 4,
-                                        background: 'var(--surface3)', color: 'var(--text3)', flexShrink: 0,
-                                    }}>{device.protocol}</span>
-                                    <span style={{ fontSize: 9, color: col.fg, flexShrink: 0 }}>{device.type}</span>
-                                    {device.location && (
-                                        <span style={{
-                                            fontSize: 9, padding: '2px 6px', borderRadius: 4,
-                                            background: 'var(--blue-bg)', color: 'var(--accent)', flexShrink: 0,
-                                        }}>{device.location}</span>
-                                    )}
+                            <div className="lr-main">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
+                                    <span className="lr-title" style={{ flexShrink: 1, minWidth: 0 }}>{device.name}</span>
+                                    <Badge tone="neutral">{device.protocol}</Badge>
+                                    <Badge tone={tone}>{device.type}</Badge>
+                                    {device.location && <Badge tone="info">{device.location}</Badge>}
                                 </div>
                                 {preview && (
                                     <div style={{
-                                        fontSize: 10, color: 'var(--text3)', fontFamily: 'var(--font-mono)',
-                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                        fontSize: 10, color: 'var(--tx3)', fontFamily: 'var(--font-mono)',
+                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                     }}>
                                         {preview}
                                     </div>
                                 )}
                             </div>
 
-                            {/* Last seen */}
-                            <div style={{ fontSize: 10, color: 'var(--text3)', flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'var(--tx3)', flexShrink: 0, minWidth: 60, textAlign: 'right' }}>
                                 {formatLastSeen(device.last_seen, t)}
                             </div>
 
-                            {/* Toggle / state indicator */}
                             {on !== null ? (
-                                <div className={`toggle-switch ${on ? 'on' : 'off'}`}
-                                    onClick={() => handleToggle(device.device_id, !on)}>
-                                    <div className="toggle-knob" />
-                                </div>
+                                <Toggle
+                                    size="sm"
+                                    checked={on}
+                                    onChange={() => handleToggle(device.device_id, !on)}
+                                    label={device.name}
+                                />
                             ) : (
-                                <div style={{ width: 32, textAlign: 'center', fontSize: 11, color: 'var(--text3)' }}>—</div>
+                                <div style={{ width: 46, textAlign: 'center', fontSize: 11, color: 'var(--tx3)' }}>—</div>
                             )}
                         </div>
                     );
@@ -218,5 +213,3 @@ export default function Devices() {
         </div>
     );
 }
-
-
