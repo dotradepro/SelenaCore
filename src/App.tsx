@@ -8,6 +8,7 @@ import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
 import KioskElevationGate from './components/KioskElevationGate';
+import ModulePage from './components/ModulePage';
 
 export default function App() {
   // Kiosk watchdog: force-reload if WebSocket sync is unresponsive > 60s
@@ -104,6 +105,25 @@ export default function App() {
         <Routes>
           {/* Dashboard — always accessible without auth */}
           <Route path="/" element={<Dashboard />} />
+
+          {/* Top-level module pages promoted from /settings/system-modules
+              in v0.4.0. Still PIN-gated: these expose device control and
+              voice settings, same threat model as the old location. */}
+          <Route path="/devices" element={
+            <KioskElevationGate>
+              <ModulePage moduleName="device-control" titleKey="nav.devices" />
+            </KioskElevationGate>
+          } />
+          <Route path="/automations" element={
+            <KioskElevationGate>
+              <ModulePage moduleName="automation-engine" titleKey="nav.automations" />
+            </KioskElevationGate>
+          } />
+          <Route path="/voice" element={
+            <KioskElevationGate>
+              <ModulePage moduleName="voice-core" titleKey="nav.voice" />
+            </KioskElevationGate>
+          } />
 
           {/* Settings (+ Modules/System/Integrity tabs) — require PIN/QR elevation */}
           <Route path="/settings/*" element={

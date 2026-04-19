@@ -50,8 +50,11 @@ const uk = {
         nav: {
             dashboard: 'Дашборд',
             devices: 'Пристрої',
+            automations: 'Автоматизації',
+            voice: 'Голос',
             modules: 'Модулі',
             settings: 'Налаштування',
+            primary: 'Головна навігація',
         },
 
         // ── Dashboard ──

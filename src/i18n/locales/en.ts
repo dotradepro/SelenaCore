@@ -50,8 +50,11 @@ const en = {
         nav: {
             dashboard: 'Dashboard',
             devices: 'Devices',
+            automations: 'Automations',
+            voice: 'Voice',
             modules: 'Modules',
             settings: 'Settings',
+            primary: 'Primary navigation',
         },
 
         // ── Dashboard ──

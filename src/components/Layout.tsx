@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
+import TopNavigation from './layout/TopNavigation';
+import BottomNavigation from './layout/BottomNavigation';
 
 /* ── Notification Bell ── */
 interface NotifyEntry { message: string; level: string; ts: string; channels: string[]; }
@@ -230,6 +232,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </svg>
         </div>
 
+        {/* Primary navigation — Dashboard / Devices / Automations / Voice.
+            Sits immediately after the logo so it's the first thing the eye
+            hits on a wide kiosk; spacer below pushes the status cluster to
+            the right edge. */}
+        <TopNavigation />
+
         {/* Spacer */}
         <div style={{ flex: 1 }} />
 
@@ -314,6 +322,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <main style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', zIndex: 1 }}>
         {children}
       </main>
+
+      {/* ═══════════ BOTTOM NAV (mobile only, <768px) ═══════════ */}
+      <BottomNavigation />
 
       {/* ═══════════ TOAST ═══════════ */}
       <ToastNotification />

@@ -87,6 +87,12 @@ export default function Settings() {
           <Route path="/system-info"    element={<SystemPage />} />
           <Route path="/system-info/:tab" element={<SystemPage />} />
           <Route path="/system-modules" element={<SystemModulesSettings />} />
+          {/* v0.4.0 B1 redirects: the three most-used system modules were
+              promoted to top-level nav. Bookmarks / docs that pointed at
+              the old /settings/system-modules/<name> path now follow. */}
+          <Route path="/system-modules/voice-core"        element={<Navigate to="/voice" replace />} />
+          <Route path="/system-modules/device-control"    element={<Navigate to="/devices" replace />} />
+          <Route path="/system-modules/automation-engine" element={<Navigate to="/automations" replace />} />
           <Route path="*" element={<FormPage><div className="text-zinc-400">{t('common.inDevelopment')}</div></FormPage>} />
         </Routes>
       </div>

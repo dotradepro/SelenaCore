@@ -988,3 +988,18 @@ html.light .bg-zinc-800 .text-zinc-400 {
   color: var(--tx2) !important;
 }
 
+
+/* v0.4.0 B1: responsive navigation. Top-nav is the kiosk default; the
+   bottom-nav fallback appears below 768px where the top-bar gets too
+   cramped for horizontal pills. Both read from the same route set —
+   switching between them is seamless. */
+@media (max-width: 767px) {
+  .selena-bottom-nav {
+    display: flex !important;
+  }
+  /* Body has a fixed bottom-nav below it; pad the main area so content
+     isn't obscured by the 56px nav bar. */
+  main {
+    padding-bottom: 56px;
+  }
+}
