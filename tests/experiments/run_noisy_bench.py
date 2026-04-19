@@ -345,9 +345,9 @@ async def main() -> None:
         bar = "█" * int(p / t * 20) if t else ""
         print(f"  {noise:<10} {p:>2}/{t:<2}  {bar:<20}  {p/t*100:.0f}%")
 
-    out_path = Path("/opt/selena-core/_private/noisy_bench_results.json")
+    out_path = Path("/opt/selena-core/tests/experiments/results/noisy_bench_results.json")
     if not out_path.parent.is_dir():
-        out_path = _here.parents[2] / "_private" / "noisy_bench_results.json"
+        out_path = _here.parent / "results" / "noisy_bench_results.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
         "accuracy_pct": round(accuracy, 1),

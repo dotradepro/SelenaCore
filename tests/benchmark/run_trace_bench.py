@@ -7,7 +7,7 @@ tokenisation, dynamic filtered catalog, system prompt, the exact
 payload sent to Ollama, the raw LLM response, parsed intent/params,
 sanitizer output, and the pass/fail verdict.
 
-Output: ``_private/benchmark_trace_<model>_<timestamp>.txt`` — one
+Output: ``tests/experiments/results/benchmark_trace_<model>_<timestamp>.txt`` — one
 section per case, readable top to bottom like a console log. Plus a
 JSON dump for further analysis.
 
@@ -376,7 +376,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default="tests/benchmark/full_corpus.jsonl")
     ap.add_argument("--model", default="qwen2.5:1.5b")
-    ap.add_argument("--out-dir", default="_private")
+    ap.add_argument("--out-dir", default="tests/experiments/results")
     ap.add_argument(
         "--cloud", default="",
         help="Cloud provider id (e.g. 'google'). When set, bench against the "

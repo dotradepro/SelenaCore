@@ -1012,7 +1012,7 @@ class IntentRouter:
 
         # ── Low-margin clarification trigger ──
         # Band chosen empirically from bench margin histogram (see
-        # _private/bench_margin_histogram.txt for the analysis). When
+        # tests/experiments/results/bench_margin_histogram.txt for the analysis). When
         # the winner is only this close to the runner-up, the classifier
         # is on the fence — asking the user is cheaper and more
         # deterministic than silently committing to the wrong intent.

@@ -5,11 +5,11 @@ Produces a scalable bar chart with per-category accuracy, total-acc
 callout, latency and source breakdown. Pure Python (no matplotlib) —
 runnable on the host or in the container.
 
-Input:  _private/coverage_bench_results.json
-Output: _private/bench_viz/intent-bench.svg
+Input:  tests/experiments/results/coverage_bench_results.json
+Output: tests/experiments/results/bench_viz/intent-bench.svg
 
-Output lives under ``_private/`` (gitignored) — bench results are local
-artefacts and vary per machine / registry state. See
+Output lives under ``tests/experiments/results/`` (gitignored) — bench results
+are local artefacts and vary per machine / registry state. See
 ``docs/bench-coverage.md`` for interpretation and publishing guidance.
 """
 from __future__ import annotations
@@ -211,8 +211,8 @@ def render(path_in: Path, path_out: Path) -> None:
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
-    path_in = root / "_private" / "coverage_bench_results.json"
-    path_out = root / "_private" / "bench_viz" / "intent-bench.svg"
+    path_in = root / "tests" / "experiments" / "results" / "coverage_bench_results.json"
+    path_out = root / "tests" / "experiments" / "results" / "bench_viz" / "intent-bench.svg"
     if len(sys.argv) > 1:
         path_in = Path(sys.argv[1])
     if len(sys.argv) > 2:

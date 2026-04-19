@@ -147,7 +147,7 @@ async def main() -> None:
                 break
 
     # Write human report
-    out_dir = Path("/opt/selena-core/_private")
+    out_dir = Path("/opt/selena-core/tests/experiments/results")
     out_dir.mkdir(parents=True, exist_ok=True)
     hist_path = out_dir / "bench_margin_histogram.txt"
     csv_path = out_dir / "bench_margins.csv"

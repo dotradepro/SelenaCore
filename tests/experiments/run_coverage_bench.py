@@ -320,8 +320,8 @@ async def main() -> None:
     _breakdown("category",    by_category)
 
     # ── Persist ────────────────────────────────────────────────────────
-    out_dir = Path("/opt/selena-core/_private")
-    out_dir.mkdir(exist_ok=True)
+    out_dir = Path("/opt/selena-core/tests/experiments/results")
+    out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "coverage_bench_results.json"
     out_path.write_text(json.dumps({
         "summary": {

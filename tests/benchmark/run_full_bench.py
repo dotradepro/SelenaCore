@@ -17,8 +17,8 @@ takes. No direct Ollama API calls for classification, so the numbers
 reflect end-to-end latency the user actually experiences.
 
 Output:
-  _private/benchmark_<timestamp>.txt     — human-readable report
-  _private/benchmark_<timestamp>.json    — raw results for graphing
+  tests/experiments/results/benchmark_<timestamp>.txt     — human-readable report
+  tests/experiments/results/benchmark_<timestamp>.json    — raw results for graphing
 
 Usage (inside the selena-core container):
     docker compose exec -T core python3 \\
@@ -430,7 +430,7 @@ async def main() -> None:
         help="Comma-separated model list. Empty → every installed Ollama model.",
     )
     ap.add_argument("--consistency", type=int, default=3)
-    ap.add_argument("--out-dir", default="_private")
+    ap.add_argument("--out-dir", default="tests/experiments/results")
     args = ap.parse_args()
 
     import httpx

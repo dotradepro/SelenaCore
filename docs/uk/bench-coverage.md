@@ -69,12 +69,12 @@ By category:
   ...
 ```
 
-JSON-підсумок потрапляє до `_private/coverage_bench_results.json` (container-side: `/opt/selena-core/_private/coverage_bench_results.json`). Копіювання на хост:
+JSON-підсумок потрапляє до `tests/experiments/results/coverage_bench_results.json` (container-side: `/opt/selena-core/tests/experiments/results/coverage_bench_results.json`). Копіювання на хост:
 
 ```bash
-sudo docker cp selena-core:/opt/selena-core/_private/coverage_bench_results.json \
-               _private/coverage_bench_results.json
-sudo chown $USER _private/coverage_bench_results.json
+sudo docker cp selena-core:/opt/selena-core/tests/experiments/results/coverage_bench_results.json \
+               tests/experiments/results/coverage_bench_results.json
+sudo chown $USER tests/experiments/results/coverage_bench_results.json
 ```
 
 ### Цикл ітерацій під час тюнінгу
@@ -90,11 +90,11 @@ until sudo docker ps --format '{{.Names}}: {{.Status}}' | grep -q 'selena-core.*
 done
 
 # 3. run bench, tee log, copy JSON, diff against previous
-TS=$(date +%H%M); LOG=_private/bench_runs/round_${TS}.log
+TS=$(date +%H%M); LOG=tests/experiments/results/bench_runs/round_${TS}.log
 sudo docker exec -t selena-core python3 /opt/selena-core/tests/experiments/run_coverage_bench.py 2>&1 | tee "$LOG"
-sudo docker cp selena-core:/opt/selena-core/_private/coverage_bench_results.json _private/coverage_bench_results.json
-sudo chown $USER _private/coverage_bench_results.json
-python3 _private/compare_rounds.py     # prev vs current diff
+sudo docker cp selena-core:/opt/selena-core/tests/experiments/results/coverage_bench_results.json tests/experiments/results/coverage_bench_results.json
+sudo chown $USER tests/experiments/results/coverage_bench_results.json
+python3 tests/experiments/compare_rounds.py     # prev vs current diff
 ```
 
 ---
@@ -105,10 +105,10 @@ python3 _private/compare_rounds.py     # prev vs current diff
 
 ```bash
 python3 scripts/render_bench_svg.py
-# → _private/bench_viz/intent-bench.svg
+# → tests/experiments/results/bench_viz/intent-bench.svg
 ```
 
-Вивід живе в `_private/` (gitignored), бо bench-результати машинно-локальні та змінюються разом з реєстром. Про публікацію — нижче.
+Вивід живе в `tests/experiments/results/` (gitignored), бо bench-результати машинно-локальні та змінюються разом з реєстром. Про публікацію — нижче.
 
 ### Конвертація в PNG
 
@@ -118,12 +118,12 @@ python3 scripts/render_bench_svg.py
 cat > /tmp/wrap.html <<'HTML'
 <!DOCTYPE html>
 <html><head><style>*{margin:0;padding:0}html,body{background:#0d1117}</style></head>
-<body><img src="/home/YOU/SelenaCore/_private/bench_viz/intent-bench.svg"/></body></html>
+<body><img src="/home/YOU/SelenaCore/tests/experiments/results/bench_viz/intent-bench.svg"/></body></html>
 HTML
 
 google-chrome --headless --no-sandbox --disable-gpu --hide-scrollbars \
     --device-scale-factor=2 --window-size=960,560 \
-    --screenshot=/home/YOU/SelenaCore/_private/bench_viz/intent-bench.png \
+    --screenshot=/home/YOU/SelenaCore/tests/experiments/results/bench_viz/intent-bench.png \
     file:///tmp/wrap.html
 rm /tmp/wrap.html
 ```
@@ -133,7 +133,7 @@ rm /tmp/wrap.html
 Коли потрібно опублікувати поточний score (release notes, README badge, сайт):
 
 1. Перегенеруйте SVG зі свіжого bench
-2. Завантажте вручну з `_private/bench_viz/` на ціль публікації — **не комітьте бінарі в репо**, бо вони стають застарілими, щойно реєстр або класифікатор змінюються
+2. Завантажте вручну з `tests/experiments/results/bench_viz/` на ціль публікації — **не комітьте бінарі в репо**, бо вони стають застарілими, щойно реєстр або класифікатор змінюються
 3. Для документів, що посилаються на конкретне число, зазначайте "станом на v0.3.X" з commit SHA — не hardcode'те значення
 
 ---
@@ -212,7 +212,7 @@ sudo docker exec -t selena-core python3 \
     /opt/selena-core/tests/experiments/run_clarification_bench.py
 ```
 
-~5 секунд. JSON → `_private/clarification_bench_results.json`.
+~5 секунд. JSON → `tests/experiments/results/clarification_bench_results.json`.
 
 ### Пороги
 

@@ -354,10 +354,10 @@ async def main() -> None:
         "low_margin_cases": low_margin,
         "cases": results,
     }
-    out_path = Path("/opt/selena-core/_private/embedding_bench_results.json")
+    out_path = Path("/opt/selena-core/tests/experiments/results/embedding_bench_results.json")
     if not out_path.parent.is_dir():
         out_path = (
-            _here.parents[2] / "_private" / "embedding_bench_results.json"
+            _here.parent / "results" / "embedding_bench_results.json"
         )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, ensure_ascii=False, indent=2))

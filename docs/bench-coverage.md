@@ -69,12 +69,12 @@ By category:
   ...
 ```
 
-A JSON summary lands at `_private/coverage_bench_results.json` (container-side path: `/opt/selena-core/_private/coverage_bench_results.json`). Copy to host:
+A JSON summary lands at `tests/experiments/results/coverage_bench_results.json` (container-side path: `/opt/selena-core/tests/experiments/results/coverage_bench_results.json`). Copy to host:
 
 ```bash
-sudo docker cp selena-core:/opt/selena-core/_private/coverage_bench_results.json \
-               _private/coverage_bench_results.json
-sudo chown $USER _private/coverage_bench_results.json
+sudo docker cp selena-core:/opt/selena-core/tests/experiments/results/coverage_bench_results.json \
+               tests/experiments/results/coverage_bench_results.json
+sudo chown $USER tests/experiments/results/coverage_bench_results.json
 ```
 
 ### Re-run in a loop while iterating
@@ -90,11 +90,11 @@ until sudo docker ps --format '{{.Names}}: {{.Status}}' | grep -q 'selena-core.*
 done
 
 # 3. run bench, tee log, copy JSON, diff against previous
-TS=$(date +%H%M); LOG=_private/bench_runs/round_${TS}.log
+TS=$(date +%H%M); LOG=tests/experiments/results/bench_runs/round_${TS}.log
 sudo docker exec -t selena-core python3 /opt/selena-core/tests/experiments/run_coverage_bench.py 2>&1 | tee "$LOG"
-sudo docker cp selena-core:/opt/selena-core/_private/coverage_bench_results.json _private/coverage_bench_results.json
-sudo chown $USER _private/coverage_bench_results.json
-python3 _private/compare_rounds.py     # prev vs current diff
+sudo docker cp selena-core:/opt/selena-core/tests/experiments/results/coverage_bench_results.json tests/experiments/results/coverage_bench_results.json
+sudo chown $USER tests/experiments/results/coverage_bench_results.json
+python3 tests/experiments/compare_rounds.py     # prev vs current diff
 ```
 
 ---
@@ -105,10 +105,10 @@ python3 _private/compare_rounds.py     # prev vs current diff
 
 ```bash
 python3 scripts/render_bench_svg.py
-# → _private/bench_viz/intent-bench.svg
+# → tests/experiments/results/bench_viz/intent-bench.svg
 ```
 
-The output lives under `_private/` (gitignored) because bench results are machine-local and change per registry. See below for publishing.
+The output lives under `tests/experiments/results/` (gitignored) because bench results are machine-local and change per registry. See below for publishing.
 
 ### Convert to PNG
 
@@ -118,12 +118,12 @@ No matplotlib / rsvg-convert dependency. Use headless Chrome:
 cat > /tmp/wrap.html <<'HTML'
 <!DOCTYPE html>
 <html><head><style>*{margin:0;padding:0}html,body{background:#0d1117}</style></head>
-<body><img src="/home/YOU/SelenaCore/_private/bench_viz/intent-bench.svg"/></body></html>
+<body><img src="/home/YOU/SelenaCore/tests/experiments/results/bench_viz/intent-bench.svg"/></body></html>
 HTML
 
 google-chrome --headless --no-sandbox --disable-gpu --hide-scrollbars \
     --device-scale-factor=2 --window-size=960,560 \
-    --screenshot=/home/YOU/SelenaCore/_private/bench_viz/intent-bench.png \
+    --screenshot=/home/YOU/SelenaCore/tests/experiments/results/bench_viz/intent-bench.png \
     file:///tmp/wrap.html
 rm /tmp/wrap.html
 ```
@@ -133,7 +133,7 @@ rm /tmp/wrap.html
 When you want to publish the current score (release notes, README badge, website):
 
 1. Regenerate the SVG from the latest bench
-2. Upload manually from `_private/bench_viz/` to your publishing target — **don't commit the binary into the repo**, since it goes stale as soon as the registry or classifier changes
+2. Upload manually from `tests/experiments/results/bench_viz/` to your publishing target — **don't commit the binary into the repo**, since it goes stale as soon as the registry or classifier changes
 3. For docs that reference a specific number, quote it as "as of v0.3.X" with a commit SHA — not a hardcoded value
 
 ---
@@ -212,7 +212,7 @@ sudo docker exec -t selena-core python3 \
     /opt/selena-core/tests/experiments/run_clarification_bench.py
 ```
 
-~5 seconds. JSON lands at `_private/clarification_bench_results.json`.
+~5 seconds. JSON lands at `tests/experiments/results/clarification_bench_results.json`.
 
 ### Expected thresholds
 

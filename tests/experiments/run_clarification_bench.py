@@ -21,7 +21,7 @@ Run inside the selena-core container:
     docker exec -t selena-core python3 \\
         /opt/selena-core/tests/experiments/run_clarification_bench.py
 
-JSON result lands at ``_private/clarification_bench_results.json``.
+JSON result lands at ``tests/experiments/results/clarification_bench_results.json``.
 """
 from __future__ import annotations
 
@@ -214,7 +214,7 @@ async def main() -> None:
             f"p95={sorted(latencies)[int(0.95*len(latencies))-1]:.0f}ms"
         )
 
-    out_dir = Path("/opt/selena-core/_private")
+    out_dir = Path("/opt/selena-core/tests/experiments/results")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "clarification_bench_results.json"
     out_path.write_text(json.dumps({

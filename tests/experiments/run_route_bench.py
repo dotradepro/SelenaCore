@@ -157,9 +157,9 @@ async def main() -> None:
     if p50 > 0:
         print(f"  Speedup:         ~{2548 / p50:.1f}× faster end-to-end")
 
-    out_path = Path("/opt/selena-core/_private/route_bench_results.json")
+    out_path = Path("/opt/selena-core/tests/experiments/results/route_bench_results.json")
     if not out_path.parent.is_dir():
-        out_path = _here.parents[2] / "_private" / "route_bench_results.json"
+        out_path = _here.parent / "results" / "route_bench_results.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps({
         "accuracy_pct": round(accuracy, 1),

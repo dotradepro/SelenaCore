@@ -20,6 +20,7 @@ config/core.yaml
 
 # Benchmark reports (generated)
 benchmarks/report.json
+tests/experiments/results/
 
 # Private planning — never commit to GitHub
 _private/
