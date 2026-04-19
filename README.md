@@ -325,13 +325,13 @@ pytest tests/ -x -q
 python -m mypy core/ --ignore-missing
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+Read [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the full workflow.
 
 ---
 
 ## Security
 
-Please **do not** open a public issue for security reports. Use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new) instead. See [SECURITY.md](SECURITY.md) for the full policy.
+Please **do not** open a public issue for security reports. Use [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new) instead. See [SECURITY.md](.github/SECURITY.md) for the full policy.
 
 ---
 

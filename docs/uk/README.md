@@ -332,13 +332,13 @@ pytest tests/ -x -q
 python -m mypy core/ --ignore-missing
 ```
 
-Повний робочий процес: [CONTRIBUTING.md](../../CONTRIBUTING.md).
+Повний робочий процес: [CONTRIBUTING.md](../../.github/CONTRIBUTING.md).
 
 ---
 
 ## Безпека
 
-Будь ласка, **не відкривайте публічний issue** для повідомлень про вразливості. Використовуйте [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new). Повна політика: [SECURITY.md](../../SECURITY.md).
+Будь ласка, **не відкривайте публічний issue** для повідомлень про вразливості. Використовуйте [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new). Повна політика: [SECURITY.md](../../.github/SECURITY.md).
 
 ---
 

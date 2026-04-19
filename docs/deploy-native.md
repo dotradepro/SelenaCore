@@ -282,4 +282,4 @@ Open an issue with:
 - First error or warning
 - Output of `docker compose logs core --tail 50`
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](../.github/CONTRIBUTING.md) for details.

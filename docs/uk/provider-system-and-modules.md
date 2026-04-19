@@ -190,7 +190,7 @@ REST endpoints:
 - `POST /providers/{id}/uninstall` → body `{remove_package?: bool}`
 
 Повна локалізація EN/UK через inline `var L = {en, uk}` згідно
-CLAUDE.md §3.1.
+проєктної i18n-конвенції (див. [translation.md](translation.md)).
 
 ## 3. Авто-маршрутизація на `device.registered`
 

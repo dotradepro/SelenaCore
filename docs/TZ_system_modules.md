@@ -3429,5 +3429,5 @@ docs/architecture.md              <- core components
 docs/module-bus-protocol.md       <- module bus, lifecycle, WebSocket protocol
 docs/module-development.md        <- SDK, manifest, permissions
 docs/deployment.md                <- Raspberry Pi deployment
-CONTRIBUTING.md                   <- code standards
+.github/CONTRIBUTING.md           <- code standards
 ```

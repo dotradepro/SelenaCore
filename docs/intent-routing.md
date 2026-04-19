@@ -1,6 +1,6 @@
 # Intent Routing — deep dive
 
-> Companion to `CLAUDE.md §20` and [voice-settings.md](voice-settings.md).
+> Companion to [voice-settings.md](voice-settings.md).
 > Single source of truth for how SelenaCore classifies and dispatches user
 > voice / text commands.
 >

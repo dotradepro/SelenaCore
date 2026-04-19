@@ -200,8 +200,8 @@ REST endpoints:
 - `POST /providers/{id}/install` → returns `{ok, message, restart_needed: false}`
 - `POST /providers/{id}/uninstall` → body `{remove_package?: bool}`
 
-Full EN/UK i18n via the inline `var L = {en, uk}` dictionary per
-CLAUDE.md §3.1.
+Full EN/UK i18n via the inline `var L = {en, uk}` dictionary per the
+project i18n convention (see [translation.md](translation.md)).
 
 ## 3. Auto-routing on `device.registered`
 
