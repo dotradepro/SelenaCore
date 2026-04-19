@@ -1,0 +1,81 @@
+{
+    "_comment": "Terms preserved verbatim across auto-translations. Before translating a string, the generator substitutes these tokens with placeholders (__TERM_N__), translates, then restores the original. Prevents 'Piper TTS' from becoming 'Трубочник TTS'. Edit this file directly — no generator changes needed.",
+
+    "keep_original": [
+        "SelenaCore",
+        "Selena",
+
+        "Ollama",
+        "Piper",
+        "Vosk",
+        "Whisper",
+        "Helsinki",
+        "Argos",
+        "MiniLM",
+
+        "API",
+        "REST",
+        "WebSocket",
+        "SSE",
+        "MQTT",
+        "Zigbee",
+        "Z-Wave",
+        "Matter",
+        "Thread",
+        "Bluetooth",
+        "Wi-Fi",
+        "SSH",
+        "HTTP",
+        "HTTPS",
+        "JSON",
+        "YAML",
+        "URL",
+        "UUID",
+        "PIN",
+        "QR",
+
+        "STT",
+        "TTS",
+        "LLM",
+        "GPU",
+        "CPU",
+        "RAM",
+        "Swap",
+        "SSD",
+
+        "Docker",
+        "Linux",
+        "Ubuntu",
+        "Raspberry Pi",
+        "Jetson",
+
+        "Tuya",
+        "Philips Hue",
+        "ESPHome",
+        "Home Assistant",
+        "Tailscale",
+
+        "ALSA",
+        "PulseAudio",
+        "D-Bus",
+
+        "OpenAI",
+        "Anthropic",
+        "Groq",
+        "Google"
+    ],
+
+    "per_language_overrides": {
+        "_comment": "Optional per-language alternate renderings. Applies after the keep_original pass. Key is the English term, value is the language-specific replacement.",
+
+        "ru": {
+            "Wake word": "Слово активации"
+        },
+        "uk": {
+            "Wake word": "Слово активації"
+        },
+        "de": {
+            "Provider": "Anbieter"
+        }
+    }
+}

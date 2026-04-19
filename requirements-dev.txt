@@ -5,3 +5,8 @@ pytest-cov==5.0.0
 httpx==0.27.0
 mypy==1.10.1
 ruff==0.5.0
+
+# i18n auto-generation pipeline (scripts/generate_auto_locales.py + plurals)
+# argostranslate is declared in requirements.txt / Dockerfile.core; babel
+# is dev-only — used at build/CI time to resolve CLDR plural categories.
+Babel>=2.14
