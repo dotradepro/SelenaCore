@@ -528,112 +528,30 @@
     <script src="/api/shared/widget-common.js"></script>
     <script>
         // ── i18n dictionaries ─────────────────────────────────────────────────────────
-        var L = {
-            en: {
-                tab_playback: 'Playback', tab_radio: 'Radio', tab_usb: 'USB / Files',
-                tab_network: 'Network', tab_archive: 'Archive', tab_covers: 'Covers & Voice',
-                sec_audio_out: 'Audio output', lbl_output: 'Output device',
-                sec_stream: 'Stream settings', lbl_buffer: 'Stream buffer',
-                lbl_normalize: 'Normalize volume', lbl_def_vol: 'Default volume:',
-                btn_save: 'Save',
-                sec_radio_library: 'Radio library', sec_radio_search: 'Search library',
-                sec_radio_import: 'Import stations',
-                opt_any_genre: 'Any genre', opt_any_country: 'Any country',
-                opt_any_bitrate: 'Any bitrate', opt_any_codec: 'Any codec',
-                btn_search: 'Search', sec_fav_stations: 'Favourite stations',
-                btn_add_station: '+ Add station',
-                lbl_station_name: 'Station name', lbl_stream_url: 'Stream URL', btn_add: 'Add',
-                lbl_paste_m3u: 'Paste M3U8 content',
-                btn_import_m3u: '↑ Import M3U8', btn_do_import: 'Import',
-                btn_export_m3u: '↓ Export M3U8', btn_import_rb: '↓ Browse radio-browser.info',
-                btn_rb_import_all: 'Import all visible', btn_rb_load_more: 'Load more',
-                rb_loaded: 'loaded', btn_rb_add: '+ Add',
-                btn_clear_library: '🗑 Clear library',
-                confirm_clear: 'Clear all stations from the library? This cannot be undone.',
-                cleared: 'stations removed', importing: 'Importing…', fetching: 'Fetching…',
-                sec_usb_settings: 'USB / SD settings', lbl_auto_scan: 'Auto-scan on USB connect',
-                lbl_sort: 'Sort by', opt_folder: 'Folder', opt_artist: 'Artist',
-                opt_album: 'Album', opt_date: 'Date modified',
-                sec_mounted: 'Mounted devices', btn_scan_now: 'Scan now',
-                sec_shares: 'Network shares', btn_add_share: '+ Add share',
-                lbl_type: 'Type', lbl_host: 'Host / IP', lbl_share: 'Share name',
-                lbl_export: 'NFS export path', lbl_username: 'Username', lbl_password: 'Password',
-                btn_mount: 'Mount',
-                sec_archive_search: 'Search archive.org',
-                opt_all_coll: 'All collections',
-                sec_fav_archive: 'Saved items',
-                lbl_lastfm_key: 'Last.fm API key',
-                btn_verify: 'Verify',
-                sec_cover_cache: 'Cover cache', lbl_cache_size: 'Size:',
-                btn_clear_cache: 'Clear cache',
-                sec_voice_cmds: 'Voice commands',
-                th_phrase: 'Phrase', th_action: 'Action',
-                sec_test_voice: 'Test voice command', btn_test: 'Test',
-                play: 'Play', add_queue: 'Add to queue',
-                saved_ok: 'Settings saved', cache_cleared: 'Cache cleared',
-                verifying: 'Verifying…', key_ok: 'Key is valid ✓', key_err: 'Invalid key',
-                mounting: 'Mounting…', mounted_ok: 'Mounted OK', mount_err: 'Mount failed',
-                no_results: 'No results',
-                scan_running: 'Scanning…', scan_done: 'Scan complete',
-                saving: 'Saving…', error: 'Error occurred', exported: 'Exported M3U8',
-                station_added: 'Station added', name_url_required: 'Name and URL required',
-                nothing_to_import: 'Nothing to import', testing: 'Testing…',
-                library_cleared: 'Library cleared', scanning: 'Scanning…',
-                searching: 'Searching…',
-            },
-            uk: {
-                tab_playback: 'Відтворення', tab_radio: 'Радіо', tab_usb: 'USB / Файли',
-                tab_network: 'Мережа', tab_archive: 'Архів', tab_covers: 'Обкладинки і голос',
-                sec_audio_out: 'Аудіо вивід', lbl_output: 'Пристрій виводу',
-                sec_stream: 'Налаштування потоку', lbl_buffer: 'Буфер потоку',
-                lbl_normalize: 'Нормалізація гучності', lbl_def_vol: 'Гучність за замовчуванням:',
-                btn_save: 'Зберегти',
-                sec_radio_library: 'Бібліотека радіо', sec_radio_search: 'Пошук у бібліотеці',
-                sec_radio_import: 'Імпорт станцій',
-                opt_any_genre: 'Будь-який жанр', opt_any_country: 'Будь-яка країна',
-                opt_any_bitrate: 'Будь-який бітрейт', opt_any_codec: 'Будь-який кодек',
-                btn_search: 'Пошук', sec_fav_stations: 'Улюблені станції',
-                btn_add_station: '+ Додати станцію',
-                lbl_station_name: 'Назва станції', lbl_stream_url: 'URL потоку', btn_add: 'Додати',
-                lbl_paste_m3u: 'Вставте M3U8 вміст',
-                btn_import_m3u: '↑ Імпорт M3U8', btn_do_import: 'Імпорт',
-                btn_export_m3u: '↓ Експорт M3U8', btn_import_rb: '↓ Переглянути radio-browser.info',
-                btn_rb_import_all: 'Імпортувати все', btn_rb_load_more: 'Завантажити ще',
-                rb_loaded: 'завантажено', btn_rb_add: '+ Додати',
-                btn_clear_library: '🗑 Очистити бібліотеку',
-                confirm_clear: 'Видалити всі станції з бібліотеки? Скасувати буде неможливо.',
-                cleared: 'станцій видалено', importing: 'Імпорт…', fetching: 'Завантаження…',
-                sec_usb_settings: 'Налаштування USB / SD', lbl_auto_scan: 'Автосканування при підключенні',
-                lbl_sort: 'Сортування', opt_folder: 'Папки', opt_artist: 'Виконавець',
-                opt_album: 'Альбом', opt_date: 'Дата',
-                sec_mounted: 'Підключені пристрої', btn_scan_now: 'Сканувати зараз',
-                sec_shares: 'Мережеві папки', btn_add_share: '+ Додати папку',
-                lbl_type: 'Тип', lbl_host: 'Хост / IP', lbl_share: 'Ім\'я шари',
-                lbl_export: 'Шлях NFS export', lbl_username: 'Логін', lbl_password: 'Пароль',
-                btn_mount: 'Підключити',
-                sec_archive_search: 'Пошук archive.org',
-                opt_all_coll: 'Всі колекції',
-                sec_fav_archive: 'Збережені елементи',
-                lbl_lastfm_key: 'Last.fm API ключ',
-                btn_verify: 'Перевірити',
-                sec_cover_cache: 'Кеш обкладинок', lbl_cache_size: 'Розмір:',
-                btn_clear_cache: 'Очистити кеш',
-                sec_voice_cmds: 'Голосові команди',
-                th_phrase: 'Фраза', th_action: 'Дія',
-                sec_test_voice: 'Тест голосової команди', btn_test: 'Тест',
-                play: 'Грати', add_queue: 'В чергу',
-                saved_ok: 'Збережено', cache_cleared: 'Кеш очищено',
-                verifying: 'Перевірка…', key_ok: 'Ключ дійсний ✓', key_err: 'Невірний ключ',
-                mounting: 'Підключення…', mounted_ok: 'Підключено', mount_err: 'Помилка підключення',
-                no_results: 'Результатів немає',
-                scan_running: 'Сканування…', scan_done: 'Сканування завершено',
-                saving: 'Збереження…', error: 'Помилка', exported: 'Експортовано M3U8',
-                station_added: 'Станцію додано', name_url_required: 'Потрібна назва та URL',
-                nothing_to_import: 'Нічого імпортувати', testing: 'Тестування…',
-                library_cleared: 'Бібліотеку очищено', scanning: 'Сканування…',
-                searching: 'Пошук…',
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/media_player/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/media-player. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/media-player?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[media-player] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         // ── Tabs ──────────────────────────────────────────────────────────────────────
         document.querySelectorAll('.tab').forEach(function (btn) {
@@ -1264,15 +1182,17 @@
 
         // ── Init ──────────────────────────────────────────────────────────────────────
         function load() {
-            applyLang();
-            loadOutputs();
-            loadPlaybackConfig();
-            loadRadioStats();
-            loadRadioLibrary();
-            loadFavourites();
-            loadMountedDevices();
-            loadCoverConfig();
-            renderVoiceTable();
+            loadI18n().then(function () {
+                applyLang();
+                loadOutputs();
+                loadPlaybackConfig();
+                loadRadioStats();
+                loadRadioLibrary();
+                loadFavourites();
+                loadMountedDevices();
+                loadCoverConfig();
+                renderVoiceTable();
+            });
         }
 
         // Works whether script runs before or after DOMContentLoaded

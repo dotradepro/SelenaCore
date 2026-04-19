@@ -88,40 +88,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: 'Scheduler', h_loc_tz: 'Location & Timezone',
-                detect: 'Detect my location', detecting: 'Detecting\u2026',
-                detect_ok: 'Location detected', detect_tz: 'Timezone detected',
-                detect_err_denied: 'Location access denied. Allow it in browser settings.',
-                detect_err_unavail: 'Location unavailable. Try again later.',
-                detect_err_timeout: 'Location request timed out. Try again.',
-                detect_err_nosupport: 'Geolocation is not supported by this browser.',
-                detect_err_unknown: 'Failed to detect location.',
-                loc_not_set: 'Location not set \u2014 press the button above to detect',
-                loc_set: 'Location', lbl_tz: 'Timezone',
-                save: 'Save', saved: 'Saved',
-                h_jobs: 'Active Jobs', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Owner', col_next: 'Next Run',
-                remove_confirm: 'Remove job ',
-                removed_ok: 'Job removed', error: 'Error'
-            },
-            uk: {
-                title: 'Планувальник', h_loc_tz: 'Місцезнаходження і часовий пояс',
-                detect: 'Визначити моє місце', detecting: 'Визначаємо\u2026',
-                detect_ok: 'Місцезнаходження визначено', detect_tz: 'Часовий пояс визначено',
-                detect_err_denied: 'Доступ до геолокації заборонено. Дозвольте у налаштуваннях браузера.',
-                detect_err_unavail: 'Місцезнаходження недоступне. Спробуйте пізніше.',
-                detect_err_timeout: 'Час очікування вичерпано. Спробуйте ще раз.',
-                detect_err_nosupport: 'Геолокація не підтримується цим браузером.',
-                detect_err_unknown: 'Не вдалося визначити місцезнаходження.',
-                loc_not_set: 'Місцезнаходження не встановлено \u2014 натисніть кнопку вище',
-                loc_set: 'Місцезнаходження', lbl_tz: 'Часовий пояс',
-                save: 'Зберегти', saved: 'Збережено',
-                h_jobs: 'Активні завдання', col_jobid: 'Job ID', col_trigger: 'Trigger', col_owner: 'Власник', col_next: 'Наступний запуск',
-                remove_confirm: 'Видалити завдання ',
-                removed_ok: 'Завдання видалено', error: 'Помилка'
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/scheduler/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/scheduler. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/scheduler?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[scheduler] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         function updateLocInfo() {
             var el = $('loc-info');
@@ -241,10 +231,12 @@
 
         $('btn-detect').addEventListener('click', detectLocation);
 
-        applyLang();
-        loadConfig();
-        loadJobs();
-        setInterval(loadJobs, 30000);
+        loadI18n().then(function () {
+            applyLang();
+            loadConfig();
+            loadJobs();
+            setInterval(loadJobs, 30000);
+        });
     </script>
 </body>
 

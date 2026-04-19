@@ -1,0 +1,17 @@
+{
+  "title": "Lights & Switches",
+  "help": "Diagnostic view of every device with entity_type ∈ light / switch / outlet. Devices are added through Device Control → Tuya Cloud Wizard. Voice commands (“turn on the kitchen light”) are owned by the Device Control module — there is no separate intent layer here.",
+  "detected": "Detected lights / switches",
+  "refresh": "Refresh",
+  "col_room": "Room",
+  "col_name": "Name",
+  "col_type": "Type",
+  "col_protocol": "Protocol",
+  "col_status": "Status",
+  "col_state": "State",
+  "loading": "Loading…",
+  "empty": "No lights, switches or outlets yet — add some via Device Control.",
+  "on": "on",
+  "off": "off",
+  "unassigned": "unassigned"
+}

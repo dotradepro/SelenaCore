@@ -303,60 +303,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: '⚙️ Automation Engine', subtitle: 'Triggers → conditions → actions',
-                total_rules: 'Total rules', enabled: 'Enabled', runs: 'Runs', errors: 'Errors',
-                active_rules: 'Active Rules', refresh: '↻ Refresh', loading: 'Loading…',
-                no_rules: 'No rules yet. Add your first rule below.',
-                add_rule_title: 'Add New Rule',
-                f_name: 'Rule name', f_name_ph: 'Morning lights',
-                f_trigger_type: 'Trigger', f_action_type: 'Action',
-                trig_time: '🕐 Time (schedule)', trig_event: '📡 Event', trig_device: '💡 Device state', trig_presence: '👤 Presence',
-                act_device: '💡 Control device', act_event: '📡 Publish event', act_notify: '🔔 Send notification',
-                f_at_time: 'Time (HH:MM)', f_event_type: 'Event type',
-                f_device_id: 'Device ID', f_state_key: 'State key', f_state_val: 'State value',
-                f_user_id: 'User ID', f_presence_status: 'Status',
-                pres_home: 'Home', pres_away: 'Away',
-                f_act_device_id: 'Device ID', f_pub_event_type: 'Event type',
-                f_notify_msg: 'Message', f_notify_channel: 'Channel',
-                add_rule_btn: '+ Add Rule', added_ok: '✓ Rule added',
-                adv_yaml: '▸ Advanced: Import from YAML',
-                adv_yaml_hint: 'Paste a YAML ruleset to bulk-import rules:',
-                import_btn: 'Import YAML', imported_ok: '✓ Imported',
-                trigger_lbl: 'trigger: ', on: 'ON', off: 'OFF',
-                disable: 'Disable', enable: 'Enable', delete_confirm: 'Delete this rule?',
-                err_name: 'Enter a rule name',
-                saving: 'Saving…', saved: 'Saved', deleted: 'Deleted', error: 'Error', loading_btn: 'Loading…',
-                rule_enabled: 'Rule enabled', rule_disabled: 'Rule disabled', importing: 'Importing…'
-            },
-            uk: {
-                title: '⚙️ Рушій автоматизації', subtitle: 'Тригери → умови → дії',
-                total_rules: 'Всього правил', enabled: 'Увімкнено', runs: 'Запуски', errors: 'Помилки',
-                active_rules: 'Активні правила', refresh: '↻ Оновити', loading: 'Завантаження…',
-                no_rules: 'Правил ще немає. Додайте перше правило нижче.',
-                add_rule_title: 'Додати нове правило',
-                f_name: 'Назва правила', f_name_ph: 'Ранкове світло',
-                f_trigger_type: 'Тригер', f_action_type: 'Дія',
-                trig_time: '🕐 Час (розклад)', trig_event: '📡 Подія', trig_device: '💡 Стан пристрою', trig_presence: '👤 Присутність',
-                act_device: '💡 Керувати пристроєм', act_event: '📡 Опублікувати подію', act_notify: '🔔 Надіслати сповіщення',
-                f_at_time: 'Час (ГГ:ХХ)', f_event_type: 'Тип події',
-                f_device_id: 'ID пристрою', f_state_key: 'Ключ стану', f_state_val: 'Значення',
-                f_user_id: 'ID користувача', f_presence_status: 'Статус',
-                pres_home: 'Вдома', pres_away: 'Відсутній',
-                f_act_device_id: 'ID пристрою', f_pub_event_type: 'Тип події',
-                f_notify_msg: 'Повідомлення', f_notify_channel: 'Канал',
-                add_rule_btn: '+ Додати правило', added_ok: '✓ Правило додано',
-                adv_yaml: '▸ Додатково: імпорт з YAML',
-                adv_yaml_hint: 'Вставте YAML з правилами для масового імпорту:',
-                import_btn: 'Імпортувати YAML', imported_ok: '✓ Імпортовано',
-                trigger_lbl: 'тригер: ', on: 'ВКЛ', off: 'ВИКЛ',
-                disable: 'Вимкнути', enable: 'Увімкнути', delete_confirm: 'Видалити це правило?',
-                err_name: 'Введіть назву правила',
-                saving: 'Збереження…', saved: 'Збережено', deleted: 'Видалено', error: 'Помилка', loading_btn: 'Завантаження…',
-                rule_enabled: 'Правило увімкнено', rule_disabled: 'Правило вимкнено', importing: 'Імпортування…'
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/automation_engine/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/automation-engine. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/automation-engine?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[automation-engine] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         async function loadStatus() {
             try {
@@ -529,10 +499,12 @@
             loadStatus();
         }
 
-        applyLang();
-        loadStatus();
-        loadRules();
-        setInterval(loadStatus, 10000);
+        loadI18n().then(function () {
+            applyLang();
+            loadStatus();
+            loadRules();
+            setInterval(loadStatus, 10000);
+        });
     </script>
 </body>
 

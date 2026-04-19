@@ -67,10 +67,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: { title: 'Device Watchdog', scan_settings: 'Scan Settings', check_interval: 'Check interval (seconds)', ping_timeout: 'Ping timeout (seconds)', mqtt_timeout: 'MQTT offline threshold (seconds)', protocol_timeout: 'Zigbee/Z-Wave offline threshold (seconds)', offline_threshold: 'Consecutive failures before marking offline', notify_offline: 'Publish device.offline event', save: 'Save', scan_now: 'Scan Now', saved: 'Saved', scan_done: 'Scan done: ', online_suffix: ' online, ', offline_suffix: ' offline', error: 'Error' },
-            uk: { title: 'Моніторинг пристроїв', scan_settings: 'Налаштування сканування', check_interval: 'Інтервал перевірки (секунди)', ping_timeout: 'Таймаут пінгу (секунди)', mqtt_timeout: 'Поріг MQTT офлайн (секунди)', protocol_timeout: 'Поріг Zigbee/Z-Wave офлайн (секунди)', offline_threshold: 'Послідовних помилок до позначення офлайн', notify_offline: 'Публікувати подію device.offline', save: 'Зберегти', scan_now: 'Сканувати зараз', saved: 'Збережено', scan_done: 'Скан завершено: ', online_suffix: ' онлайн, ', offline_suffix: ' офлайн', error: 'Помилка' }
-        };
+    // Module-specific i18n: strings live in system_modules/device_watchdog/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/device-watchdog. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/device-watchdog?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[device-watchdog] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         async function loadConfig() {
             try {
@@ -106,8 +126,10 @@
             });
         });
 
-        applyLang();
-        loadConfig();
+        loadI18n().then(function () {
+            applyLang();
+            loadConfig();
+        });
     </script>
 </body>
 

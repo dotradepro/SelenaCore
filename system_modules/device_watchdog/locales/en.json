@@ -1,0 +1,17 @@
+{
+  "title": "Device Watchdog",
+  "scan_settings": "Scan Settings",
+  "check_interval": "Check interval (seconds)",
+  "ping_timeout": "Ping timeout (seconds)",
+  "mqtt_timeout": "MQTT offline threshold (seconds)",
+  "protocol_timeout": "Zigbee/Z-Wave offline threshold (seconds)",
+  "offline_threshold": "Consecutive failures before marking offline",
+  "notify_offline": "Publish device.offline event",
+  "save": "Save",
+  "scan_now": "Scan Now",
+  "saved": "Saved",
+  "scan_done": "Scan done: ",
+  "online_suffix": " online, ",
+  "offline_suffix": " offline",
+  "error": "Error"
+}

@@ -1,0 +1,17 @@
+{
+  "title": "Climate",
+  "help": "Climate devices are added through Device Control → Gree / Pular tab. This page lists every device with entity_type=air_conditioner or thermostat plus its current state. Voice commands (“set temperature to 22 in bedroom”, “switch bedroom to cool mode”) are owned by the Device Control module — there is no separate climate intent layer.",
+  "detected": "Detected climate devices",
+  "refresh": "Refresh",
+  "col_room": "Room",
+  "col_name": "Name",
+  "col_type": "Type",
+  "col_protocol": "Protocol",
+  "col_status": "Status",
+  "col_state": "State",
+  "loading": "Loading…",
+  "empty": "No climate devices yet — add one via Device Control → Gree / Pular.",
+  "on": "on",
+  "off": "off",
+  "unassigned": "unassigned"
+}

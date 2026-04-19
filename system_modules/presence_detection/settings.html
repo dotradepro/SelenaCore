@@ -441,90 +441,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: '\uD83C\uDFE0 Presence Detection',
-                subtitle: 'Track who is home by scanning the network',
-                stat_home: 'Home', stat_away: 'Away', stat_tracked: 'Tracked', stat_interval: 'Scan (s)',
-                tracked_users: 'Tracked Users', scan_now: 'Scan Now', loading: 'Loading\u2026',
-                h_add_user: 'Add Person',
-                add_hint: 'Scan your network to discover devices. Select your phone or laptop, enter a name, and click Add.',
-                btn_scan_network: '\uD83D\uDD0E Scan Network',
-                btn_qr_invite: '\uD83D\uDCF2 QR Invite',
-                scanning: 'Scanning network\u2026',
-                no_devices_found: 'No devices found. Make sure devices are connected to the same network.',
-                select_device: 'Select one or more devices that belong to this person',
-                lbl_name: 'Person name',
-                ph_name: 'e.g. Alice, Dad, Mom\u2026',
-                btn_add_user: '\u2795 Add Person',
-                selected_prefix: 'Selected devices:',
-                manual_toggle: '\u2699 Add manually (advanced)',
-                lbl_uid: 'User ID', lbl_name_manual: 'Name',
-                lbl_ip: 'IP address', lbl_mac: 'MAC address', lbl_bt: 'Bluetooth address',
-                btn_add_manual: 'Add',
-                no_users: 'No one tracked yet. Scan the network and add people below.',
-                added: '\u2713 Added!', err_select: 'Select at least one device',
-                err_name: 'Enter a name', err_required: 'User ID and Name are required',
-                remove_confirm: 'Remove this person?',
-                last_seen: 'Last seen', never: 'never',
-                home: 'home', away: 'away', unknown: 'unknown',
-                qr_title: 'QR Invite', qr_lbl_name: 'Person name',
-                qr_generate: 'Generate QR Code', qr_waiting: 'Waiting for scan\u2026',
-                qr_done: '\u2713 Device registered!', qr_expired: 'Invite expired',
-                qr_close: 'Close', qr_hint: 'Show this QR to the person. They scan it with their phone camera.',
-                show_history: 'History',
-                push_title: 'Push Notifications', push_devices: 'devices subscribed',
-                push_user: 'User', push_platform: 'Platform', push_date: 'Date',
-                push_test: 'Test', push_no_subs: 'No push subscriptions yet.',
-                push_vapid: 'VAPID Public Key', push_copy: 'Copy',
-                push_copied: 'Copied!', push_sent: 'Sent', push_failed: 'Failed',
-                push_testing: 'Sending\u2026',
-                push_reset: 'Reset Push Keys', push_reset_hint: 'Regenerate VAPID keys and clear all subscriptions. Users must re-subscribe.',
-                push_reset_ok: 'Keys regenerated. Users must re-subscribe from their phones.',
-                push_reset_confirm: 'This will delete all push subscriptions. Users will need to re-subscribe. Continue?'
-            },
-            uk: {
-                title: '\uD83C\uDFE0 \u0412\u0438\u044F\u0432\u043B\u0435\u043D\u043D\u044F \u043F\u0440\u0438\u0441\u0443\u0442\u043D\u043E\u0441\u0442\u0456',
-                subtitle: '\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0439\u0442\u0435, \u0445\u0442\u043E \u0432\u0434\u043E\u043C\u0430, \u0441\u043A\u0430\u043D\u0443\u044E\u0447\u0438 \u043C\u0435\u0440\u0435\u0436\u0443',
-                stat_home: '\u0412\u0434\u043E\u043C\u0430', stat_away: '\u0412\u0456\u0434\u0441\u0443\u0442\u043D\u0456', stat_tracked: '\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0454\u0442\u044C\u0441\u044F', stat_interval: '\u0421\u043A\u0430\u043D (\u0441)',
-                tracked_users: '\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0432\u0430\u043D\u0456 \u043B\u044E\u0434\u0438', scan_now: '\u0421\u043A\u0430\u043D\u0443\u0432\u0430\u0442\u0438', loading: '\u0417\u0430\u0432\u0430\u043D\u0442\u0430\u0436\u0435\u043D\u043D\u044F\u2026',
-                h_add_user: '\u0414\u043E\u0434\u0430\u0442\u0438 \u043B\u044E\u0434\u0438\u043D\u0443',
-                add_hint: '\u0421\u043A\u0430\u043D\u0443\u0439\u0442\u0435 \u043C\u0435\u0440\u0435\u0436\u0443, \u0449\u043E\u0431 \u0437\u043D\u0430\u0439\u0442\u0438 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457. \u0412\u0438\u0431\u0435\u0440\u0456\u0442\u044C \u0441\u0432\u0456\u0439 \u0442\u0435\u043B\u0435\u0444\u043E\u043D \u0430\u0431\u043E \u043D\u043E\u0443\u0442\u0431\u0443\u043A, \u0432\u0432\u0435\u0434\u0456\u0442\u044C \u0456\u043C\u0027\u044F \u0442\u0430 \u043D\u0430\u0442\u0438\u0441\u043D\u0456\u0442\u044C \u0414\u043E\u0434\u0430\u0442\u0438.',
-                btn_scan_network: '\uD83D\uDD0E \u0421\u043A\u0430\u043D\u0443\u0432\u0430\u0442\u0438 \u043C\u0435\u0440\u0435\u0436\u0443',
-                btn_qr_invite: '\uD83D\uDCF2 QR \u0437\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043D\u044F',
-                scanning: '\u0421\u043A\u0430\u043D\u0443\u0432\u0430\u043D\u043D\u044F \u043C\u0435\u0440\u0435\u0436\u0456\u2026',
-                no_devices_found: '\u041F\u0440\u0438\u0441\u0442\u0440\u043E\u0457 \u043D\u0435 \u0437\u043D\u0430\u0439\u0434\u0435\u043D\u043E. \u041F\u0435\u0440\u0435\u043A\u043E\u043D\u0430\u0439\u0442\u0435\u0441\u044C, \u0449\u043E \u0432\u043E\u043D\u0438 \u043F\u0456\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0456 \u0434\u043E \u0442\u0456\u0454\u0457 \u0436 \u043C\u0435\u0440\u0435\u0436\u0456.',
-                select_device: '\u0412\u0438\u0431\u0435\u0440\u0456\u0442\u044C \u043E\u0434\u0438\u043D \u0430\u0431\u043E \u043A\u0456\u043B\u044C\u043A\u0430 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432 \u0446\u0456\u0454\u0457 \u043B\u044E\u0434\u0438\u043D\u0438',
-                lbl_name: '\u0406\u043C\u0027\u044F \u043B\u044E\u0434\u0438\u043D\u0438',
-                ph_name: '\u043D\u0430\u043F\u0440. \u0410\u043B\u0456\u0441\u0430, \u0422\u0430\u0442\u043E, \u041C\u0430\u043C\u0430\u2026',
-                btn_add_user: '\u2795 \u0414\u043E\u0434\u0430\u0442\u0438 \u043B\u044E\u0434\u0438\u043D\u0443',
-                selected_prefix: '\u0412\u0438\u0431\u0440\u0430\u043D\u0456 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457:',
-                manual_toggle: '\u2699 \u0414\u043E\u0434\u0430\u0442\u0438 \u0432\u0440\u0443\u0447\u043D\u0443 (\u0440\u043E\u0437\u0448\u0438\u0440\u0435\u043D\u0435)',
-                lbl_uid: 'User ID', lbl_name_manual: '\u0406\u043C\u0027\u044F',
-                lbl_ip: 'IP-\u0430\u0434\u0440\u0435\u0441\u0430', lbl_mac: 'MAC-\u0430\u0434\u0440\u0435\u0441\u0430', lbl_bt: 'Bluetooth-\u0430\u0434\u0440\u0435\u0441\u0430',
-                btn_add_manual: '\u0414\u043E\u0434\u0430\u0442\u0438',
-                no_users: '\u0429\u0435 \u043D\u0456\u043A\u043E\u0433\u043E \u043D\u0435 \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0454\u0442\u044C\u0441\u044F. \u0421\u043A\u0430\u043D\u0443\u0439\u0442\u0435 \u043C\u0435\u0440\u0435\u0436\u0443 \u0442\u0430 \u0434\u043E\u0434\u0430\u0439\u0442\u0435 \u043B\u044E\u0434\u0435\u0439.',
-                added: '\u2713 \u0414\u043E\u0434\u0430\u043D\u043E!', err_select: '\u0412\u0438\u0431\u0435\u0440\u0456\u0442\u044C \u0445\u043E\u0447\u0430 \u0431 \u043E\u0434\u0438\u043D \u043F\u0440\u0438\u0441\u0442\u0440\u0456\u0439',
-                err_name: '\u0412\u0432\u0435\u0434\u0456\u0442\u044C \u0456\u043C\u0027\u044F', err_required: 'User ID \u0442\u0430 \u0406\u043C\u0027\u044F \u043E\u0431\u043E\u0432\u0027\u044F\u0437\u043A\u043E\u0432\u0456',
-                remove_confirm: '\u0412\u0438\u0434\u0430\u043B\u0438\u0442\u0438 \u0446\u044E \u043B\u044E\u0434\u0438\u043D\u0443?',
-                last_seen: '\u041E\u0441\u0442\u0430\u043D\u043D\u0456\u0439 \u0440\u0430\u0437', never: '\u043D\u0456\u043A\u043E\u043B\u0438',
-                home: '\u0432\u0434\u043E\u043C\u0430', away: '\u0432\u0456\u0434\u0441\u0443\u0442\u043D\u0456\u0439', unknown: '\u043D\u0435\u0432\u0456\u0434\u043E\u043C\u043E',
-                qr_title: 'QR \u0437\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043D\u044F', qr_lbl_name: '\u0406\u043C\u0027\u044F \u043B\u044E\u0434\u0438\u043D\u0438',
-                qr_generate: '\u0417\u0433\u0435\u043D\u0435\u0440\u0443\u0432\u0430\u0442\u0438 QR \u043A\u043E\u0434', qr_waiting: '\u041E\u0447\u0456\u043A\u0443\u0432\u0430\u043D\u043D\u044F \u0441\u043A\u0430\u043D\u0443\u0432\u0430\u043D\u043D\u044F\u2026',
-                qr_done: '\u2713 \u041F\u0440\u0438\u0441\u0442\u0440\u0456\u0439 \u0437\u0430\u0440\u0435\u0454\u0441\u0442\u0440\u043E\u0432\u0430\u043D\u043E!', qr_expired: '\u0417\u0430\u043F\u0440\u043E\u0448\u0435\u043D\u043D\u044F \u043F\u0440\u043E\u0441\u0442\u0440\u043E\u0447\u0435\u043D\u0435',
-                qr_close: '\u0417\u0430\u043A\u0440\u0438\u0442\u0438', qr_hint: '\u041F\u043E\u043A\u0430\u0436\u0456\u0442\u044C \u0446\u0435\u0439 QR \u043B\u044E\u0434\u0438\u043D\u0456. \u0412\u043E\u043D\u0430 \u0441\u043A\u0430\u043D\u0443\u0454 \u0439\u043E\u0433\u043E \u043A\u0430\u043C\u0435\u0440\u043E\u044E \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0443.',
-                show_history: '\u0406\u0441\u0442\u043E\u0440\u0456\u044F',
-                push_title: 'Push-\u0441\u043F\u043E\u0432\u0456\u0449\u0435\u043D\u043D\u044F', push_devices: '\u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432 \u043F\u0456\u0434\u043F\u0438\u0441\u0430\u043D\u043E',
-                push_user: '\u041A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447', push_platform: '\u041F\u043B\u0430\u0442\u0444\u043E\u0440\u043C\u0430', push_date: '\u0414\u0430\u0442\u0430',
-                push_test: '\u0422\u0435\u0441\u0442', push_no_subs: '\u041F\u043E\u043A\u0438 \u043D\u0435\u043C\u0430\u0454 push-\u043F\u0456\u0434\u043F\u0438\u0441\u043E\u043A.',
-                push_vapid: 'VAPID Public Key', push_copy: '\u041A\u043E\u043F\u0456\u044E\u0432\u0430\u0442\u0438',
-                push_copied: '\u0421\u043A\u043E\u043F\u0456\u0439\u043E\u0432\u0430\u043D\u043E!', push_sent: '\u0412\u0456\u0434\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u043E', push_failed: '\u041F\u043E\u043C\u0438\u043B\u043A\u0430',
-                push_testing: '\u0412\u0456\u0434\u043F\u0440\u0430\u0432\u043A\u0430\u2026',
-                push_reset: '\u0421\u043A\u0438\u043D\u0443\u0442\u0438 Push \u043A\u043B\u044E\u0447\u0456', push_reset_hint: '\u041F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u0443\u0432\u0430\u0442\u0438 VAPID \u043A\u043B\u044E\u0447\u0456 \u0442\u0430 \u0432\u0438\u0434\u0430\u043B\u0438\u0442\u0438 \u0432\u0441\u0456 \u043F\u0456\u0434\u043F\u0438\u0441\u043A\u0438. \u041A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447\u0456 \u043F\u043E\u0432\u0438\u043D\u043D\u0456 \u043F\u0456\u0434\u043F\u0438\u0441\u0430\u0442\u0438\u0441\u044F \u0437\u0430\u043D\u043E\u0432\u043E.',
-                push_reset_ok: '\u041A\u043B\u044E\u0447\u0456 \u043F\u0435\u0440\u0435\u0433\u0435\u043D\u0435\u0440\u043E\u0432\u0430\u043D\u043E. \u041A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447\u0456 \u043F\u043E\u0432\u0438\u043D\u043D\u0456 \u043F\u0456\u0434\u043F\u0438\u0441\u0430\u0442\u0438\u0441\u044F \u0437\u0430\u043D\u043E\u0432\u043E \u0437 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0456\u0432.',
-                push_reset_confirm: '\u0426\u0435 \u0432\u0438\u0434\u0430\u043B\u0438\u0442\u044C \u0432\u0441\u0456 push-\u043F\u0456\u0434\u043F\u0438\u0441\u043A\u0438. \u041A\u043E\u0440\u0438\u0441\u0442\u0443\u0432\u0430\u0447\u0456 \u043F\u043E\u0432\u0438\u043D\u043D\u0456 \u0431\u0443\u0434\u0443\u0442\u044C \u043F\u0456\u0434\u043F\u0438\u0441\u0430\u0442\u0438\u0441\u044F \u0437\u0430\u043D\u043E\u0432\u043E. \u041F\u0440\u043E\u0434\u043E\u0432\u0436\u0438\u0442\u0438?'
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/presence_detection/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/presence-detection. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/presence-detection?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[presence-detection] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         var selectedDevices = [];
         var discoveredDevices = [];
@@ -878,12 +818,14 @@
             });
         }
 
-        applyLang();
-        loadStatus();
-        loadUsers();
-        loadPushSubscriptions();
-        copyVapid();
-        setInterval(loadStatus, 15000);
+        loadI18n().then(function () {
+            applyLang();
+            loadStatus();
+            loadUsers();
+            loadPushSubscriptions();
+            copyVapid();
+            setInterval(loadStatus, 15000);
+        });
     </script>
 </body>
 

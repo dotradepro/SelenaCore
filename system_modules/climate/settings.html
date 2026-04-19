@@ -41,26 +41,30 @@ pre{background:var(--sf2);padding:6px 8px;border-radius:5px;font-size:10px;font-
 
 <script src="/api/shared/widget-common.js"></script>
 <script>
-var L = {
-  en: {
-    title:'Climate',
-    help:'Climate devices are added through Device Control \u2192 Gree / Pular tab. This page lists every device with entity_type=air_conditioner or thermostat plus its current state. Voice commands (\u201cset temperature to 22 in bedroom\u201d, \u201cswitch bedroom to cool mode\u201d) are owned by the Device Control module \u2014 there is no separate climate intent layer.',
-    detected:'Detected climate devices', refresh:'Refresh',
-    col_room:'Room', col_name:'Name', col_type:'Type', col_protocol:'Protocol', col_status:'Status', col_state:'State',
-    loading:'Loading\u2026',
-    empty:'No climate devices yet \u2014 add one via Device Control \u2192 Gree / Pular.',
-    on:'on', off:'off', unassigned:'unassigned',
-  },
-  uk: {
-    title:'\u041a\u043b\u0456\u043c\u0430\u0442',
-    help:'\u041a\u043b\u0456\u043c\u0430\u0442\u0438\u0447\u043d\u0456 \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u0457 \u0434\u043e\u0434\u0430\u044e\u0442\u044c\u0441\u044f \u0447\u0435\u0440\u0435\u0437 \u041a\u0435\u0440\u0443\u0432\u0430\u043d\u043d\u044f \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044f\u043c\u0438 \u2192 \u0432\u043a\u043b\u0430\u0434\u043a\u0443 Gree / Pular. \u0426\u044f \u0441\u0442\u043e\u0440\u0456\u043d\u043a\u0430 \u043f\u043e\u043a\u0430\u0437\u0443\u0454 \u0432\u0441\u0456 \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u0457 \u0437 entity_type=air_conditioner \u0430\u0431\u043e thermostat \u0437 \u043f\u043e\u0442\u043e\u0447\u043d\u0438\u043c \u0441\u0442\u0430\u043d\u043e\u043c. \u0413\u043e\u043b\u043e\u0441\u043e\u0432\u0456 \u043a\u043e\u043c\u0430\u043d\u0434\u0438 (\u201c\u0432\u0441\u0442\u0430\u043d\u043e\u0432\u0438 \u0442\u0435\u043c\u043f\u0435\u0440\u0430\u0442\u0443\u0440\u0443 22 \u0432 \u0441\u043f\u0430\u043b\u044c\u043d\u0456\u201d, \u201c\u043f\u0435\u0440\u0435\u043c\u043a\u043d\u0438 \u0441\u043f\u0430\u043b\u044c\u043d\u044e \u0432 \u0440\u0435\u0436\u0438\u043c \u043e\u0445\u043e\u043b\u043e\u0434\u0436\u0435\u043d\u043d\u044f\u201d) \u043d\u0430\u043b\u0435\u0436\u0430\u0442\u044c \u043c\u043e\u0434\u0443\u043b\u044e \u041a\u0435\u0440\u0443\u0432\u0430\u043d\u043d\u044f \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044f\u043c\u0438 \u2014 \u043e\u043a\u0440\u0435\u043c\u043e\u0433\u043e \u0448\u0430\u0440\u0443 \u043a\u043b\u0456\u043c\u0430\u0442\u0438\u0447\u043d\u0438\u0445 \u0456\u043d\u0442\u0435\u043d\u0442\u0456\u0432 \u043d\u0435\u043c\u0430\u0454.',
-    detected:'\u0417\u043d\u0430\u0439\u0434\u0435\u043d\u0456 \u043a\u043b\u0456\u043c\u0430\u0442\u0438\u0447\u043d\u0456 \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u0457', refresh:'\u041e\u043d\u043e\u0432\u0438\u0442\u0438',
-    col_room:'\u041a\u0456\u043c\u043d\u0430\u0442\u0430', col_name:'\u041d\u0430\u0437\u0432\u0430', col_type:'\u0422\u0438\u043f', col_protocol:'\u041f\u0440\u043e\u0442\u043e\u043a\u043e\u043b', col_status:'\u0421\u0442\u0430\u043d', col_state:'\u0414\u0430\u043d\u0456',
-    loading:'\u0417\u0430\u0432\u0430\u043d\u0442\u0430\u0436\u0435\u043d\u043d\u044f\u2026',
-    empty:'\u041d\u0435\u043c\u0430\u0454 \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u0457\u0432 \u2014 \u0434\u043e\u0434\u0430\u0439\u0442\u0435 \u0447\u0435\u0440\u0435\u0437 \u041a\u0435\u0440\u0443\u0432\u0430\u043d\u043d\u044f \u043f\u0440\u0438\u0441\u0442\u0440\u043e\u044f\u043c\u0438 \u2192 Gree / Pular.',
-    on:'\u0443\u0432\u0456\u043c\u043a', off:'\u0432\u0438\u043c\u043a', unassigned:'\u0431\u0435\u0437 \u043a\u0456\u043c\u043d\u0430\u0442\u0438',
-  }
-};
+    // Module-specific i18n: strings live in system_modules/climate/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/climate. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/climate?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[climate] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
 function load(){
   apiGet('/devices').then(function(res){
@@ -94,8 +98,10 @@ $('refreshBtn').addEventListener('click', function(){
   withLoading(this, function(){ return load(); });
 });
 
-applyLang();
-load();
+loadI18n().then(function () {
+  applyLang();
+  load();
+});
 </script>
 </body>
 </html>

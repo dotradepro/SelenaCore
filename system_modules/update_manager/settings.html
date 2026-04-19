@@ -81,42 +81,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: '🔄 Update Manager',
-                checking: 'Checking…', h_version: 'Version Info', h_actions: 'Actions',
-                lbl_current: 'Installed version', lbl_latest: 'Latest available',
-                lbl_state: 'State', lbl_last_check: 'Last checked', lbl_downloaded: 'Downloaded',
-                check_btn: 'Check for Updates', download_btn: 'Download Update', rollback_btn: 'Rollback',
-                state_idle: 'Up to date', state_update_available: 'Update available',
-                state_downloading: 'Downloading…', state_applying: 'Applying…',
-                state_rolling_back: 'Rolling back…', state_error: 'Error',
-                checking_msg: 'Checking for updates…', up_to_date: '✓ Already up to date',
-                update_avail: '✅ Update available', new_version: 'New version: ',
-                downloading: 'Downloading…', downloaded: '✅ Downloaded successfully',
-                failed: '⚠️ Failed', rolling_back: 'Rolling back…',
-                rolled_back: '✅ Rolled back successfully',
-                rollback_confirm: 'Roll back to the previous version?',
-                never: 'Never', loading: 'Loading…'
-            },
-            uk: {
-                title: '🔄 Менеджер оновлень',
-                checking: 'Перевірка…', h_version: 'Відомості про версію', h_actions: 'Дії',
-                lbl_current: 'Встановлена версія', lbl_latest: 'Остання доступна',
-                lbl_state: 'Стан', lbl_last_check: 'Остання перевірка', lbl_downloaded: 'Завантажено',
-                check_btn: 'Перевірити оновлення', download_btn: 'Завантажити', rollback_btn: 'Відкат',
-                state_idle: 'Актуально', state_update_available: 'Доступне оновлення',
-                state_downloading: 'Завантаження…', state_applying: 'Застосування…',
-                state_rolling_back: 'Відкат…', state_error: 'Помилка',
-                checking_msg: 'Перевірка оновлень…', up_to_date: '✓ Версія актуальна',
-                update_avail: '✅ Доступне оновлення', new_version: 'Нова версія: ',
-                downloading: 'Завантаження…', downloaded: '✅ Завантажено успішно',
-                failed: '⚠️ Помилка', rolling_back: 'Відкат…',
-                rolled_back: '✅ Відкат виконано',
-                rollback_confirm: 'Відкатити до попередньої версії?',
-                never: 'Ніколи', loading: 'Завантаження…'
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/update_manager/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/update-manager. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/update-manager?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[update-manager] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         function stateLabel(state) {
             var map = { idle: 'state_idle', update_available: 'state_update_available', downloading: 'state_downloading', applying: 'state_applying', rolling_back: 'state_rolling_back', error: 'state_error' };
@@ -225,9 +213,11 @@
             });
         });
 
-        applyLang();
-        loadStatus();
-        setInterval(loadStatus, 30000);
+        loadI18n().then(function () {
+            applyLang();
+            loadStatus();
+            setInterval(loadStatus, 30000);
+        });
     </script>
 </body>
 </html>

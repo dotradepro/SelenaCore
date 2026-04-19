@@ -1,0 +1,17 @@
+{
+  "title": "Моніторинг пристроїв",
+  "scan_settings": "Налаштування сканування",
+  "check_interval": "Інтервал перевірки (секунди)",
+  "ping_timeout": "Таймаут пінгу (секунди)",
+  "mqtt_timeout": "Поріг MQTT офлайн (секунди)",
+  "protocol_timeout": "Поріг Zigbee/Z-Wave офлайн (секунди)",
+  "offline_threshold": "Послідовних помилок до позначення офлайн",
+  "notify_offline": "Публікувати подію device.offline",
+  "save": "Зберегти",
+  "scan_now": "Сканувати зараз",
+  "saved": "Збережено",
+  "scan_done": "Скан завершено: ",
+  "online_suffix": " онлайн, ",
+  "offline_suffix": " офлайн",
+  "error": "Помилка"
+}

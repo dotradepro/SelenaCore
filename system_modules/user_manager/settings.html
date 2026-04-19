@@ -77,48 +77,30 @@
     </div>
 
     <script>
-        var L = {
-            en: {
-                loading: 'Loading\u2026',
-                usersSection: 'Users',
-                addUser: '+ Add user',
-                rolePerms: 'Role permissions',
-                noUsers: 'No users found.',
-                roleOwner: 'Owner', roleAdmin: 'Admin', roleUser: 'User', roleGuest: 'Guest',
-                devicesView: 'View devices',
-                devicesControl: 'Control devices',
-                modulesConf: 'Configure modules',
-                usersManage: 'Manage users',
-                systemReboot: 'Reboot system',
-                systemUpdate: 'Update system',
-                voiceCommands: 'Voice commands',
-                scenesRun: 'Run scenes',
-                savePerms: 'Save',
-                saved: 'Saved', save_error: 'Save failed',
-                errLoad: 'Failed to load users',
-                errPerms: 'Failed to load permissions',
-            },
-            uk: {
-                loading: 'Завантаження\u2026',
-                usersSection: 'Користувачі',
-                addUser: '+ Додати користувача',
-                rolePerms: 'Права ролей',
-                noUsers: 'Користувачів не знайдено.',
-                roleOwner: 'Власник', roleAdmin: 'Адмін', roleUser: 'Користувач', roleGuest: 'Гість',
-                devicesView: 'Перегляд пристроїв',
-                devicesControl: 'Керування пристроями',
-                modulesConf: 'Налаштування модулів',
-                usersManage: 'Управління користувачами',
-                systemReboot: 'Перезавантаження',
-                systemUpdate: 'Оновлення системи',
-                voiceCommands: 'Голосові команди',
-                scenesRun: 'Запуск сцен',
-                savePerms: 'Зберегти',
-                saved: 'Збережено', save_error: 'Не вдалося зберегти',
-                errLoad: 'Помилка завантаження',
-                errPerms: 'Не вдалося завантажити права',
-            },
-        };
+    // Module-specific i18n: strings live in system_modules/user_manager/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/user-manager. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/user-manager?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[user-manager] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         var ROLE_LABELS = {};
         var selectedRole = 'admin';
@@ -127,6 +109,11 @@
             ROLE_LABELS = { owner: t('roleOwner'), admin: t('roleAdmin'), user: t('roleUser'), guest: t('roleGuest') };
         }
 
+        // i18n is async — the initial call from the bottom of the script
+        // wraps load() in loadI18n().then(), so by the time load() runs,
+        // applyLang() has a populated L. applyLang() here is kept as a
+        // no-op safety net for when the bundle fetch races through before
+        // DOM is parsed.
         applyLang();
         updateRoleLabels();
 
@@ -236,7 +223,7 @@
             });
         }
 
-        load();
+        loadI18n().then(function () { applyLang(); updateRoleLabels(); load(); });
     </script>
 </body>
 

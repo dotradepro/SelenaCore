@@ -315,100 +315,30 @@
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: '\u26A1 Energy Monitor',
-                h_overview: 'Overview', h_thresholds: 'Alert Thresholds', h_devices: 'Device Power Readings',
-                h_sources: 'Data Sources', h_add_source: 'Add Data Source',
-                lbl_status: 'Status', lbl_tracked: 'Tracked Devices', lbl_total_w: 'Total Power (W)', lbl_kwh_today: 'Today Total (kWh)',
-                lbl_alert_w: 'Alert threshold (W) \u2014 notify when device exceeds this',
-                lbl_low_w: 'Low-power threshold (W) \u2014 ignore devices below this',
-                lbl_report_min: 'Daily report interval (minutes)',
-                lbl_source_name: 'Source Name', lbl_source_type: 'Source Type',
-                lbl_device_id: 'Device', lbl_state_key: 'State Key (power field name)',
-                lbl_mqtt_topic: 'MQTT Topic', lbl_mqtt_key: 'JSON Key for watts',
-                lbl_manual_device_id: 'Device ID (label for readings)',
-                type_device: '\uD83D\uDD0C Device from Registry',
-                type_mqtt: '\uD83D\uDCE1 MQTT Topic',
-                type_manual: '\u270D Manual Input',
-                ph_source_name: 'e.g. Kitchen Smart Plug',
-                ph_state_key: 'power, watts, energy_power\u2026',
-                ph_mqtt_topic: 'e.g. shellies/shelly1/relay/0/power',
-                ph_mqtt_key: 'power',
-                ph_manual_device_id: 'e.g. solar-inverter-1',
-                hint_device_id: 'Select a device from the registry to track its power usage',
-                hint_state_key: 'The JSON key in device state that contains watts (e.g. "power", "watts", "current_power")',
-                hint_mqtt_topic: 'MQTT topic that publishes power data (Shelly, Tasmota, Sonoff, etc.)',
-                hint_mqtt_key: 'Key in the MQTT JSON payload for watts value',
-                hint_manual: 'For devices you send readings to manually via API',
-                btn_add_source: '+ Add Source',
-                save: 'Save Settings', refresh: '\u21BB Refresh',
-                loading: 'Loading\u2026', no_readings: 'No readings yet',
-                no_sources: 'No data sources configured yet. Add one to start tracking energy.',
-                device_id: 'Device', current_w: 'Power (W)', today_kwh: 'Today (kWh)',
-                saved_ok: '\u2713 Saved', error_prefix: 'Error: ',
-                source_added: '\u2713 Source added', source_deleted: 'Source removed',
-                src_active: 'Receiving data', src_no_data: 'No data yet', src_disabled: 'Disabled',
-                last_reading: 'Last reading', never: 'never',
-                confirm_delete_source: 'Remove this data source?',
-                err_name_required: 'Please enter a source name',
-                saving: 'Saving\u2026', deleted: 'Deleted', error: 'Error', loading_btn: 'Loading\u2026',
-                toggled_on: 'Source enabled', toggled_off: 'Source disabled', adding: 'Adding\u2026',
-                h_devices_unified: 'Devices',
-                hint_auto_sources: 'Devices and their power sources are managed automatically \u2014 every device added via Device Control appears here on its own.',
-                col_name: 'Name', col_room: 'Room', col_type: 'Type', col_state: 'State', col_power: 'Power (W)', col_kwh: 'Today (kWh)',
-                ph_filter_search: 'Search by name\u2026',
-                filter_type_all: 'All types', filter_type_light: '\uD83D\uDCA1 Lights', filter_type_switch: '\u23FB Switches', filter_type_outlet: '\uD83D\uDD0C Outlets', filter_type_ac: '\u2744 A/C', filter_type_thermostat: '\uD83C\uDF21 Thermostats', filter_type_sensor: '\uD83D\uDCD0 Sensors',
-                filter_room_all: 'All rooms',
-                filter_status_all: 'All status', filter_status_on: 'On', filter_status_off: 'Off',
-            },
-            uk: {
-                title: '\u26A1 \u041C\u043E\u043D\u0456\u0442\u043E\u0440\u0438\u043D\u0433 \u0435\u043D\u0435\u0440\u0433\u0456\u0457',
-                h_overview: '\u041E\u0433\u043B\u044F\u0434', h_thresholds: '\u041F\u043E\u0440\u043E\u0433\u043E\u0432\u0456 \u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044F', h_devices: '\u0421\u043F\u043E\u0436\u0438\u0432\u0430\u043D\u043D\u044F \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432',
-                h_sources: '\u0414\u0436\u0435\u0440\u0435\u043B\u0430 \u0434\u0430\u043D\u0438\u0445', h_add_source: '\u0414\u043E\u0434\u0430\u0442\u0438 \u0434\u0436\u0435\u0440\u0435\u043B\u043E \u0434\u0430\u043D\u0438\u0445',
-                lbl_status: '\u0421\u0442\u0430\u0442\u0443\u0441', lbl_tracked: '\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0454\u0442\u044C\u0441\u044F', lbl_total_w: '\u0417\u0430\u0433\u0430\u043B\u044C\u043D\u0430 \u043F\u043E\u0442\u0443\u0436\u043D\u0456\u0441\u0442\u044C (W)', lbl_kwh_today: '\u0421\u044C\u043E\u0433\u043E\u0434\u043D\u0456 (\u043A\u0412\u0442\u00B7\u0433\u043E\u0434)',
-                lbl_alert_w: '\u041F\u043E\u0440\u0456\u0433 \u043E\u043F\u043E\u0432\u0456\u0449\u0435\u043D\u043D\u044F (W) \u2014 \u0441\u043F\u043E\u0432\u0456\u0441\u0442\u0438\u0442\u0438 \u043F\u0440\u0438 \u043F\u0435\u0440\u0435\u0432\u0438\u0449\u0435\u043D\u043D\u0456',
-                lbl_low_w: '\u041F\u043E\u0440\u0456\u0433 \u043C\u0430\u043B\u043E\u0433\u043E \u0441\u043F\u043E\u0436\u0438\u0432\u0430\u043D\u043D\u044F (W) \u2014 \u0456\u0433\u043D\u043E\u0440\u0443\u0432\u0430\u0442\u0438 \u043D\u0438\u0436\u0447\u0435',
-                lbl_report_min: '\u0406\u043D\u0442\u0435\u0440\u0432\u0430\u043B \u0434\u043E\u0431\u043E\u0432\u043E\u0433\u043E \u0437\u0432\u0456\u0442\u0443 (\u0445\u0432\u0438\u043B\u0438\u043D\u0438)',
-                lbl_source_name: '\u041D\u0430\u0437\u0432\u0430 \u0434\u0436\u0435\u0440\u0435\u043B\u0430', lbl_source_type: '\u0422\u0438\u043F \u0434\u0436\u0435\u0440\u0435\u043B\u0430',
-                lbl_device_id: '\u041F\u0440\u0438\u0441\u0442\u0440\u0456\u0439', lbl_state_key: '\u041A\u043B\u044E\u0447 \u0441\u0442\u0430\u043D\u0443 (\u043F\u043E\u043B\u0435 \u043F\u043E\u0442\u0443\u0436\u043D\u043E\u0441\u0442\u0456)',
-                lbl_mqtt_topic: 'MQTT \u0442\u043E\u043F\u0456\u043A', lbl_mqtt_key: 'JSON \u043A\u043B\u044E\u0447 \u0434\u043B\u044F \u0432\u0430\u0442\u0442',
-                lbl_manual_device_id: 'ID \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u044E (\u043C\u0456\u0442\u043A\u0430 \u0434\u043B\u044F \u043F\u043E\u043A\u0430\u0437\u043D\u0438\u043A\u0456\u0432)',
-                type_device: '\uD83D\uDD0C \u041F\u0440\u0438\u0441\u0442\u0440\u0456\u0439 \u0437 \u0440\u0435\u0454\u0441\u0442\u0440\u0443',
-                type_mqtt: '\uD83D\uDCE1 MQTT \u0442\u043E\u043F\u0456\u043A',
-                type_manual: '\u270D \u0420\u0443\u0447\u043D\u0435 \u0432\u0432\u0435\u0434\u0435\u043D\u043D\u044F',
-                ph_source_name: '\u043D\u0430\u043F\u0440. \u0420\u043E\u0437\u0443\u043C\u043D\u0430 \u0440\u043E\u0437\u0435\u0442\u043A\u0430 \u043A\u0443\u0445\u043D\u044F',
-                ph_state_key: 'power, watts, energy_power\u2026',
-                ph_mqtt_topic: '\u043D\u0430\u043F\u0440. shellies/shelly1/relay/0/power',
-                ph_mqtt_key: 'power',
-                ph_manual_device_id: '\u043D\u0430\u043F\u0440. solar-inverter-1',
-                hint_device_id: '\u0412\u0438\u0431\u0435\u0440\u0456\u0442\u044C \u043F\u0440\u0438\u0441\u0442\u0440\u0456\u0439 \u0437 \u0440\u0435\u0454\u0441\u0442\u0440\u0443 \u0434\u043B\u044F \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043D\u043D\u044F \u0435\u043D\u0435\u0440\u0433\u043E\u0441\u043F\u043E\u0436\u0438\u0432\u0430\u043D\u043D\u044F',
-                hint_state_key: 'JSON \u043A\u043B\u044E\u0447 \u0432 \u0441\u0442\u0430\u043D\u0456 \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u044E, \u0449\u043E \u043C\u0456\u0441\u0442\u0438\u0442\u044C \u0432\u0430\u0442\u0442\u0438 (\u043D\u0430\u043F\u0440. "power", "watts", "current_power")',
-                hint_mqtt_topic: 'MQTT \u0442\u043E\u043F\u0456\u043A, \u0449\u043E \u043F\u0443\u0431\u043B\u0456\u043A\u0443\u0454 \u0434\u0430\u043D\u0456 \u043F\u0440\u043E \u043F\u043E\u0442\u0443\u0436\u043D\u0456\u0441\u0442\u044C (Shelly, Tasmota, Sonoff \u0442\u0430 \u0456\u043D.)',
-                hint_mqtt_key: '\u041A\u043B\u044E\u0447 \u0443 JSON MQTT \u043F\u043E\u0432\u0456\u0434\u043E\u043C\u043B\u0435\u043D\u043D\u0456 \u0434\u043B\u044F \u0437\u043D\u0430\u0447\u0435\u043D\u043D\u044F \u0432\u0430\u0442\u0442',
-                hint_manual: '\u0414\u043B\u044F \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u0457\u0432, \u043F\u043E\u043A\u0430\u0437\u043D\u0438\u043A\u0438 \u044F\u043A\u0438\u0445 \u0432\u0438 \u043D\u0430\u0434\u0441\u0438\u043B\u0430\u0454\u0442\u0435 \u0432\u0440\u0443\u0447\u043D\u0443 \u0447\u0435\u0440\u0435\u0437 API',
-                btn_add_source: '+ \u0414\u043E\u0434\u0430\u0442\u0438 \u0434\u0436\u0435\u0440\u0435\u043B\u043E',
-                save: '\u0417\u0431\u0435\u0440\u0435\u0433\u0442\u0438', refresh: '\u21BB \u041E\u043D\u043E\u0432\u0438\u0442\u0438',
-                loading: '\u0417\u0430\u0432\u0430\u043D\u0442\u0430\u0436\u0435\u043D\u043D\u044F\u2026', no_readings: '\u0414\u0430\u043D\u0438\u0445 \u0449\u0435 \u043D\u0435\u043C\u0430\u0454',
-                no_sources: '\u0414\u0436\u0435\u0440\u0435\u043B\u0430 \u0434\u0430\u043D\u0438\u0445 \u0449\u0435 \u043D\u0435 \u043D\u0430\u043B\u0430\u0448\u0442\u043E\u0432\u0430\u043D\u0456. \u0414\u043E\u0434\u0430\u0439\u0442\u0435 \u043E\u0434\u043D\u0435, \u0449\u043E\u0431 \u043F\u043E\u0447\u0430\u0442\u0438 \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043D\u043D\u044F.',
-                device_id: '\u041F\u0440\u0438\u0441\u0442\u0440\u0456\u0439', current_w: '\u041F\u043E\u0442\u0443\u0436\u043D\u0456\u0441\u0442\u044C (W)', today_kwh: '\u0421\u044C\u043E\u0433\u043E\u0434\u043D\u0456 (\u043A\u0412\u0442\u00B7\u0433\u043E\u0434)',
-                saved_ok: '\u2713 \u0417\u0431\u0435\u0440\u0435\u0436\u0435\u043D\u043E', error_prefix: '\u041F\u043E\u043C\u0438\u043B\u043A\u0430: ',
-                source_added: '\u2713 \u0414\u0436\u0435\u0440\u0435\u043B\u043E \u0434\u043E\u0434\u0430\u043D\u043E', source_deleted: '\u0414\u0436\u0435\u0440\u0435\u043B\u043E \u0432\u0438\u0434\u0430\u043B\u0435\u043D\u043E',
-                src_active: '\u041E\u0442\u0440\u0438\u043C\u0443\u044E \u0434\u0430\u043D\u0456', src_no_data: '\u0414\u0430\u043D\u0438\u0445 \u0449\u0435 \u043D\u0435\u043C\u0430\u0454', src_disabled: '\u0412\u0438\u043C\u043A\u043D\u0435\u043D\u043E',
-                last_reading: '\u041E\u0441\u0442\u0430\u043D\u043D\u0456\u0439 \u043F\u043E\u043A\u0430\u0437\u043D\u0438\u043A', never: '\u043D\u0456\u043A\u043E\u043B\u0438',
-                confirm_delete_source: '\u0412\u0438\u0434\u0430\u043B\u0438\u0442\u0438 \u0446\u0435 \u0434\u0436\u0435\u0440\u0435\u043B\u043E \u0434\u0430\u043D\u0438\u0445?',
-                err_name_required: '\u0412\u0432\u0435\u0434\u0456\u0442\u044C \u043D\u0430\u0437\u0432\u0443 \u0434\u0436\u0435\u0440\u0435\u043B\u0430',
-                saving: '\u0417\u0431\u0435\u0440\u0435\u0436\u0435\u043D\u043D\u044F\u2026', deleted: '\u0412\u0438\u0434\u0430\u043B\u0435\u043D\u043E', error: '\u041F\u043E\u043C\u0438\u043B\u043A\u0430', loading_btn: '\u0417\u0430\u0432\u0430\u043D\u0442\u0430\u0436\u0435\u043D\u043D\u044F\u2026',
-                toggled_on: '\u0414\u0436\u0435\u0440\u0435\u043B\u043E \u0443\u0432\u0456\u043C\u043A\u043D\u0435\u043D\u043E', toggled_off: '\u0414\u0436\u0435\u0440\u0435\u043B\u043E \u0432\u0438\u043C\u043A\u043D\u0435\u043D\u043E', adding: '\u0414\u043E\u0434\u0430\u0432\u0430\u043D\u043D\u044F\u2026',
-                h_devices_unified: '\u041F\u0440\u0438\u0441\u0442\u0440\u043E\u0457',
-                hint_auto_sources: '\u041F\u0440\u0438\u0441\u0442\u0440\u043E\u0457 \u0442\u0430 \u0457\u0445\u043D\u0456 \u0434\u0436\u0435\u0440\u0435\u043B\u0430 \u0435\u043D\u0435\u0440\u0433\u0456\u0457 \u043A\u0435\u0440\u0443\u044E\u0442\u044C\u0441\u044F \u0430\u0432\u0442\u043E\u043C\u0430\u0442\u0438\u0447\u043D\u043E \u2014 \u043A\u043E\u0436\u0435\u043D \u043F\u0440\u0438\u0441\u0442\u0440\u0456\u0439, \u0434\u043E\u0434\u0430\u043D\u0438\u0439 \u0447\u0435\u0440\u0435\u0437 \u041A\u0435\u0440\u0443\u0432\u0430\u043D\u043D\u044F \u043F\u0440\u0438\u0441\u0442\u0440\u043E\u044F\u043C\u0438, \u0437\u2019\u044F\u0432\u043B\u044F\u0454\u0442\u044C\u0441\u044F \u0442\u0443\u0442 \u0441\u0430\u043C\u043E\u0441\u0442\u0456\u0439\u043D\u043E.',
-                col_name: '\u041D\u0430\u0437\u0432\u0430', col_room: '\u041A\u0456\u043C\u043D\u0430\u0442\u0430', col_type: '\u0422\u0438\u043F', col_state: '\u0421\u0442\u0430\u043D', col_power: '\u041F\u043E\u0442\u0443\u0436\u043D\u0456\u0441\u0442\u044C (W)', col_kwh: '\u0421\u044C\u043E\u0433\u043E\u0434\u043D\u0456 (\u043A\u0412\u0442\u00B7\u0433\u043E\u0434)',
-                ph_filter_search: '\u041F\u043E\u0448\u0443\u043A \u0437\u0430 \u043D\u0430\u0437\u0432\u043E\u044E\u2026',
-                filter_type_all: '\u0423\u0441\u0456 \u0442\u0438\u043F\u0438', filter_type_light: '\uD83D\uDCA1 \u041B\u0430\u043C\u043F\u0438', filter_type_switch: '\u23FB \u0412\u0438\u043C\u0438\u043A\u0430\u0447\u0456', filter_type_outlet: '\uD83D\uDD0C \u0420\u043E\u0437\u0435\u0442\u043A\u0438', filter_type_ac: '\u2744 \u041A\u043E\u043D\u0434\u0438\u0446\u0456\u043E\u043D\u0435\u0440\u0438', filter_type_thermostat: '\uD83C\uDF21 \u0422\u0435\u0440\u043C\u043E\u0441\u0442\u0430\u0442\u0438', filter_type_sensor: '\uD83D\uDCD0 \u0421\u0435\u043D\u0441\u043E\u0440\u0438',
-                filter_room_all: '\u0423\u0441\u0456 \u043A\u0456\u043C\u043D\u0430\u0442\u0438',
-                filter_status_all: '\u0411\u0443\u0434\u044C-\u044F\u043A\u0438\u0439 \u0441\u0442\u0430\u043D', filter_status_on: '\u0423\u0432\u0456\u043C\u043A\u043D\u0435\u043D\u043E', filter_status_off: '\u0412\u0438\u043C\u043A\u043D\u0435\u043D\u043E',
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/energy_monitor/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/energy-monitor. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
+
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/energy-monitor?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[energy-monitor] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
+
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
 
         /* ── Source type toggle ──────────────────────────────────── */
         function onSourceTypeChange() {
@@ -705,15 +635,17 @@
             });
         }
 
-        applyLang();
-        load();
-        loadSources();
-        loadRegistryDevices();
-        _wireFilterUI();
-        loadFull();
-        setInterval(load, 30000);
-        setInterval(loadSources, 30000);
-        setInterval(loadFull, 15000);
+        loadI18n().then(function () {
+            applyLang();
+            load();
+            loadSources();
+            loadRegistryDevices();
+            _wireFilterUI();
+            loadFull();
+            setInterval(load, 30000);
+            setInterval(loadSources, 30000);
+            setInterval(loadFull, 15000);
+        });
     </script>
 </body>
 
