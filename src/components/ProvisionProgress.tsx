@@ -12,6 +12,12 @@ interface ProvisionTask {
   label: string;
   status: string;
   error?: string;
+  /** Fine-grained outcome (e.g. "installed" / "skipped" / "failed") —
+   *  used by tasks where "done" hides important nuance (e.g.
+   *  install_native_services skipping in-container installs). */
+  outcome?: string;
+  /** Human-readable secondary line shown when `outcome` is present. */
+  message?: string;
   progress?: {
     downloaded_bytes: number;
     total_bytes: number;
@@ -193,10 +199,28 @@ export default function ProvisionProgress({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <span className={cn("text-sm font-medium", tk.status === 'running' && "text-emerald-400")}>
+                  <span className={cn(
+                    "text-sm font-medium",
+                    tk.status === 'running' && "text-emerald-400",
+                    tk.outcome === 'skipped' && "text-zinc-400",
+                  )}>
                     {t(`wizard.provTask_${tk.label}` as any)}
                   </span>
-                  {tk.error && <p className="text-[10px] text-red-400 mt-0.5 truncate">{tk.error}</p>}
+                  {/* outcome: skipped / failed carry an explanatory message
+                      (e.g. "Host-managed"). done tasks without outcome stay
+                      silent — only the checkmark conveys completion. */}
+                  {tk.outcome && tk.message && (
+                    <p className={cn(
+                      "text-[10px] mt-0.5 truncate",
+                      tk.outcome === 'skipped' ? "text-zinc-500" :
+                        tk.outcome === 'failed' ? "text-red-400" :
+                          "text-emerald-400/80"
+                    )}>
+                      {tk.outcome === 'skipped' ? '⏭ ' : tk.outcome === 'failed' ? '✕ ' : '✓ '}
+                      {tk.message}
+                    </p>
+                  )}
+                  {tk.error && !tk.message && <p className="text-[10px] text-red-400 mt-0.5 truncate">{tk.error}</p>}
                 </div>
                 {/* Percentage badge for running downloads */}
                 {tk.status === 'running' && hasProg && (

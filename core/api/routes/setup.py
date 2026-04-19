@@ -1928,7 +1928,7 @@ async def _run_provision(stt_model: str, tts_voice: str) -> None:
                 elif task["id"] == "download_translate":
                     await _provision_download_translate(task)
                 elif task["id"] == "install_native_services":
-                    await _provision_install_native_services()
+                    await _provision_install_native_services(task)
                 elif task["id"] == "finalize":
                     await _provision_finalize()
 
@@ -2218,21 +2218,81 @@ async def _provision_download_translate(task: dict[str, Any]) -> None:
     raise RuntimeError("Argos download timed out after 5 min")
 
 
-async def _provision_install_native_services() -> None:
+def _running_in_container() -> bool:
+    """Detect whether this process is running inside a container.
+
+    Three signals checked:
+      1. /.dockerenv — standard Docker marker file.
+      2. /proc/1/cgroup — string "docker" / "containerd" / "lxc" in any
+         cgroup line.
+      3. container env var — set by Podman / systemd-nspawn.
+
+    Any one triggers True. Keeps the logic conservative: better to flag
+    a host as containerised than attempt a privileged systemd install
+    from inside a container and leave orphan unit files in the container
+    layer."""
+    if Path("/.dockerenv").exists():
+        return True
+    try:
+        if Path("/proc/1/cgroup").exists():
+            cgroups = Path("/proc/1/cgroup").read_text()
+            if any(marker in cgroups for marker in ("docker", "containerd", "kubepods", "lxc")):
+                return True
+    except OSError:
+        pass
+    if os.environ.get("container"):
+        return True
+    return False
+
+
+async def _provision_install_native_services(task: dict[str, Any] | None = None) -> None:
     """Install systemd unit files from repo into /etc/systemd/system and enable them.
 
-    Silently no-ops if `systemctl` is unavailable (e.g. running inside a container
-    without privileged systemd access). The install.sh bootstrap will have already
-    set up the user/group and directories.
+    Three outcomes, surfaced back to the wizard UI via `task["outcome"]`
+    and `task["message"]`:
+
+      * ``installed`` — script ran on a host with systemd, units were
+        dropped into /etc/systemd/system and enabled.
+      * ``skipped:container`` — we're running inside a container whose
+        /etc/systemd/system is NOT the host's. install.sh on the host
+        already handled unit staging; writing from here would leak
+        orphan files into the container layer.
+      * ``skipped:no-systemd`` — OpenRC / runit / Alpine — systemd
+        isn't the init system, so there's nothing to install.
+
+    The wizard's previous behaviour was to silently "succeed" in-container
+    (writing to container-local /etc/systemd/system), which made the
+    install_native_services step look done while host systemd had no
+    idea the units existed.
     """
-    if not shutil.which("systemctl"):
-        logger.info("systemctl not available — skipping native service install")
+    def _mark(outcome: str, message: str) -> None:
+        if task is not None:
+            task["outcome"] = outcome
+            task["message"] = message
+
+    if _running_in_container():
+        logger.info(
+            "install_native_services: in-container, skipping "
+            "(install.sh on the host already staged systemd units)"
+        )
+        _mark("skipped", "Host-managed (install.sh already configured)")
         return
+
+    if not shutil.which("systemctl") or not Path("/etc/systemd/system").is_dir():
+        logger.info(
+            "install_native_services: systemd not available, skipping "
+            "(see docs/deploy-native.md for OpenRC / runit setups)"
+        )
+        _mark("skipped", "Not a systemd host")
+        return
+
     repo_root = Path(__file__).resolve().parents[3]
     helper = repo_root / "scripts" / "install-systemd.sh"
     if not helper.exists():
         logger.info("scripts/install-systemd.sh not found — skipping")
+        _mark("skipped", "Installer script missing")
         return
+
     try:
         proc = await asyncio.create_subprocess_exec(
             "bash", str(helper),
@@ -2241,14 +2301,17 @@ async def _provision_install_native_services() -> None:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
+            err = stderr.decode(errors="ignore").strip()
             logger.warning(
-                "install-systemd.sh exited with %s: %s",
-                proc.returncode, stderr.decode(errors="ignore"),
+                "install-systemd.sh exited with %s: %s", proc.returncode, err,
             )
+            _mark("failed", err[:120] or f"exit {proc.returncode}")
         else:
             logger.info("Native systemd units installed")
+            _mark("installed", "systemd units enabled")
     except Exception as exc:
         logger.warning("Native service install failed (non-critical): %s", exc)
+        _mark("failed", str(exc))
 
 
 async def _provision_finalize() -> None:
