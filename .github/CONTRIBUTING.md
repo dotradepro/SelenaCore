@@ -2,7 +2,7 @@
 
 Thank you for your interest in the project!
 
-[Українська версія](docs/uk/CONTRIBUTING.md)
+[Українська версія](../docs/uk/CONTRIBUTING.md)
 
 ## Good First Issues
 
