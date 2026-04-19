@@ -153,12 +153,11 @@ function isHex(v: string) { return /^#[0-9a-fA-F]{3,8}$/.test(v); }
 /* ── Theme Editor Modal ── */
 function ThemeEditorModal({ theme, onSave, onClose }: {
   theme: CustomTheme | null; // null = create new
-  onSave: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => void;
+  onSave: (name: string, dark: Record<string, string>, light: Record<string, string>) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [nameEn, setNameEn] = useState(theme?.name?.en || '');
-  const [nameUk, setNameUk] = useState(theme?.name?.uk || '');
+  const [name, setName] = useState(theme?.name || '');
   const [dark, setDark] = useState<Record<string, string>>({ ...DEFAULT_DARK, ...(theme?.dark || {}) });
   const [light, setLight] = useState<Record<string, string>>({ ...DEFAULT_LIGHT, ...(theme?.light || {}) });
 
@@ -181,18 +180,11 @@ function ThemeEditorModal({ theme, onSave, onClose }: {
           {theme ? t('settings.editTheme') : t('settings.createTheme')}
         </h3>
 
-        {/* Name inputs */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
-          <div>
-            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameEn')}</label>
-            <input value={nameEn} onChange={e => setNameEn(e.target.value)} placeholder="My Theme"
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameUk')}</label>
-            <input value={nameUk} onChange={e => setNameUk(e.target.value)} placeholder="Моя тема"
-              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
-          </div>
+        {/* Name input — single, tied to active UI language */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeName')}</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={t('settings.themeNamePlaceholder')}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
         </div>
 
         {/* Copy from default */}
@@ -240,11 +232,12 @@ function ThemeEditorModal({ theme, onSave, onClose }: {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
           <button onClick={onClose}
             style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', cursor: 'pointer', fontSize: 13 }}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button onClick={() => {
-            if (!nameEn.trim()) return;
-            onSave({ en: nameEn.trim(), uk: nameUk.trim() || nameEn.trim() }, dark, light);
+            const trimmed = name.trim();
+            if (!trimmed) return;
+            onSave(trimmed, dark, light);
           }}
             style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--ac)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
             {theme ? t('settings.themeUpdated').replace(/\.$/, '') : t('settings.themeCreated').replace(/\.$/, '')}
@@ -256,8 +249,7 @@ function ThemeEditorModal({ theme, onSave, onClose }: {
 }
 
 function AppearanceSettings() {
-  const { t, i18n } = useTranslation();
-  const lang = i18n.language as 'en' | 'uk';
+  const { t } = useTranslation();
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const selectedLanguage = useStore(s => s.selectedLanguage);
@@ -289,7 +281,17 @@ function AppearanceSettings() {
     { value: 'light', label: t('settings.themeLight'), desc: t('settings.themeLightDesc'), icon: '☀️' },
   ];
 
-  const themeName = (th: CustomTheme) => th.name?.[lang] || th.name?.en || th.id;
+  // Built-in themes carry a localised display name under settings.builtInTheme.<id>.
+  // Custom themes just use whatever the user typed (tied to the UI language that
+  // was active at creation time — they can re-edit if they switch languages).
+  const themeName = (th: CustomTheme) => {
+    if (th.builtIn) {
+      const key = `settings.builtInTheme.${th.id}`;
+      const localised = t(key);
+      return localised !== key ? localised : (th.name || th.id);
+    }
+    return th.name || th.id;
+  };
 
   return (
     <div className="space-y-8">

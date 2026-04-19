@@ -168,8 +168,11 @@ const uk = {
             editTheme: 'Редагувати тему',
             deleteTheme: 'Видалити тему',
             themeName: 'Назва теми',
-            themeNameEn: 'Назва (English)',
-            themeNameUk: 'Назва (Українська)',
+            themeNamePlaceholder: 'Моя тема',
+            builtInTheme: {
+                default: 'Системна',
+                ocean: 'Океан',
+            },
             darkVariant: 'Темна',
             lightVariant: 'Світла',
             copyFromDefault: 'Скопіювати з системної',

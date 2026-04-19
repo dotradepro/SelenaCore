@@ -168,8 +168,11 @@ const en = {
             editTheme: 'Edit theme',
             deleteTheme: 'Delete theme',
             themeName: 'Theme name',
-            themeNameEn: 'Name (English)',
-            themeNameUk: 'Name (Ukrainian)',
+            themeNamePlaceholder: 'My theme',
+            builtInTheme: {
+                default: 'System Default',
+                ocean: 'Ocean',
+            },
             darkVariant: 'Dark',
             lightVariant: 'Light',
             copyFromDefault: 'Copy from default',

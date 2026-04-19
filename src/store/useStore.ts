@@ -156,7 +156,7 @@ function broadcastThemeToIframes() {
 
 export interface CustomTheme {
   id: string;
-  name: { en: string; uk: string };
+  name: string;
   builtIn: boolean;
   dark: Record<string, string>;
   light: Record<string, string>;
@@ -258,8 +258,8 @@ interface AppState {
   activeThemeId: string;
   fetchThemes: () => Promise<void>;
   activateTheme: (id: string) => Promise<void>;
-  createTheme: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<CustomTheme | null>;
-  updateTheme: (id: string, name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<void>;
+  createTheme: (name: string, dark: Record<string, string>, light: Record<string, string>) => Promise<CustomTheme | null>;
+  updateTheme: (id: string, name: string, dark: Record<string, string>, light: Record<string, string>) => Promise<void>;
   deleteTheme: (id: string) => Promise<void>;
 
   // Wallpapers
