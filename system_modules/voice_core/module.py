@@ -1024,7 +1024,14 @@ class VoiceCoreModule(SystemModule):
         from core.config_writer import get_value as _cfg_get
         if not _cfg_get("translation", "enabled", False):
             return text
-        tts_lang = self._tts_primary_lang or "en"
+        # Translate target = активний перекладач (self._lang), НЕ voice lang.
+        # Пайплайн працює так: translation.active_lang диктує куди перекладаємо
+        # відповідь; TTS voice може не збігатися (наприклад, UI uk + Russian
+        # voice → translator ru ↔ en, тож відповідь іде російською і
+        # озвучується російським голосом — все узгоджено).
+        # self._lang резолвиться у start() за priority:
+        #   translation.active_lang > voice.tts.primary.lang > system.language > "en"
+        tts_lang = self._lang or "en"
         if tts_lang == "en":
             return text
         from core.translation.local_translator import get_output_translator
