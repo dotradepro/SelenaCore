@@ -303,7 +303,12 @@ body,
   transition: width .5s;
 }
 
-/* ── Buttons ── */
+/* ── Buttons ──────────────────────────────────────────────────────────
+   Base .btn is intentionally minimal — variant classes (.btn-primary
+   etc.) supply background + colour. Existing call-sites that use bare
+   `<button class="btn">` keep their legacy "secondary outlined" look
+   via the .btn block below; new code should pair .btn with a variant
+   from the synced UI Primitives block at the bottom of this file. */
 .btn {
   background: var(--sf2);
   color: var(--tx);
@@ -313,9 +318,10 @@ body,
   font-family: var(--font);
   padding: 6px 12px;
   font-size: 12px;
-  transition: background .15s, border-color .15s;
+  transition: background .15s, border-color .15s, opacity .15s;
 }
 .btn:hover { background: var(--sf3); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn-xs { padding: 2px 8px; font-size: 10px; border-radius: 4px; }
 .btn-sm { padding: 4px 10px; font-size: 11px; }
 .btn-active { background: var(--ac); color: #fff; border-color: var(--ac); }
@@ -1020,3 +1026,117 @@ html.light .bg-zinc-800 .text-zinc-400 {
     padding-bottom: 56px;
   }
 }
+
+/* =====================================================
+   UI Primitives v4 — synced with /api/shared/theme.css
+   so React app and iframe widgets render identical
+   buttons, inputs, fields, cards, badges, toggles.
+   These rules are ADDITIVE — bare `.btn` keeps its
+   legacy gray styling above; variants below override.
+   Source-of-truth lives in core/api/routes/shared_assets.py.
+   ===================================================== */
+
+/* ── Button variants (filled + tonal + outline + ghost + link) ── */
+.btn.btn-primary,.btn.btn-blue{background:var(--ac);color:var(--on-accent);border-color:var(--ac)}
+.btn.btn-primary:hover:not(:disabled),.btn.btn-blue:hover:not(:disabled){opacity:.85;background:var(--ac)}
+.btn.btn-green{background:var(--gr);color:var(--on-success);border-color:var(--gr)}
+.btn.btn-green:hover:not(:disabled){opacity:.85;background:var(--gr)}
+.btn.btn-secondary,.btn.btn-sec{background:var(--sf3);color:var(--tx);border-color:var(--b2)}
+.btn.btn-secondary:hover:not(:disabled),.btn.btn-sec:hover:not(:disabled){background:var(--sf2)}
+.btn.btn-danger-tonal,.btn.btn-red{background:rgba(224,84,84,.15);color:var(--rd);border-color:transparent}
+.btn.btn-danger-tonal:hover:not(:disabled),.btn.btn-red:hover:not(:disabled){background:rgba(224,84,84,.25)}
+.btn.btn-danger-solid{background:var(--rd);color:var(--on-danger);border-color:var(--rd)}
+.btn.btn-danger-solid:hover:not(:disabled){opacity:.85;background:var(--rd);color:var(--on-danger)}
+.btn.btn-amber{background:rgba(245,169,58,.15);color:var(--am);border-color:transparent}
+.btn.btn-amber:hover:not(:disabled){background:rgba(245,169,58,.25)}
+.btn.btn-amber-solid{background:var(--am);color:var(--on-warning);border-color:var(--am)}
+.btn.btn-amber-solid:hover:not(:disabled){opacity:.85;background:var(--am)}
+.btn.btn-ghost{background:transparent;color:var(--tx3);border-color:transparent}
+.btn.btn-ghost:hover:not(:disabled){background:var(--sf2);color:var(--tx)}
+.btn.btn-outline{background:none;border-color:var(--b2);color:var(--tx)}
+.btn.btn-outline:hover:not(:disabled){background:var(--sf2)}
+.btn.btn-link{background:none;border:none;color:var(--ac);padding:0;font-size:12px}
+.btn.btn-link:hover:not(:disabled){opacity:.8;background:none}
+.btn.btn-loading{pointer-events:none;opacity:.7;position:relative}
+.btn.btn-loading::after{content:"";display:inline-block;width:12px;height:12px;margin-left:6px;border:2px solid rgba(255,255,255,.3);border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;vertical-align:-2px}
+
+/* ── Icon Button (square, icon-only) ── */
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:transparent;border:1px solid var(--b);color:var(--tx2);cursor:pointer;flex-shrink:0;transition:.15s;font-family:inherit;font-size:14px;padding:0;line-height:1}
+.icon-btn:hover:not(:disabled){border-color:var(--ac);color:var(--tx);background:var(--sf2)}
+.icon-btn:disabled{opacity:.4;cursor:not-allowed}
+.icon-btn.danger:hover:not(:disabled){border-color:var(--rd);color:var(--rd);background:rgba(224,84,84,.08)}
+.icon-btn.success:hover:not(:disabled){border-color:var(--gr);color:var(--gr);background:rgba(46,201,138,.08)}
+.icon-btn-sm{width:26px;height:26px;font-size:12px;border-radius:6px}
+.icon-btn-lg{width:38px;height:38px;font-size:16px;border-radius:10px}
+
+/* ── Field (label + control + hint) ── */
+.field{margin-bottom:14px;display:flex;flex-direction:column;gap:6px}
+.field>label{font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em;margin:0}
+.field>input,.field>textarea,.field>select{width:100%}
+.field .hint{font-size:11px;color:var(--tx3)}
+.field-row{display:flex;gap:8px}
+.field-row>*{flex:1;min-width:0}
+.field-row>.field{margin-bottom:0}
+
+/* ── Form controls (consistent with shared theme.css) ──
+   Scoped to .field/.form-control to avoid clobbering Tailwind-styled
+   inputs in unmigrated components. */
+.field input[type="text"],.field input[type="number"],.field input[type="password"],
+.field input[type="email"],.field input[type="search"],.field input[type="url"],
+.field input[type="tel"],.field input[type="date"],.field input[type="time"],
+.field input[type="datetime-local"],.field textarea,.field select,
+.form-control{
+  background:var(--sf2);color:var(--tx);border:1px solid var(--b2);
+  border-radius:8px;padding:7px 10px;font-size:12px;outline:none;
+  font-family:inherit;
+}
+.field input:focus,.field textarea:focus,.field select:focus,.form-control:focus{border-color:var(--ac)}
+.field textarea,.form-control textarea{resize:vertical;line-height:1.5}
+
+/* ── Empty State ── */
+.empty-state{padding:32px 16px;text-align:center;color:var(--tx3);font-size:12px}
+.empty-state .es-title{font-size:13px;color:var(--tx2);margin-bottom:4px;font-weight:500}
+
+/* ── List Row ── */
+.list-row{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;background:var(--sf);border:1px solid var(--b);border-radius:10px;transition:border-color .15s,background .15s}
+.list-row:hover{border-color:var(--ac)}
+.list-row.clickable{cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+.list-row.clickable:active{transform:scale(.985)}
+.list-row.off{opacity:.55}
+.list-row .lr-main{flex:1;min-width:0}
+.list-row .lr-title{font-size:13px;font-weight:500;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-row .lr-sub{font-size:11px;color:var(--tx3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Toggle (Swift-style sliding switch) ── */
+.toggle{position:relative;display:inline-block;width:52px;height:30px;flex-shrink:0;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;inset:0;background:var(--sf3);border:1px solid var(--b2);border-radius:30px;transition:background .22s ease,border-color .22s ease}
+.toggle .slider::before{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:var(--tx);box-shadow:0 2px 6px rgba(0,0,0,.25);transition:transform .22s ease,background .22s ease}
+.toggle input:checked + .slider{background:var(--gr);border-color:var(--gr)}
+.toggle.amber input:checked + .slider{background:var(--am);border-color:var(--am)}
+.toggle input:checked + .slider::before{background:#fff;transform:translateX(22px)}
+.toggle.toggle-sm{width:46px;height:26px}
+.toggle.toggle-sm .slider::before{width:22px;height:22px;top:1px;left:1px}
+.toggle.toggle-sm input:checked + .slider::before{transform:translateX(20px)}
+
+/* ── Chip Picker ── */
+.chip-picker{display:flex;gap:5px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;background:var(--sf);border:1px solid var(--b);border-radius:8px;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;transition:.15s;font-family:inherit;white-space:nowrap}
+.chip:hover{border-color:var(--ac);color:var(--tx)}
+.chip.on,.chip.active{background:var(--ac);border-color:var(--ac);color:var(--on-accent)}
+
+/* ── Status Dot ── */
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--tx3);flex-shrink:0;display:inline-block}
+.status-dot.on,.status-dot.ok{background:var(--gr);box-shadow:0 0 6px rgba(46,201,138,.55)}
+.status-dot.warn{background:var(--am);box-shadow:0 0 6px rgba(245,169,58,.55)}
+.status-dot.err,.status-dot.off{background:var(--rd)}
+.status-dot.info{background:var(--ac);box-shadow:0 0 6px rgba(90,150,255,.55)}
+
+/* ── Modal (overlay + dialog) ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;justify-content:center;align-items:center;z-index:1000;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+.modal{background:var(--sf);border:1px solid var(--b);border-radius:16px;padding:24px;max-width:480px;width:90%;box-shadow:var(--shadow-lg)}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:12px;color:var(--tx)}
+.modal-actions{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
+
+/* ── Spinner ── */
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--b2);border-top-color:var(--ac);border-radius:50%;animation:spin .6s linear infinite}
