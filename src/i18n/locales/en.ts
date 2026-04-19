@@ -81,6 +81,7 @@ const en = {
             addBtn: 'Add',
             addScreen: 'Screen',
             allPinned: 'All available widgets are already on the dashboard.',
+            widgetStopped: 'Stopped',
         },
 
         // ── Devices ──
@@ -820,6 +821,18 @@ const en = {
             processKilled: 'Process "{{name}}" terminated',
             refresh: 'Refresh',
             loadProcesses: 'Load processes',
+        },
+        integrityPage: {
+            allVerified: 'All core files verified',
+            violationDetected: 'Integrity violation detected',
+            metaLine: 'SHA256 · {{checks}} checks · every 30s',
+            lastCheck: 'Last check: {{age}}s ago',
+            checkLog: 'Check log',
+            logAllOkNoChanges: 'All {{count}} files OK · no changes detected',
+            logAllOk: 'All {{count}} files OK',
+            logAllOkNoCount: 'All files OK · no changes detected',
+            logModuleUpdated: 'Module updated: {{name}} v{{version}} (excluded from core)',
+            logCoreStartupVerified: 'Core startup verified · manifest hash OK',
         },
         llmEngine: {
             activeProvider: 'Active provider',

@@ -81,6 +81,7 @@ const uk = {
             addBtn: 'Додати',
             addScreen: 'Екран',
             allPinned: 'Всі доступні віджети вже на головному екрані.',
+            widgetStopped: 'Зупинено',
         },
 
         // ── Devices ──
@@ -820,6 +821,18 @@ const uk = {
             processKilled: 'Процес "{{name}}" завершено',
             refresh: 'Оновити',
             loadProcesses: 'Показати процеси',
+        },
+        integrityPage: {
+            allVerified: 'Усі файли ядра перевірено',
+            violationDetected: 'Виявлено порушення цілісності',
+            metaLine: 'SHA256 · {{checks}} перевірок · кожні 30с',
+            lastCheck: 'Остання перевірка: {{age}}с тому',
+            checkLog: 'Журнал перевірок',
+            logAllOkNoChanges: 'Усі {{count}} файлів OK · змін не виявлено',
+            logAllOk: 'Усі {{count}} файлів OK',
+            logAllOkNoCount: 'Усі файли OK · змін не виявлено',
+            logModuleUpdated: 'Модуль оновлено: {{name}} v{{version}} (поза ядром)',
+            logCoreStartupVerified: 'Старт ядра перевірено · manifest hash OK',
         },
         llmEngine: {
             activeProvider: 'Активний провайдер',

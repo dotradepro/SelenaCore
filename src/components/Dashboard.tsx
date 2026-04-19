@@ -31,6 +31,7 @@ function WidgetShell({
   onPointerDown?: (e: React.PointerEvent) => void;
   onResizeHandleDown?: (e: React.PointerEvent) => void;
 }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isRunning = mod.status === 'RUNNING';
   const isErr = mod.status === 'ERROR';
@@ -142,7 +143,7 @@ function WidgetShell({
           <div style={{ fontSize: 9, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--tx3)' }}>
             {mod.name}
           </div>
-          <div style={{ fontSize: 9, color: 'var(--tx3)' }}>Stopped</div>
+          <div style={{ fontSize: 9, color: 'var(--tx3)' }}>{t('dashboard.widgetStopped')}</div>
         </div>
       )}
       <div className="ws-label">{mod.name} · :{mod.port}</div>

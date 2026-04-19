@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/useStore';
 
 interface LogEntry {
@@ -8,6 +9,7 @@ interface LogEntry {
 }
 
 export default function IntegrityPage() {
+  const { t } = useTranslation();
   const stats      = useStore((s) => s.stats);
   const fetchStats = useStore((s) => s.fetchStats);
   const [age, setAge]         = useState(0);
@@ -20,11 +22,11 @@ export default function IntegrityPage() {
       return `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
     };
     return [
-      { color:'var(--gr)', text:'All 847 files OK · no changes detected', time: ts(0) },
-      { color:'var(--gr)', text:'All 847 files OK', time: ts(30) },
-      { color:'var(--gr)', text:'All 847 files OK', time: ts(60) },
-      { color:'var(--ac)', text:'Module updated: climate-control v1.2.1 (excluded from core)', time: ts(11640) },
-      { color:'var(--gr)', text:'Core startup verified · manifest hash OK', time: ts(36480) },
+      { color:'var(--gr)', text: t('integrityPage.logAllOkNoChanges', { count: 847 }), time: ts(0) },
+      { color:'var(--gr)', text: t('integrityPage.logAllOk',         { count: 847 }), time: ts(30) },
+      { color:'var(--gr)', text: t('integrityPage.logAllOk',         { count: 847 }), time: ts(60) },
+      { color:'var(--ac)', text: t('integrityPage.logModuleUpdated', { name: 'climate-control', version: '1.2.1' }), time: ts(11640) },
+      { color:'var(--gr)', text: t('integrityPage.logCoreStartupVerified'), time: ts(36480) },
     ];
   });
 
@@ -39,7 +41,7 @@ export default function IntegrityPage() {
           const p = (x: number) => String(x).padStart(2, '0');
           const ts = `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
           setLog((l) => [
-            { color:'var(--gr)', text:'All files OK · no changes detected', time: ts },
+            { color:'var(--gr)', text: t('integrityPage.logAllOkNoCount'), time: ts },
             ...l.slice(0, 9),
           ]);
         }
@@ -47,7 +49,7 @@ export default function IntegrityPage() {
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [fetchStats]);
+  }, [fetchStats, t]);
 
   const intOk = (stats?.integrity ?? 'ok') === 'ok';
 
@@ -79,13 +81,13 @@ export default function IntegrityPage() {
         </div>
         <div>
           <div style={{ fontSize:13, fontWeight:500, color: intOk ? 'var(--tx)' : 'var(--rd)' }}>
-            {intOk ? 'All core files verified' : 'Integrity violation detected'}
+            {intOk ? t('integrityPage.allVerified') : t('integrityPage.violationDetected')}
           </div>
           <div style={{ fontSize:10, color:'var(--tx3)', marginTop:2 }}>
-            SHA256 · {checks} checks · every 30s
+            {t('integrityPage.metaLine', { checks })}
           </div>
           <div style={{ fontSize:10, color: intOk ? 'var(--gr)' : 'var(--am)', marginTop:3 }}>
-            Last check: {age}s ago
+            {t('integrityPage.lastCheck', { age })}
           </div>
         </div>
         <div style={{
@@ -100,7 +102,7 @@ export default function IntegrityPage() {
 
       {/* Log */}
       <div className="card">
-        <div className="card-title">Check log</div>
+        <div className="card-title">{t('integrityPage.checkLog')}</div>
         <div className="tl">
           {log.map((entry, i) => (
             <div key={i} className="tl-row">
