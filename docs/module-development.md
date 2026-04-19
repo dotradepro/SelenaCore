@@ -366,6 +366,60 @@ err = self.t("fetch_error", lang="en")
 - Logger messages are NOT translated (they stay in English for debugging).
 - Key format: `section.key` or flat keys (e.g., `current_weather`, `fetch_error`).
 
+### Locale file tiers (v0.4.0+)
+
+The `locales/` directory supports four file tiers per language. They merge
+in priority order — later entries override earlier ones when keys collide:
+
+| File                     | Tier          | Written by                                     |
+|--------------------------|---------------|-----------------------------------------------|
+| `en.json`                | reference     | Module author (manual)                         |
+| `{lang}.auto.json`       | auto (lowest) | `scripts/generate_auto_locales.py --modules`   |
+| `{lang}.community.json`  | community     | Community PR                                  |
+| `{lang}.json`            | manual (highest) | Module author (human-translated)            |
+
+`.auto.json` files are generated on CI from `en.json` via the project
+auto-translation pipeline (Argos). Never hand-edit them — your changes
+will be overwritten on the next regeneration. If an auto translation is
+wrong, drop a `{lang}.community.json` override instead; it ranks above
+auto but below the module author's manual file.
+
+The SDK's `self.t()` and the core `/api/i18n/bundle/{module}?lang={lang}`
+endpoint both honor this tier order. For widgets / settings.html, use
+the endpoint:
+
+```html
+<script>
+var LANG = (function () { try { return localStorage.getItem('selena-lang') || 'en'; } catch (e) { return 'en'; } })();
+var L = { en: {} };
+
+async function loadI18n() {
+    async function fetchLang(lang) {
+        const r = await fetch('/api/i18n/bundle/my-module?lang=' + encodeURIComponent(lang));
+        if (r.ok) L[lang] = await r.json();
+    }
+    const targets = ['en'];
+    if (LANG !== 'en') targets.push(LANG);
+    await Promise.all(targets.map(fetchLang));
+}
+
+loadI18n().then(() => {
+    applyLang();  // provided by widget-common.js
+    // ... rest of your init
+});
+</script>
+```
+
+The endpoint merges `core/i18n/common/*.json` (shared strings like
+Save/Cancel/Loading) with your module's `locales/*.json`, so common
+UI chrome doesn't need to be re-translated per module.
+
+**Deprecated:** the legacy `var L = { en: {...}, uk: {...} }` inline
+pattern inside `settings.html` is deprecated as of v0.4.0. New modules
+should use the fetch pattern above; existing system modules are being
+migrated to it (see `system_modules/voice_core/settings.html` for the
+canonical example).
+
 ---
 
 ## Complete Example

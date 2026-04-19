@@ -163,7 +163,15 @@ class SmartHomeModule:
     # ── i18n (autonomous — no core.i18n dependency) ─────────────────────
 
     def _register_locales(self) -> None:
-        """Load locale files from ``locales/`` next to the module or from MODULE_DIR."""
+        """Load locale files from ``locales/`` next to the module or from MODULE_DIR.
+
+        Merges the same 4-tier priority as the /api/i18n/bundle endpoint:
+
+            en.json  (reference)
+            {lang}.auto.json      ← lowest priority (Argos-generated)
+            {lang}.community.json ← community-PR overrides
+            {lang}.json           ← manual translation, highest priority
+        """
         import inspect
         dirs_to_check = []
         if MODULE_DIR:
@@ -174,19 +182,49 @@ class SmartHomeModule:
         except (TypeError, OSError):
             pass
 
+        def _load(path: Path) -> dict:
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception as exc:
+                self._log.warning("Locale load error %s: %s", path, exc)
+                return {}
+
         for locales_dir in dirs_to_check:
             if not locales_dir.is_dir():
                 continue
+            # Discover every language referenced by any tier file. Filenames
+            # look like: en.json, uk.json, pl.auto.json, pl.community.json.
+            languages: set[str] = set()
             for f in locales_dir.iterdir():
-                if f.suffix != ".json":
+                if not f.name.endswith(".json"):
                     continue
-                lang = f.stem  # e.g. "uk", "en"
-                try:
-                    data = json.loads(f.read_text(encoding="utf-8"))
-                    self._locale_strings.setdefault(lang, {}).update(data)
-                    self._log.debug("Loaded locale %s from %s", lang, f)
-                except Exception as exc:
-                    self._log.warning("Locale load error %s: %s", f, exc)
+                # Strip .json then any .auto/.community suffix to get the code.
+                stem = f.name[:-5]
+                for suffix in (".auto", ".community"):
+                    if stem.endswith(suffix):
+                        stem = stem[: -len(suffix)]
+                        break
+                if stem:
+                    languages.add(stem)
+
+            for lang in languages:
+                merged: dict = {}
+                # en.json is the reference — always merge first so target lang
+                # keys can override it (mostly for common utility strings).
+                en_file = locales_dir / "en.json"
+                if en_file.exists():
+                    merged.update(_load(en_file))
+                if lang != "en":
+                    for tier_name in ("auto", "community"):
+                        tier_file = locales_dir / f"{lang}.{tier_name}.json"
+                        if tier_file.exists():
+                            merged.update(_load(tier_file))
+                    manual = locales_dir / f"{lang}.json"
+                    if manual.exists():
+                        merged.update(_load(manual))
+                self._locale_strings.setdefault(lang, {}).update(merged)
+                self._log.debug("Loaded locale %s for %s from %s",
+                                lang, self.name, locales_dir)
             break  # first found directory wins
 
     def t(self, key: str, lang: str | None = None, **kwargs: Any) -> str:

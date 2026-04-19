@@ -17,7 +17,7 @@ from fastapi.responses import Response as FastAPIResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
-from core.api.routes import devices, events, integrity, intents, modules, radio, scenes, secrets, setup, system, ui
+from core.api.routes import devices, events, i18n as i18n_routes, integrity, intents, modules, radio, scenes, secrets, setup, system, ui
 from core.config import get_settings
 from core.cloud_sync.sync import get_cloud_sync
 from core.eventbus.bus import get_event_bus
@@ -409,6 +409,9 @@ def create_app() -> FastAPI:
     # Shared assets for widget iframes (no auth)
     from core.api.routes import shared_assets
     app.include_router(shared_assets.router, prefix="/api")
+
+    # i18n bundles for widget/settings iframes (no auth — localhost UI)
+    app.include_router(i18n_routes.router, prefix="/api")
 
     # UI routes (no auth — localhost only, protected by iptables)
     from core.api.routes import voice_engines, vosk as vosk_routes

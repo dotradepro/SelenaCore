@@ -121,6 +121,37 @@ class TestModuleI18n:
         }
         assert mod.t("msg", lang="fr") == "English fallback"
 
+    def test_register_locales_tier_priority(self, tmp_path):
+        """Manual > community > auto > en-fallback, all merged per lang."""
+        import inspect
+        from sdk.base_module import SmartHomeModule
+
+        locales = tmp_path / "locales"
+        locales.mkdir()
+        (locales / "en.json").write_text('{"shared": "en-shared", "only_en": "only-en"}')
+        # Three tiers for pl — manual should win for overlapping keys.
+        (locales / "pl.auto.json").write_text('{"shared": "pl-auto", "a": "from-auto"}')
+        (locales / "pl.community.json").write_text('{"shared": "pl-community", "c": "from-community"}')
+        (locales / "pl.json").write_text('{"shared": "pl-manual", "m": "from-manual"}')
+
+        class TestMod(SmartHomeModule):
+            name = "tier-test"
+
+        # Stub inspect.getfile so _register_locales picks up our tmp dir.
+        original_getfile = inspect.getfile
+        try:
+            inspect.getfile = lambda _cls: str(tmp_path / "fake_module.py")
+            mod = TestMod()
+        finally:
+            inspect.getfile = original_getfile
+
+        pl = mod._locale_strings.get("pl", {})
+        assert pl.get("shared") == "pl-manual"   # highest tier wins
+        assert pl.get("a") == "from-auto"
+        assert pl.get("c") == "from-community"
+        assert pl.get("m") == "from-manual"
+        assert pl.get("only_en") == "only-en"  # en.json baseline merged first
+
 
 class TestMatchesSubscription:
     def test_exact(self):
