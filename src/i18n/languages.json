@@ -1,0 +1,23 @@
+{
+    "_comment": "Language manifest — mirrors scripts/i18n_config.py. Used by LanguagePicker + Wizard. Keep in sync when adding/removing languages; plan to auto-sync from CI in a future iteration.",
+    "manual": [
+        { "code": "en", "nativeName": "English", "direction": "ltr", "quality": "manual" },
+        { "code": "uk", "nativeName": "Українська", "direction": "ltr", "quality": "manual" }
+    ],
+    "auto": [
+        { "code": "ru", "nativeName": "Русский", "direction": "ltr", "quality": "auto" },
+        { "code": "pl", "nativeName": "Polski", "direction": "ltr", "quality": "auto" },
+        { "code": "cs", "nativeName": "Čeština", "direction": "ltr", "quality": "auto" },
+        { "code": "de", "nativeName": "Deutsch", "direction": "ltr", "quality": "auto" },
+        { "code": "nl", "nativeName": "Nederlands", "direction": "ltr", "quality": "auto" },
+        { "code": "es", "nativeName": "Español", "direction": "ltr", "quality": "auto" },
+        { "code": "fr", "nativeName": "Français", "direction": "ltr", "quality": "auto" },
+        { "code": "it", "nativeName": "Italiano", "direction": "ltr", "quality": "auto" },
+        { "code": "pt", "nativeName": "Português", "direction": "ltr", "quality": "auto" },
+        { "code": "tr", "nativeName": "Türkçe", "direction": "ltr", "quality": "auto" },
+        { "code": "ja", "nativeName": "日本語", "direction": "ltr", "quality": "auto" },
+        { "code": "zh", "nativeName": "中文", "direction": "ltr", "quality": "auto" },
+        { "code": "ko", "nativeName": "한국어", "direction": "ltr", "quality": "auto" },
+        { "code": "hi", "nativeName": "हिन्दी", "direction": "ltr", "quality": "auto" }
+    ]
+}

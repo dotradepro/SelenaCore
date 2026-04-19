@@ -636,6 +636,18 @@ const en = {
         languageSelect: {
             scanForSetup: 'Scan to set up from your phone',
             tapToContinue: 'Tap the screen to continue setup',
+            title: 'Interface language',
+            searchPlaceholder: 'Search languages…',
+            noMatches: 'No languages match your search.',
+            fullyTranslated: 'Fully translated',
+            autoTranslated: 'Machine-translated (beta)',
+            badgeManual: 'Official',
+            badgeAuto: 'β',
+            requestLanguage: 'Request a new language →',
+            autoWarningTitle: 'Machine-translated interface',
+            autoWarningBody: '{{lang}} is translated automatically via Argos Translate. Parts of the UI may read oddly — help us improve by submitting a PR on GitHub.',
+            helpImprove: 'Help improve →',
+            dismiss: 'Got it',
         },
 
         // ── Setup Landing ──

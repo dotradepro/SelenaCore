@@ -636,6 +636,18 @@ const uk = {
         languageSelect: {
             scanForSetup: 'Відскануйте для налаштування з телефону',
             tapToContinue: 'Натисніть на екран для продовження налаштування',
+            title: 'Мова інтерфейсу',
+            searchPlaceholder: 'Пошук мови…',
+            noMatches: 'За вашим запитом нічого не знайдено.',
+            fullyTranslated: 'Повний переклад',
+            autoTranslated: 'Машинний переклад (бета)',
+            badgeManual: 'Офіційна',
+            badgeAuto: 'β',
+            requestLanguage: 'Запросити нову мову →',
+            autoWarningTitle: 'Машинний переклад інтерфейсу',
+            autoWarningBody: 'Мова {{lang}} перекладена автоматично через Argos Translate. Можуть бути неточності — допоможіть покращити через GitHub PR.',
+            helpImprove: 'Допомогти покращити →',
+            dismiss: 'Зрозуміло',
         },
 
         // ── Setup Landing ──

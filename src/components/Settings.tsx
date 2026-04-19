@@ -8,6 +8,7 @@ import UsersPanel from './UsersPanel';
 import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
+import LanguagePicker from './settings/LanguagePicker';
 import ProvisionProgress from './ProvisionProgress';
 // Wrapper for tabs whose root content is just a form / list with no
 // built-in scroll container.  Defined OUTSIDE the component so React
@@ -281,11 +282,6 @@ function AppearanceSettings() {
     { value: 'light', label: t('settings.themeLight'), desc: t('settings.themeLightDesc'), icon: '☀️' },
   ];
 
-  const languages = [
-    { code: 'en', label: 'English', flag: '🇬🇧' },
-    { code: 'uk', label: 'Українська', flag: '🇺🇦' },
-  ];
-
   const themeName = (th: CustomTheme) => th.name?.[lang] || th.name?.en || th.id;
 
   return (
@@ -455,30 +451,13 @@ function AppearanceSettings() {
 
       {/* ═══ Language selector ═══ */}
       <div style={{ background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 12, padding: 20 }}>
-        <h4 style={{ fontWeight: 500, marginBottom: 16, color: 'var(--tx)' }}>{t('settings.language')}</h4>
-        <div style={{ display: 'flex', gap: 12 }}>
-          {languages.map(l => {
-            const isActive = selectedLanguage === l.code;
-            return (
-              <button
-                key={l.code}
-                onClick={() => { setSelectedLanguage(l.code); showToast(t('settings.languageChanged')); }}
-                style={{
-                  padding: '12px 24px',
-                  borderRadius: 10,
-                  border: `2px solid ${isActive ? 'var(--ac)' : 'var(--b)'}`,
-                  background: isActive ? 'rgba(79,140,247,.08)' : 'var(--sf2)',
-                  cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  transition: 'all .15s',
-                }}
-              >
-                <span style={{ fontSize: 22 }}>{l.flag}</span>
-                <span style={{ fontSize: 13, fontWeight: 500, color: isActive ? 'var(--ac)' : 'var(--tx)' }}>{l.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <LanguagePicker
+          currentLang={selectedLanguage}
+          onChange={(code) => {
+            setSelectedLanguage(code);
+            showToast(t('settings.languageChanged'));
+          }}
+        />
       </div>
 
       {/* ═══ Theme Editor Modal ═══ */}
