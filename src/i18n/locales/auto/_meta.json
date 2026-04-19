@@ -1,0 +1,139 @@
+{
+  "source_hash": "7ad1e7f9e1f6a5fa",
+  "generated_at": "2026-04-19T10:16:07.976342+00:00",
+  "generator": "scripts/generate_auto_locales.py",
+  "generator_version": "0.1.0-skeleton",
+  "manual": [
+    {
+      "code": "en",
+      "nativeName": "English",
+      "direction": "ltr",
+      "quality": "manual"
+    },
+    {
+      "code": "uk",
+      "nativeName": "Українська",
+      "direction": "ltr",
+      "quality": "manual"
+    }
+  ],
+  "auto": [
+    {
+      "code": "ru",
+      "nativeName": "Русский",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "pl",
+      "nativeName": "Polski",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "cs",
+      "nativeName": "Čeština",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "de",
+      "nativeName": "Deutsch",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "nl",
+      "nativeName": "Nederlands",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "es",
+      "nativeName": "Español",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "fr",
+      "nativeName": "Français",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "it",
+      "nativeName": "Italiano",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "pt",
+      "nativeName": "Português",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "tr",
+      "nativeName": "Türkçe",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "ja",
+      "nativeName": "日本語",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "zh",
+      "nativeName": "中文",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "ko",
+      "nativeName": "한국어",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    },
+    {
+      "code": "hi",
+      "nativeName": "हिन्दी",
+      "direction": "ltr",
+      "quality": "auto",
+      "regenerated": true
+    }
+  ],
+  "summary": {
+    "regenerated": [
+      "ru",
+      "pl",
+      "cs",
+      "de",
+      "nl",
+      "es",
+      "fr",
+      "it",
+      "pt",
+      "tr",
+      "ja",
+      "zh",
+      "ko",
+      "hi"
+    ],
+    "skipped_unchanged": []
+  }
+}
