@@ -302,14 +302,103 @@ function QrPane({ onSuccess }: { onSuccess: (tok: string) => void }) {
     );
 }
 
-// ─── Gate ─────────────────────────────────────────────────────────────────────
+// ─── Reusable panel (shared by full-page gate AND the modal-style
+//     PIN prompt used by `useElevated().requestElevation()`) ──────────────
 type Tab = 'pin' | 'qr';
 
-export default function KioskElevationGate({ children }: { children: ReactNode }) {
+interface ElevationPanelProps {
+    /** Called with the `elevated_token` after a successful PIN/QR flow. */
+    onSuccess: (token: string) => void;
+    /** Handler for the numpad "Back" key. Full-page uses history.back; modal
+     *  uses its own onClose prop so the user can cancel without navigating. */
+    onBack?: () => void;
+    /** Title/description overrides. Defaults to the "restricted section"
+     *  copy used by KioskElevationGate. The Dashboard-edit modal passes
+     *  its own (e.g. "Confirm your identity"). */
+    titleKey?: string;
+    descKey?: string;
+}
+
+/**
+ * Single source of truth for the PIN/QR elevation UI. Renders the card
+ * (icon + header + tabs + PinPane/QrPane) without any positioning — the
+ * caller wraps it in either a full-page overlay (KioskElevationGate) or
+ * a modal (PinConfirmModal).
+ *
+ * Exported so both callers can use the same markup. If you change the
+ * visual style of the elevation flow, edit here once.
+ */
+export function ElevationPanel({ onSuccess, onBack, titleKey, descKey }: ElevationPanelProps) {
     const { t } = useTranslation();
+    const [tab, setTab] = useState<Tab>('pin');
+
+    return (
+        <div className="rounded-2xl border shadow-2xl overflow-hidden"
+            style={{ background: 'var(--sf)', borderColor: 'var(--b)' }}
+        >
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-violet-600/10 border border-violet-500/20 flex items-center justify-center">
+                            <Lock size={14} className="text-violet-400" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold" style={{ color: 'var(--tx)' }}>
+                                {t(titleKey ?? 'kiosk.restrictedTitle')}
+                            </p>
+                            <p className="text-xs" style={{ color: 'var(--tx3)' }}>
+                                {t(descKey ?? 'kiosk.restrictedDesc')}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tabs */}
+                <div className="flex rounded-xl p-1" style={{ background: 'var(--bg)' }}>
+                    {([['pin', KeyRound, 'auth.tabPin'], ['qr', QrCode, 'auth.tabQr']] as const).map(
+                        ([id, Icon, key]) => (
+                            <button key={id} onClick={() => setTab(id)}
+                                className={cn(
+                                    'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all',
+                                    tab === id ? 'bg-violet-600 text-white shadow' : 'hover:opacity-80',
+                                )}
+                                style={tab !== id ? { color: 'var(--tx2)' } : {}}
+                            >
+                                <Icon size={12} />
+                                {t(key)}
+                            </button>
+                        )
+                    )}
+                </div>
+            </div>
+
+            {/* Tab content */}
+            <div className="px-6 pb-6">
+                <AnimatePresence mode="wait">
+                    <motion.div
+                        key={tab}
+                        initial={{ opacity: 0, x: tab === 'pin' ? -8 : 8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.12 }}
+                    >
+                        {tab === 'pin'
+                            ? <PinPane onSuccess={onSuccess} onBack={onBack ?? (() => window.history.back())} />
+                            : <QrPane onSuccess={onSuccess} />
+                        }
+                    </motion.div>
+                </AnimatePresence>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── Gate ─────────────────────────────────────────────────────────────────────
+export default function KioskElevationGate({ children }: { children: ReactNode }) {
     const elevatedToken = useStore(s => s.elevatedToken);
     const setElevatedToken = useStore(s => s.setElevatedToken);
-    const [tab, setTab] = useState<Tab>('pin');
 
     // Inactivity timer — while lock screen is visible, redirect to / after 5 min
     useGateInactivity(!elevatedToken);
@@ -345,64 +434,7 @@ export default function KioskElevationGate({ children }: { children: ReactNode }
                 <div className="absolute w-80 h-80 rounded-full bg-violet-600/8 blur-3xl pointer-events-none" />
 
                 <div className="relative z-10 w-full max-w-xs mx-4">
-                    <div className="rounded-2xl border shadow-2xl overflow-hidden"
-                        style={{ background: 'var(--sf)', borderColor: 'var(--b)' }}
-                    >
-                        {/* Header */}
-                        <div className="px-6 pt-6 pb-4">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-lg bg-violet-600/10 border border-violet-500/20 flex items-center justify-center">
-                                        <Lock size={14} className="text-violet-400" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-semibold" style={{ color: 'var(--tx)' }}>
-                                            {t('kiosk.restrictedTitle')}
-                                        </p>
-                                        <p className="text-xs" style={{ color: 'var(--tx3)' }}>
-                                            {t('kiosk.restrictedDesc')}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Tabs */}
-                            <div className="flex rounded-xl p-1" style={{ background: 'var(--bg)' }}>
-                                {([['pin', KeyRound, 'auth.tabPin'], ['qr', QrCode, 'auth.tabQr']] as const).map(
-                                    ([id, Icon, key]) => (
-                                        <button key={id} onClick={() => setTab(id)}
-                                            className={cn(
-                                                'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all',
-                                                tab === id ? 'bg-violet-600 text-white shadow' : 'hover:opacity-80',
-                                            )}
-                                            style={tab !== id ? { color: 'var(--tx2)' } : {}}
-                                        >
-                                            <Icon size={12} />
-                                            {t(key)}
-                                        </button>
-                                    )
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Tab content */}
-                        <div className="px-6 pb-6">
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={tab}
-                                    initial={{ opacity: 0, x: tab === 'pin' ? -8 : 8 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.12 }}
-                                >
-                                    {tab === 'pin'
-                                        ? <PinPane onSuccess={handleSuccess} onBack={() => window.history.back()} />
-                                        : <QrPane onSuccess={handleSuccess} />
-                                    }
-                                </motion.div>
-                            </AnimatePresence>
-                        </div>
-                    </div>
+                    <ElevationPanel onSuccess={handleSuccess} />
                 </div>
             </motion.div>
         </AnimatePresence>

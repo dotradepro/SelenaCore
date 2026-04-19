@@ -766,6 +766,7 @@ const en = {
             registerFailed: 'Registration failed. Check your username or PIN.',
             registerSuccess: 'Device registered!',
             confirmTitle: 'Confirm with PIN',
+            confirmDesc: 'Enter PIN or scan QR to continue',
             confirmAs: 'Confirming as {{name}}',
             confirm: 'Confirm',
             pinIncorrect: 'Incorrect PIN',

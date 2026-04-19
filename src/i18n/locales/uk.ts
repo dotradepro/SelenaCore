@@ -766,6 +766,7 @@ const uk = {
             registerFailed: 'Помилка реєстрації. Перевірте ім\'я або PIN.',
             registerSuccess: 'Пристрій зареєстровано!',
             confirmTitle: 'Підтвердіть PIN',
+            confirmDesc: 'Введіть PIN або відскануйте QR',
             confirmAs: 'Підтвердження як {{name}}',
             confirm: 'Підтвердити',
             pinIncorrect: 'Невірний PIN',
