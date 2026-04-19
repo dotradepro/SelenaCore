@@ -70,6 +70,7 @@ async def _trace_case(case: dict[str, Any]) -> dict[str, Any]:
     )
     from system_modules.llm_engine.intent_router import (
         get_intent_router, _tokenize, _parse_catalog_to_candidates,
+        post_process_embedding_intent,
         _extract_command_segment,
     )
     from system_modules.llm_engine.embedding_classifier import (
@@ -164,6 +165,14 @@ async def _trace_case(case: dict[str, Any]) -> dict[str, Any]:
                 query = _extract_command_segment(user_text)
                 t0 = time.perf_counter()
                 result = emb.classify(query, candidates)
+                # Apply the same post-processor the production runtime
+                # does after `classify()` — without this, bench sees a
+                # "raw" classifier score and misses the disambiguation
+                # fixes (bare-verb → device.on, TV → device.*, volume
+                # idioms, mass-power). Keeps bench honest about the
+                # end-user-observable accuracy.
+                raw_intent = result.intent
+                post_process_embedding_intent(result, query, native_text)
                 emb_ms = (time.perf_counter() - t0) * 1000
                 emb_intent = result.intent
                 emb_params = result.params or {}
@@ -171,6 +180,7 @@ async def _trace_case(case: dict[str, Any]) -> dict[str, Any]:
                 trace["embedding"].update({
                     "query_text": query,
                     "intent": result.intent,
+                    "intent_raw": raw_intent,
                     "score": round(result.score, 4),
                     "margin": round(result.margin, 4),
                     "runner_up": result.runner_up,

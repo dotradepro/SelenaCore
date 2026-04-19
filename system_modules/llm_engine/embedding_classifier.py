@@ -88,6 +88,9 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "turn on the thermometer in the garage",
         "turn on the motion sensor",
         "turn on the speaker",
+        "turn on the kitchen speaker",
+        "turn on the speaker in the living room",
+        "turn on the smart speaker",
         "turn on the thermostat",
         "enable the thermostat",
         "switch on the thermostat",
@@ -163,6 +166,10 @@ INTENT_ANCHORS: dict[str, list[str]] = {
         "turn off the air conditioning",
         "turn off the kettle in the kitchen",
         "turn off the thermostat in the bedroom",
+        "turn off the speaker",
+        "turn off the speaker in the living room",
+        "turn off the kitchen speaker",
+        "turn off the smart speaker",
         # Covers (curtains/blinds) → device.off = close
         "close the curtains",
         "close the curtains in the bedroom",
@@ -427,13 +434,15 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     ],
     "privacy_on": [
         "enable privacy mode",
+        "activate privacy mode",
         # Helsinki outputs:
         "turn on the privacy mode.",
-        # Noisy bench: "stop listening" alone shifted centroid too
-        # far from positive commands like "увімкни режим приватності".
-        # Keep only the longer, more specific forms.
-        "stop listening to me",
-        "don't listen to me",
+        # v0.4.0 RU bench: removed "stop listening to me" / "don't
+        # listen to me" — they pulled "Turn on the kitchen speaker"
+        # away from device.on because both phrases live in the
+        # audio/mic semantic neighbourhood. Privacy users reliably
+        # say "privacy mode" explicitly, so the shorter anchors
+        # aren't worth the collateral misroutes.
     ],
     "automation.list": [
         "list automations",
@@ -478,7 +487,8 @@ INTENT_ANCHORS: dict[str, list[str]] = {
     ],
     "privacy_off": [
         "disable privacy mode",
-        "start listening again",
+        "deactivate privacy mode",
+        "turn off privacy mode",
     ],
     "presence.who_home": [
         "who is at home",

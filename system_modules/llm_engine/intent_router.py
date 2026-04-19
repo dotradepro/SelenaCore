@@ -209,6 +209,123 @@ def _normalize_en(text: str) -> str:
     return " ".join(s.split())
 
 
+# ── Verb / idiom pattern tables (kept module-level so post-processor
+#    and classifier-level heuristics share identical definitions). ──
+
+_ON_VERBS = (
+    "turn on", "switch on", "enable", "power on",
+    "start", "activate", "run",
+    "i want", "put on", "fire up", "kick on",
+    "light up", "set up",
+)
+_OFF_VERBS = (
+    "turn off", "switch off", "disable", "power off",
+    "stop", "deactivate", "put out", "extinguish",
+    "you can turn off", "could you turn off",
+    "no need for", "don't need", "kill the",
+    "shut down", "shut off", "cut the",
+)
+_MEDIA_VOLUME_IDIOMS = (
+    "turn it up", "turn it down",
+    "louder", "quieter", "softer",
+)
+_ALL_TOKENS = (
+    " all ", " everything", " every ",
+    " все ", " всі ", " всё ", " всю ", " все.", " всі.", " всё.",
+)
+
+
+def post_process_embedding_intent(result, query_en: str, native_text: str) -> None:
+    """Context-aware disambiguation applied AFTER the embedding classifier.
+
+    Mutates `result.intent` in place. Lives at module level so benchmarks
+    (which bypass `IntentRouter.route()` and call `classifier.classify()`
+    directly) can reuse the same logic without duplicating it.
+
+    Handled cases:
+      • Bare on/off imperative on an AC / thermostat → `device.set_mode`
+        reclassified to `device.on` / `device.off`.
+      • TV entity misrouted to `media.play_*` → power intent.
+      • "turn it up / down" volume idioms misrouted to `device.on/off`.
+      • Universal quantifier ("all", "все", "everything") on on/off →
+        `house.all_on` / `house.all_off`.
+    """
+    q_low = (query_en or "").lower()
+
+    suffix_on = q_low.rstrip(".!?").endswith(" on")
+    suffix_off = q_low.rstrip(".!?").endswith(" off")
+
+    def has_on_verb() -> bool:
+        return suffix_on or any(
+            q_low.startswith(v) or f" {v}" in q_low for v in _ON_VERBS
+        )
+
+    def has_off_verb() -> bool:
+        return suffix_off or any(
+            q_low.startswith(v) or f" {v}" in q_low for v in _OFF_VERBS
+        )
+
+    # 1. Bare-verb reclassification for mode/temp/fan/query intents.
+    if result.intent in (
+        "device.set_mode", "device.set_temperature",
+        "device.set_fan_speed", "device.query_temperature",
+    ):
+        has_mode_param = bool((result.params or {}).get("value"))
+        is_on = has_on_verb()
+        is_off = has_off_verb()
+        if any(phr in q_low for phr in _MEDIA_VOLUME_IDIOMS):
+            is_on = False
+            is_off = False
+        if not has_mode_param and (is_on or is_off):
+            new_intent = "device.off" if is_off else "device.on"
+            logger.debug(
+                "embedding post-proc: %s → %s (imperative verb, no mode param)",
+                result.intent, new_intent,
+            )
+            result.intent = new_intent
+
+    # 2. TV misrouted to media.play_* → power intent.
+    if (
+        result.intent.startswith("media.play_")
+        and ((result.params or {}).get("entity") == "tv")
+    ):
+        new_intent = "device.off" if has_off_verb() else "device.on"
+        logger.debug(
+            "embedding post-proc: %s → %s (TV is a device, not a station)",
+            result.intent, new_intent,
+        )
+        result.intent = new_intent
+
+    # 3. Volume idioms misrouted to device.on/off.
+    if result.intent in ("device.on", "device.off"):
+        if "turn it up" in q_low or "louder" in q_low:
+            result.intent = "media.volume_up"
+            logger.debug("post-proc: → media.volume_up (idiom)")
+        elif (
+            "turn it down" in q_low
+            or "quieter" in q_low
+            or "softer" in q_low
+        ):
+            result.intent = "media.volume_down"
+            logger.debug("post-proc: → media.volume_down (idiom)")
+
+    # 4. Universal quantifier → mass power intent.
+    native_check = f" {(native_text or '').lower()} "
+    q_all_check = f" {q_low} "
+    has_all = any(
+        tok in q_all_check or tok in native_check for tok in _ALL_TOKENS
+    )
+    if has_all and result.intent in ("device.on", "device.off"):
+        new_intent = (
+            "house.all_on" if result.intent == "device.on" else "house.all_off"
+        )
+        logger.debug(
+            "embedding post-proc: %s → %s (all/everything quantifier)",
+            result.intent, new_intent,
+        )
+        result.intent = new_intent
+
+
 class IntentRouter:
     """Intent router: Module Bus → Embedding → Assistant LLM → Fallback."""
 
@@ -889,118 +1006,9 @@ class IntentRouter:
             return None
 
         # ── Post-processing: context-aware disambiguation ──
-        # "Turn on the air conditioning" hits set_mode because "air
-        # conditioning" is semantically close to mode-setting. But if
-        # the query is a simple on/off imperative WITHOUT a mode value,
-        # reclassify to device.on / device.off.
-        q_low = query_for_embed.lower()
-        _ON_VERBS = ("turn on", "switch on", "enable", "power on",
-                     "start", "activate", "run",
-                     "i want", "put on", "fire up", "kick on",
-                     "light up", "set up")
-        _OFF_VERBS = ("turn off", "switch off", "disable", "power off",
-                      "stop", "deactivate", "put out", "extinguish",
-                      "you can turn off", "could you turn off",
-                      "no need for", "don't need", "kill the",
-                      "shut down", "shut off", "cut the")
-        # Suffix-form imperatives: "AC on" / "lights off" / "heater on"
-        # end with a bare on/off particle. Check the last token(s) too.
-        _suffix_on  = q_low.rstrip(".!?").endswith(" on")
-        _suffix_off = q_low.rstrip(".!?").endswith(" off")
-        if result.intent in (
-            "device.set_mode", "device.set_temperature",
-            "device.set_fan_speed", "device.query_temperature",
-        ):
-            has_mode_param = bool(result.params.get("value"))
-            is_on = _suffix_on or any(
-                q_low.startswith(v) or f" {v}" in q_low
-                for v in _ON_VERBS
-            )
-            is_off = _suffix_off or any(
-                q_low.startswith(v) or f" {v}" in q_low
-                for v in _OFF_VERBS
-            )
-            # "turn it up" / "turn it down" are media volume idioms,
-            # not power on/off. Guard the reclassification.
-            _media_idiom = any(
-                phr in q_low for phr in (
-                    "turn it up", "turn it down",
-                    "louder", "quieter", "softer",
-                )
-            )
-            if _media_idiom:
-                is_on = False
-                is_off = False
-            if not has_mode_param and (is_on or is_off):
-                new_intent = "device.off" if is_off else "device.on"
-                logger.debug(
-                    "embedding post-proc: %s → %s (imperative verb, "
-                    "no mode param)", result.intent, new_intent,
-                )
-                result.intent = new_intent
-
-        # TV / television — MiniLM often routes these to
-        # media.play_radio_name because "TV" looks like a proper-noun
-        # station name. Override when the extracted entity is the
-        # TV device class: this isn't a radio intent, it's a power /
-        # on-off intent for a discrete TV device.
-        if (
-            result.intent.startswith("media.play_")
-            and (result.params or {}).get("entity") == "tv"
-        ):
-            is_on = _suffix_on or any(
-                q_low.startswith(v) or f" {v}" in q_low
-                for v in _ON_VERBS
-            )
-            is_off = _suffix_off or any(
-                q_low.startswith(v) or f" {v}" in q_low
-                for v in _OFF_VERBS
-            )
-            new_intent = "device.off" if is_off else "device.on"
-            logger.debug(
-                "embedding post-proc: %s → %s (TV is a device, not a station)",
-                result.intent, new_intent,
-            )
-            result.intent = new_intent
-
-        # "turn it up" / "turn it down" — volume idioms. MiniLM
-        # sometimes routes them to device.on/off because "turn" is a
-        # strong on-verb anchor. Reclassify to volume if the query is
-        # the idiom form.
-        if result.intent in ("device.on", "device.off"):
-            if "turn it up" in q_low or "louder" in q_low:
-                result.intent = "media.volume_up"
-                logger.debug("post-proc: → media.volume_up (idiom)")
-            elif "turn it down" in q_low or "quieter" in q_low or "softer" in q_low:
-                result.intent = "media.volume_down"
-                logger.debug("post-proc: → media.volume_down (idiom)")
-
-        # Whole-house mass power — classifier usually routes "turn off
-        # everything" to device.off, but that path returns ambiguous
-        # (no entity). Convert to house.all_off/on when the query has
-        # an explicit universal quantifier. Checked on BOTH the
-        # translated EN query and the original native text so UK "все"
-        # reaches this branch even if Helsinki translated it oddly.
-        _ALL_TOKENS = (
-            " all ", " everything", " every ",
-            " все ", " всі ", " всё ", " всю ", " все.", " всі.", " всё.",
-        )
-        q_all_check = f" {q_low} "
-        native_check = f" {(native_text or text).lower()} "
-        has_all = any(
-            tok in q_all_check or tok in native_check
-            for tok in _ALL_TOKENS
-        )
-        if has_all and result.intent in ("device.on", "device.off"):
-            new_intent = (
-                "house.all_on" if result.intent == "device.on"
-                else "house.all_off"
-            )
-            logger.debug(
-                "embedding post-proc: %s → %s (all/everything quantifier)",
-                result.intent, new_intent,
-            )
-            result.intent = new_intent
+        # Extracted into a module-level function so benchmarks can reuse
+        # the same logic without dragging the full `route()` pipeline.
+        post_process_embedding_intent(result, query_for_embed, native_text or text)
 
         # ── Low-margin clarification trigger ──
         # Band chosen empirically from bench margin histogram (see

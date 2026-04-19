@@ -111,6 +111,64 @@ def _normalize_for_mt(text: str) -> str:
     return s
 
 
+# ── Per-language pre-translate glossary ──────────────────────────────
+#
+# Argos makes systematic mistakes on certain domain words where a
+# literal dictionary match wins over the intended smart-home sense —
+# e.g. "лента" (LED strip) → "tape" (cassette). Instead of trying to
+# retrain Argos, we rewrite the source text in its native language
+# BEFORE translation so Argos sees an unambiguous phrase.
+#
+# Keys are source-language lowercase tokens with \b boundaries;
+# values are the native-language replacement that Argos renders
+# correctly. Replacement happens case-preserving for the first char
+# so "ленту" at start-of-sentence still yields a capitalised output.
+# Each language block lists its own forms — Russian/Ukrainian etc. need
+# a row per grammatical case we expect to see in Vosk output.
+
+import re as _re
+
+_PRETRANSLATE_GLOSSARY: dict[str, dict[str, str]] = {
+    "ru": {
+        r"\bленту\b":      "светодиодную ленту",
+        r"\bленты\b":      "светодиодной ленты",
+        r"\bлента\b":      "светодиодная лента",
+        r"\bленте\b":      "светодиодной ленте",
+        # Brand name normalization (Argos sometimes transliterates oddly)
+        r"\bсяоми\b":      "Xiaomi",
+        r"\bксиаоми\b":    "Xiaomi",
+    },
+    "uk": {
+        r"\bстрічку\b":    "світлодіодну стрічку",
+        r"\bстрічки\b":    "світлодіодної стрічки",
+        r"\bстрічка\b":    "світлодіодна стрічка",
+        r"\bстрічці\b":    "світлодіодній стрічці",
+        r"\bсяомі\b":      "Xiaomi",
+    },
+}
+
+
+def _apply_pretranslate_glossary(text: str, source_lang: str) -> str:
+    """Rewrite known-bad source-language terms to disambiguate Argos.
+
+    Zero-effect for languages without an entry in the glossary, or when
+    no terms match. Intentionally case-insensitive — Vosk output varies
+    in capitalisation. The substituted phrase inherits its own
+    capitalisation from the glossary table."""
+    rules = _PRETRANSLATE_GLOSSARY.get(source_lang)
+    if not rules or not text:
+        return text
+    rewritten = text
+    for pattern, replacement in rules.items():
+        rewritten = _re.sub(pattern, replacement, rewritten, flags=_re.IGNORECASE)
+    if rewritten != text:
+        logger.debug(
+            "pretranslate glossary [%s]: %r → %r",
+            source_lang, text[:80], rewritten[:80],
+        )
+    return rewritten
+
+
 class InputTranslator:
     """Any language → English.
 
@@ -149,8 +207,11 @@ class InputTranslator:
             )
             return text
 
-        # Language-agnostic grammar normalisation before Argos.
-        prepared = _normalize_for_mt(text)
+        # Language-agnostic grammar normalisation + per-language glossary
+        # rewrites (e.g. ru "лента" → "светодиодная лента" so Argos
+        # renders "LED strip" instead of "tape").
+        prepared = _apply_pretranslate_glossary(text, source_lang)
+        prepared = _normalize_for_mt(prepared)
         if prepared != text:
             logger.debug(
                 "IN [%s] normalised: %r → %r",
