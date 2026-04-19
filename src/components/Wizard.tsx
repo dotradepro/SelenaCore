@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import VirtualKeyboard from './VirtualKeyboard';
 import ProvisionProgress from './ProvisionProgress';
 import { LlmProviderStep } from './LlmProviderStep';
+import LanguagePicker from './settings/LanguagePicker';
 
 function HomeIcon(props: any) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
@@ -967,26 +968,18 @@ export default function Wizard() {
                     <div className="space-y-3">
                       <h2 className="text-base font-medium">{t('wizard.selectLanguage')}</h2>
                       <p className="text-zinc-400 text-xs">{t('wizard.languageDesc')}</p>
-                      <div className="space-y-2">
-                        {[
-                          { id: 'uk', name: 'Українська' },
-                          { id: 'en', name: 'English' },
-                        ].map(lang => (
-                          <button
-                            key={lang.id}
-                            onClick={() => { setFormData({ ...formData, lang: lang.id }); setSelectedLanguage(lang.id); }}
-                            className={cn(
-                              "w-full p-3 rounded-lg border flex items-center justify-between transition-all",
-                              formData.lang === lang.id
-                                ? "border-emerald-500 bg-emerald-500/10"
-                                : "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
-                            )}
-                          >
-                            <span className="font-medium text-sm">{lang.name}</span>
-                            {formData.lang === lang.id && <Check size={16} className="text-emerald-500" />}
-                          </button>
-                        ))}
-                      </div>
+                      {/* v0.4.0: dynamic 16-language list with search, replacing
+                          the hardcoded EN/UK pair. LanguagePicker shows the
+                          auto-quality warning banner on first auto-language
+                          pick, so new users don't get caught off guard by
+                          machine-translation artefacts. */}
+                      <LanguagePicker
+                        currentLang={formData.lang || 'en'}
+                        onChange={(code) => {
+                          setFormData({ ...formData, lang: code });
+                          setSelectedLanguage(code);
+                        }}
+                      />
                     </div>
                   )}
 
