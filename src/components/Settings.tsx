@@ -9,6 +9,7 @@ import Modules from './Modules';
 import ModuleDetail from './ModuleDetail';
 import SystemPage from './SystemPage';
 import LanguagePicker from './settings/LanguagePicker';
+import TTSLangSuggest, { TTSLangSuggestOptOut } from './settings/TTSLangSuggest';
 import ProvisionProgress from './ProvisionProgress';
 // Wrapper for tabs whose root content is just a form / list with no
 // built-in scroll container.  Defined OUTSIDE the component so React
@@ -458,6 +459,14 @@ function AppearanceSettings() {
             showToast(t('settings.languageChanged'));
           }}
         />
+        {/* TTS voice mismatch suggestion — re-keys on language change so the
+            effect re-runs and either hides or surfaces a fresh recommendation. */}
+        <TTSLangSuggest
+          key={selectedLanguage}
+          currentLang={selectedLanguage}
+          onToast={showToast}
+        />
+        <TTSLangSuggestOptOut />
       </div>
 
       {/* ═══ Theme Editor Modal ═══ */}

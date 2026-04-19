@@ -650,6 +650,20 @@ const en = {
             dismiss: 'Got it',
         },
 
+        ttsSuggest: {
+            title: 'Voice does not match interface',
+            body: 'UI language is {{ui}} but the assistant speaks in {{tts}}.',
+            installed: '(installed)',
+            needsDownload: 'Install {{voice}} from Voice settings to use it.',
+            noMatch: 'No Piper voice for "{{lang}}" is installed or available right now.',
+            activate: 'Activate matching voice',
+            activating: 'Activating…',
+            activated: 'Voice activated: {{voice}}',
+            activateFailed: 'Could not activate the voice. Check Voice settings.',
+            keep: 'Keep current voice',
+            optOutLabel: 'Don\'t suggest voice changes after switching language',
+        },
+
         // ── Setup Landing ──
         setupLanding: {
             mobileSetup: 'Mobile setup',
