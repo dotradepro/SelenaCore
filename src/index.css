@@ -10,6 +10,11 @@
    ===================================================== */
 :root {
   --bg: #0B0C10;
+  /* v0.4.0 B4 — neutral gradient default for the no-wallpaper state.
+     When .has-wallpaper is absent, html/body/#root paint this gradient
+     instead of the flat --bg (see the html/body rule further down). */
+  --bg-gradient-start: #1a1d24;
+  --bg-gradient-end:   #0f1218;
   --sf: #14151E;
   --sf2: #1B1C27;
   --sf3: #242532;
@@ -42,6 +47,8 @@
    ===================================================== */
 html.light {
   --bg: #EFF0F5;
+  --bg-gradient-start: #f0f4f8;
+  --bg-gradient-end:   #e0e7ef;
   --sf: #FFFFFF;
   --sf2: #F4F5F9;
   --sf3: #E8E9F0;
@@ -66,14 +73,18 @@ html.light {
 :root {
   --ws-bg: var(--sf);
   --ws-blur: none;
+  /* v0.4.0 B4 — WCAG-aware widget backdrop tokens. The saturate() bump
+     keeps colored content (weather icons, media album art) readable on
+     busy wallpapers without a full opaque card. Widgets opt in via
+     `background: var(--ws-bg); backdrop-filter: var(--ws-blur)`. */
 }
 html.has-wallpaper {
-  --ws-bg: rgba(20, 21, 30, .55);
-  --ws-blur: blur(16px);
+  --ws-bg: color-mix(in srgb, #14151e 70%, transparent);
+  --ws-blur: blur(12px) saturate(180%);
 }
 html.has-wallpaper.light {
-  --ws-bg: rgba(255, 255, 255, .45);
-  --ws-blur: blur(16px);
+  --ws-bg: color-mix(in srgb, #ffffff 70%, transparent);
+  --ws-blur: blur(12px) saturate(180%);
 }
 
 html,
@@ -82,7 +93,13 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  /* Neutral gradient fallback when no wallpaper is active. The flat --bg
+     color is still the fallback-of-the-fallback (e.g. if gradients fail
+     to paint for any reason). When .has-wallpaper is on html, the
+     gradient is covered by the wallpaper layer; widgets get a
+     readability boost via --ws-bg / --ws-blur tokens. */
+  background-color: var(--bg);
+  background-image: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
   color: var(--tx);
   font-size: 13px;
   line-height: 1.4;
