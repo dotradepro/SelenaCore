@@ -29,6 +29,25 @@ from core.registry.service import DeviceNotFoundError, DeviceRegistry
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ui"])
 
+
+def _extract_piper_voice_lang(voice_id: str) -> str | None:
+    """Parse a Piper voice filename into its ISO-639-1 language code.
+
+    Piper voices follow the convention `{locale}-{speaker}-{quality}`
+    where locale is `xx_XX` (e.g. `ru_RU-irina-medium` → `ru`,
+    `uk_UA-ukrainian_tts-medium` → `uk`, `en_US-amy-low` → `en`).
+    Returns None for unrecognised formats — caller should preserve
+    whatever's already in config rather than overwriting with a guess.
+    """
+    if not voice_id or not isinstance(voice_id, str):
+        return None
+    head = voice_id.split("-", 1)[0]  # "ru_RU" from "ru_RU-irina-medium"
+    lang = head.split("_", 1)[0].lower() if "_" in head else head.lower()
+    # Sanity check — ISO-639-1 codes are 2 chars, all lowercase alpha.
+    if len(lang) == 2 and lang.isalpha():
+        return lang
+    return None
+
 # ── SSE broadcast: set of per-client asyncio.Queue ──────────────────────────
 _sse_clients: weakref.WeakSet[asyncio.Queue] = weakref.WeakSet()
 
@@ -1300,9 +1319,19 @@ async def _apply_wizard_step(step: str, data: dict[str, Any]) -> dict[str, Any] 
 
         elif step == "tts_voice" and data.get("voice"):
             from core.config_writer import update_nested
-            update_config("voice", "tts_voice", data["voice"])  # legacy key
-            update_nested("voice.tts.primary.voice", data["voice"])  # canonical
-            os.environ["PIPER_VOICE"] = data["voice"]
+            voice_id = data["voice"]
+            update_config("voice", "tts_voice", voice_id)  # legacy key
+            update_nested("voice.tts.primary.voice", voice_id)  # canonical
+            # Sync voice.tts.primary.lang with the voice filename — Piper
+            # voices are named `{locale}-{speaker}-{quality}`, e.g.
+            # `ru_RU-irina-medium` → lang=ru. Before this fix the field
+            # kept whatever step 1 (UI language) wrote, which broke the
+            # _resolve_active_lang() priority chain when the user picked a
+            # TTS voice in a different language from their UI.
+            lang = _extract_piper_voice_lang(voice_id)
+            if lang:
+                update_nested("voice.tts.primary.lang", lang)
+            os.environ["PIPER_VOICE"] = voice_id
             # Wizard passes a "cuda" flag based on GPU detection + user
             # override. start.sh reads voice.tts.primary.cuda on boot and
             # passes --device gpu|cpu to piper-server.py. Missing field →

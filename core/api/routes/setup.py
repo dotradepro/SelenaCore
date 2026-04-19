@@ -1293,11 +1293,22 @@ async def tts_catalog(
 
 @router.post("/tts/select")
 async def tts_select(req: SelectVoiceRequest) -> dict[str, Any]:
-    """Select and persist TTS voice."""
-    update_config("voice", "tts_voice", req.voice)
+    """Select and persist TTS voice. Also syncs `voice.tts.primary.*`
+    (canonical keys) + `voice.tts.primary.lang` extracted from the
+    voice filename, so the pipeline's `_resolve_active_lang()` sees
+    a coherent state whether the voice was picked in the wizard or
+    later in Settings → Voice."""
+    from core.config_writer import update_nested
+    from core.api.routes.ui import _extract_piper_voice_lang
+
+    update_config("voice", "tts_voice", req.voice)  # legacy key
+    update_nested("voice.tts.primary.voice", req.voice)  # canonical
+    lang = _extract_piper_voice_lang(req.voice)
+    if lang:
+        update_nested("voice.tts.primary.lang", lang)
     os.environ["PIPER_VOICE"] = req.voice
-    logger.info("TTS voice set to %s", req.voice)
-    return {"status": "ok", "voice": req.voice}
+    logger.info("TTS voice set to %s (lang=%s)", req.voice, lang or "unchanged")
+    return {"status": "ok", "voice": req.voice, "lang": lang}
 
 
 @router.post("/tts/preview")
