@@ -26,6 +26,7 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,46 @@ async def get_adapter_status() -> dict[str, Any]:
     return info
 
 
+def _rfkill_unblock_bluetooth() -> None:
+    """Best-effort: clear any rfkill soft-block on Bluetooth controllers.
+
+    On many RPi / Debian setups hci0 boots with `/sys/class/rfkill/rfkillN/soft=1`
+    (PowerState: off-blocked in bluetoothctl), and `bluetoothctl power on`
+    fails with `org.bluez.Error.Failed` until the block is cleared.
+
+    Because the selena-core container runs `privileged: true`, `/sys` from
+    the host is writable — we just find entries whose `name` starts with
+    "hci" and write "0" to the paired `soft` flag. Any IO failure is
+    logged and ignored so this stays a best-effort helper, not a hard
+    prerequisite for the rest of the Bluetooth flow.
+    """
+    base = Path("/sys/class/rfkill")
+    if not base.is_dir():
+        return
+    for entry in base.iterdir():
+        name_file = entry / "name"
+        soft_file = entry / "soft"
+        try:
+            name = name_file.read_text().strip()
+        except OSError:
+            continue
+        if not name.startswith("hci"):
+            continue
+        try:
+            if soft_file.read_text().strip() == "0":
+                continue  # already unblocked, skip the write
+            soft_file.write_text("0\n")
+            logger.info("rfkill: unblocked %s (%s)", name, entry.name)
+        except OSError as exc:
+            logger.warning("rfkill: could not unblock %s: %s", name, exc)
+
+
 async def set_power(on: bool) -> bool:
+    if on:
+        # rfkill soft-block survives reboots on many RPi images; clear it
+        # before asking bluez to power on. No-op on hosts without the
+        # block (re-read + early return above).
+        _rfkill_unblock_bluetooth()
     rc, out, _ = await _run("power", "on" if on else "off")
     return rc == 0 and "succeeded" in out.lower()
 
