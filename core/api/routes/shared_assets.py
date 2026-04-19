@@ -217,6 +217,78 @@ tr:hover td{background:var(--sf2)}
 .toggle input:checked + .slider{background:var(--gr);border-color:var(--gr)}
 .toggle.amber input:checked + .slider,.toggle.light input:checked + .slider{background:var(--am);border-color:var(--am)}
 .toggle input:checked + .slider::before{background:#fff;transform:translateX(22px)}
+/* Smaller 46x26 variant (opt-in via .toggle-sm) — for compact list rows. */
+.toggle.toggle-sm{width:46px;height:26px}
+.toggle.toggle-sm .slider::before{width:22px;height:22px;top:1px;left:1px}
+.toggle.toggle-sm input:checked + .slider::before{transform:translateX(20px)}
+
+/* ── Icon Button (square, icon-only) ──────────────────────────────────── */
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:transparent;border:1px solid var(--b);color:var(--tx2);cursor:pointer;flex-shrink:0;transition:.15s;font-family:inherit;font-size:14px;padding:0;line-height:1}
+.icon-btn:hover:not(:disabled){border-color:var(--ac);color:var(--tx);background:var(--sf2)}
+.icon-btn:disabled{opacity:.4;cursor:not-allowed}
+.icon-btn.danger:hover:not(:disabled){border-color:var(--rd);color:var(--rd);background:rgba(224,84,84,.08)}
+.icon-btn.success:hover:not(:disabled){border-color:var(--gr);color:var(--gr);background:rgba(46,201,138,.08)}
+.icon-btn-sm{width:26px;height:26px;font-size:12px;border-radius:6px}
+.icon-btn-lg{width:38px;height:38px;font-size:16px;border-radius:10px}
+
+/* ── List Row (uniform rounded-card row for alarm/device/city/etc lists) ─ */
+.list{display:flex;flex-direction:column;gap:6px}
+.list-row{display:flex;align-items:center;gap:12px;min-width:0;padding:12px 14px;background:var(--sf);border:1px solid var(--b);border-radius:10px;transition:border-color .15s,background .15s}
+.list-row:hover{border-color:var(--ac)}
+.list-row.clickable{cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+.list-row.clickable:active{transform:scale(.985)}
+.list-row.off{opacity:.55}
+.list-row .lr-main{flex:1;min-width:0}
+.list-row .lr-title{font-size:13px;font-weight:500;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-row .lr-sub{font-size:11px;color:var(--tx3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Empty State ──────────────────────────────────────────────────────── */
+.empty-state{padding:32px 16px;text-align:center;color:var(--tx3);font-size:12px}
+.empty-state .es-title{font-size:13px;color:var(--tx2);margin-bottom:4px;font-weight:500}
+
+/* ── Field (label + control + hint) ───────────────────────────────────── */
+.field{margin-bottom:14px;display:flex;flex-direction:column;gap:6px}
+.field>label{font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.04em;margin:0}
+.field>input,.field>textarea,.field>select{width:100%}
+.field .hint{font-size:11px;color:var(--tx3)}
+.field-row{display:flex;gap:8px}
+.field-row>*{flex:1;min-width:0}
+.field-row>.field{margin-bottom:0}
+
+/* ── Sheet (bottom-sheet editor — slide-up modal alternative) ─────────── */
+.sheet-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:1000;align-items:flex-end;justify-content:center;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.sheet-overlay.open{display:flex}
+.sheet{width:100%;max-width:480px;background:var(--sf);border:1px solid var(--b);border-bottom:none;border-top-left-radius:16px;border-top-right-radius:16px;padding:20px 22px 26px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.sheet>h3{margin:0 0 16px;font-size:15px;font-weight:600;color:var(--tx)}
+.sheet-actions{display:flex;gap:8px;margin-top:18px}
+.sheet-actions>.btn{flex:1;justify-content:center;padding:11px}
+
+/* ── Floating Action Button ───────────────────────────────────────────── */
+.fab{position:fixed;right:22px;bottom:22px;width:52px;height:52px;border-radius:50%;background:var(--ac);color:var(--on-accent);border:none;cursor:pointer;font-size:24px;line-height:1;font-weight:300;box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:5;display:flex;align-items:center;justify-content:center;transition:filter .15s,transform .08s}
+.fab:hover{filter:brightness(1.1)}
+.fab:active{transform:scale(.95)}
+
+/* ── Fullscreen Close Button (standalone widget; auto-hidden in-modal) ── */
+.fs-close{position:fixed;top:14px;right:18px;background:var(--sf);border:1px solid var(--b);border-radius:50%;width:36px;height:36px;cursor:pointer;color:var(--tx);font-size:18px;display:flex;align-items:center;justify-content:center;z-index:1001;transition:border-color .15s}
+.fs-close:hover{border-color:var(--ac)}
+
+/* ── Chip Picker (selectable inline chips: day picker, multi-select) ──── */
+.chip-picker{display:flex;gap:5px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;justify-content:center;padding:7px 12px;background:var(--sf);border:1px solid var(--b);border-radius:8px;color:var(--tx2);font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase;letter-spacing:.04em;transition:.15s;font-family:inherit;white-space:nowrap}
+.chip:hover{border-color:var(--ac);color:var(--tx)}
+.chip.on,.chip.active{background:var(--ac);border-color:var(--ac);color:var(--on-accent)}
+
+/* ── Status Dot (colored indicator) ───────────────────────────────────── */
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--tx3);flex-shrink:0;display:inline-block}
+.status-dot.on,.status-dot.ok{background:var(--gr);box-shadow:0 0 6px rgba(46,201,138,.55)}
+.status-dot.warn{background:var(--am);box-shadow:0 0 6px rgba(245,169,58,.55)}
+.status-dot.err,.status-dot.off{background:var(--rd)}
+.status-dot.info{background:var(--ac);box-shadow:0 0 6px rgba(90,150,255,.55)}
+
+/* ── Divider (dashed only — solid divider conflicts with module-local
+   gradient/coloured variants; use <div style="height:1px;background:var(--b)">
+   inline if a module just needs a thin solid line). ───────────────────── */
+.divider-dashed{border-top:1px dashed var(--b);height:0;margin:12px 0}
 """
 
 
