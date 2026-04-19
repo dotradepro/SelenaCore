@@ -71,6 +71,10 @@ Auto-tracking of power consumption for every registered device. One filterable, 
 
 The built-in `update-manager` checks GitHub Releases daily at 03:00, downloads with SHA256 verification, snapshots a backup, and applies the update atomically through systemd. One click to update.
 
+### 🌍 Multilingual UI
+
+The interface ships in **16 languages**: `en`, `uk` are hand-maintained; `ru`, `pl`, `cs`, `de`, `nl`, `es`, `fr`, `it`, `pt`, `tr`, `ja`, `zh`, `ko`, `hi` are auto-generated on CI via Argos Translate. Community contributors can polish any machine-translated language via a `*.community.json` override without touching the generator output. RTL support (Arabic, Hebrew, Urdu, Farsi) is planned for v0.4.1. See [docs/CONTRIBUTING_i18n.md](docs/CONTRIBUTING_i18n.md).
+
 ---
 
 ## Quick Start
@@ -132,7 +136,7 @@ docker compose up -d --build
 |  +--------------------------------------------------------+  |     (Docker)
 |                                                              |
 |  Device Registry (SQLite) · Cloud Sync (HMAC-SHA256)         |
-|  Secrets Vault (AES-256-GCM) · SyncManager · i18n (en, uk)   |
+|  Secrets Vault (AES-256-GCM) · SyncManager · i18n (16 langs) |
 +--------------------------------------------------------------+
 
 HTTPS :443 ---> TLS proxy (asyncio, ~5 MB RAM) ---> :80
