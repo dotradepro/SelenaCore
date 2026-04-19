@@ -21,8 +21,8 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 MAJOR = 0
-MINOR = 3
-LABEL = "beta"
+MINOR = 4
+LABEL = "rc"
 
 _VERSION_FILE = Path("/opt/selena-core/.version")
 
