@@ -9,10 +9,10 @@ This guide covers how to build UI widgets, settings pages, and icons for SelenaC
 1. [UI Profiles](#ui-profiles)
 2. [manifest.json UI Section](#manifestjson-ui-section)
 3. [Grid Sizes](#grid-sizes)
-4. [Widget HTML Structure](#widget-html-structure)
-5. [Settings Page](#settings-page)
-6. [Communication Patterns](#communication-patterns)
-7. [Theming](#theming)
+4. [Shared Component Library](#shared-component-library)
+5. [Widget HTML Structure](#widget-html-structure)
+6. [Settings Page](#settings-page)
+7. [Communication Patterns](#communication-patterns)
 8. [Icon Requirements](#icon-requirements)
 9. [Complete Module UI Example](#complete-module-ui-example)
 10. [Best Practices](#best-practices)
@@ -83,9 +83,133 @@ Set `size` to the default and `max_size` to the largest the widget can scale to.
 
 ---
 
+## Shared Component Library
+
+Every widget and settings page runs inside an iframe and loads two shared assets from the core. **Always include them in your `<head>`:**
+
+```html
+<link rel="stylesheet" href="/api/shared/theme.css">
+<script src="/api/shared/widget-common.js"></script>
+```
+
+This gives you a full component library — theme tokens, cards, buttons, forms, badges, toasts, modals, toggles, chips, status dots — plus JS helpers for `fetch`, toast notifications, loading states, tabs, and localization. **In most cases, your module should not need a `<style>` block at all.**
+
+Canonical starters: [`docs/module-ui-template/widget.template.html`](module-ui-template/widget.template.html) and [`docs/module-ui-template/settings.template.html`](module-ui-template/settings.template.html). Copy one and edit.
+
+### Automatic body layout
+
+`widget-common.js` automatically tags `<body>` based on filename:
+
+| File | Auto-applied class | Effect |
+|---|---|---|
+| `widget.html` | `body.sc-widget` | Transparent background, no scroll — blends into the dashboard tile. |
+| `settings.html` | `body.sc-settings` | Padded (`20px`), scrollable, `800px` max-width, centered. |
+
+If your module needs a different layout, set one of those classes on `<body>` yourself — the auto-applier will leave your choice alone. To opt out entirely (your module has a custom full-viewport body with its own background, padding, or sticky header that neither preset fits), use `<body class="sc-custom">`.
+
+### Component cheat sheet
+
+| Use case | Class or element |
+|---|---|
+| Card container | `.card` (main), `.card-inner` (nested) |
+| Section heading | `h2` + `.subtitle`, or `.section-title` + `.section-sub` |
+| Small label / hint | `.label-sm`, `.label-xs` |
+| Primary action button | `.btn .btn-primary` (aliased: `.btn-blue`) |
+| Secondary button | `.btn .btn-secondary` or `.btn .btn-outline` |
+| Destructive button | `.btn .btn-danger` (soft) / `.btn-danger-solid` (solid) |
+| Success button | `.btn .btn-green` |
+| Ghost / link button | `.btn .btn-ghost`, `.btn-link` |
+| Icon-only button | `.icon-btn` (+ `.icon-btn-sm` / `.icon-btn-lg`) |
+| Form field (label + input) | `.field` wrapping `<label>` + `<input>` |
+| Two-column form row | `.field-row` wrapping two `.field`s |
+| Text inputs | `input[type="text|number|password"]`, `textarea`, `select` — already styled |
+| Slider | `input[type="range"]` + `.slider-row` / `.slider-header` |
+| Toggle switch | `.toggle` (contains `<input type="checkbox">` + `.slider`) |
+| Chip picker | `.chip-picker` + `.chip` (with `.on` / `.active`) |
+| Status pill | `.badge` + `.badge-ok` / `-err` / `-warn` / `-info` / `-pr` |
+| Status dot | `.status-dot` + `.ok` / `.warn` / `.err` / `.info` |
+| Tab strip | `.settings-tabs` + `.settings-tab` + `.tab-panel` (call `initTabs()`) |
+| Data table | `<table>` (already styled — no class needed) |
+| Progress bar | `.progress-bar` + `.progress-bar .fill` |
+| Toast notification | Call `showToast(msg, 'success'|'error'|'info')` |
+| Modal dialog | `.modal-overlay` > `.modal` |
+| Bottom sheet editor | `.sheet-overlay` > `.sheet` + `.sheet-actions` |
+| List of rows | `.list` > `.list-row` (+ `.clickable` / `.off`) |
+| Empty state | `.empty-state` + `.es-title` |
+| Floating action button | `.fab` |
+| Fixed stat grid (2-col) | `.stat-grid` + `.stat-card` + `.num` + `.desc` |
+| Generic grid | `.grid-2`, `.grid-3`, `.grid-4`, `.grid-auto` |
+| KPI hero (big number + caption) | `.kpi` > `.kpi-val` (+ `-accent` / `-success` / `-warn` / `-danger`) + `.kpi-lbl` |
+| Vertical rhythm | `.stack` / `.stack-sm` / `.stack-lg` on a container |
+| Horizontal row | `.row`, `.flex`, `.flex-col`, `.wrap`, `.flex1` |
+| Spacing utilities | `.gap4` … `.gap16`, `.mb4` … `.mb16`, `.mt4` … `.mt16` |
+| Spinner / skeleton | `.spinner`, `.skeleton`, `.pulse` |
+| Divider | `.divider-dashed` |
+| Hide element | `.hidden` |
+| Monospaced text | `.mono` |
+
+### JS helpers (from `widget-common.js`)
+
+```js
+// Fetch — BASE is auto-computed, auth headers auto-included
+apiGet('/status').then(data => { … });
+apiPost('/settings', { city: 'Kyiv' }).then(() => { … });
+apiDelete('/items/42');
+apiPatch('/config', { enabled: true });
+
+// Toast (bridges to parent dashboard too)
+showToast('Saved', 'success');
+showToast('Connection failed', 'error');
+showToast('Restarting…', 'info');
+
+// Button loading state — disables the button, shows a spinner,
+// catches errors and toasts them automatically
+withLoading(btnElement, () => apiPost('/action'));
+
+// DOM helpers
+$('my-id');        // document.getElementById
+show('my-id');     // removes .hidden
+hide('my-id');
+esc(userString);   // HTML-escape before setting innerHTML
+
+// Tab switching — buttons with [data-tab="x"] activate #tabX panel
+initTabs();
+```
+
+### Localization
+
+Define `L = { en: {...}, uk: {...} }`, then tag markup with i18n attributes:
+
+```html
+<h2 data-i18n="title"></h2>
+<input data-placeholder-i18n="ph_name">
+<button data-i18n="save" data-i18n-title="save_tip"></button>
+<span data-i18n-aria-label="lbl_status"></span>
+```
+
+Call `applyLang()` once on load. The current language is `LANG` (auto-read from `localStorage['selena-lang']`), and `t(key)` returns the translated string. When the user switches language in the parent dashboard, a `lang_changed` postMessage re-runs `applyLang()` and calls your `refresh()` / `load()` / `loadStatus()` function if present.
+
+### Theme tokens (for module-specific styles only)
+
+If you genuinely need custom CSS for a specialized visual, use these CSS custom properties so your styles track the active theme:
+
+| Token | Purpose |
+|---|---|
+| `--bg` / `--sf` / `--sf2` / `--sf3` | Background layers (app → surface → elevated → deepest) |
+| `--b` / `--b2` | Borders (subtle → strong) |
+| `--tx` / `--tx2` / `--tx3` | Text (primary → secondary → tertiary) |
+| `--ac` | Accent (blue) |
+| `--gr` / `--am` / `--rd` | Semantic colors (success / warning / danger) |
+| `--on-accent` / `--on-success` / `--on-warning` / `--on-danger` | WCAG AA-paired text colors for use on top of the saturated fills above |
+| `--shadow` / `--shadow-lg` | Soft / pronounced drop shadows |
+
+All tokens flip automatically between light/dark and adapt to `has-wallpaper` mode. Never hardcode hex colors in module CSS.
+
+---
+
 ## Widget HTML Structure
 
-Widgets are embedded as iframes in the dashboard. Each widget must be a self-contained HTML file with inline styles and scripts.
+Widgets are embedded as iframes in the dashboard. Each widget is a self-contained HTML file that loads the shared component library (see previous section) and adds module-specific markup + script.
 
 ### Minimal Example
 
@@ -285,49 +409,6 @@ Recommended polling intervals:
 | Critical alerts      | Use SSE      |
 
 Avoid intervals shorter than 5 seconds unless the data genuinely changes that often.
-
----
-
-## Theming
-
-The dashboard injects CSS custom properties into widget iframes. Use these variables so your widget adapts to the user's light or dark theme:
-
-```css
-body {
-    background: transparent;
-    color: var(--text-color, #333);
-}
-
-.secondary-text {
-    color: var(--text-secondary, #666);
-}
-
-.card {
-    background: var(--surface-color, #ffffff);
-    border: 1px solid var(--border-color, #e0e0e0);
-    border-radius: 8px;
-}
-
-.accent {
-    color: var(--accent-color, #007AFF);
-}
-```
-
-Always provide a fallback value (the second argument to `var()`) so the widget renders correctly even if the theme variables are not yet injected.
-
-### Supporting Dark Mode
-
-```css
-/* Fallback dark mode if CSS variables are not provided */
-@media (prefers-color-scheme: dark) {
-    body {
-        color: var(--text-color, #e0e0e0);
-    }
-    .secondary-text {
-        color: var(--text-secondary, #999);
-    }
-}
-```
 
 ---
 

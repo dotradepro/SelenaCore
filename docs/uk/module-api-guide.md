@@ -634,25 +634,31 @@ Module                                          Core
 
 ## 6. Гід по Widget/Settings HTML
 
-Кожен модуль може мати два HTML-файли для UI:
-- `widget.html` — віджет для дашборду (вбудовується через iframe)
-- `settings.html` — сторінка налаштувань модуля
+Системні модулі надають `widget.html` та `settings.html` як iframe всередині панелі керування SelenaCore. **Повну бібліотеку компонентів, спільні класи та рекомендації з layout див. у [widget-development.md](widget-development.md#спільна-бібліотека-компонентів).** Ця секція описує лише JS-хелпери та HTTP-контракт специфічний для API модулів.
 
-### BASE URL обчислення
+### Обов'язкові спільні ресурси
 
-```javascript
-// ✅ Правильно — обчислюється з URL iframe
-const BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-fetch(BASE + '/weather/current')
-    .then(r => r.json())
-    .then(data => { /* ... */ });
+Кожен віджет і сторінка налаштувань повинні підключати обидва:
 
-// ❌ Неправильно — захардкоджений порт
-const BASE = "http://localhost:8115";
-
-// ❌ Неправильно — без префіксу
-fetch('/status');
+```html
+<link rel="stylesheet" href="/api/shared/theme.css">
+<script src="/api/shared/widget-common.js"></script>
 ```
+
+`widget-common.js` надає все нижче — не реімплементуйте `BASE`, `t()`, `applyLang`, слухач `message` чи обгортку над fetch у вашому модулі.
+
+### BASE та fetch-хелпери
+
+`widget-common.js` автоматично обчислює `BASE` з шляху iframe (відрізаючи `/widget.html` або `/settings.html`) і надає чотири fetch-обгортки, що автоматично додають auth-заголовки:
+
+```js
+apiGet('/status')                       // GET  → JSON
+apiPost('/settings', { city: 'Kyiv' })  // POST → JSON
+apiPatch('/config', { enabled: true })  // PATCH → JSON
+apiDelete('/items/42')                  // DELETE → JSON (або null при 204)
+```
+
+Усі чотири повертають Promise. Для не-2xx відповідей вони reject з `Error`, де `.message` — серверне поле `detail` (або HTTP statusText). **Ніколи не хардкодьте `http://localhost:PORT`** — хелпери використовують відносні шляхи від iframe.
 
 Для системних модулів роутер монтується на `/api/ui/modules/{name}/`, тому:
 
@@ -662,121 +668,70 @@ fetch('/status');
 /api/ui/modules/weather-service/data      ← кастомний ендпоінт
 ```
 
-### Тема оформлення
+### Хелпери зворотного зв'язку
 
-```html
-<link rel="stylesheet" href="/api/shared/theme.css">
-```
+```js
+showToast('Збережено', 'success');         // зелений — транслюється й у батьківську панель
+showToast('Помилка з'єднання', 'error');   // червоний
+showToast('Перезапуск…', 'info');          // синій
 
-Файл `theme.css` надає CSS-змінні для узгодженого вигляду з основним UI:
-
-```css
-/* Доступні змінні */
-var(--bg-primary)
-var(--bg-secondary)
-var(--text-primary)
-var(--text-secondary)
-var(--accent-color)
-var(--border-color)
-var(--border-radius)
+// Стан завантаження кнопки — вимикає її, показує спінер,
+// ловить помилки і показує їх у toast автоматично
+withLoading(btnElement, function () {
+    return apiPost('/action');
+});
 ```
 
 ### Локалізація (i18n) у HTML
 
-Кожен `widget.html` та `settings.html` **повинен** реалізувати вбудовану EN/UK локалізацію за стандартним шаблоном:
+Кожен `widget.html` та `settings.html` **повинен** реалізувати вбудовану EN/UK локалізацію. `widget-common.js` надає `LANG`, `t(key)` і `applyLang()` — визначте лише таблицю рядків:
 
 ```html
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <link rel="stylesheet" href="/api/shared/theme.css">
-</head>
-<body>
-    <h1 data-i18n="title"></h1>
-    <p data-i18n="description"></p>
-    <span id="status"></span>
+<script>
+var L = {
+    en: { title: 'Sensor Data', no_data: 'No data', loading: 'Loading…' },
+    uk: { title: 'Дані сенсорів', no_data: 'Немає даних', loading: 'Завантаження…' }
+};
+</script>
 
-    <script>
-    // 1. Ініціалізація мови
-    var LANG = (function () {
-        try { return localStorage.getItem('selena-lang') || 'en'; }
-        catch (e) { return 'en'; }
-    })();
-
-    // 2. Словники для обох мов
-    var L = {
-        en: {
-            title: 'Sensor Data',
-            description: 'Real-time sensor readings',
-            no_data: 'No data available',
-            loading: 'Loading...',
-        },
-        uk: {
-            title: 'Дані сенсорів',
-            description: 'Показники сенсорів у реальному часі',
-            no_data: 'Немає даних',
-            loading: 'Завантаження...',
-        }
-    };
-
-    // 3. Функція перекладу
-    function t(k) { return (L[LANG] || L.en)[k] || k; }
-
-    // 4. Застосування перекладу до елементів з data-i18n
-    function applyLang() {
-        document.querySelectorAll('[data-i18n]').forEach(function (el) {
-            el.textContent = t(el.getAttribute('data-i18n'));
-        });
-    }
-
-    // 5. Слухач зміни мови
-    window.addEventListener('message', function (e) {
-        if (e.data && e.data.type === 'lang_changed') {
-            try { LANG = localStorage.getItem('selena-lang') || 'en'; }
-            catch (ex) { }
-            applyLang();
-            refresh();  // перезавантаження даних
-        }
-    });
-
-    // 6. Логіка модуля
-    var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-
-    function refresh() {
-        document.getElementById('status').textContent = t('loading');
-        fetch(BASE + '/data')
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data || !data.value) {
-                    document.getElementById('status').textContent = t('no_data');
-                    return;
-                }
-                document.getElementById('status').textContent = data.value;
-            })
-            .catch(function () {
-                document.getElementById('status').textContent = t('no_data');
-            });
-    }
-
-    // 7. Ініціалізація
-    applyLang();
-    refresh();
-    setInterval(refresh, 30000);
-    </script>
-</body>
-</html>
+<h2 data-i18n="title"></h2>
+<p  data-i18n="no_data"></p>
+<button data-i18n="refresh"
+        data-i18n-title="refresh_tip"
+        data-i18n-aria-label="refresh"
+        onclick="refresh()"></button>
+<input data-placeholder-i18n="ph_search">
 ```
+
+Підтримувані атрибути:
+
+| Атрибут | Встановлює |
+|---|---|
+| `data-i18n` | `textContent` |
+| `data-placeholder-i18n` | `placeholder` |
+| `data-i18n-title` | `title` (підказка) |
+| `data-i18n-aria-label` | `aria-label` (екранні зчитувачі) |
+
+Викличте `applyLang()` один раз під час ініціалізації (перед першим викликом `refresh()` / `load()` / `loadStatus()`). Коли користувач змінює мову в батьківській панелі, postMessage `lang_changed` спрацьовує автоматично — `widget-common.js` перезапустить `applyLang()` і викличе вашу функцію `refresh()` / `load()` / `loadStatus()`, якщо вона існує, тож вам не потрібно слухати самостійно.
+
+### PostMessage-події (інформаційно)
+
+`widget-common.js` вже обробляє ці події — слухайте лише якщо вам потрібна додаткова поведінка поверх вбудованої:
+
+| Подія | Тригер | Вбудований обробник |
+|---|---|---|
+| `theme_changed` | Батьківська панель перемикає light/dark | Перемикає клас `.light` на `<html>` |
+| `theme_vars_changed` | Батьківська панель змінює токени теми | Перезавантажує `/api/shared/theme.css` з cache-bust |
+| `lang_changed` | Батьківська панель перемикає EN↔UK | Перезапускає `applyLang()` + ваш `refresh`/`load`/`loadStatus` |
 
 ### Обов'язкові правила для HTML
 
 ```
 ⛔ Не хардкодити UI-текст жодною мовою — тільки через t('key') або data-i18n
-⛔ Не використовувати localhost:PORT — тільки BASE URL з pathname
+⛔ Не використовувати localhost:PORT — apiGet/apiPost використовують BASE автоматично
 ✅ Мова читається з localStorage('selena-lang') — значення 'en' | 'uk'
 ✅ Словники для обох мов (en і uk) повинні містити однаковий набір ключів
 ✅ applyLang() викликається перед першим refresh()/load()
-✅ При зміні мови (postMessage 'lang_changed') — applyLang() + перезавантаження даних
 ✅ Скорочення (MQTT, STT, TTS, LLM, ID) та технічні назви не перекладаються
 ```
 

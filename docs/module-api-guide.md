@@ -782,88 +782,86 @@ The handler is still needed in code (via `@intent` or `handle_api_request`). Man
 
 ## Widget and Settings HTML
 
-System modules serve `widget.html` and `settings.html` as iframes inside the SelenaCore dashboard.
+System modules serve `widget.html` and `settings.html` as iframes inside the SelenaCore dashboard. **For the full component library, shared classes, and layout guidance see [widget-development.md](widget-development.md#shared-component-library).** This section covers only the JS helpers and HTTP contract specific to the module API.
 
-### Widget BASE URL
+### Required shared assets
 
-Compute the base URL from the iframe location. Never hardcode `localhost:PORT`.
-
-```javascript
-// Correct — works in all environments
-var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
-fetch(BASE + '/status')
-    .then(function(r) { return r.json(); })
-    .then(function(data) { /* ... */ });
-
-// Wrong — breaks in production
-var BASE = "http://localhost:8115";  // never do this
-```
-
-### Widget Theme CSS
-
-Include the shared theme stylesheet for consistent appearance:
+Every widget and settings page must include both:
 
 ```html
 <link rel="stylesheet" href="/api/shared/theme.css">
+<script src="/api/shared/widget-common.js"></script>
 ```
 
-### Widget Localization
+`widget-common.js` provides everything below — do not reimplement `BASE`, `t()`, `applyLang`, the `message` listener, or a fetch wrapper in your module.
 
-Every widget and settings page must implement EN/UK localization:
+### BASE and fetch helpers
 
-```html
-<script>
-var LANG = (function () {
-    try { return localStorage.getItem('selena-lang') || 'en'; }
-    catch (e) { return 'en'; }
-})();
+`widget-common.js` auto-computes `BASE` from the iframe path (stripping `/widget.html` or `/settings.html`) and exposes four fetch wrappers that include auth headers automatically:
 
-var L = {
-    en: {
-        title: 'Sensor Status',
-        no_data: 'No data available',
-        refresh: 'Refresh'
-    },
-    uk: {
-        title: 'Стан сенсора',
-        no_data: 'Немає даних',
-        refresh: 'Оновити'
-    }
-};
-
-function t(k) { return (L[LANG] || L.en)[k] || k; }
-
-function applyLang() {
-    document.querySelectorAll('[data-i18n]').forEach(function (el) {
-        el.textContent = t(el.getAttribute('data-i18n'));
-    });
-}
-</script>
-
-<h1 data-i18n="title"></h1>
-<p data-i18n="no_data"></p>
-<button data-i18n="refresh" onclick="refresh()"></button>
+```js
+apiGet('/status')                       // GET  → JSON
+apiPost('/settings', { city: 'Kyiv' })  // POST → JSON
+apiPatch('/config', { enabled: true })  // PATCH → JSON
+apiDelete('/items/42')                  // DELETE → JSON (or null on 204)
 ```
 
-### Widget PostMessage Events
+All four return a Promise. On non-2xx responses they reject with an `Error` whose `.message` is the server's `detail` field (or HTTP statusText). **Never hardcode `http://localhost:PORT`** — the helpers use relative paths from the iframe.
 
-Listen for theme and language changes from the parent dashboard:
+### User feedback helpers
 
-```javascript
-window.addEventListener('message', function (e) {
-    if (e.data && e.data.type === 'lang_changed') {
-        try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
-        applyLang();
-        refresh();  // reload data in the new language
-    }
-    if (e.data && e.data.type === 'theme_changed') {
-        // Theme CSS variables update automatically via theme.css
-        // Re-render any manually styled elements here
-    }
+```js
+showToast('Saved', 'success');        // green — also bridges to parent dashboard
+showToast('Connection failed', 'error');  // red
+showToast('Restarting…', 'info');     // blue
+
+// Button loading state — disables, shows spinner, catches and toasts errors
+withLoading(btnElement, function () {
+    return apiPost('/action');
 });
 ```
 
-Call `applyLang()` before the first `refresh()` or `load()` call during initialization.
+### Localization
+
+Every widget and settings page must implement EN/UK localization. `widget-common.js` provides `LANG`, `t(key)`, and `applyLang()` — define only the string table:
+
+```html
+<script>
+var L = {
+    en: { title: 'Sensor Status', no_data: 'No data', refresh: 'Refresh' },
+    uk: { title: 'Стан сенсора',   no_data: 'Немає даних', refresh: 'Оновити' }
+};
+</script>
+
+<h2 data-i18n="title"></h2>
+<p  data-i18n="no_data"></p>
+<button data-i18n="refresh"
+        data-i18n-title="refresh"
+        data-i18n-aria-label="refresh"
+        onclick="refresh()"></button>
+<input data-placeholder-i18n="ph_search">
+```
+
+Supported attributes:
+
+| Attribute | Sets |
+|---|---|
+| `data-i18n` | `textContent` |
+| `data-placeholder-i18n` | `placeholder` |
+| `data-i18n-title` | `title` (tooltip) |
+| `data-i18n-aria-label` | `aria-label` (screen readers) |
+
+Call `applyLang()` once during initialization (before the first `refresh()` / `load()` / `loadStatus()` call). When the user changes language in the parent dashboard, a `lang_changed` postMessage fires automatically — `widget-common.js` re-runs `applyLang()` and invokes your `refresh()` / `load()` / `loadStatus()` function if present, so you do not need to listen yourself.
+
+### PostMessage events (informational)
+
+`widget-common.js` already handles these — listen only if you need extra behavior beyond what it does:
+
+| Event | Trigger | Built-in handler |
+|---|---|---|
+| `theme_changed` | Parent toggles light/dark | Toggles `.light` class on `<html>` |
+| `theme_vars_changed` | Parent edits theme tokens | Reloads `/api/shared/theme.css` with a cache-bust |
+| `lang_changed` | Parent switches EN↔UK | Re-runs `applyLang()` + your `refresh`/`load`/`loadStatus` |
 
 ---
 
