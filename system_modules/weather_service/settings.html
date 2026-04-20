@@ -8,47 +8,9 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--tx);
-            padding: 20px;
-            min-height: 100%;
-            overflow-y: auto;
-        }
-
-        h1 {
-            font-size: 1.3rem;
-            margin-bottom: 20px;
-            color: var(--tx);
-        }
-
-        .section {
-            background: var(--sf);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 14px;
-        }
-
-        .section h2 {
-            font-size: 0.95rem;
-            color: var(--tx2);
-            margin-bottom: 12px;
-        }
-
-        label {
-            display: block;
-            font-size: 0.82rem;
-            color: var(--tx2);
-            margin-bottom: 4px;
-        }
+        /* Module-specific: location card, green detect button, city search
+           dropdown, Leaflet map container, status panel. Shared theme.css
+           handles cards, headings, labels, buttons, forms, toasts, tables. */
 
         .btn-detect {
             background: linear-gradient(135deg, #22c55e, #16a34a);
@@ -60,11 +22,9 @@
             border-radius: 8px;
             color: var(--tx);
             cursor: pointer;
+            font-family: inherit;
         }
-
-        .btn-detect:hover {
-            background: linear-gradient(135deg, #16a34a, #15803d);
-        }
+        .btn-detect:hover { background: linear-gradient(135deg, #16a34a, #15803d); }
 
         /* Location display */
         .location-display {
@@ -77,27 +37,10 @@
             margin-bottom: 12px;
             min-height: 48px;
         }
-
-        .location-display .pin {
-            font-size: 1.4rem;
-        }
-
-        .location-display .info {
-            flex: 1;
-        }
-
-        .location-display .name {
-            font-size: 0.95rem;
-            color: var(--tx);
-            font-weight: 500;
-        }
-
-        .location-display .coords {
-            font-size: 0.75rem;
-            color: var(--tx3);
-            margin-top: 2px;
-        }
-
+        .location-display .pin { font-size: 1.4rem; }
+        .location-display .info { flex: 1; }
+        .location-display .name { font-size: 0.95rem; color: var(--tx); font-weight: 500; }
+        .location-display .coords { font-size: 0.75rem; color: var(--tx3); margin-top: 2px; }
         .location-display .change-btn {
             background: none;
             border: 1px solid var(--b2);
@@ -106,24 +49,13 @@
             font-size: 0.75rem;
             border-radius: 6px;
             cursor: pointer;
+            font-family: inherit;
         }
+        .location-display .change-btn:hover { border-color: var(--ac); color: var(--ac); }
 
-        .location-display .change-btn:hover {
-            border-color: var(--ac);
-            color: var(--ac);
-        }
-
-        /* Search */
-        .search-wrap {
-            position: relative;
-            margin-bottom: 12px;
-        }
-
-        .search-wrap input {
-            margin-bottom: 0;
-            padding-right: 36px;
-        }
-
+        /* City search dropdown */
+        .search-wrap { position: relative; margin-bottom: 12px; }
+        .search-wrap input { margin-bottom: 0; padding-right: 36px; }
         .search-wrap .search-spinner {
             position: absolute;
             right: 10px;
@@ -136,7 +68,6 @@
             animation: spin .6s linear infinite;
             display: none;
         }
-
         .search-results {
             background: var(--sf2);
             border-radius: 8px;
@@ -144,7 +75,6 @@
             overflow-y: auto;
             display: none;
         }
-
         .search-results .item {
             padding: 10px 14px;
             cursor: pointer;
@@ -152,22 +82,11 @@
             font-size: 0.85rem;
             transition: background .15s;
         }
+        .search-results .item:hover { background: var(--sf); }
+        .search-results .item .city { color: var(--tx); }
+        .search-results .item .region { color: var(--tx3); font-size: 0.75rem; margin-top: 2px; }
 
-        .search-results .item:hover {
-            background: var(--sf);
-        }
-
-        .search-results .item .city {
-            color: var(--tx);
-        }
-
-        .search-results .item .region {
-            color: var(--tx3);
-            font-size: 0.75rem;
-            margin-top: 2px;
-        }
-
-        /* Map */
+        /* Leaflet map container */
         #map {
             width: 100%;
             height: 220px;
@@ -176,24 +95,7 @@
             z-index: 0;
         }
 
-        /* Messages */
-        .msg {
-            margin-top: 10px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-        }
-
-        .msg.ok {
-            background: rgba(80, 200, 120, .15);
-            color: var(--gr);
-        }
-
-        .msg.err {
-            background: rgba(220, 50, 50, .15);
-            color: var(--rd);
-        }
-
+        /* Raw JSON status panel */
         #status-panel {
             background: var(--sf2);
             border-radius: 8px;
@@ -205,21 +107,15 @@
             max-height: 160px;
             overflow-y: auto;
         }
-
-        .row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
     </style>
 </head>
 
 <body>
-    <h1 data-i18n="title"></h1>
+    <h2 data-i18n="title"></h2>
 
     <!-- Location Section -->
-    <div class="section">
-        <h2 data-i18n="h_location"></h2>
+    <div class="card">
+        <div class="section-title" data-i18n="h_location"></div>
 
         <div class="location-display" id="loc-display" style="display:none">
             <div class="pin">📌</div>
@@ -241,12 +137,12 @@
 
             <div id="map"></div>
 
-            <div class="row" style="margin-bottom:4px">
-                <div>
+            <div class="field-row">
+                <div class="field">
                     <label data-i18n="lbl_lat"></label>
                     <input type="number" id="lat" step="0.0001" placeholder="50.4501">
                 </div>
-                <div>
+                <div class="field">
                     <label data-i18n="lbl_lon"></label>
                     <input type="number" id="lon" step="0.0001" placeholder="30.5234">
                 </div>
@@ -255,26 +151,30 @@
     </div>
 
     <!-- Preferences -->
-    <div class="section">
-        <h2 data-i18n="h_prefs"></h2>
-        <label data-i18n="lbl_units"></label>
-        <select id="units">
-            <option value="metric" data-i18n="opt_metric"></option>
-            <option value="imperial" data-i18n="opt_imperial"></option>
-        </select>
-        <label data-i18n="lbl_interval"></label>
-        <input type="number" id="interval" step="60" min="60" placeholder="1800">
+    <div class="card">
+        <div class="section-title" data-i18n="h_prefs"></div>
+        <div class="field">
+            <label data-i18n="lbl_units"></label>
+            <select id="units">
+                <option value="metric" data-i18n="opt_metric"></option>
+                <option value="imperial" data-i18n="opt_imperial"></option>
+            </select>
+        </div>
+        <div class="field">
+            <label data-i18n="lbl_interval"></label>
+            <input type="number" id="interval" step="60" min="60" placeholder="1800">
+        </div>
     </div>
 
     <!-- Alert Thresholds -->
-    <div class="section">
-        <h2 data-i18n="h_alerts"></h2>
-        <div class="row">
-            <div>
+    <div class="card">
+        <div class="section-title" data-i18n="h_alerts"></div>
+        <div class="field-row">
+            <div class="field">
                 <label data-i18n="lbl_rain"></label>
                 <input type="number" id="alert_rain" step="0.5" min="0" placeholder="10">
             </div>
-            <div>
+            <div class="field">
                 <label data-i18n="lbl_wind"></label>
                 <input type="number" id="alert_wind" step="1" min="0" placeholder="50">
             </div>
@@ -282,11 +182,10 @@
     </div>
 
     <button class="btn btn-primary" id="btn-save" style="width:100%" data-i18n="save_btn"></button>
-    <button class="btn btn-secondary" id="btn-refresh" style="width:100%;margin-top:8px;" data-i18n="refresh_btn"></button>
-    <div id="msg"></div>
+    <button class="btn btn-secondary mt8" id="btn-refresh" style="width:100%" data-i18n="refresh_btn"></button>
 
-    <div class="section" style="margin-top:14px">
-        <h2 data-i18n="h_status"></h2>
+    <div class="card mt16">
+        <div class="section-title" data-i18n="h_status"></div>
         <div id="status-panel" data-i18n="loading"></div>
     </div>
 
@@ -393,10 +292,10 @@
         // ── Detect Location (Browser Geolocation API) ──
         function detectLocation() {
             if (!navigator.geolocation) {
-                showMsg(t('geo_notsupported'), 'err');
+                showToast(t('geo_notsupported'), 'error');
                 return;
             }
-            showMsg(t('detecting'), 'ok');
+            showToast(t('detecting'), 'info');
             navigator.geolocation.getCurrentPosition(
                 function (pos) {
                     var lat = pos.coords.latitude;
@@ -409,7 +308,7 @@
                     var accLabel = acc < 1000
                         ? '\xb1' + Math.round(acc) + 'm'
                         : '\xb1' + (acc / 1000).toFixed(1) + 'km';
-                    showMsg(t('detected') + ' (' + accLabel + ')', 'ok');
+                    showToast(t('detected') + ' (' + accLabel + ')', 'success');
                 },
                 function () {
                     // Fallback: use IP-based location
@@ -447,12 +346,12 @@
                     var name = [loc.city, loc.country].filter(Boolean).join(', ');
                     setLocation(loc.lat, loc.lon, name);
                     initMap(loc.lat, loc.lon); // no accuracy circle — IP is city-level
-                    showMsg(t('detected_ip'), 'err'); // amber warning — approximate
+                    showToast(t('detected_ip'), 'info'); // approximate — shown as info, not success
                 } else {
-                    showMsg(t('detect_failed'), 'err');
+                    showToast(t('detect_failed'), 'error');
                 }
             } catch (e) {
-                showMsg(t('detect_failed_err') + e.message, 'err');
+                showToast(t('detect_failed_err') + e.message, 'error');
             }
         }
 
@@ -493,8 +392,7 @@
 
         async function searchCity(q) {
             try {
-                var r = await fetch(BASE + '/weather/geocode?q=' + encodeURIComponent(q));
-                var d = await r.json();
+                var d = await apiGet('/weather/geocode?q=' + encodeURIComponent(q));
                 var el = $('search-results');
                 if (!d.results || d.results.length === 0) {
                     el.innerHTML = '<div class="item"><span class="city" style="color:var(--tx3)">No results</span></div>';
@@ -592,13 +490,6 @@
             await apiPost('/weather/refresh');
             showToast(t('refreshed'));
             loadStatus();
-        }
-
-        function showMsg(text, type) {
-            var el = $('msg');
-            el.className = 'msg ' + type;
-            el.textContent = text;
-            setTimeout(function () { el.textContent = ''; el.className = ''; }, 5000);
         }
 
         // ── Event listeners ──

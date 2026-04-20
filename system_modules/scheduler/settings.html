@@ -7,21 +7,9 @@
     <title>Scheduler — Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        body {
-            max-width: 700px;
-            margin: 0 auto;
-            padding: 20px;
-            min-height: 100%;
-            overflow-y: auto;
-        }
-
-        #msg {
-            margin-top: 10px;
-            font-size: 12px;
-            color: var(--gr);
-            min-height: 20px;
-        }
-
+        /* Module-specific: the outlined "Detect" action and its inline
+           result line, plus the location summary box. Layout, forms, buttons,
+           tables, badges come from /api/shared/theme.css. */
         .btn-detect {
             padding: 6px 14px;
             background: var(--sf2);
@@ -32,6 +20,7 @@
             font-size: 12px;
             margin-bottom: 10px;
             transition: background .2s;
+            font-family: inherit;
         }
         .btn-detect:hover { background: var(--ac); color: var(--on-accent); }
         .btn-detect:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -50,9 +39,6 @@
             min-height: 20px;
         }
         .loc-info .coords { color: var(--tx3); font-size: 11px; }
-
-        .form-group { margin-bottom: 14px; }
-        .form-group label { display: block; font-size: 12px; color: var(--tx2); margin-bottom: 4px; }
     </style>
 </head>
 
@@ -65,12 +51,11 @@
     <div id="loc-info" class="loc-info"></div>
     <button class="btn-detect" id="btn-detect" data-i18n="detect"></button>
     <div id="detect-msg" class="detect-msg"></div>
-    <div class="form-group">
+    <div class="field">
         <label data-i18n="lbl_tz"></label>
-        <input type="text" id="tz" placeholder="Europe/Kyiv" style="width:100%" />
+        <input type="text" id="tz" placeholder="Europe/Kyiv" />
     </div>
     <button class="btn btn-primary" id="btnSave" data-i18n="save"></button>
-    <div id="msg"></div>
 
     <div class="section-title mt16" data-i18n="h_jobs"></div>
     <table id="jobs-table">

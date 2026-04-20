@@ -6,32 +6,24 @@
     <title>Update Manager Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        body { padding: 20px; min-height: 100%; overflow-y: auto; }
-        h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; }
-        .section { background: var(--sf); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
-        .section h2 { font-size: 0.95rem; color: var(--tx2); margin-bottom: 14px; font-weight: 600; }
-        /* Version card */
+        /* Module-specific: version card rows and state banner.
+           Everything else (layout, cards, buttons, forms, progress, badges,
+           toasts) comes from /api/shared/theme.css — see widget-development.md. */
         .ver-card { background: var(--sf2); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
         .ver-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--b); }
         .ver-row:last-child { border-bottom: none; }
-        .ver-label { font-size: 0.82rem; color: var(--tx2); }
         .ver-value { font-size: 0.9rem; font-weight: 600; color: var(--tx); }
         .ver-value.big { font-size: 1.2rem; color: var(--ac); }
-        /* Available banner */
         .update-banner { border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
         .update-banner.available { background: rgba(46,201,138,.1); border: 1px solid rgba(46,201,138,.3); }
         .update-banner.current   { background: rgba(79,140,247,.07); border: 1px solid var(--b); }
         .update-banner .ico { font-size: 1.4rem; }
         .update-banner .text .head { font-weight: 700; font-size: 0.95rem; }
         .update-banner .text .sub  { font-size: 0.8rem; color: var(--tx2); margin-top: 2px; }
-        .msg { font-size: 0.85rem; margin-top: 8px; min-height: 18px; }
-        .ok-msg { color: var(--gr); } .err-msg { color: var(--rd); } .info-msg { color: var(--am); }
-        .progress { height: 4px; background: var(--sf3); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
-        .progress .fill { height: 100%; background: var(--ac); width: 0; transition: width 0.3s; border-radius: 2px; }
     </style>
 </head>
 <body>
-    <h1 data-i18n="title"></h1>
+    <h2 data-i18n="title"></h2>
 
     <!-- Current version banner -->
     <div id="upd-banner" class="update-banner current">
@@ -43,40 +35,41 @@
     </div>
 
     <!-- Version details -->
-    <div class="section">
-        <h2 data-i18n="h_version"></h2>
+    <div class="card">
+        <div class="section-title" data-i18n="h_version"></div>
         <div class="ver-card">
             <div class="ver-row">
-                <span class="ver-label" data-i18n="lbl_current"></span>
+                <span class="label-xs" data-i18n="lbl_current"></span>
                 <span class="ver-value big" id="v-current">—</span>
             </div>
             <div class="ver-row">
-                <span class="ver-label" data-i18n="lbl_latest"></span>
+                <span class="label-xs" data-i18n="lbl_latest"></span>
                 <span class="ver-value" id="v-latest">—</span>
             </div>
             <div class="ver-row">
-                <span class="ver-label" data-i18n="lbl_state"></span>
+                <span class="label-xs" data-i18n="lbl_state"></span>
                 <span id="v-state"><span class="badge badge-info" data-i18n="loading"></span></span>
             </div>
             <div class="ver-row">
-                <span class="ver-label" data-i18n="lbl_last_check"></span>
+                <span class="label-xs" data-i18n="lbl_last_check"></span>
                 <span class="ver-value" id="v-last-check">—</span>
             </div>
             <div class="ver-row" id="row-downloaded" style="display:none">
-                <span class="ver-label" data-i18n="lbl_downloaded"></span>
+                <span class="label-xs" data-i18n="lbl_downloaded"></span>
                 <span class="ver-value" id="v-downloaded">—</span>
             </div>
         </div>
     </div>
 
     <!-- Actions -->
-    <div class="section">
-        <h2 data-i18n="h_actions"></h2>
-        <button class="btn btn-sec" id="btn-check" data-i18n="check_btn"></button>
-        <button class="btn btn-primary" id="btn-download" disabled data-i18n="download_btn"></button>
-        <button class="btn btn-danger" id="btn-rollback" data-i18n="rollback_btn"></button>
-        <div class="progress"><div class="fill" id="prog-bar"></div></div>
-        <div class="msg" id="action-msg"></div>
+    <div class="card">
+        <div class="section-title" data-i18n="h_actions"></div>
+        <div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-sec" id="btn-check" data-i18n="check_btn"></button>
+            <button class="btn btn-primary" id="btn-download" disabled data-i18n="download_btn"></button>
+            <button class="btn btn-danger" id="btn-rollback" data-i18n="rollback_btn"></button>
+        </div>
+        <div class="progress-bar hidden" id="prog-wrap"><div class="fill" id="prog-bar"></div></div>
     </div>
 
     <script src="/api/shared/widget-common.js"></script>
@@ -124,12 +117,6 @@
             } catch (e) { return String(ts); }
         }
 
-        function showMsg(text, cls) {
-            var el = $('action-msg');
-            el.textContent = text;
-            el.className = 'msg ' + (cls || '');
-        }
-
         async function loadStatus() {
             try {
                 var s = await apiGet('/update/status');
@@ -173,31 +160,32 @@
         $('btn-check').addEventListener('click', function () {
             var btn = this;
             withLoading(btn, async function () {
-                showMsg(t('checking_msg'), 'info-msg');
                 var r = await apiPost('/update/check');
-                showMsg(r.update_available ? t('update_avail') + ' — ' + r.version : t('up_to_date'), r.update_available ? 'info-msg' : 'ok-msg');
+                showToast(
+                    r.update_available ? t('update_avail') + ' — ' + r.version : t('up_to_date'),
+                    r.update_available ? 'info' : 'success'
+                );
                 await loadStatus();
             });
         });
 
         $('btn-download').addEventListener('click', function () {
             var btn = this;
-            showMsg(t('downloading'), 'info-msg');
-            var progWrap = document.querySelector('.progress');
+            var wrap = $('prog-wrap');
             var bar = $('prog-bar');
-            progWrap.style.display = 'block';
+            show(wrap);
             var pct = 0;
             var prog = setInterval(function () { pct = Math.min(pct + 5, 90); bar.style.width = pct + '%'; }, 300);
             withLoading(btn, async function () {
                 var r = await apiPost('/update/download');
                 clearInterval(prog);
                 bar.style.width = '100%';
-                showMsg(r.ok !== false ? t('downloaded') : t('failed'), r.ok !== false ? 'ok-msg' : 'err-msg');
+                showToast(r.ok !== false ? t('downloaded') : t('failed'), r.ok !== false ? 'success' : 'error');
                 await loadStatus();
-                setTimeout(function () { progWrap.style.display = 'none'; bar.style.width = '0'; }, 1500);
-            }).catch(function (e) {
+                setTimeout(function () { hide(wrap); bar.style.width = '0'; }, 1500);
+            }).catch(function () {
                 clearInterval(prog);
-                progWrap.style.display = 'none';
+                hide(wrap);
                 bar.style.width = '0';
             });
         });
@@ -206,9 +194,8 @@
             if (!confirm(t('rollback_confirm'))) return;
             var btn = this;
             withLoading(btn, async function () {
-                showMsg(t('rolling_back'), 'info-msg');
                 await apiPost('/update/rollback');
-                showMsg(t('rolled_back'), 'ok-msg');
+                showToast(t('rolled_back'), 'success');
                 await loadStatus();
             });
         });
