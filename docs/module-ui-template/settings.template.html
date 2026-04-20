@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<!--
+  SelenaCore canonical settings template.
+
+  Copy this file into your module as `settings.html` and adjust:
+    - <title>
+    - the L object (localization strings)
+    - the fields inside each .card
+    - load() / save() / refresh() bodies
+
+  This template intentionally has zero <style> block. Layout and visuals
+  come from /api/shared/theme.css. See docs/widget-development.md for the
+  full component library inventory.
+
+  The body gets the `sc-settings` class automatically from widget-common.js
+  (padded, scrollable, centered, 800px max-width).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module Settings</title>
+  <link rel="stylesheet" href="/api/shared/theme.css">
+  <script src="/api/shared/widget-common.js"></script>
+</head>
+<body>
+
+  <h2 data-i18n="title"></h2>
+  <div class="subtitle" data-i18n="subtitle"></div>
+
+  <div class="card">
+    <div class="section-title" data-i18n="h_general"></div>
+
+    <div class="field">
+      <label data-i18n="lbl_name"></label>
+      <input type="text" id="name" data-placeholder-i18n="ph_name">
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label data-i18n="lbl_host"></label>
+        <input type="text" id="host">
+      </div>
+      <div class="field">
+        <label data-i18n="lbl_port"></label>
+        <input type="number" id="port">
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:flex-start;gap:8px">
+      <button class="btn btn-primary" onclick="save(this)" data-i18n="save"></button>
+      <button class="btn btn-outline" onclick="load()" data-i18n="reset"></button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title" data-i18n="h_status"></div>
+    <div class="row" style="justify-content:flex-start;gap:8px">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-label" class="label-sm" data-i18n="loading"></span>
+    </div>
+  </div>
+
+  <script>
+    var L = {
+      en: {
+        title: 'Module Settings',
+        subtitle: 'Configure how this module behaves.',
+        h_general: 'General', h_status: 'Status',
+        lbl_name: 'Name', ph_name: 'Display name',
+        lbl_host: 'Host', lbl_port: 'Port',
+        save: 'Save', reset: 'Reset',
+        loading: 'Loading…', connected: 'Connected', disconnected: 'Disconnected',
+        saved: 'Settings saved', save_err: 'Failed to save'
+      },
+      uk: {
+        title: 'Налаштування модуля',
+        subtitle: 'Налаштуйте поведінку цього модуля.',
+        h_general: 'Загальне', h_status: 'Стан',
+        lbl_name: 'Назва', ph_name: 'Відображуване ім’я',
+        lbl_host: 'Хост', lbl_port: 'Порт',
+        save: 'Зберегти', reset: 'Скинути',
+        loading: 'Завантаження…', connected: 'Підключено', disconnected: 'Відключено',
+        saved: 'Налаштування збережено', save_err: 'Не вдалося зберегти'
+      }
+    };
+
+    function load() {
+      apiGet('/settings')
+        .then(function (s) {
+          $('name').value = s.name || '';
+          $('host').value = s.host || '';
+          $('port').value = s.port != null ? s.port : '';
+        })
+        .catch(function () { /* leave fields empty */ });
+    }
+
+    function save(btn) {
+      withLoading(btn, function () {
+        return apiPost('/settings', {
+          name: $('name').value,
+          host: $('host').value,
+          port: parseInt($('port').value, 10) || 0
+        }).then(function () {
+          showToast(t('saved'), 'success');
+        }).catch(function (e) {
+          showToast(t('save_err') + ': ' + (e.message || ''), 'error');
+          throw e;
+        });
+      });
+    }
+
+    function refresh() {
+      apiGet('/status')
+        .then(function (st) {
+          var dot = $('status-dot');
+          var lbl = $('status-label');
+          if (st.ok) {
+            dot.className = 'status-dot ok';
+            lbl.textContent = t('connected');
+          } else {
+            dot.className = 'status-dot err';
+            lbl.textContent = t('disconnected');
+          }
+        })
+        .catch(function () { /* keep loading label */ });
+    }
+
+    applyLang();
+    load();
+    refresh();
+    setInterval(refresh, 15000);
+  </script>
+</body>
+</html>

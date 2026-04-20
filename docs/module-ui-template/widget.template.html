@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+  SelenaCore canonical widget template.
+
+  Copy this file into your module as `widget.html` and adjust:
+    - <title>
+    - the L object (localization strings; add more keys as needed)
+    - the refresh() body (what to fetch and render)
+
+  This template intentionally has zero <style> block. Layout and visuals
+  come from /api/shared/theme.css. See docs/widget-development.md for the
+  full component library inventory.
+
+  The body gets the `sc-widget` class automatically from widget-common.js
+  (transparent background, no overflow — ready to drop into a tile).
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module Widget</title>
+  <link rel="stylesheet" href="/api/shared/theme.css">
+  <script src="/api/shared/widget-common.js"></script>
+</head>
+<body>
+
+  <div class="card" style="height:100%;display:flex;align-items:center;justify-content:center">
+    <div class="kpi">
+      <div class="kpi-val kpi-val-accent" id="value">—</div>
+      <div class="kpi-lbl" data-i18n="lbl_value"></div>
+    </div>
+  </div>
+
+  <script>
+    var L = {
+      en: { lbl_value: 'Value' },
+      uk: { lbl_value: 'Значення' }
+    };
+
+    function refresh() {
+      apiGet('/status')
+        .then(function (data) {
+          $('value').textContent = data.value != null ? data.value : '—';
+        })
+        .catch(function () {
+          $('value').textContent = '—';
+        });
+    }
+
+    applyLang();
+    refresh();
+    setInterval(refresh, 30000);
+  </script>
+</body>
+</html>
