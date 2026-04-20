@@ -289,6 +289,33 @@ tr:hover td{background:var(--sf2)}
    gradient/coloured variants; use <div style="height:1px;background:var(--b)">
    inline if a module just needs a thin solid line). ───────────────────── */
 .divider-dashed{border-top:1px dashed var(--b);height:0;margin:12px 0}
+
+/* ── KPI Block (big number + caption — widget hero displays) ──────────── */
+.kpi{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.kpi-val{font-size:22px;font-weight:700;color:var(--tx);line-height:1.1}
+.kpi-val-accent{color:var(--ac)}
+.kpi-val-success{color:var(--gr)}
+.kpi-val-warn{color:var(--am)}
+.kpi-val-danger{color:var(--rd)}
+.kpi-lbl{font-size:11px;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em}
+
+/* ── Generic grid utilities (distinct from fixed-2col .stat-grid) ─────── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.grid-auto{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+
+/* ── Stack (ergonomic vertical spacing via lobotomized-owl) ───────────── */
+.stack>*+*{margin-top:10px}
+.stack-sm>*+*{margin-top:6px}
+.stack-lg>*+*{margin-top:16px}
+
+/* ── Body modes (opt-in; widget-common.js auto-applies by filename
+   only when the element has neither class already — modules that set
+   their own body class keep full control). ───────────────────────────── */
+body.sc-widget{background:transparent;overflow:hidden}
+body.sc-settings{background:var(--bg);overflow-x:hidden;overflow-y:auto;padding:20px;height:auto;min-height:100%}
+body.sc-settings>*{max-width:800px;margin-left:auto;margin-right:auto}
 """
 
 
@@ -348,6 +375,12 @@ function applyLang() {
     });
     document.querySelectorAll('[data-placeholder-i18n]').forEach(function (el) {
         el.placeholder = t(el.getAttribute('data-placeholder-i18n'));
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+        el.setAttribute('title', t(el.getAttribute('data-i18n-title')));
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(function (el) {
+        el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
     });
 }
 
@@ -519,6 +552,22 @@ window.addEventListener('message', function (e) {
         else if (typeof load === 'function') load();
     }
 });
+
+/* ── Optional body layout class (only if module didn't set its own).
+   To opt out entirely (module has its own custom body layout that
+   neither sc-widget nor sc-settings fits), set body class="sc-custom". */
+(function () {
+    function apply() {
+        if (!document.body) return;
+        var cls = document.body.classList;
+        if (cls.contains('sc-widget') || cls.contains('sc-settings') || cls.contains('sc-custom')) return;
+        var path = window.location.pathname;
+        if (/settings(\\.html)?$/.test(path)) cls.add('sc-settings');
+        else if (/widget(\\.html)?$/.test(path)) cls.add('sc-widget');
+    }
+    if (document.body) apply();
+    else document.addEventListener('DOMContentLoaded', apply);
+})();
 """
 
 
