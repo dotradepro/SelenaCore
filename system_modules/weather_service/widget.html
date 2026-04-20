@@ -7,14 +7,11 @@
     <title>Weather</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* Widget-specific overrides on top of shared theme.css */
-        html,
-        body {
-            background: transparent;
-        }
+        /* Widget-specific overrides on top of shared theme.css.
+           Body opts out of sc-widget auto-apply (see <body class="sc-custom">)
+           because the tile paints its own grid-pattern background. */
 
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             background: var(--bg);
             background-image:
                 linear-gradient(var(--b) 1px, transparent 1px),
@@ -388,7 +385,7 @@
     </style>
 </head>
 
-<body>
+<body class="sc-custom">
 
     <div class="root" id="root">
         <div class="state-center">

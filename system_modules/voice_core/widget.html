@@ -7,14 +7,10 @@
     <title>Voice Core</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* Widget-specific overrides on top of shared theme.css */
-        html, body {
-            background: transparent;
-        }
-
+        /* Widget-specific overrides on top of shared theme.css.
+           Body is a flex-centered container for the mic button + caption.
+           sc-widget (auto) gives transparent background + overflow:hidden. */
         body {
-            font-family: "DM Sans", system-ui, sans-serif;
-            color: var(--tx);
             display: flex;
             flex-direction: column;
             align-items: center;

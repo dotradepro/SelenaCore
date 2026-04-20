@@ -7,6 +7,10 @@
     <title>Media Player Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
+        /* This page has a full-viewport grid-pattern background and sticky
+           tab bar — the standard .sc-settings layout (800px centered,
+           padded) doesn't fit. body class="sc-custom" below opts out of
+           auto-apply; everything else comes from shared theme.css. */
 
         body {
             width: 100%;
@@ -159,7 +163,7 @@
     </style>
 </head>
 
-<body>
+<body class="sc-custom">
 
     <div class="tabs-bar" id="tabsBar">
         <button class="tab active" data-tab="playback" data-i18n="tab_playback">Playback</button>
