@@ -5,86 +5,25 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <meta charset="UTF-8" />
     <style>
-        body {
-            background: transparent;
-        }
+        /* Module-specific: two-panel widget with connection status dots and
+           recent events list. Shared theme.css gives typography, toasts. */
+        .widget { display: flex; gap: 12px; padding: 10px; height: 100%; }
+        .panel  { flex: 1; background: var(--b); border-radius: 8px; padding: 10px; }
+        .panel h3 { font-size: 11px; text-transform: uppercase; color: var(--tx2); margin-bottom: 8px; letter-spacing: 0.05em; }
 
-        .widget {
-            display: flex;
-            gap: 12px;
-            padding: 10px;
-            height: 100%;
-        }
+        .status-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .dot       { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .dot.ok    { background: var(--gr); }
+        .dot.error { background: var(--rd); }
+        .dot.idle  { background: var(--tx2); }
 
-        .panel {
-            flex: 1;
-            background: var(--b);
-            border-radius: 8px;
-            padding: 10px;
-        }
+        .label { font-size: 12px; color: var(--tx); flex: 1; }
+        .val   { font-size: 12px; color: var(--tx); font-weight: 600; }
 
-        .panel h3 {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: var(--tx2);
-            margin-bottom: 8px;
-            letter-spacing: 0.05em;
-        }
+        .event-item { font-size: 11px; color: var(--tx2); border-bottom: 1px solid var(--b); padding: 4px 0; }
+        .event-item span { color: var(--ac); }
 
-        .status-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-bottom: 6px;
-        }
-
-        .dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        .dot.ok {
-            background: var(--gr);
-        }
-
-        .dot.error {
-            background: var(--rd);
-        }
-
-        .dot.idle {
-            background: var(--tx2);
-        }
-
-        .label {
-            font-size: 12px;
-            color: var(--tx);
-            flex: 1;
-        }
-
-        .val {
-            font-size: 12px;
-            color: var(--tx);
-            font-weight: 600;
-        }
-
-        .event-item {
-            font-size: 11px;
-            color: var(--tx2);
-            border-bottom: 1px solid var(--b);
-            padding: 4px 0;
-        }
-
-        .event-item span {
-            color: var(--ac);
-        }
-
-        .stat {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-        }
+        .stat { display: flex; justify-content: space-between; margin-bottom: 4px; }
     </style>
 </head>
 

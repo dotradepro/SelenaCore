@@ -5,43 +5,12 @@
     <link rel="stylesheet" href="/api/shared/theme.css">
     <meta charset="UTF-8" />
     <style>
-        body {
-            background: transparent;
-        }
-
-        .widget {
-            display: flex;
-            gap: 12px;
-            padding: 10px;
-            height: 100%;
-        }
-
-        .panel {
-            flex: 1;
-            background: var(--b);
-            border-radius: 8px;
-            padding: 10px;
-        }
-
-        .panel h3 {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: var(--tx2);
-            margin-bottom: 8px;
-            letter-spacing: 0.05em;
-        }
-
-        .stat {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-size: 12px;
-        }
-
-        .val {
-            font-weight: 600;
-        }
-
+        /* Module-specific: two-panel widget layout, big number display,
+           compact rule-item list. Shared theme.css handles badges. */
+        .widget { display: flex; gap: 12px; padding: 10px; height: 100%; }
+        .panel  { flex: 1; background: var(--b); border-radius: 8px; padding: 10px; }
+        .stat   { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+        .val    { font-weight: 600; }
         .rule-item {
             font-size: 11px;
             color: var(--tx2);
@@ -50,7 +19,6 @@
             display: flex;
             justify-content: space-between;
         }
-
         .rule-item .name {
             color: var(--tx);
             flex: 1;
@@ -58,13 +26,7 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-
-        .big {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--am);
-            margin-bottom: 2px;
-        }
+        .big { font-size: 28px; font-weight: 700; color: var(--am); margin-bottom: 2px; }
     </style>
 </head>
 

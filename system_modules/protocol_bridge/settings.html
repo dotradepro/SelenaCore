@@ -7,21 +7,9 @@
     <title>Protocol Bridge Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        body {
-            overflow-y: auto;
-        }
-
-        .container {
-            max-width: 680px;
-            margin: 0 auto;
-            padding: 24px 16px;
-        }
-
-        h1 {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 4px;
-        }
+        /* Module-specific: underline-style tabs (different from shared pill tabs)
+           and toggle-row layout. Layout, forms, buttons, badges, status-bar
+           come from /api/shared/theme.css. */
 
         .tabs {
             display: flex;
@@ -29,7 +17,6 @@
             border-bottom: 1px solid var(--sf);
             margin-bottom: 20px;
         }
-
         .tab {
             padding: 8px 16px;
             border-radius: 6px 6px 0 0;
@@ -39,42 +26,9 @@
             border-bottom: 2px solid transparent;
             transition: all .15s;
         }
-
-        .tab.active {
-            color: var(--ac);
-            border-bottom-color: var(--ac);
-        }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .card h2 {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 12px;
-            color: var(--tx);
-        }
-
-        .form-row {
-            margin-bottom: 12px;
-        }
-
-        label {
-            display: block;
-            font-size: 12px;
-            color: var(--tx2);
-            margin-bottom: 4px;
-        }
-
-        input,
-        select {
-            width: 100%;
-        }
+        .tab.active { color: var(--ac); border-bottom-color: var(--ac); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
 
         .toggle-row {
             display: flex;
@@ -83,95 +37,32 @@
             padding: 8px 0;
             border-bottom: 1px solid var(--sf);
         }
-
-        .toggle-row:last-child {
-            border-bottom: none;
-        }
-
-        .toggle-label {
-            font-size: 13px;
-        }
-
-        .toggle-desc {
-            font-size: 11px;
-            color: var(--tx3);
-            margin-top: 2px;
-        }
-
-        input[type=checkbox] {
-            width: auto;
-        }
-
-        .badge.connected {
-            background: rgba(52, 211, 153, 0.15);
-            color: var(--gr);
-        }
-
-        .badge.disconnected {
-            background: rgba(248, 113, 113, 0.15);
-            color: var(--rd);
-        }
-
-        .status-bar {
-            display: flex;
-            gap: 24px;
-            background: var(--sf);
-            border-radius: 10px;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-        }
-
-        .stat {
-            text-align: center;
-        }
-
-        .stat .num {
-            font-size: 22px;
-            font-weight: 700;
-            color: var(--ac);
-        }
-
-        .stat .desc {
-            font-size: 11px;
-            color: var(--tx3);
-        }
-
-        .actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 20px;
-        }
-
-        #save-msg {
-            font-size: 12px;
-            color: var(--gr);
-            margin-left: 10px;
-            display: none;
-        }
+        .toggle-row:last-child { border-bottom: none; }
+        .toggle-label { font-size: 13px; }
+        .toggle-desc  { font-size: 11px; color: var(--tx3); margin-top: 2px; }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1 data-i18n="title"></h1>
+        <h2 data-i18n="title"></h2>
         <p class="subtitle" data-i18n="subtitle"></p>
 
         <!-- Status bar -->
-        <div class="status-bar">
-            <div class="stat">
-                <div class="num" id="s-bridged">0</div>
-                <div class="desc" data-i18n="lbl_bridged"></div>
+        <div class="grid-4 mb16">
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-accent" id="s-bridged">0</div>
+                <div class="kpi-lbl" data-i18n="lbl_bridged"></div>
             </div>
-            <div class="stat">
-                <div class="num" id="s-msg">0</div>
-                <div class="desc" data-i18n="lbl_msgrate"></div>
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-accent" id="s-msg">0</div>
+                <div class="kpi-lbl" data-i18n="lbl_msgrate"></div>
             </div>
-            <div class="stat">
-                <div class="num" id="s-err">0</div>
-                <div class="desc" data-i18n="lbl_errors"></div>
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-accent" id="s-err">0</div>
+                <div class="kpi-lbl" data-i18n="lbl_errors"></div>
             </div>
-            <div class="stat">
-                <div id="s-mqtt-badge" class="badge disconnected" data-i18n="mqtt_offline"></div>
+            <div class="card-inner kpi">
+                <div id="s-mqtt-badge" class="badge badge-err" data-i18n="mqtt_offline"></div>
             </div>
         </div>
 
@@ -185,26 +76,26 @@
         <!-- MQTT tab -->
         <div class="tab-content active" id="tab-mqtt">
             <div class="card">
-                <h2 data-i18n="h_mqtt_broker"></h2>
-                <div class="form-row">
+                <div class="section-title" data-i18n="h_mqtt_broker"></div>
+                <div class="field">
                     <label data-i18n="lbl_broker_host"></label>
                     <input id="mqtt-host" placeholder="localhost" />
                 </div>
-                <div class="form-row">
+                <div class="field">
                     <label data-i18n="lbl_port"></label>
                     <input id="mqtt-port" type="number" value="1883" />
                 </div>
-                <div class="form-row">
+                <div class="field">
                     <label data-i18n="lbl_user_opt"></label>
                     <input id="mqtt-user" placeholder="mqtt_user" />
                 </div>
-                <div class="form-row">
+                <div class="field">
                     <label data-i18n="lbl_pass_opt"></label>
                     <input id="mqtt-pass" type="password" placeholder="••••••••" />
                 </div>
             </div>
             <div class="card">
-                <h2 data-i18n="h_subscriptions"></h2>
+                <div class="section-title" data-i18n="h_subscriptions"></div>
                 <div class="toggle-row">
                     <div>
                         <div class="toggle-label" data-i18n="tgl_ha_discovery"></div>
@@ -219,7 +110,7 @@
                     </div>
                     <input type="checkbox" id="z2m-enabled" checked />
                 </div>
-                <div class="form-row" style="margin-top:10px">
+                <div class="field mt12">
                     <label data-i18n="lbl_z2m_topic"></label>
                     <input id="z2m-topic" value="zigbee2mqtt" />
                 </div>
@@ -229,7 +120,7 @@
         <!-- HTTP Poll tab -->
         <div class="tab-content" id="tab-http">
             <div class="card">
-                <h2 data-i18n="h_http_polling"></h2>
+                <div class="section-title" data-i18n="h_http_polling"></div>
                 <div class="toggle-row">
                     <div>
                         <div class="toggle-label" data-i18n="tgl_http_enable"></div>
@@ -237,11 +128,11 @@
                     </div>
                     <input type="checkbox" id="http-enabled" checked />
                 </div>
-                <div class="form-row" style="margin-top:10px">
+                <div class="field mt12">
                     <label data-i18n="lbl_poll_interval"></label>
                     <input id="http-interval" type="number" value="30" />
                 </div>
-                <div class="form-row">
+                <div class="field">
                     <label data-i18n="lbl_req_timeout"></label>
                     <input id="http-timeout" type="number" value="5" />
                 </div>
@@ -251,7 +142,7 @@
         <!-- Zigbee / Z-Wave tab -->
         <div class="tab-content" id="tab-zigbee">
             <div class="card">
-                <h2 data-i18n="h_zigbee"></h2>
+                <div class="section-title" data-i18n="h_zigbee"></div>
                 <p style="color:var(--tx3);font-size:12px;margin-bottom:12px" data-i18n="zigbee_info"></p>
                 <div class="toggle-row">
                     <div>
@@ -262,7 +153,7 @@
                 </div>
             </div>
             <div class="card">
-                <h2 data-i18n="h_zwave"></h2>
+                <div class="section-title" data-i18n="h_zwave"></div>
                 <div class="toggle-row">
                     <div>
                         <div class="toggle-label" data-i18n="tgl_zwave"></div>
@@ -270,7 +161,7 @@
                     </div>
                     <input type="checkbox" id="zwave-enabled" />
                 </div>
-                <div class="form-row" style="margin-top:10px">
+                <div class="field mt12">
                     <label data-i18n="lbl_zwave_topic"></label>
                     <input id="zwave-topic" value="zwave" />
                 </div>
@@ -280,7 +171,7 @@
         <!-- Advanced tab -->
         <div class="tab-content" id="tab-advanced">
             <div class="card">
-                <h2 data-i18n="h_general"></h2>
+                <div class="section-title" data-i18n="h_general"></div>
                 <div class="toggle-row">
                     <div>
                         <div class="toggle-label" data-i18n="tgl_reconnect"></div>
@@ -288,18 +179,16 @@
                     </div>
                     <input type="checkbox" id="reconnect" checked />
                 </div>
-                <div class="form-row" style="margin-top:10px">
+                <div class="field mt12">
                     <label data-i18n="lbl_reconnect_max"></label>
                     <input id="reconnect-max" type="number" value="60" />
                 </div>
             </div>
         </div>
 
-        <div class="actions">
+        <div class="mt16">
             <button class="btn btn-primary" id="save-btn" onclick="save()" data-i18n="save_btn"></button>
-            <span id="save-msg" data-i18n="saved"></span>
         </div>
-    </div>
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
@@ -343,10 +232,10 @@
                 var badge = $("s-mqtt-badge");
                 if (d.mqtt && d.mqtt.connected) {
                     badge.textContent = t('mqtt_online');
-                    badge.className = "badge connected";
+                    badge.className = "badge badge-ok";
                 } else {
                     badge.textContent = t('mqtt_offline');
-                    badge.className = "badge disconnected";
+                    badge.className = "badge badge-err";
                 }
             }).catch(function (e) { showToast(e.message || 'Error', 'error'); });
         }

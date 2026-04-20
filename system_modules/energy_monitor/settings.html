@@ -7,75 +7,11 @@
     <title>Energy Monitor Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
+        /* Module-specific: source cards, unified filterable table, power-coloured
+           cells, energy pills. Shared theme.css handles layout, forms, buttons,
+           stats (use .grid-4 + .card-inner.kpi), toasts. */
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--tx);
-            padding: 20px;
-            min-height: 100%;
-            overflow-y: auto;
-        }
-
-        h1 {
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin-bottom: 20px;
-        }
-
-        .section {
-            background: var(--sf);
-            border-radius: 12px;
-            padding: 18px;
-            margin-bottom: 14px;
-        }
-
-        .section h2 {
-            font-size: 0.95rem;
-            color: var(--tx2);
-            margin-bottom: 14px;
-            font-weight: 600;
-        }
-
-        /* Stat card extensions */
-        .stat-card .val {
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: var(--am);
-            line-height: 1.1;
-        }
-
-        .stat-card .val.ok {
-            color: var(--gr);
-        }
-
-        .stat-card .val.err {
-            color: var(--rd);
-        }
-
-        .stat-card .lbl {
-            font-size: 0.75rem;
-            color: var(--tx3);
-            margin-top: 4px;
-        }
-
-        /* Form */
-        .form-row {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            margin-bottom: 12px;
-        }
-
-        .form-row label {
-            font-size: 0.8rem;
-            color: var(--tx2);
-        }
-
-        select option {
-            background: var(--sf2);
-            color: var(--tx);
-        }
+        select option { background: var(--sf2); color: var(--tx); }
 
         .btn-row {
             display: flex;
@@ -83,20 +19,6 @@
             align-items: center;
             flex-wrap: wrap;
             margin-top: 12px;
-        }
-
-        .msg {
-            font-size: 0.82rem;
-            margin-top: 8px;
-            min-height: 18px;
-        }
-
-        .ok-msg {
-            color: var(--gr);
-        }
-
-        .err-msg {
-            color: var(--rd);
         }
 
         td.power {
@@ -224,27 +146,27 @@
 </head>
 
 <body>
-    <h1 data-i18n="title"></h1>
+    <h2 data-i18n="title"></h2>
 
     <!-- Overview -->
-    <div class="section">
-        <h2 data-i18n="h_overview"></h2>
-        <div class="stat-grid">
-            <div class="stat-card">
-                <div class="val" id="s-status">&mdash;</div>
-                <div class="lbl" data-i18n="lbl_status"></div>
+    <div class="card">
+        <div class="section-title" data-i18n="h_overview"></div>
+        <div class="grid-4 mb12">
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-warn" id="s-status">&mdash;</div>
+                <div class="kpi-lbl" data-i18n="lbl_status"></div>
             </div>
-            <div class="stat-card">
-                <div class="val" id="s-devices">&mdash;</div>
-                <div class="lbl" data-i18n="lbl_tracked"></div>
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-warn" id="s-devices">&mdash;</div>
+                <div class="kpi-lbl" data-i18n="lbl_tracked"></div>
             </div>
-            <div class="stat-card">
-                <div class="val" id="s-power">&mdash;</div>
-                <div class="lbl" data-i18n="lbl_total_w"></div>
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-warn" id="s-power">&mdash;</div>
+                <div class="kpi-lbl" data-i18n="lbl_total_w"></div>
             </div>
-            <div class="stat-card">
-                <div class="val" id="s-kwh">&mdash;</div>
-                <div class="lbl" data-i18n="lbl_kwh_today"></div>
+            <div class="card-inner kpi">
+                <div class="kpi-val kpi-val-accent" id="s-kwh">&mdash;</div>
+                <div class="kpi-lbl" data-i18n="lbl_kwh_today"></div>
             </div>
         </div>
         <div class="btn-row">
@@ -253,8 +175,8 @@
     </div>
 
     <!-- Unified device table with filters and sorting -->
-    <div class="section">
-        <h2 data-i18n="h_devices_unified"></h2>
+    <div class="card">
+        <div class="section-title" data-i18n="h_devices_unified"></div>
         <p style="color: var(--tx3); font-size: 0.78rem; margin: 0 0 10px 0" data-i18n="hint_auto_sources"></p>
         <div class="filter-row">
             <input type="text" id="filter-search" data-placeholder-i18n="ph_filter_search">
@@ -295,17 +217,17 @@
     </div>
 
     <!-- Compact thresholds -->
-    <div class="section">
-        <h2 data-i18n="h_thresholds"></h2>
-        <div class="form-row">
+    <div class="card">
+        <div class="section-title" data-i18n="h_thresholds"></div>
+        <div class="field">
             <label data-i18n="lbl_alert_w"></label>
             <input type="number" id="alert-w" min="0" step="10" placeholder="500">
         </div>
-        <div class="form-row">
+        <div class="field">
             <label data-i18n="lbl_low_w"></label>
             <input type="number" id="low-w" min="0" step="1" placeholder="5">
         </div>
-        <div class="form-row">
+        <div class="field">
             <label data-i18n="lbl_report_min"></label>
             <input type="number" id="report-min" min="5" step="5" placeholder="60">
         </div>

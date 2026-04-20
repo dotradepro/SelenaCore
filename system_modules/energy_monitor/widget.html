@@ -7,11 +7,11 @@
     <title>Energy Monitor</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* Widget-specific overrides on top of shared theme.css */
+        /* Widget-specific overrides on top of shared theme.css.
+           Body is a click-to-expand tile (pointer + flex column layout).
+           NOTE: .kpi-val / .kpi-lbl below are intentional module-local
+           overrides of shared classes — the tile needs smaller numbers. */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--bg);
-            color: var(--tx);
             padding: 10px 12px;
             display: flex;
             flex-direction: column;
