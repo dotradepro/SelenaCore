@@ -210,14 +210,9 @@ When data changes (add/remove station, device, scene):
 3. IntentRouter.refresh_system_prompt() invalidates the dynamic LLM-prompt cache
 4. No restart needed
 
-### Seed Script
+### Intent Seeding
 
-`scripts/seed_intents_to_db.py` is **legacy** — it still seeds a few weather / privacy rules, but **system-module intents are no longer seeded here**. Each module declares its own hard intents in `_OWNED_INTENT_META` and inserts/claims them on `start()` via `_claim_intent_ownership()`. See [intent-routing.md §2](intent-routing.md#2-where-intents-come-from) for the full design.
-
-```bash
-# Run only when bringing up a fresh DB or after a schema migration:
-docker exec selena-core python3 -m scripts.seed_intents_to_db
-```
+There is no separate seed step. Each module declares its own hard intents in `_OWNED_INTENT_META` and inserts/claims them on `start()` via `_claim_intent_ownership()`. See [intent-routing.md §2](intent-routing.md#2-where-intents-come-from) for the full design.
 
 ## Audio Settings
 

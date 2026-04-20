@@ -49,7 +49,7 @@ Coverage bench — це regression-гейт для голосового клас
 - Core-контейнер піднятий і healthy (`sudo docker ps | grep selena-core`)
 - Helsinki-перекладач активний (`translation.engine = helsinki` в `config/core.yaml`)
 - Embedding-модель присутня за `intent.embedding_model_dir` (default: `/var/lib/selena/models/embedding/paraphrase-multilingual-MiniLM-L12-v2/`)
-- Реєстр заповнений типовими пристроями — запустіть [scripts/seed_missing_types.py](../../scripts/seed_missing_types.py), якщо певні типи відсутні
+- Реєстр заповнений типовими пристроями, що покривають типи сутностей, на яких працює бенч
 
 ### Виконання
 

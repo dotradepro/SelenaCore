@@ -49,7 +49,7 @@ Every intent owned by every module is represented at least once. Declared-but-ne
 - Core container up and healthy (`sudo docker ps | grep selena-core`)
 - Helsinki translator active (`translation.engine = helsinki` in `config/core.yaml`)
 - Embedding model present at `intent.embedding_model_dir` (default: `/var/lib/selena/models/embedding/paraphrase-multilingual-MiniLM-L12-v2/`)
-- Registry populated with representative devices — run [scripts/seed_missing_types.py](../scripts/seed_missing_types.py) if certain entity types are absent
+- Registry populated with representative devices covering the entity types exercised by the bench
 
 ### Execute
 

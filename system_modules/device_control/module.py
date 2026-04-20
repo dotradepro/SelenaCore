@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 MODULE_DIR = Path(__file__).parent
 
-# Voice intents this module owns. Strings match seed_intents_to_db.py.
+# Voice intents this module owns.
 INTENT_ON = "device.on"
 INTENT_OFF = "device.off"
 # Climate-specific intents (target air_conditioner / thermostat devices).
@@ -1164,9 +1164,7 @@ class DeviceControlModule(SystemModule):
         """Ensure every OWNED_INTENT exists in the DB and is owned by us.
 
         Creates missing definitions on the fly using ``_OWNED_INTENT_META``.
-        This makes the module self-sufficient: it does not rely on
-        ``scripts/seed_intents_to_db.py`` to populate ``intent_definitions``
-        rows. Existing rows have their ``module`` column rewritten to
+        Existing rows have their ``module`` column rewritten to
         ``device-control`` so any duplicates from older code paths land
         under our ownership.
         """

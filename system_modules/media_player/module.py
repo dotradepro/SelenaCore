@@ -95,9 +95,8 @@ class ImportRBBody(BaseModel):
 class MediaPlayerModule(SystemModule):
     name = "media-player"
 
-    # Disambiguating descriptions for the radio media intents. The seed
-    # script (scripts/seed_intents_to_db.py) creates initial rows; this
-    # module owns the wording from now on and resyncs on every boot via
+    # Disambiguating descriptions for the radio media intents. This
+    # module owns the wording and resyncs on every boot via
     # _resync_intent_descriptions(). Without the resync, prompt-tuning
     # changes here would never propagate to live IntentRouter prompts.
     #
