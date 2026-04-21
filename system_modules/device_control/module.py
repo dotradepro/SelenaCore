@@ -126,6 +126,14 @@ class DeviceControlModule(SystemModule):
             await self._spawn_watchers_for_existing_devices()
         except Exception as exc:
             logger.warning("device-control: failed to spawn initial watchers: %s", exc)
+        # Conditionally start the Plejd BLE gateway. The gateway is a
+        # process-singleton — only live when the user has actually imported
+        # Plejd devices (or explicitly enabled the provider). Otherwise we
+        # leave the BT adapter untouched for presence_detection et al.
+        try:
+            await self._maybe_start_plejd_gateway()
+        except Exception as exc:
+            logger.warning("device-control: Plejd gateway start failed: %s", exc)
         logger.info("DeviceControlModule started")
 
     async def stop(self) -> None:
@@ -144,8 +152,89 @@ class DeviceControlModule(SystemModule):
             except Exception:
                 pass
         self._drivers.clear()
+        # Tear down the Plejd gateway last — the driver's stream_events()
+        # tasks have already been cancelled above so no event subscribers
+        # remain.
+        try:
+            await self._stop_plejd_gateway()
+        except Exception:
+            logger.warning("device-control: Plejd gateway stop crashed", exc_info=True)
         self._cleanup_subscriptions()
         logger.info("DeviceControlModule stopped")
+
+    # ── Plejd gateway lifecycle ──────────────────────────────────────────
+
+    async def _maybe_start_plejd_gateway(self) -> None:
+        """Start the Plejd BLE gateway if there is any plejd_native Device
+        in the registry. The first site key found in Device.meta references
+        a row in secrets_vault — rehydrate the key and hand it to the
+        gateway.
+
+        Design: gateway is owned by the module, not by individual drivers,
+        because one BLE connection serves the whole mesh. Drivers look it
+        up via ``plejd.gateway.get_gateway()``.
+        """
+        from core.registry.models import Device
+        from sqlalchemy import select as _sel
+
+        async with self._db_session() as session:
+            res = await session.execute(_sel(Device).where(Device.protocol == "plejd_native"))
+            rows = list(res.scalars())
+        if not rows:
+            return
+
+        site_id: str | None = None
+        import json as _json
+        for row in rows:
+            try:
+                meta = _json.loads(row.meta or "{}")
+            except _json.JSONDecodeError:
+                continue
+            sid = (meta.get("plejd") or {}).get("site_id")
+            if sid:
+                site_id = str(sid)
+                break
+        if site_id is None:
+            logger.warning("device-control: plejd devices present but no site_id in meta — skipping gateway")
+            return
+
+        try:
+            from system_modules.secrets_vault.vault import get_vault
+            import base64 as _b64
+            rec = get_vault().load(f"device-control_plejd_{site_id}")
+        except Exception as exc:
+            logger.warning("device-control: cannot load plejd site key: %s", exc)
+            return
+        if rec is None or not rec.access_token:
+            logger.warning("device-control: plejd site %s has no key in vault — skipping", site_id)
+            return
+        try:
+            site_key = _b64.b64decode(rec.access_token)
+        except Exception as exc:
+            logger.warning("device-control: plejd site key not base64: %s", exc)
+            return
+
+        from .plejd.gateway import PlejdGateway, set_gateway, get_gateway
+        if get_gateway() is not None:
+            return
+        try:
+            gw = PlejdGateway(site_key=site_key)
+        except Exception as exc:
+            logger.warning("device-control: plejd gateway init failed: %s", exc)
+            return
+        set_gateway(gw)
+        await gw.start()
+        logger.info("device-control: Plejd gateway started (site=%s)", site_id)
+
+    async def _stop_plejd_gateway(self) -> None:
+        from .plejd.gateway import get_gateway, set_gateway
+        gw = get_gateway()
+        if gw is None:
+            return
+        try:
+            await gw.stop()
+        finally:
+            set_gateway(None)
 
     # ── Router ───────────────────────────────────────────────────────────
 

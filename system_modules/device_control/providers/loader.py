@@ -356,6 +356,7 @@ class ProviderLoader:
                 "icon": spec.get("icon", ""),
                 "homepage": spec.get("homepage", ""),
                 "needs_external_service": spec.get("needs_external_service", False),
+                "integration_mode": spec.get("integration_mode", "direct"),
                 "installed": installed,
                 "auto_detected": bool(row.auto_detected) if row else False,
                 "installed_at": row.installed_at.isoformat() if row else None,

@@ -31,7 +31,10 @@ textarea{font-family:'DM Mono',monospace;font-size:11px}
 .help code{background:var(--bg);padding:1px 5px;border-radius:3px;font-size:10px}
 .dps-row{display:grid;grid-template-columns:1fr 1fr 30px;gap:6px;margin-bottom:4px;align-items:center}
 .dps-row button{padding:4px 8px;background:var(--bg);color:var(--mut);border:1px solid var(--b);border-radius:4px;cursor:pointer}
-.prov-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.prov-grid{display:flex;flex-direction:column;gap:18px}
+.prov-group-title{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:2px}
+.prov-group-hint{font-size:11px;color:var(--mut);line-height:1.45;margin-bottom:8px}
+.prov-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
 .prov-card{background:var(--card);border:1px solid var(--b);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .prov-card.installed{border-color:var(--gr)}
 .prov-card.error{border-color:var(--rd)}
@@ -58,6 +61,8 @@ textarea{font-family:'DM Mono',monospace;font-size:11px}
     <button class="tab" data-tab="hue" data-i18n="tab_hue">Philips Hue</button>
     <button class="tab" data-tab="esphome" data-i18n="tab_esphome">ESPHome</button>
     <button class="tab" data-tab="z2m" data-i18n="tab_z2m">Zigbee2MQTT</button>
+    <button class="tab" data-tab="plejd" data-i18n="tab_plejd">Plejd</button>
+    <button class="tab" data-tab="import" data-i18n="tab_import">Import from other systems</button>
   </div>
 
   <!-- TAB: Devices ------------------------------------------------------- -->
@@ -401,6 +406,207 @@ textarea{font-family:'DM Mono',monospace;font-size:11px}
         </tr></thead>
         <tbody id="z2mDeviceBody"><tr><td colspan="4" class="muted" data-i18n="loading">Loading…</td></tr></tbody>
       </table>
+    </div>
+  </div>
+
+  <!-- TAB: Plejd ---------------------------------------------------------- -->
+  <div id="tab-plejd" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="plejd_help">
+        Plejd is a Swedish BLE-mesh lighting system. SelenaCore talks to
+        the mesh directly via the host's Bluetooth adapter — no dedicated
+        hub required. You authenticate to hems.plejd.com once to fetch
+        the site key, after which the integration is fully offline.
+      </div>
+
+      <!-- Step 1: cloud login -->
+      <div id="plejdStep1">
+        <div class="label-sm mb8" data-i18n="plejd_step1_title">1. Log in to your Plejd cloud account</div>
+        <div class="grid2 mb8">
+          <div>
+            <div class="label-sm" data-i18n="plejd_lbl_email">Email</div>
+            <input id="plejdEmail" type="email" autocomplete="off">
+          </div>
+          <div>
+            <div class="label-sm" data-i18n="plejd_lbl_password">Password</div>
+            <input id="plejdPassword" type="password" autocomplete="off">
+          </div>
+        </div>
+        <div class="help mb8" data-i18n="plejd_login_hint">
+          Credentials are kept only for the duration of this wizard. Only the 16-byte site key is persisted — encrypted — in SelenaCore's secrets vault.
+        </div>
+        <div class="flex gap8 mb12">
+          <button id="plejdLoginBtn" class="btn btn-green" data-i18n="plejd_login">Log in &amp; list sites</button>
+          <span id="plejdLoginSpinner" class="spinner hidden" style="align-self:center"></span>
+        </div>
+        <div id="plejdLoginResult" class="muted"></div>
+      </div>
+
+      <!-- Step 2: pick a site -->
+      <div id="plejdStep2" class="hidden">
+        <div class="label-sm mb8" data-i18n="plejd_step2_title">2. Select the site</div>
+        <div id="plejdSiteList"></div>
+        <div class="flex gap8 mt12">
+          <button id="plejdBackToLoginBtn" class="btn btn-ghost" data-i18n="plejd_back">Back</button>
+        </div>
+      </div>
+
+      <!-- Step 3: pick outputs -->
+      <div id="plejdStep3" class="hidden">
+        <div class="label-sm mb8" data-i18n="plejd_step3_title">3. Select outputs to import</div>
+        <div id="plejdDevicesHeader" class="help mb8"></div>
+        <div class="flex gap8 mb8" style="align-items:center">
+          <label class="label-sm"><input type="checkbox" id="plejdSelectAll" checked> <span data-i18n="plejd_select_all">Select all</span></label>
+        </div>
+        <table style="font-size:12px">
+          <thead><tr>
+            <th data-i18n="plejd_col_import">Import</th>
+            <th data-i18n="plejd_col_output">Output</th>
+            <th data-i18n="plejd_col_name">Name</th>
+            <th data-i18n="plejd_col_room">Room</th>
+            <th data-i18n="plejd_col_type">Type</th>
+            <th data-i18n="plejd_col_ble">BLE addr</th>
+          </tr></thead>
+          <tbody id="plejdDevicesBody"></tbody>
+        </table>
+        <div class="flex gap8 mt12">
+          <button id="plejdRunBtn" class="btn btn-green" data-i18n="plejd_run">Import selected</button>
+          <span id="plejdRunSpinner" class="spinner hidden" style="align-self:center"></span>
+          <button id="plejdBackToSitesBtn" class="btn btn-ghost" data-i18n="plejd_back">Back</button>
+        </div>
+      </div>
+
+      <!-- Step 4: results -->
+      <div id="plejdStep4" class="hidden">
+        <div class="label-sm mb8" data-i18n="plejd_step4_title">4. Results</div>
+        <div id="plejdRunSummary" class="help mb12"></div>
+        <div id="plejdGatewayStatus" class="help mb12"></div>
+        <div class="flex gap8">
+          <button id="plejdRefreshStatusBtn" class="btn btn-ghost" data-i18n="plejd_refresh_status">Refresh gateway status</button>
+          <button id="plejdRestartBtn" class="btn btn-ghost" data-i18n="plejd_import_another">Start over</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: Import from other systems -------------------------------------- -->
+  <div id="tab-import" class="tab-pane hidden">
+    <div class="card">
+      <div class="help mb12" data-i18n="import_help">
+        One-time migration from another smart-home platform. After import,
+        the source system can be decommissioned — SelenaCore talks to the
+        devices directly via its own drivers.
+      </div>
+
+      <!-- Step 1: connect -->
+      <div id="haStep1">
+        <div class="label-sm mb8" data-i18n="ha_step1_title">1. Connect to Home Assistant</div>
+        <div class="grid2 mb8">
+          <div>
+            <div class="label-sm" data-i18n="ha_lbl_host">HA host</div>
+            <input id="haHost" placeholder="http://homeassistant.local:8123" autocomplete="off" style="font-family:'DM Mono',monospace">
+          </div>
+          <div>
+            <div class="label-sm" data-i18n="ha_lbl_llat">Long-Lived Access Token</div>
+            <input id="haLlat" type="password" placeholder="eyJhbGciOi..." autocomplete="off" style="font-family:'DM Mono',monospace">
+          </div>
+        </div>
+        <div class="help mb8" data-i18n="ha_llat_hint">
+          Generate a token in HA: profile → Security → "Create Token". This token gives read-only access to device/entity/area registries only.
+        </div>
+        <div class="flex gap8 mb12">
+          <button id="haConnectBtn" class="btn btn-green" data-i18n="ha_connect">Connect</button>
+          <span id="haConnectSpinner" class="spinner hidden" style="align-self:center"></span>
+        </div>
+        <div id="haConnectResult" class="muted"></div>
+      </div>
+
+      <!-- Step 2: preview -->
+      <div id="haStep2" class="hidden">
+        <div class="label-sm mb8" data-i18n="ha_step2_title">2. Review devices</div>
+        <div id="haConnectSummary" class="help mb8"></div>
+
+        <!-- MQTT override prompt (appears only when needed) -->
+        <div id="haMqttOverride" class="hidden mb12" style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);padding:10px;border-radius:6px">
+          <div class="label-sm mb4" data-i18n="ha_mqtt_override_title">MQTT broker override</div>
+          <div class="help mb8" data-i18n="ha_mqtt_override_hint">
+            MQTT devices need a broker that keeps running after HA is off. Supply an alternate broker here, or skip these devices.
+          </div>
+          <div class="grid2 mb8">
+            <div>
+              <div class="label-sm" data-i18n="ha_mqtt_host">Broker host</div>
+              <input id="haMqttHost" placeholder="mosquitto.lan" autocomplete="off" style="font-family:'DM Mono',monospace">
+            </div>
+            <div>
+              <div class="label-sm" data-i18n="ha_mqtt_port">Broker port</div>
+              <input id="haMqttPort" type="number" value="1883" autocomplete="off">
+            </div>
+            <div>
+              <div class="label-sm" data-i18n="ha_mqtt_user">Username (optional)</div>
+              <input id="haMqttUser" autocomplete="off">
+            </div>
+            <div>
+              <div class="label-sm" data-i18n="ha_mqtt_pass">Password (optional)</div>
+              <input id="haMqttPass" type="password" autocomplete="off">
+            </div>
+          </div>
+          <button id="haMqttOverrideApply" class="btn btn-ghost" data-i18n="ha_mqtt_apply">Apply &amp; recheck</button>
+        </div>
+
+        <!-- Tuya Cloud prompt (appears only when needed) -->
+        <div id="haTuyaPrompt" class="hidden mb12" style="background:rgba(250,204,21,.08);border:1px solid rgba(250,204,21,.3);padding:10px;border-radius:6px">
+          <div class="label-sm mb4" data-i18n="ha_tuya_prompt_title">Tuya Cloud authorization</div>
+          <div class="help" data-i18n="ha_tuya_prompt_hint">
+            Tuya local_keys have to be re-fetched from the Tuya cloud. Open the "Tuya Cloud Wizard" tab and connect your Smart Life account, then come back and click "Recheck".
+          </div>
+          <div class="flex gap8 mt8">
+            <button id="haTuyaRecheckBtn" class="btn btn-ghost" data-i18n="ha_tuya_recheck">Recheck</button>
+          </div>
+        </div>
+
+        <!-- Readiness table -->
+        <div class="flex gap8 mb8" style="align-items:center;flex-wrap:wrap">
+          <span id="haCountGreen" class="badge badge-on">0 ok</span>
+          <span id="haCountYellow" class="badge badge-mut">0 need input</span>
+          <span id="haCountRed" class="badge badge-mut">0 unsupported</span>
+          <span style="flex:1"></span>
+          <label class="label-sm"><input type="checkbox" id="haSelectAll" checked> <span data-i18n="ha_select_all">Select all green</span></label>
+        </div>
+        <table id="haReadinessTable" style="font-size:12px">
+          <thead><tr>
+            <th data-i18n="ha_col_import">Import</th>
+            <th data-i18n="ha_col_name">Name</th>
+            <th data-i18n="ha_col_integration">Integration</th>
+            <th data-i18n="ha_col_target">Target</th>
+            <th data-i18n="ha_col_status">Status</th>
+          </tr></thead>
+          <tbody id="haReadinessBody"></tbody>
+        </table>
+        <div class="flex gap8 mt12">
+          <button id="haRunBtn" class="btn btn-green" data-i18n="ha_run">Import selected</button>
+          <span id="haRunSpinner" class="spinner hidden" style="align-self:center"></span>
+          <button id="haBackToConnectBtn" class="btn btn-ghost" data-i18n="ha_back">Back</button>
+        </div>
+      </div>
+
+      <!-- Step 3: results + health -->
+      <div id="haStep3" class="hidden">
+        <div class="label-sm mb8" data-i18n="ha_step3_title">3. Results</div>
+        <div id="haRunSummary" class="help mb12"></div>
+        <div class="label-sm mb4" data-i18n="ha_health_title">Reachability check</div>
+        <div id="haHealthSummary" class="help mb12"></div>
+        <div id="haFinalBanner" class="hidden mb12" style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);padding:10px;border-radius:6px">
+          <div class="label-sm" data-i18n="ha_ready_to_disconnect">✓ Ready to disconnect Home Assistant</div>
+          <div class="help" data-i18n="ha_ready_to_disconnect_hint">
+            All imported devices answered to SelenaCore directly. You can power off HA now — come back here only if you need to roll this import back.
+          </div>
+        </div>
+        <div class="flex gap8">
+          <button id="haRecheckHealthBtn" class="btn btn-ghost" data-i18n="ha_recheck_health">Re-check reachability</button>
+          <button id="haRollbackBtn" class="btn btn-ghost" data-i18n="ha_rollback">Rollback import</button>
+          <button id="haRestartBtn" class="btn btn-ghost" data-i18n="ha_import_another">Import another</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -844,52 +1050,71 @@ function _renderProviders(list){
     if(a.builtin !== b.builtin) return a.builtin ? -1 : 1;
     return (a.name||'').localeCompare(b.name||'');
   });
-  $('provGrid').innerHTML = list.map(function(p){
-    var cls = 'prov-card';
-    if(p.installed && p.loaded) cls += ' installed';
-    if(p.last_error) cls += ' error';
-    var statusBadge = p.installed
-      ? '<span class="badge badge-on">'+esc(t('prov_installed'))+'</span>'
-      : '<span class="badge badge-mut">'+esc(t('prov_not_installed'))+'</span>';
-    var loadedBadge = (p.installed && p.loaded)
-      ? '<span class="badge badge-pr">'+esc(t('prov_loaded'))+'</span>'
-      : '';
-    var builtinBadge = p.builtin
-      ? '<span class="badge badge-mut">'+esc(t('prov_builtin'))+'</span>'
-      : '';
-    var cloudBadge = p.needs_cloud
-      ? '<span class="badge badge-mut">'+esc(t('prov_needs_cloud'))+'</span>'
-      : '';
-    var extBadge = p.needs_external_service
-      ? '<span class="badge badge-mut">'+esc(t('prov_external'))+'</span>'
-      : '';
-    var meta = '';
-    if(p.package){
-      meta = '<div class="prov-meta"><b>'+esc(p.package)+'</b>'+(p.version?' '+esc(p.version):'')+'</div>';
-    }
-    var error = p.last_error
-      ? '<div class="prov-error">'+esc(p.last_error)+'</div>'
-      : '';
-    var actions;
-    if(p.installed){
-      // built-ins can only be disabled (no pip-uninstall)
-      actions = '<button class="btn btn-ghost" onclick="provDisable(\''+esc(p.id)+'\')">'+esc(t('prov_disable'))+'</button>';
-    } else {
-      actions = '<button class="btn btn-green" onclick="provInstall(\''+esc(p.id)+'\')">'+esc(t('prov_install'))+'</button>';
-    }
-    return '<div class="'+cls+'">'+
-      '<div class="prov-head">'+
-        '<span class="prov-icon">'+esc(p.icon||'📦')+'</span>'+
-        '<div class="prov-title">'+esc(p.name)+'</div>'+
-        statusBadge+
-      '</div>'+
-      '<div class="prov-desc">'+esc(p.description||'')+'</div>'+
-      meta+
-      '<div class="prov-meta">'+builtinBadge+' '+loadedBadge+' '+cloudBadge+' '+extBadge+'</div>'+
-      error+
-      '<div class="prov-actions">'+actions+'</div>'+
+  var groups = {direct:[], bridge:[], cloud_fallback:[]};
+  list.forEach(function(p){
+    var mode = p.integration_mode || 'direct';
+    (groups[mode] || groups.direct).push(p);
+  });
+  var sections = [
+    {key:'direct',         titleKey:'prov_group_direct',        hintKey:'prov_group_direct_hint'},
+    {key:'bridge',         titleKey:'prov_group_bridge',        hintKey:'prov_group_bridge_hint'},
+    {key:'cloud_fallback', titleKey:'prov_group_cloud_fallback', hintKey:'prov_group_cloud_fallback_hint'},
+  ];
+  $('provGrid').innerHTML = sections.map(function(sec){
+    var items = groups[sec.key];
+    if(!items || !items.length) return '';
+    return '<div class="prov-group">'+
+      '<div class="prov-group-title">'+esc(t(sec.titleKey))+'</div>'+
+      '<div class="prov-group-hint">'+esc(t(sec.hintKey))+'</div>'+
+      '<div class="prov-group-grid">'+items.map(_renderProviderCard).join('')+'</div>'+
     '</div>';
   }).join('');
+}
+
+function _renderProviderCard(p){
+  var cls = 'prov-card';
+  if(p.installed && p.loaded) cls += ' installed';
+  if(p.last_error) cls += ' error';
+  var statusBadge = p.installed
+    ? '<span class="badge badge-on">'+esc(t('prov_installed'))+'</span>'
+    : '<span class="badge badge-mut">'+esc(t('prov_not_installed'))+'</span>';
+  var loadedBadge = (p.installed && p.loaded)
+    ? '<span class="badge badge-pr">'+esc(t('prov_loaded'))+'</span>'
+    : '';
+  var builtinBadge = p.builtin
+    ? '<span class="badge badge-mut">'+esc(t('prov_builtin'))+'</span>'
+    : '';
+  var cloudBadge = p.needs_cloud
+    ? '<span class="badge badge-mut">'+esc(t('prov_needs_cloud'))+'</span>'
+    : '';
+  var extBadge = p.needs_external_service
+    ? '<span class="badge badge-mut">'+esc(t('prov_external'))+'</span>'
+    : '';
+  var meta = '';
+  if(p.package){
+    meta = '<div class="prov-meta"><b>'+esc(p.package)+'</b>'+(p.version?' '+esc(p.version):'')+'</div>';
+  }
+  var error = p.last_error
+    ? '<div class="prov-error">'+esc(p.last_error)+'</div>'
+    : '';
+  var actions;
+  if(p.installed){
+    actions = '<button class="btn btn-ghost" onclick="provDisable(\''+esc(p.id)+'\')">'+esc(t('prov_disable'))+'</button>';
+  } else {
+    actions = '<button class="btn btn-green" onclick="provInstall(\''+esc(p.id)+'\')">'+esc(t('prov_install'))+'</button>';
+  }
+  return '<div class="'+cls+'">'+
+    '<div class="prov-head">'+
+      '<span class="prov-icon">'+esc(p.icon||'📦')+'</span>'+
+      '<div class="prov-title">'+esc(p.name)+'</div>'+
+      statusBadge+
+    '</div>'+
+    '<div class="prov-desc">'+esc(p.description||'')+'</div>'+
+    meta+
+    '<div class="prov-meta">'+builtinBadge+' '+loadedBadge+' '+cloudBadge+' '+extBadge+'</div>'+
+    error+
+    '<div class="prov-actions">'+actions+'</div>'+
+  '</div>';
 }
 
 window.provInstall = function(id){
@@ -1217,6 +1442,365 @@ window.delDevice = function(deviceId, reloadFn){
     if(reloadFn) reloadFn();
   }).catch(function(e){showToast(e.message,'error');});
 };
+
+// ── Plejd wizard ────────────────────────────────────────────────────────
+
+var _plejdState = {
+  session_id: null,
+  sites: [],
+  selected_site_id: null,
+  devices: [],
+};
+
+function _plejdShowStep(n){
+  for (var i=1; i<=4; i++) {
+    var el = $('plejdStep'+i);
+    if (!el) continue;
+    if (i === n) { el.classList.remove('hidden'); } else { el.classList.add('hidden'); }
+  }
+}
+
+function _plejdFmtErr(e){
+  try {
+    var d = JSON.parse(e.message);
+    if (d && d.detail && d.detail.user_message) return d.detail.user_message;
+    if (d && d.detail) return JSON.stringify(d.detail);
+  } catch(_) {}
+  return e.message || String(e);
+}
+
+function _plejdReset(){
+  _plejdState = {session_id:null, sites:[], selected_site_id:null, devices:[]};
+  $('plejdEmail').value = '';
+  $('plejdPassword').value = '';
+  $('plejdLoginResult').textContent = '';
+  _plejdShowStep(1);
+}
+
+$('plejdLoginBtn').onclick = function(){
+  var email = ($('plejdEmail').value||'').trim();
+  var pw = ($('plejdPassword').value||'').trim();
+  if (!email || !pw){ showToast(t('plejd_fill_required'),'error'); return; }
+  var btn = this;
+  withLoading(btn, function(){
+    show('plejdLoginSpinner');
+    return apiPost('/plejd/login', {username:email, password:pw})
+      .then(function(r){
+        _plejdState.session_id = r.session_id;
+        _plejdState.sites = r.sites||[];
+        _plejdRenderSites();
+        _plejdShowStep(2);
+      })
+      .catch(function(e){
+        $('plejdLoginResult').innerHTML =
+          '<div style="color:var(--rd)">'+esc(_plejdFmtErr(e))+'</div>';
+        throw e;
+      })
+      .finally(function(){ hide('plejdLoginSpinner'); });
+  });
+};
+
+function _plejdRenderSites(){
+  if (!_plejdState.sites.length){
+    $('plejdSiteList').innerHTML = '<div class="muted">'+esc(t('plejd_no_sites'))+'</div>';
+    return;
+  }
+  $('plejdSiteList').innerHTML = _plejdState.sites.map(function(s){
+    return '<button class="btn btn-ghost mb8" style="display:block;width:100%;text-align:left" '+
+      'onclick="plejdPickSite(\''+esc(s.site_id)+'\')">'+
+      '<b>'+esc(s.title)+'</b><br><span class="muted" style="font-size:10px"><code>'+esc(s.site_id)+'</code></span>'+
+      '</button>';
+  }).join('');
+}
+
+window.plejdPickSite = function(site_id){
+  _plejdState.selected_site_id = site_id;
+  apiPost('/plejd/import/preview', {
+    session_id: _plejdState.session_id,
+    site_id: site_id,
+    selected_output_addresses: [],
+  }).then(function(r){
+    _plejdState.devices = r.devices||[];
+    _plejdRenderDevices(r.title);
+    _plejdShowStep(3);
+  }).catch(function(e){ showToast(_plejdFmtErr(e),'error'); });
+};
+
+function _plejdRenderDevices(siteTitle){
+  $('plejdDevicesHeader').innerHTML =
+    '<b>'+esc(siteTitle||'')+'</b> · '+esc(String(_plejdState.devices.length))+' '+esc(t('plejd_outputs_found'));
+  if (!_plejdState.devices.length){
+    $('plejdDevicesBody').innerHTML = '<tr><td colspan="6" class="muted">—</td></tr>';
+    return;
+  }
+  $('plejdDevicesBody').innerHTML = _plejdState.devices.map(function(d){
+    return '<tr>'+
+      '<td><input type="checkbox" class="plejdRow" checked data-addr="'+String(d.output_address)+'"></td>'+
+      '<td><code>'+esc(String(d.output_address))+'</code></td>'+
+      '<td>'+esc(d.title||'')+'</td>'+
+      '<td>'+esc(d.room||'')+'</td>'+
+      '<td>'+esc(d.device_type||'')+(d.dimmable?' · dim':'')+'</td>'+
+      '<td><code style="font-size:10px">'+esc(d.ble_address||'')+'</code></td>'+
+    '</tr>';
+  }).join('');
+}
+
+$('plejdSelectAll').onchange = function(){
+  var checked = this.checked;
+  document.querySelectorAll('#plejdDevicesBody .plejdRow').forEach(function(cb){
+    cb.checked = checked;
+  });
+};
+
+$('plejdBackToLoginBtn').onclick = function(){ _plejdShowStep(1); };
+$('plejdBackToSitesBtn').onclick = function(){ _plejdShowStep(2); };
+
+$('plejdRunBtn').onclick = function(){
+  var picks = [];
+  document.querySelectorAll('#plejdDevicesBody .plejdRow').forEach(function(cb){
+    if (cb.checked) picks.push(parseInt(cb.getAttribute('data-addr'), 10));
+  });
+  if (!picks.length){ showToast(t('plejd_no_selection'),'error'); return; }
+  var btn = this;
+  withLoading(btn, function(){
+    show('plejdRunSpinner');
+    return apiPost('/plejd/import/run', {
+      session_id: _plejdState.session_id,
+      site_id: _plejdState.selected_site_id,
+      selected_output_addresses: picks,
+    }).then(function(r){
+      $('plejdRunSummary').innerHTML =
+        '<b>'+esc(String((r.created||[]).length))+'</b> '+esc(t('plejd_created'))+
+        ' · '+esc(String((r.skipped||[]).length))+' '+esc(t('plejd_skipped'));
+      _plejdShowStep(4);
+      _plejdRefreshGatewayStatus();
+    }).catch(function(e){
+      showToast(_plejdFmtErr(e),'error');
+      throw e;
+    }).finally(function(){ hide('plejdRunSpinner'); });
+  });
+};
+
+function _plejdRefreshGatewayStatus(){
+  return apiGet('/plejd/gateway/status').then(function(s){
+    if (s.running){
+      $('plejdGatewayStatus').innerHTML =
+        '<span class="badge badge-on">'+esc(t('plejd_gw_running'))+'</span>';
+    } else {
+      $('plejdGatewayStatus').innerHTML =
+        '<span class="badge badge-mut">'+esc(t('plejd_gw_not_running'))+'</span>'+
+        (s.last_error? ' <span class="muted" style="font-size:10px">'+esc(s.last_error)+'</span>':'');
+    }
+  }).catch(function(e){
+    $('plejdGatewayStatus').innerHTML = '<span style="color:var(--rd)">'+esc(_plejdFmtErr(e))+'</span>';
+  });
+}
+
+$('plejdRefreshStatusBtn').onclick = function(){ _plejdRefreshGatewayStatus(); };
+$('plejdRestartBtn').onclick = function(){ _plejdReset(); };
+
+// ── HA importer wizard ──────────────────────────────────────────────────
+//
+// 3-step flow: connect → preview → results. All state lives in
+// _haState; the DOM toggles visibility of #haStep1/2/3 based on it.
+// No global side effects until /ha/import/run actually fires.
+
+var _haState = {
+  session_id: null,
+  last_import_id: null,
+  report: null,
+  needs: [],
+  mqtt_override: null,
+};
+
+function _haShowStep(n){
+  ['haStep1','haStep2','haStep3'].forEach(function(id, idx){
+    if(idx === n-1) { $(id).classList.remove('hidden'); }
+    else { $(id).classList.add('hidden'); }
+  });
+}
+
+function _haResetWizard(){
+  _haState = {session_id:null, last_import_id:null, report:null, needs:[], mqtt_override:null};
+  $('haHost').value = '';
+  $('haLlat').value = '';
+  $('haConnectResult').textContent = '';
+  _haShowStep(1);
+}
+
+function _haFmtErr(e){
+  // Routes return {error_code, user_message, diagnostic}; widget-common's
+  // apiPost surfaces the whole body in e.message as JSON. Try to parse;
+  // fall back to the raw string if that fails.
+  try {
+    var d = JSON.parse(e.message);
+    if(d && d.detail && d.detail.user_message) return d.detail.user_message;
+    if(d && d.detail) return JSON.stringify(d.detail);
+  } catch(_) {}
+  return e.message || String(e);
+}
+
+$('haConnectBtn').onclick = function(){
+  var host = ($('haHost').value||'').trim();
+  var llat = ($('haLlat').value||'').trim();
+  if(!host || !llat){ showToast(t('ha_fill_required'),'error'); return; }
+  var btn = this;
+  withLoading(btn, function(){
+    show('haConnectSpinner');
+    return apiPost('/ha/import/connect', {host:host, llat:llat})
+      .then(function(r){
+        _haState.session_id = r.session_id;
+        $('haConnectSummary').innerHTML =
+          '<b>HA '+esc(r.ha_version||'?')+'</b> · '+
+          esc(String(r.device_count))+' '+esc(t('ha_devices_found'))+
+          (r.mqtt_broker_detected ? ' · MQTT' : '');
+        return _haRunPreview();
+      })
+      .catch(function(e){
+        $('haConnectResult').innerHTML =
+          '<div style="color:var(--rd)">'+esc(_haFmtErr(e))+'</div>';
+        throw e;
+      })
+      .finally(function(){ hide('haConnectSpinner'); });
+  });
+};
+
+function _haRunPreview(){
+  var body = {session_id: _haState.session_id, use_existing_tuya_cloud: true};
+  if(_haState.mqtt_override) body.mqtt_override = _haState.mqtt_override;
+  return apiPost('/ha/import/preview', body).then(function(r){
+    _haState.report = r.report;
+    _haState.needs = r.needs || [];
+    _haRenderReadiness();
+    _haShowStep(2);
+  });
+}
+
+function _haRenderReadiness(){
+  var rep = _haState.report;
+  $('haCountGreen').textContent  = rep.green  + ' ' + t('ha_ok');
+  $('haCountYellow').textContent = rep.yellow + ' ' + t('ha_needs_input');
+  $('haCountRed').textContent    = rep.red    + ' ' + t('ha_unsupported');
+  $('haMqttOverride').classList.toggle('hidden',
+    _haState.needs.indexOf('mqtt_broker_override')<0 &&
+    _haState.needs.indexOf('mqtt_broker')<0);
+  $('haTuyaPrompt').classList.toggle('hidden',
+    _haState.needs.indexOf('tuya_cloud_creds')<0);
+
+  var rows = (rep.rows||[]).map(function(r, i){
+    var color = r.status==='ok' ? 'var(--gr)' : (r.status==='needs_user_input' ? '#facc15' : 'var(--rd)');
+    var checked = r.status==='ok' ? 'checked' : '';
+    var disabled = r.status==='ok' ? '' : 'disabled';
+    var badge = r.status==='ok' ? t('ha_ok')
+              : r.status==='needs_user_input' ? t('ha_needs_input')
+              : t('ha_unsupported');
+    return '<tr>'+
+      '<td><input type="checkbox" class="haRow" '+checked+' '+disabled+' data-haid="'+esc(r.ha_device_id)+'"></td>'+
+      '<td>'+esc(r.ha_device_name)+'</td>'+
+      '<td><code>'+esc(r.integration)+'</code></td>'+
+      '<td>'+esc(r.protocol||'—')+(r.entity_type?' · '+esc(r.entity_type):'')+'</td>'+
+      '<td><span style="color:'+color+'">'+esc(badge)+'</span>'+
+         (r.reason?' <span class="muted" style="font-size:10px">'+esc(r.reason)+'</span>':'')+
+      '</td>'+
+    '</tr>';
+  }).join('');
+  $('haReadinessBody').innerHTML = rows || '<tr><td colspan="5" class="muted">—</td></tr>';
+}
+
+$('haSelectAll').onchange = function(){
+  var checked = this.checked;
+  document.querySelectorAll('#haReadinessBody .haRow:not([disabled])').forEach(function(cb){
+    cb.checked = checked;
+  });
+};
+
+$('haMqttOverrideApply').onclick = function(){
+  _haState.mqtt_override = {
+    broker_host: ($('haMqttHost').value||'').trim(),
+    broker_port: parseInt($('haMqttPort').value||'1883', 10),
+  };
+  var u = ($('haMqttUser').value||'').trim();
+  var p = ($('haMqttPass').value||'').trim();
+  if(u) _haState.mqtt_override.username = u;
+  if(p) _haState.mqtt_override.password = p;
+  _haRunPreview().catch(function(e){ showToast(_haFmtErr(e),'error'); });
+};
+
+$('haTuyaRecheckBtn').onclick = function(){
+  _haRunPreview().catch(function(e){ showToast(_haFmtErr(e),'error'); });
+};
+
+$('haBackToConnectBtn').onclick = function(){ _haShowStep(1); };
+
+$('haRunBtn').onclick = function(){
+  var picks = [];
+  document.querySelectorAll('#haReadinessBody .haRow:not([disabled])').forEach(function(cb){
+    if(cb.checked) picks.push(cb.getAttribute('data-haid'));
+  });
+  if(picks.length === 0){ showToast(t('ha_no_selection'),'error'); return; }
+  var body = {
+    session_id: _haState.session_id,
+    selected_ids: picks,
+    use_existing_tuya_cloud: true,
+  };
+  if(_haState.mqtt_override) body.mqtt_override = _haState.mqtt_override;
+  var btn = this;
+  withLoading(btn, function(){
+    show('haRunSpinner');
+    return apiPost('/ha/import/run', body).then(function(r){
+      _haState.last_import_id = r.import_id;
+      $('haRunSummary').innerHTML =
+        '<b>'+esc(String((r.created||[]).length))+'</b> '+esc(t('ha_created'))+
+        ' · '+esc(String((r.skipped||[]).length))+' '+esc(t('ha_skipped'))+
+        ' · '+esc(String((r.failed||[]).length))+' '+esc(t('ha_failed'));
+      $('haHealthSummary').textContent = t('ha_health_pending');
+      $('haFinalBanner').classList.add('hidden');
+      _haShowStep(3);
+      // Fire-and-forget health probe; UI updates when the probe returns.
+      _haRunHealthCheck();
+    }).catch(function(e){
+      showToast(_haFmtErr(e),'error');
+      throw e;
+    }).finally(function(){ hide('haRunSpinner'); });
+  });
+};
+
+function _haRunHealthCheck(){
+  if(!_haState.last_import_id) return;
+  return apiGet('/ha/import/'+encodeURIComponent(_haState.last_import_id)+'/health')
+    .then(function(h){
+      var r = (h.reachable||[]).length;
+      var u = (h.unreachable||[]).length;
+      var parts = [
+        '<span class="badge badge-on">'+r+' '+esc(t('ha_reachable'))+'</span>',
+        u>0 ? '<span class="badge" style="background:var(--rd);color:#fff">'+u+' '+esc(t('ha_unreachable'))+'</span>' : '',
+      ];
+      if(u>0){
+        parts.push('<div class="muted mt8">');
+        (h.unreachable||[]).forEach(function(row){
+          parts.push('<div>'+esc(row.device_id)+': '+esc(row.reason||'')+'</div>');
+        });
+        parts.push('</div>');
+      }
+      $('haHealthSummary').innerHTML = parts.join(' ');
+      $('haFinalBanner').classList.toggle('hidden', u > 0);
+    }).catch(function(e){
+      $('haHealthSummary').innerHTML = '<span style="color:var(--rd)">'+esc(_haFmtErr(e))+'</span>';
+    });
+}
+
+$('haRecheckHealthBtn').onclick = function(){ _haRunHealthCheck(); };
+
+$('haRollbackBtn').onclick = function(){
+  if(!_haState.last_import_id){ return; }
+  if(!confirm(t('ha_confirm_rollback'))) return;
+  apiDelete('/ha/import/'+encodeURIComponent(_haState.last_import_id)).then(function(r){
+    showToast(t('ha_rolled_back')+': '+(r.deleted||[]).length);
+    _haResetWizard();
+  }).catch(function(e){ showToast(_haFmtErr(e),'error'); });
+};
+
+$('haRestartBtn').onclick = function(){ _haResetWizard(); };
 
 // ── boot ─────────────────────────────────────────────────────────────────
 // Override widget-common.js lang_changed to also reload wizard status
