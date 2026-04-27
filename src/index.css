@@ -40,7 +40,21 @@
   --r: 12px;
   --shadow: 0 1px 3px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.06);
   --shadow-lg: 0 4px 16px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.06);
+
+  /* Dashboard V2 — recraft tokens (see docs/dashboard-recraft.md §2.6).
+     --hero-tint is overridden per data-tod by useTimeOfDay; the value below
+     is the noon (10–18) baseline. */
+  --hero-tint: rgba(90, 150, 255, .10);
+  --widget-glow-on: 0 0 0 1px var(--ac), 0 8px 24px rgba(90, 150, 255, .12);
+  --motion-spring: cubic-bezier(.5, 1.4, .5, 1);
+  --skeleton-bg: linear-gradient(90deg, var(--sf2) 0%, var(--sf3) 50%, var(--sf2) 100%);
 }
+
+/* Time-of-day hero tints — set on <html data-tod="..."> by useTimeOfDay. */
+html[data-tod="night"]   { --hero-tint: rgba(80, 120, 220, .12); }
+html[data-tod="morning"] { --hero-tint: rgba(245, 169, 58, .14); }
+html[data-tod="day"]     { --hero-tint: rgba(90, 150, 255, .10); }
+html[data-tod="evening"] { --hero-tint: rgba(255, 180, 90, .14); }
 
 /* =====================================================
    DESIGN TOKENS v4 — Light theme
@@ -65,7 +79,16 @@ html.light {
   --tl: #1E9AA8;
   --shadow: 0 1px 3px rgba(0,0,0,.08), 0 0 0 1px rgba(0,0,0,.06);
   --shadow-lg: 0 4px 16px rgba(0,0,0,.1), 0 0 0 1px rgba(0,0,0,.06);
+
+  /* Dashboard V2 — light theme variants. */
+  --hero-tint: rgba(59, 122, 232, .08);
+  --widget-glow-on: 0 0 0 1px var(--ac), 0 4px 16px rgba(59, 122, 232, .10);
 }
+
+html.light[data-tod="night"]   { --hero-tint: rgba(80, 120, 220, .08); }
+html.light[data-tod="morning"] { --hero-tint: rgba(219, 143, 28, .10); }
+html.light[data-tod="day"]     { --hero-tint: rgba(59, 122, 232, .08); }
+html.light[data-tod="evening"] { --hero-tint: rgba(255, 156, 80, .12); }
 
 /* =====================================================
    WALLPAPER — widget transparency when bg image active

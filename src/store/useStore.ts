@@ -27,9 +27,22 @@ export interface Module {
   installed_at: number;
   ui?: {
     icon?: string;
-    widget?: { file?: string; size?: string; min_size?: string; max_size?: string };
+    widget?: {
+      file?: string;
+      size?: string;
+      min_size?: string;
+      max_size?: string;
+      // Dashboard recraft Phase 0 — template engine fields
+      kind?: 'template' | 'custom';
+      template?: 'metric' | 'sparkline' | 'toggle-list' | 'control-panel' | 'status';
+      data_endpoints?: Record<string, { path: string; cache_ttl_s?: number }>;
+      actions?: Record<string, { path: string }>;
+      refresh?: { events?: string[]; poll_interval_s?: number };
+    };
     settings?: string;
   };
+  /** Dashboard recraft Phase 0 — required room tag for room-tab filtering. */
+  room?: string;
 }
 
 export interface CloudProviderStatus {
@@ -102,16 +115,57 @@ export interface WidgetLayout {
   screens: number;
   positions: Record<string, number>; // widget name -> absolute slot index (screen * PER_SCREEN + slot)
   spans: Record<string, { cols: number; rows: number }>; // widget name -> grid span
+  /** Schema version. v1 = original 5×4 fixed-slot layout. v2 = bento auto-flow.
+   *  v1 layouts read identically into the V2 renderer; in-place migration to
+   *  v2 happens in dashboard recraft Phase 4 with an explicit "Reset layout"
+   *  escape hatch. Absent value is interpreted as 1. */
+  version?: 1 | 2;
 }
 function loadWidgetLayout(): WidgetLayout {
   // Initial value from localStorage (fast, synchronous); will be overridden
   // by the backend value once connectSyncStream() fetches it.
   try {
     const raw = localStorage.getItem('selena-widget-layout');
-    if (raw) return { hidden: [], screens: 1, positions: {}, spans: {}, ...JSON.parse(raw) } as WidgetLayout;
+    if (raw) {
+      const parsed = JSON.parse(raw) as WidgetLayout;
+      const merged = { hidden: [], screens: 1, positions: {}, spans: {}, version: 1, ...parsed };
+      return migrateLayoutToV2(merged);
+    }
   } catch { /* ignore */ }
-  return { pinned: [], sizes: {}, hidden: [], screens: 1, positions: {}, spans: {} };
+  return { pinned: [], sizes: {}, hidden: [], screens: 1, positions: {}, spans: {}, version: 2 };
 }
+
+/** Phase 4 in-place migration: V1's ``positions`` map encoded an absolute
+ *  slot index (screen × 20 + cell). The V2 BentoGrid uses ``grid-auto-flow:
+ *  dense`` so placement is determined by the order of ``pinned``. We sort
+ *  ``pinned`` by V1 positions to preserve the user's spatial order, drop
+ *  ``screens`` to 1, then mark the layout as ``version: 2``. ``spans`` is
+ *  reused verbatim — both versions store ``{cols, rows}`` per widget. */
+export function migrateLayoutToV2(layout: WidgetLayout): WidgetLayout {
+  if (layout.version === 2) return layout;
+  const positions = layout.positions ?? {};
+  const reordered = [...layout.pinned].sort((a, b) => {
+    const pa = positions[a] ?? Number.MAX_SAFE_INTEGER;
+    const pb = positions[b] ?? Number.MAX_SAFE_INTEGER;
+    if (pa !== pb) return pa - pb;
+    return layout.pinned.indexOf(a) - layout.pinned.indexOf(b);
+  });
+  return {
+    ...layout,
+    pinned: reordered,
+    screens: 1,
+    version: 2,
+  };
+}
+
+// ── Dashboard V2 feature flag ──────────────────────────────────────────────
+// Phase 5: V1 has been retired. The flag is gone; the persisted localStorage
+// key ``selena-dashboard-v2`` is removed once on the first post-upgrade
+// load so the URL query knob ``?dashboardV2=1`` no longer surfaces in the
+// store config UI.
+(function _retireDashboardV2Flag() {
+  try { localStorage.removeItem('selena-dashboard-v2'); } catch { /* ignore */ }
+})();
 function saveWidgetLayout(layout: WidgetLayout) {
   // Mirror to localStorage for instant rehydration on next page load
   try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
@@ -150,6 +204,11 @@ function broadcastThemeToIframes() {
   document.querySelectorAll('iframe').forEach(f => {
     try { f.contentWindow?.postMessage({ type: 'theme_changed', theme }, '*'); } catch (_) { /* cross-origin */ }
   });
+  // Phase 4 — re-inject design tokens after a theme switch so custom-iframe
+  // widgets that author against `var(--tx)` etc. pick up the new values
+  // without reloading. Imported lazily because useStore loads before the
+  // wallpaper/theme stylesheets settle on first paint.
+  import('../lib/widgetMessages').then((m) => m.injectTokensIntoAllIframes()).catch(() => {});
 }
 
 // ── Custom Themes + Wallpapers ────────────────────────────────────────────────
@@ -192,6 +251,8 @@ function broadcastThemeVarsToIframes() {
   document.querySelectorAll('iframe').forEach(f => {
     try { f.contentWindow?.postMessage({ type: 'theme_vars_changed' }, '*'); } catch (_) { /* cross-origin */ }
   });
+  // Phase 4 — same token re-injection on custom-theme switches.
+  import('../lib/widgetMessages').then((m) => m.injectTokensIntoAllIframes()).catch(() => {});
 }
 
 export interface AuthUser {
@@ -238,6 +299,7 @@ interface AppState {
   updateDeviceState: (deviceId: string, state: Record<string, unknown>) => Promise<void>;
   voiceStatus: 'idle' | 'listening' | 'speaking';
   setVoiceStatus: (status: 'idle' | 'listening' | 'speaking') => void;
+
   widgetLayout: WidgetLayout;
   initWidgetLayout: (modules: Module[]) => void;
   pinModule: (name: string, preferredSlot?: number) => void;
@@ -248,6 +310,10 @@ interface AppState {
   moveWidgetToSlot: (name: string, slot: number) => void;
   setWidgetSpan: (name: string, cols: number, rows: number) => void;
   addScreen: () => void;
+  /** Phase 4 escape hatch — clears spans and unpins everything so the
+   *  bento grid renders from scratch. Backend layout is overwritten on the
+   *  next mutation; users that want to undo can re-pin from V1. */
+  resetWidgetLayout: () => void;
   connectSyncStream: () => () => void;
   lastServerContact: number;
   toast: Toast | null;
@@ -684,16 +750,33 @@ export const useStore = create<AppState>((set, get) => ({
   },
   swapWidgets: (nameA, nameB) => {
     set(state => {
-      const positions = state.widgetLayout.positions ?? {};
+      const layout = state.widgetLayout;
+      const positions = layout.positions ?? {};
       const posA = positions[nameA];
       const posB = positions[nameB];
-      if (posA === undefined || posB === undefined) return state;
-      const layout: WidgetLayout = {
-        ...state.widgetLayout,
-        positions: { ...positions, [nameA]: posB, [nameB]: posA },
-      };
-      saveWidgetLayout(layout);
-      return { widgetLayout: layout };
+
+      // V1 path: both widgets have an absolute slot — swap them.
+      if (posA !== undefined && posB !== undefined) {
+        const next: WidgetLayout = {
+          ...layout,
+          positions: { ...positions, [nameA]: posB, [nameB]: posA },
+        };
+        saveWidgetLayout(next);
+        return { widgetLayout: next };
+      }
+
+      // V2 path: bento auto-flow uses ``pinned[]`` order. Swap the indexes
+      // there so the visual order changes. New widgets pinned via the V2
+      // AddWidgetDrawer never get positions, so this branch is what edit-
+      // mode drag-and-drop actually hits in production.
+      const idxA = layout.pinned.indexOf(nameA);
+      const idxB = layout.pinned.indexOf(nameB);
+      if (idxA < 0 || idxB < 0) return state;
+      const newPinned = [...layout.pinned];
+      [newPinned[idxA], newPinned[idxB]] = [newPinned[idxB], newPinned[idxA]];
+      const next: WidgetLayout = { ...layout, pinned: newPinned };
+      saveWidgetLayout(next);
+      return { widgetLayout: next };
     });
   },
   moveWidgetToSlot: (name, slotIdx) => {
@@ -722,6 +805,19 @@ export const useStore = create<AppState>((set, get) => ({
       saveWidgetLayout(layout);
       return { widgetLayout: layout };
     });
+  },
+  resetWidgetLayout: () => {
+    const fresh: WidgetLayout = {
+      pinned: [],
+      sizes: {},
+      hidden: [],
+      screens: 1,
+      positions: {},
+      spans: {},
+      version: 2,
+    };
+    saveWidgetLayout(fresh);
+    set({ widgetLayout: fresh });
   },
 
   connectSyncStream: () => {
@@ -767,9 +863,11 @@ export const useStore = create<AppState>((set, get) => ({
           try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { /* cross-origin */ }
         });
       }
-      // Layout
+      // Layout — migrate v1 → v2 on the way in so cross-device sync from
+      // a kiosk that hasn't been upgraded yet doesn't reintroduce the old
+      // shape locally.
       if (layout && (Array.isArray(layout.pinned) || layout.hidden !== undefined)) {
-        const parsed = parseLayout(layout);
+        const parsed = migrateLayoutToV2(parseLayout(layout));
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(parsed)); } catch { /* ignore */ }
         set({ widgetLayout: parsed });
       }
@@ -831,7 +929,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // ── Layout ──
       if (eventType === 'layout_changed') {
-        const layout = parseLayout(payload);
+        const layout = migrateLayoutToV2(parseLayout(payload));
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
         set({ widgetLayout: layout });
 

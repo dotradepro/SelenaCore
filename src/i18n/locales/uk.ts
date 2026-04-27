@@ -87,6 +87,46 @@ const uk = {
             widgetStopped: 'Зупинено',
         },
 
+        // ── Dashboard V2 (рекрафт) ──
+        dashboardV2: {
+            greeting: {
+                morning: 'Доброго ранку, {{name}}',
+                day: 'Вітаю, {{name}}',
+                evening: 'Доброго вечора, {{name}}',
+                fallbackName: 'друже',
+            },
+            pill: {
+                ok: 'Усі системи в нормі · {{count}} модулів активні',
+                warning: 'Перевіряю цілісність...',
+                degraded: 'Модуль {{name}} у стані помилки',
+                safe: 'SAFE MODE',
+            },
+            scenes: {
+                activated: 'Активовано: {{name}}',
+                partial: '{{name}} активовано з помилками',
+                failed: 'Помилка: {{name}} — {{error}}',
+            },
+            rooms: {
+                all: 'Усі',
+                system: 'Система',
+                home: 'Дім',
+                living: 'Вітальня',
+                bedroom: 'Спальня',
+                kitchen: 'Кухня',
+                bath: 'Ванна',
+            },
+            label: {
+                widgetCount_one: '{{count}} віджет',
+                widgetCount_few: '{{count}} віджети',
+                widgetCount_many: '{{count}} віджетів',
+                widgetCount_other: '{{count}} віджетів',
+                empty: 'У цій кімнаті немає віджетів. Закріпіть модулі з Налаштувань → Модулі.',
+                reset: 'Скинути',
+                resetTitle: 'Видалити всі закріплені віджети та скинути розміри',
+                resetConfirm: 'Скинути layout панелі? Закріплені віджети та власні розміри буде видалено.',
+            },
+        },
+
         // ── Devices ──
         devices: {
             title: 'Пристрої',

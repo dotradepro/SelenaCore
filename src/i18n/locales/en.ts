@@ -87,6 +87,44 @@ const en = {
             widgetStopped: 'Stopped',
         },
 
+        // ── Dashboard V2 (recraft) ──
+        dashboardV2: {
+            greeting: {
+                morning: 'Good morning, {{name}}',
+                day: 'Hello, {{name}}',
+                evening: 'Good evening, {{name}}',
+                fallbackName: 'there',
+            },
+            pill: {
+                ok: 'All systems nominal · {{count}} modules active',
+                warning: 'Checking integrity...',
+                degraded: 'Module {{name}} in error state',
+                safe: 'SAFE MODE',
+            },
+            scenes: {
+                activated: 'Activated: {{name}}',
+                partial: '{{name}} activated with errors',
+                failed: 'Failed: {{name}} — {{error}}',
+            },
+            rooms: {
+                all: 'All',
+                system: 'System',
+                home: 'Home',
+                living: 'Living room',
+                bedroom: 'Bedroom',
+                kitchen: 'Kitchen',
+                bath: 'Bath',
+            },
+            label: {
+                widgetCount_one: '{{count}} widget',
+                widgetCount_other: '{{count}} widgets',
+                empty: 'No widgets in this room. Pin modules from Settings → Modules.',
+                reset: 'Reset',
+                resetTitle: 'Unpin all widgets and clear sizes',
+                resetConfirm: 'Reset the dashboard layout? Pinned widgets and custom sizes will be cleared.',
+            },
+        },
+
         // ── Devices ──
         devices: {
             title: 'Devices',
