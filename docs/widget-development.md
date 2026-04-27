@@ -1,6 +1,21 @@
 # Widget Development Guide
 
-This guide covers how to build UI widgets, settings pages, and icons for SelenaCore modules. Modules can provide dashboard widgets and configuration interfaces served through the core at `/api/ui/modules/{module_name}/`.
+This guide covers how to build UI widgets, settings pages, and icons for SelenaCore modules.
+
+> **Template engine first.** As of the dashboard recraft (Phase 5 shipped), the
+> primary path for new widgets is the **template engine**: declare a payload
+> shape in your manifest and let the dashboard render it. Only fall back to
+> custom HTML in an iframe when a built-in template doesn't fit. See
+> [dashboard-recraft.md](dashboard-recraft.md) §3 for the five available
+> templates (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`),
+> their payload schemas, and the `data_endpoints` / `actions` contract.
+>
+> This document still applies to **`kind: "custom"` iframe widgets**. The
+> legacy postMessage names (`openWidgetModal`, `closeWidgetModal`,
+> `openSettings`, `refresh`) were removed — use the canonical names
+> documented in [`src/lib/widgetMessages.ts`](../src/lib/widgetMessages.ts).
+> Modules and configuration interfaces are served through the core at
+> `/api/ui/modules/{module_name}/`.
 
 ---
 
