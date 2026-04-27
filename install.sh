@@ -809,6 +809,92 @@ install_repo() {
         log "Already running from $INSTALL_DIR"
     fi
     run chown -R "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR"
+
+    # Write deployed version marker. core/version.py reads this when
+    # /opt/selena-core/.git is missing (which it is, by design — the rsync
+    # above strips .git so the production tree stays pristine).
+    if [ -d "$SCRIPT_DIR/.git" ] && command -v git >/dev/null 2>&1; then
+        local deployed_ver
+        deployed_ver="$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || true)"
+        if [ -n "$deployed_ver" ]; then
+            if $DRY_RUN; then
+                echo "    [dry-run] would write .version=$deployed_ver"
+            else
+                printf '%s\n' "$deployed_ver" > "$INSTALL_DIR/.version"
+                chown "$SELENA_USER:$SELENA_USER" "$INSTALL_DIR/.version" 2>/dev/null || true
+                log "Wrote .version=$deployed_ver"
+            fi
+        fi
+    fi
+}
+
+# ── Update infrastructure (staging + sudoers) ──────────────────────
+
+install_update_infra() {
+    title "Provisioning update infrastructure"
+
+    # Mutable runtime dirs. apply-update.sh and the in-process update_manager
+    # both write here; smarthome-core.service has these under ReadWritePaths.
+    run install -d -m 0755 -o "$SELENA_USER" -g "$SELENA_USER" \
+        /var/lib/selena/update \
+        /var/lib/selena/update/staging \
+        /var/lib/selena/update/cache \
+        /var/log/selena
+
+    # /secure must already exist for the integrity agent. Make sure it is
+    # group-writable by selena so apply-update.sh can drop the
+    # .update_in_progress flag without escalating to root for that one file.
+    if [ -d /secure ]; then
+        run chmod 0770 /secure 2>/dev/null || true
+        run chown root:"$SELENA_USER" /secure 2>/dev/null || true
+    fi
+
+    # Make sure the new external updater is executable. rsync should preserve
+    # the bit but `cp -r` (the fallback) may not.
+    if [ -f "$INSTALL_DIR/scripts/apply-update.sh" ]; then
+        run chmod 0755 "$INSTALL_DIR/scripts/apply-update.sh"
+    fi
+
+    install_update_sudoers
+}
+
+install_update_sudoers() {
+    # Without these privileges, `update_manager` (running as User=selena
+    # under smarthome-core.service) cannot dispatch the external updater.
+    local sudoers_file="/etc/sudoers.d/selena-update"
+    local tmp_file
+    tmp_file="$(mktemp -t selena-update-sudoers.XXXXXX)"
+    cat > "$tmp_file" <<'SUDOERS'
+# /etc/sudoers.d/selena-update — managed by SelenaCore install.sh
+#
+# update_manager dispatches scripts/apply-update.sh into a fresh systemd
+# transient unit. Without sudo this fails because the user `selena` cannot
+# create system-scope units. We constrain the wildcard via the
+# [a-zA-Z0-9._-]* glob on the tag argument so a tag with shell metacharacters
+# cannot escape into the command line.
+
+Cmnd_Alias SELENA_UPDATE_INSTALL  = /bin/systemd-run --on-active=* --unit=selena-update-* --no-block /opt/selena-core/scripts/apply-update.sh [a-zA-Z0-9._-]* install
+Cmnd_Alias SELENA_UPDATE_ROLLBACK = /bin/systemd-run --on-active=* --unit=selena-update-* --no-block /opt/selena-core/scripts/apply-update.sh [a-zA-Z0-9._-]* rollback
+Cmnd_Alias SELENA_CORE_CTL        = /bin/systemctl stop smarthome-core, /bin/systemctl start smarthome-core, /bin/systemctl restart smarthome-core
+Cmnd_Alias SELENA_UPDATE_STATUS   = /bin/systemctl status selena-update-*
+
+selena ALL=(root) NOPASSWD: SELENA_UPDATE_INSTALL, SELENA_UPDATE_ROLLBACK, SELENA_CORE_CTL, SELENA_UPDATE_STATUS
+SUDOERS
+
+    if $DRY_RUN; then
+        echo "    [dry-run] would install $sudoers_file (validated via visudo)"
+        rm -f "$tmp_file"
+        return
+    fi
+
+    if ! visudo -c -f "$tmp_file" >/dev/null 2>&1; then
+        echo "ERROR: generated sudoers file failed visudo -c validation" >&2
+        rm -f "$tmp_file"
+        return 1
+    fi
+    install -m 0440 -o root -g root "$tmp_file" "$sudoers_file"
+    rm -f "$tmp_file"
+    log "Installed sudoers $sudoers_file"
 }
 
 # ── Config bootstrap ───────────────────────────────────────────────
@@ -1222,6 +1308,7 @@ main() {
     create_user_and_dirs
     install_repo
     bootstrap_config
+    install_update_infra
     build_frontend
 
     if ! $SKIP_DOCKER; then

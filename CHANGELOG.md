@@ -6,6 +6,68 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 
 ## Unreleased
 
+### Added
+
+- **update_manager: version history with GitHub Releases as source of truth.**
+  The hub now lists every release on `dotradepro/SelenaCore` (filtered by
+  channel) with publish date, prerelease badge, summary and full release
+  notes — pick a version, confirm, install. Mandatory SHA256 verification
+  against a `selenacore-<tag>.tar.gz.sha256` asset; mismatched downloads
+  are rejected with `update.failed { reason: sha256_mismatch }`. The
+  rc/stable channel selector lives in the settings page and persists to
+  `/var/lib/selena/update_manager.state.json`.
+- `scripts/apply-update.sh` — external updater run under `systemd-run`.
+  Required because `smarthome-core.service` lives under
+  `ReadOnlyPaths=/opt/selena-core /secure`, so in-process self-update
+  fails with `PermissionError`. The script does an explicit
+  `systemctl stop smarthome-core` first (overrides `Restart=always`),
+  then hardlink-delta backup + rsync + `pip install` (or
+  `docker compose build` in container deploy) + manifest rebaseline +
+  `systemctl start`.
+- `agent/manifest.py --rebuild` CLI for re-baselining `core.manifest` +
+  `master.hash` after rsync so the integrity agent does not detect
+  tampering on the new files.
+- `agent/integrity_agent.py` honours `/secure/.update_in_progress`: while
+  the flag exists (set by `apply-update.sh`, removed in `trap EXIT`),
+  the periodic check returns `ok` without comparing hashes.
+- New endpoints under `/api/ui/modules/update-manager/`: `GET /versions`,
+  `GET /version/{tag}`, `POST /install`, `POST /config`, `GET /log`.
+- `/etc/sudoers.d/selena-update` installed by `install.sh` granting the
+  `selena` user `NOPASSWD` for `systemd-run` of the updater unit and
+  `systemctl stop|start|restart smarthome-core`.
+
+### Changed
+
+- **update_manager source of truth flipped from `UPDATE_MANIFEST_URL` to
+  GitHub Releases API.** The old manifest URL flow was non-functional in
+  prod (no manifest was ever published). New flow uses
+  `api.github.com/repos/<owner>/<repo>/releases?per_page=30`, with ETag
+  caching to avoid rate limits and GitHub Releases assets for both the
+  tarball and its SHA256 file.
+- `apply_update_from_url` (cloud-triggered via `update.apply_core` event
+  from `cloud_sync/commands.py`) now goes through the same external
+  systemd-run flow as the UI install path. SHA256 is mandatory and
+  validated as 64-char lowercase hex before downloading.
+- Default `install_dir` in `UpdateManager`: `/opt/selena-update` →
+  `/opt/selena-core`. The `UPDATE_INSTALL_DIR` env override remains for
+  tests that need an isolated tree.
+- `update_manager` widget/settings HTML moved to inline
+  `var L = {en, uk}` to match the project-wide convention; the
+  per-module `/api/i18n/bundle/update-manager` lazy-load is gone.
+- ZIP archive support removed from `_extract` — releases are tar.gz only.
+
+### Migration
+
+- Releases must be published with three assets:
+  `selenacore-<tag>.tar.gz`, `selenacore-<tag>.tar.gz.sha256`, and
+  optionally `selenacore-<tag>.meta.json`. Without the first two the
+  release is skipped with a warning. CI for asset generation is a
+  separate follow-up issue.
+- Existing deployments must re-run `install.sh` once to install the
+  sudoers file and create `/var/lib/selena/update/` + `/var/log/selena/`.
+  Without the sudoers, install attempts will fail at the `systemd-run`
+  step with `permission denied`.
+
 ### Breaking changes
 
 - **Piper TTS moved into the container.** The host-side `piper-tts.service`
