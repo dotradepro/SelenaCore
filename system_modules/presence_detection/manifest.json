@@ -1,6 +1,7 @@
 {
     "name": "presence-detection",
     "version": "0.1.0",
+    "room": "system",
     "description": "Detects home/away presence via ARP ping, Bluetooth, and Wi-Fi MAC tracking",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -17,9 +18,17 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "2x1",
-            "max_size": "2x2"
+            "kind": "template",
+            "template": "status",
+            "size": "2x2",
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 15}
+            },
+            "refresh": {
+                "events": ["presence.home", "presence.away"],
+                "poll_interval_s": 60
+            }
         }
     },
     "oauth": null,

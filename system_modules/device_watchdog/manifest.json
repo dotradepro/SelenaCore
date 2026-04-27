@@ -1,6 +1,7 @@
 {
     "name": "device-watchdog",
     "version": "0.1.0",
+    "room": "system",
     "description": "Device availability monitoring: ICMP ping, MQTT/Zigbee heartbeat",
     "type": "SYSTEM",
     "ui_profile": "ICON_SETTINGS",
@@ -18,9 +19,17 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "1x1",
-            "max_size": "2x2"
+            "kind": "template",
+            "template": "metric",
+            "size": "2x1",
+            "max_size": "2x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 10}
+            },
+            "refresh": {
+                "events": ["device.online", "device.offline"],
+                "poll_interval_s": 60
+            }
         },
         "settings": "settings.html"
     },

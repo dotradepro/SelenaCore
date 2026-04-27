@@ -1,6 +1,7 @@
 {
     "name": "weather-service",
     "version": "1.0.0",
+    "room": "home",
     "description": "Local weather conditions and forecast via Open-Meteo (no API key required)",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -15,10 +16,16 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
+            "kind": "template",
+            "template": "status",
             "size": "2x2",
-            "min_size": "1x1",
-            "max_size": "2x2"
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
+            },
+            "refresh": {
+                "poll_interval_s": 300
+            }
         },
         "settings": "settings.html"
     },

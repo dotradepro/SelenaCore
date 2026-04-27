@@ -144,6 +144,52 @@ class WeatherServiceModule(SystemModule):
                 raise HTTPException(503, "No weather data yet")
             return JSONResponse(current)
 
+        # ── Dashboard V2 status template endpoint ───────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._weather is None:
+                raise HTTPException(503, "Service not ready")
+            current = svc._weather.get_current()
+            status = svc._weather.get_status()
+            location = status.get("location_name") or ""
+            unit = "°C" if status.get("units") != "fahrenheit" else "°F"
+
+            if current is None:
+                tone = "warn"
+                text = status.get("error") or "No data yet"
+                pill = {"tone": tone, "text": str(text)[:40], "icon": "alert"}
+                rows: list[dict] = []
+                if location:
+                    rows.append({"label": "Location", "value": location})
+                return {"label": "Weather", "pill": pill, "rows": rows}
+
+            condition = current.get("condition") or "—"
+            emoji = current.get("condition_emoji") or ""
+            temp = current.get("temperature")
+            feels = current.get("feels_like")
+            humidity = current.get("humidity")
+            wind = current.get("wind_speed")
+
+            pill_text = f"{emoji} {condition}".strip() if emoji else condition
+            pill = {"tone": "info", "text": pill_text, "icon": "check"}
+
+            def _fmt(v: object, suffix: str) -> str:
+                if isinstance(v, (int, float)):
+                    return f"{v:.1f}{suffix}" if isinstance(v, float) else f"{v}{suffix}"
+                return "—"
+
+            rows = []
+            if location:
+                rows.append({"label": "Location", "value": location})
+            rows.append({"label": "Temp", "value": _fmt(temp, unit)})
+            if feels is not None:
+                rows.append({"label": "Feels", "value": _fmt(feels, unit)})
+            if wind is not None:
+                rows.append({"label": "Wind", "value": _fmt(wind, " km/h")})
+            if humidity is not None:
+                rows.append({"label": "Humidity", "value": _fmt(humidity, "%")})
+            return {"label": "Weather", "pill": pill, "rows": rows[:4]}
+
         @router.get("/weather/forecast")
         async def get_forecast() -> JSONResponse:
             if svc._weather is None:

@@ -374,5 +374,61 @@ class EnergyMonitorModule(SystemModule):
                 raise HTTPException(404, "Source not found")
             return JSONResponse({"ok": True, "enabled": req.enabled})
 
+        # ── Dashboard V2 sparkline endpoint ─────────────────────────────────
+        # Returns whole-house power draw + a 12-bucket series of recent
+        # device-level readings collapsed into per-minute totals so the line
+        # has shape even when individual devices report sparsely.
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._monitor is None:
+                raise HTTPException(503, "Not ready")
+
+            current_total_w = svc._monitor.get_total_power()
+            kwh_today = svc._monitor.get_total_today_kwh()
+
+            # Build a 12-point series — one bucket per 5-minute window over
+            # the last hour. Aggregates per-device history into total watts.
+            import time as _time
+            window_s = 3600
+            bucket_s = window_s // 12
+            now_ts = _time.time()
+            buckets: list[float] = [0.0] * 12
+
+            for device_id in svc._monitor.get_all_devices():
+                try:
+                    history = svc._monitor.get_device_history(device_id, limit=200)
+                except Exception:
+                    continue
+                # Walk readings; assign each to a bucket by age.
+                last_per_bucket: dict[int, float] = {}
+                for entry in history:
+                    ts = entry.get("ts")
+                    if not isinstance(ts, (int, float)):
+                        # ts column is ISO string — convert
+                        try:
+                            from datetime import datetime as _dt
+                            ts = _dt.fromisoformat(str(ts)).timestamp()
+                        except Exception:
+                            continue
+                    age = now_ts - ts
+                    if age < 0 or age > window_s:
+                        continue
+                    idx = 11 - int(age // bucket_s)
+                    if 0 <= idx < 12:
+                        last_per_bucket[idx] = float(entry.get("watts", 0.0))
+                for idx, w in last_per_bucket.items():
+                    buckets[idx] += w
+
+            tone = "warn" if current_total_w > 3000 else "info"
+            return {
+                "label": "Energy",
+                "value": f"{current_total_w / 1000:.2f}" if current_total_w >= 1000 else f"{current_total_w:.0f}",
+                "unit": "kW" if current_total_w >= 1000 else "W",
+                "footnote": f"today · {kwh_today:.1f} kWh",
+                "series": [round(b, 2) for b in buckets],
+                "series_window_s": window_s,
+                "tone": tone,
+            }
+
         svc._register_html_routes(router, __file__)
         return router

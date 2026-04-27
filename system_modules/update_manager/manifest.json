@@ -1,6 +1,7 @@
 {
     "name": "update-manager",
     "version": "1.1.0",
+    "room": "system",
     "description": "OTA update management: GitHub Releases as source of truth, mandatory SHA256 verification, version history UI, rollback via external script under systemd-run (ReadOnlyPaths-safe)",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -15,9 +16,16 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "2x1",
-            "max_size": "2x1"
+            "kind": "template",
+            "template": "status",
+            "size": "2x2",
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
+            },
+            "refresh": {
+                "poll_interval_s": 300
+            }
         },
         "settings": "settings.html"
     },

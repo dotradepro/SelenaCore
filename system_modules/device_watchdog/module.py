@@ -131,5 +131,32 @@ class DeviceWatchdogModule(SystemModule):
                 svc._watchdog.update_config(svc._config)
             return svc._config
 
+        # ── Dashboard V2 template-engine endpoint ───────────────────────────
+        # Renders as a `metric` template: count of online devices with the
+        # delta vs the last known offline figure as a trend indicator.
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._watchdog is None:
+                raise HTTPException(503, "Watchdog not running")
+            summary = svc._watchdog.get_status_summary()
+            online = int(summary.get("online", 0))
+            offline = int(summary.get("offline", 0))
+            total = online + offline
+            tone = "ok" if offline == 0 else "warn"
+            trend: dict | None = None
+            if offline > 0:
+                trend = {
+                    "direction": "down",
+                    "magnitude": f"-{offline}",
+                    "period": "offline",
+                }
+            return {
+                "label": "Devices",
+                "value": str(online),
+                "unit": f"of {total}" if total else None,
+                "trend": trend,
+                "tone": tone,
+            }
+
         svc._register_html_routes(router, __file__)
         return router

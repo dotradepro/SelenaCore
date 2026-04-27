@@ -102,5 +102,34 @@ class ProtocolBridgeModule(SystemModule):
                 svc._config[k] = v
             return svc._config
 
+        # ── Dashboard V2 status template ───────────────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._bridge is None:
+                return {
+                    "label": "Protocol bridge",
+                    "pill": {"tone": "neutral", "text": "Not running", "icon": "alert"},
+                    "rows": [],
+                }
+            s = svc._bridge.get_status()
+            mqtt = s.get("mqtt", {})
+            zigbee = s.get("zigbee", {})
+            zwave = s.get("zwave", {})
+
+            mqtt_on = bool(mqtt.get("connected"))
+            if not mqtt.get("enabled"):
+                pill = {"tone": "neutral", "text": "Disabled", "icon": "clock"}
+            elif mqtt_on:
+                pill = {"tone": "ok", "text": "Connected", "icon": "check"}
+            else:
+                pill = {"tone": "warn", "text": "MQTT offline", "icon": "alert"}
+
+            rows = [
+                {"label": "MQTT", "value": mqtt.get("host") or "—" if mqtt.get("enabled") else "off"},
+                {"label": "Zigbee", "value": "on" if zigbee.get("enabled") else "off"},
+                {"label": "Z-Wave", "value": "on" if zwave.get("enabled") else "off"},
+            ]
+            return {"label": "Protocol bridge", "pill": pill, "rows": rows}
+
         svc._register_html_routes(router, __file__)
         return router

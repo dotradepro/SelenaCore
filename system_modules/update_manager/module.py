@@ -177,5 +177,43 @@ class UpdateManagerModule(SystemModule):
         async def get_log(tag: str | None = None, lines: int = 200) -> JSONResponse:
             return JSONResponse({"log": _req().get_apply_log(tag=tag, max_lines=lines)})
 
+        # ── Dashboard V2 status template ────────────────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._manager is None:
+                return {
+                    "label": "Updates",
+                    "pill": {"tone": "neutral", "text": "Not ready", "icon": "alert"},
+                    "rows": [],
+                }
+            s = svc._manager.get_status()
+            state = s.get("state", "idle")
+            current = s.get("current_version") or "—"
+            latest = s.get("latest_version") or "—"
+            available = bool(s.get("update_available"))
+            error = s.get("error")
+            channel = s.get("channel", "stable")
+
+            if error:
+                pill = {"tone": "alert", "text": str(error)[:30], "icon": "x"}
+            elif state == "checking":
+                pill = {"tone": "info", "text": "Checking", "icon": "refresh"}
+            elif state == "downloading":
+                pill = {"tone": "info", "text": "Downloading", "icon": "refresh"}
+            elif state == "installing":
+                pill = {"tone": "warn", "text": "Installing", "icon": "clock"}
+            elif available:
+                pill = {"tone": "warn", "text": f"v{latest} available", "icon": "alert"}
+            else:
+                pill = {"tone": "ok", "text": "Up to date", "icon": "check"}
+
+            rows = [
+                {"label": "Current", "value": str(current)},
+                {"label": "Channel", "value": str(channel)},
+            ]
+            if available and latest != current:
+                rows.append({"label": "Latest", "value": str(latest)})
+            return {"label": "Updates", "pill": pill, "rows": rows[:4]}
+
         svc._register_html_routes(router, __file__)
         return router

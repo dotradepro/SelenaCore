@@ -1,6 +1,7 @@
 {
     "name": "climate",
     "version": "0.1.0",
+    "room": "home",
     "description": "Climate control panel — render and control air conditioners and thermostats grouped by room. No voice intents owned (handled by device-control).",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -17,8 +18,21 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "2x2"
+            "kind": "template",
+            "template": "control-panel",
+            "size": "4x2",
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
+            },
+            "actions": {
+                "set_mode": {"path": "/widget/action/set_mode"},
+                "step": {"path": "/widget/action/step"}
+            },
+            "refresh": {
+                "events": ["device.state_changed"],
+                "poll_interval_s": 30
+            }
         },
         "settings": "settings.html"
     },

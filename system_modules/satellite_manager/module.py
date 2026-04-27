@@ -104,6 +104,9 @@ class SatelliteManagerModule(SystemModule):
         router.add_api_route("/ota/upload", self._api_ota_upload, methods=["POST"])
         router.add_api_route("/ota/latest", self._api_ota_latest, methods=["GET"])
 
+        # Dashboard V2 metric template — count of online satellites
+        router.add_api_route("/widget/data/state", self._widget_state, methods=["GET"])
+
         # WebSocket for ESP32
         assert self._ws_hub is not None
         router.add_api_websocket_route("/ws", self._ws_hub.handle_connection)
@@ -241,6 +244,33 @@ class SatelliteManagerModule(SystemModule):
             reg = DeviceRegistry(session)
             locations = await reg.get_locations()
         return {"satellites": satellites, "locations": locations}
+
+    async def _widget_state(self) -> dict:
+        """Dashboard V2 metric — online / total satellites."""
+        if self._registry is None:
+            return {"label": "Satellites", "value": "—", "tone": "neutral"}
+        sats = await self._registry.list_all()
+        online = sum(1 for s in sats if (s.get("state") or {}).get("online"))
+        total = len(sats)
+        if total == 0:
+            return {
+                "label": "Satellites",
+                "value": "0",
+                "trend": {"direction": "flat", "magnitude": "none", "period": "registered"},
+                "tone": "neutral",
+            }
+        offline = total - online
+        tone = "ok" if offline == 0 else "warn"
+        trend = None
+        if offline > 0:
+            trend = {"direction": "down", "magnitude": f"-{offline}", "period": "offline"}
+        return {
+            "label": "Satellites",
+            "value": str(online),
+            "unit": f"of {total}",
+            "trend": trend,
+            "tone": tone,
+        }
 
     async def _api_update(self, device_id: str, body: dict) -> dict:
         from fastapi import HTTPException

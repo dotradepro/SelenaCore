@@ -43,6 +43,12 @@ class CommandBody(BaseModel):
     state: dict[str, Any]
 
 
+class WidgetActionBody(BaseModel):
+    """Body for ``POST /widget/action/{set_mode|step}`` (Dashboard V2)."""
+    id: str
+    value: float | None = None
+
+
 def build_router(svc: "ClimateModule") -> APIRouter:
     router = APIRouter()
 
@@ -92,5 +98,96 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             )
             raise HTTPException(502, f"Command failed: {exc}")
         return {"status": "ok", "state": new_state}
+
+    # ── Dashboard V2 control-panel endpoint ─────────────────────────────────
+    # Renders the first climate device the registry returns. Multi-room
+    # composition (siblings array) is open question §1 of the recraft doc —
+    # we lean toward extending this payload with an optional `siblings` field
+    # in a later phase rather than spawning a per-room widget.
+
+    MODE_OPTIONS = [
+        {"id": "auto", "label": "Auto"},
+        {"id": "cool", "label": "Cool"},
+        {"id": "heat", "label": "Heat"},
+        {"id": "dry",  "label": "Dry"},
+    ]
+
+    def _primary_device(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not devices:
+            return None
+        # Prefer an enabled, on-state device; otherwise first.
+        for d in devices:
+            if d.get("enabled") and (d.get("state") or {}).get("on"):
+                return d
+        for d in devices:
+            if d.get("enabled"):
+                return d
+        return devices[0]
+
+    @router.get("/widget/data/state")
+    async def widget_state() -> dict[str, Any]:
+        devices = await svc.list_climate_devices()
+        device = _primary_device(devices)
+        if device is None:
+            raise HTTPException(503, "No climate device available")
+        state = device.get("state") or {}
+        target = state.get("target_temp")
+        current = state.get("current_temp") or state.get("temperature") or target or 0
+        mode = (state.get("mode") or "auto").lower()
+        secondary = (
+            f"→ set {target:g}°"
+            if isinstance(target, (int, float))
+            else None
+        )
+        location = device.get("location") or ""
+        return {
+            "_device_id": device["device_id"],  # echoed back in actions
+            "label": f"Climate · {location}" if location else "Climate",
+            "primary": {
+                "value": f"{float(current):.1f}",
+                "unit": "°",
+                "secondary": secondary,
+            },
+            "modes": {
+                "current": mode if mode in {o["id"] for o in MODE_OPTIONS} else "auto",
+                "options": MODE_OPTIONS,
+            },
+            "steppers": [
+                {
+                    "id": "temp",
+                    "label": "Temp",
+                    "value": f"{float(target):.1f}" if isinstance(target, (int, float)) else "—",
+                    "unit": "°",
+                    "min": 16, "max": 30, "step": 0.5,
+                }
+            ] if isinstance(target, (int, float)) else [],
+        }
+
+    async def _apply_to_primary(state_patch: dict[str, Any]) -> dict[str, Any]:
+        devices = await svc.list_climate_devices()
+        device = _primary_device(devices)
+        if device is None:
+            raise HTTPException(503, "No climate device available")
+        try:
+            new_state = await svc.apply_command(device["device_id"], state_patch)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc))
+        except Exception as exc:
+            logger.warning("climate widget command failed: %s", exc)
+            raise HTTPException(502, f"Command failed: {exc}")
+        return {"status": "ok", "device_id": device["device_id"], "state": new_state}
+
+    @router.post("/widget/action/set_mode")
+    async def widget_set_mode(body: WidgetActionBody) -> dict[str, Any]:
+        if body.id not in {o["id"] for o in MODE_OPTIONS}:
+            raise HTTPException(422, f"Unknown mode {body.id!r}")
+        return await _apply_to_primary({"mode": body.id})
+
+    @router.post("/widget/action/step")
+    async def widget_step(body: WidgetActionBody) -> dict[str, Any]:
+        if body.id != "temp" or body.value is None:
+            raise HTTPException(422, "Stepper id must be 'temp' with a numeric value")
+        clamped = max(16.0, min(30.0, float(body.value)))
+        return await _apply_to_primary({"target_temp": clamped})
 
     return router

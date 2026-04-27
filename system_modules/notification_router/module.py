@@ -116,6 +116,32 @@ class NotificationRouterModule(SystemModule):
                 raise HTTPException(503, "Not ready")
             return JSONResponse(svc._router_svc.get_status())
 
+        # ── Dashboard V2 status template ────────────────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._router_svc is None:
+                raise HTTPException(503, "Not ready")
+            s = svc._router_svc.get_status()
+            channels = int(s.get("channels", 0))
+            rules = int(s.get("rules", 0))
+            sent = int(s.get("total_sent", 0))
+            history = svc._router_svc.get_history(limit=10)
+            recent = len(history)
+
+            if channels == 0:
+                pill = {"tone": "warn", "text": "No channels configured", "icon": "alert"}
+            elif sent == 0:
+                pill = {"tone": "neutral", "text": "Idle", "icon": "clock"}
+            else:
+                pill = {"tone": "ok", "text": f"{sent} sent", "icon": "check"}
+
+            rows = [
+                {"label": "Channels", "value": str(channels)},
+                {"label": "Rules", "value": str(rules)},
+                {"label": "Recent", "value": str(recent)},
+            ]
+            return {"label": "Notifications", "pill": pill, "rows": rows}
+
         @router.post("/channels", status_code=201)
         async def add_channel(req: ChannelRequest) -> JSONResponse:
             if svc._router_svc is None:

@@ -1,6 +1,7 @@
 {
     "name": "backup-manager",
     "version": "1.0.0",
+    "room": "system",
     "description": "Local USB/SD and cloud E2E backup management",
     "type": "SYSTEM",
     "ui_profile": "SETTINGS_ONLY",

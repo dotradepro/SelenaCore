@@ -1,6 +1,7 @@
 {
     "name": "energy-monitor",
     "version": "1.0.0",
+    "room": "home",
     "description": "Per-device power consumption tracking, daily kWh reports, and anomaly detection",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -17,9 +18,17 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "1x1",
-            "max_size": "1x1"
+            "kind": "template",
+            "template": "sparkline",
+            "size": "2x2",
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 10}
+            },
+            "refresh": {
+                "events": ["device.power_reading"],
+                "poll_interval_s": 30
+            }
         },
         "settings": "settings.html"
     },

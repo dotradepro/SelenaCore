@@ -173,6 +173,32 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             return svc._detector.get_status()
 
+        # ── Dashboard V2 status template endpoint ───────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            if svc._detector is None:
+                raise HTTPException(503, "Not running")
+            status = svc._detector.get_status()
+            home = int(status.get("users_home", 0))
+            away = int(status.get("users_away", 0))
+            total = int(status.get("users_total", 0))
+
+            if total == 0:
+                pill = {"tone": "neutral", "text": "No users", "icon": "alert"}
+            elif home == 0:
+                pill = {"tone": "warn", "text": "Everyone away", "icon": "x"}
+            elif away == 0:
+                pill = {"tone": "ok", "text": "Everyone home", "icon": "check"}
+            else:
+                pill = {"tone": "info", "text": f"{home} home · {away} away", "icon": "check"}
+
+            method = status.get("detection_method", "—")
+            rows = [
+                {"label": "Total users", "value": str(total)},
+                {"label": "Method", "value": str(method)},
+            ]
+            return {"label": "Presence", "pill": pill, "rows": rows}
+
         @router.get("/users")
         async def list_users() -> dict:
             if svc._detector is None:

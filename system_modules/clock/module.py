@@ -187,6 +187,44 @@ class ClockModule(SystemModule):
         async def get_state() -> dict:
             return await _service().get_state()
 
+        # ── Dashboard V2 metric template ───────────────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            state = await _service().get_state()
+            alarms = state.get("alarms") or []
+            enabled_count = sum(1 for a in alarms if a.get("enabled", True))
+            next_alarm = state.get("next_alarm")
+
+            if next_alarm:
+                hour = int(next_alarm.get("hour", 0))
+                minute = int(next_alarm.get("minute", 0))
+                value = f"{hour:02d}:{minute:02d}"
+                trend = {
+                    "direction": "flat",
+                    "magnitude": next_alarm.get("label") or "alarm",
+                    "period": "next",
+                }
+                tone = "info"
+            elif enabled_count > 0:
+                value = str(enabled_count)
+                trend = {
+                    "direction": "flat",
+                    "magnitude": "set",
+                    "period": "no upcoming",
+                }
+                tone = "neutral"
+            else:
+                value = "—"
+                trend = None
+                tone = "neutral"
+            return {
+                "label": "Alarms",
+                "value": value,
+                "unit": None,
+                "trend": trend,
+                "tone": tone,
+            }
+
         # ── Alarms ─────────────────────────────────────────────────────────
         @router.get("/alarms")
         async def list_alarms() -> dict:

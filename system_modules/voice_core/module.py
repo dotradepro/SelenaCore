@@ -2955,6 +2955,34 @@ class VoiceCoreModule(SystemModule):
                 "spoken_text": svc._last_spoken if tts_done else None,
             })
 
+        # ── Dashboard V2 status template ────────────────────────────────────
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            from system_modules.voice_core.privacy import is_privacy_mode
+            privacy = is_privacy_mode()
+            state = svc._state or "idle"
+            wake_enabled = bool(svc._config.get("wake_word_enabled", True))
+            wake_word = svc._config.get("wake_word_model") or svc._config.get("wake_word_en") or "—"
+            stt_lang = svc._config.get("stt_lang") or "—"
+
+            if privacy:
+                pill = {"tone": "neutral", "text": "Privacy on", "icon": "x"}
+            elif state == "listening":
+                pill = {"tone": "info", "text": "Listening", "icon": "refresh"}
+            elif state == "speaking":
+                pill = {"tone": "info", "text": "Speaking", "icon": "refresh"}
+            elif state == "error":
+                pill = {"tone": "alert", "text": "Error", "icon": "x"}
+            else:
+                pill = {"tone": "ok", "text": "Ready", "icon": "check"}
+
+            rows = [
+                {"label": "Wake word", "value": str(wake_word) if wake_enabled else "always-on"},
+                {"label": "STT lang", "value": str(stt_lang)},
+                {"label": "Privacy", "value": "on" if privacy else "off"},
+            ]
+            return {"label": "Voice", "pill": pill, "rows": rows[:4]}
+
         svc._register_html_routes(router, __file__)
 
         @router.websocket("/stream")
