@@ -43,6 +43,11 @@ class ModuleResponse(BaseModel):
     port: int  # Deprecated: always 0 — modules use WebSocket bus
     installed_at: float
     ui: dict | None = None   # from manifest.json "ui" section (widget, settings, icon)
+    # Dashboard recraft (Phase 0): room key used for room-tab filtering and
+    # the System tab grouping in DashboardV2. Required in the manifest schema;
+    # kept Optional here so older snapshots cached during a rolling upgrade
+    # don't crash the response.
+    room: str | None = None
 
 
 class ModuleListResponse(BaseModel):
@@ -59,6 +64,7 @@ def _to_response(info: ModuleInfo) -> ModuleResponse:
         port=info.port,
         installed_at=info.installed_at,
         ui=info.manifest.get("ui") if info.manifest else None,
+        room=info.manifest.get("room") if info.manifest else None,
     )
 
 

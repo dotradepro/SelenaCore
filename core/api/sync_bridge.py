@@ -70,6 +70,11 @@ _WHITELIST: dict[str, _ThrottleConfig | None] = {
 
     # Notifications
     "notification.sent":     None,
+
+    # Scenes — dashboard scene shortcuts
+    "scene.activate":        None,
+    "scene.activated":       None,
+    "scene.failed":          None,
 }
 
 

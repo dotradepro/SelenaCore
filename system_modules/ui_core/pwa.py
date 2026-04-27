@@ -44,17 +44,22 @@ async def pwa_manifest() -> JSONResponse:
 
 @router.get("/sw.js", include_in_schema=False)
 async def service_worker() -> Response:
-    """Minimal Service Worker for offline support."""
+    """Service Worker stub. Always served with aggressive no-cache so any
+    legacy SW that ended up controlling a kiosk page picks up the new
+    self-unregistering body the next time the browser revalidates.
+
+    Headers are set via ``response.headers[...]`` rather than the
+    constructor ``headers=`` kwarg because BaseHTTPMiddleware drops the
+    constructor-supplied dict on the streaming path.
+    """
     sw_path = _STATIC_DIR / "sw.js"
-    if sw_path.exists():
-        content = sw_path.read_text()
-    else:
-        content = _default_sw()
-    return Response(
-        content=content,
-        media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"},
-    )
+    content = sw_path.read_text() if sw_path.exists() else _default_sw()
+    resp = Response(content=content, media_type="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def _default_sw() -> str:

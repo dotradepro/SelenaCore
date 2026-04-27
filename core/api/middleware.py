@@ -124,3 +124,48 @@ def setup_cors(app) -> None:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+# ── No-cache ASGI middleware ─────────────────────────────────────────────
+# Starlette's BaseHTTPMiddleware (used elsewhere here for X-Request-Id and
+# rate limiting) drops a handful of headers — including Cache-Control —
+# from regular ``Response`` returns when wrapping the ASGI stream. Adding
+# the header at the raw ASGI layer side-steps the loss and guarantees it
+# reaches the wire for the two paths that absolutely must never be cached.
+
+class NoCacheForPaths:
+    """Append ``Cache-Control: no-store`` to specific paths' responses.
+
+    Implemented as a raw ASGI middleware so it operates on the ``send``
+    message before uvicorn writes the response, after every Starlette
+    middleware has had its turn. Targets ``/sw.js`` and ``/manifest.json``
+    — these are the entry points browsers cache aggressively under PWA
+    rules and which we need to retire reliably across kiosk fleets.
+    """
+
+    NO_CACHE_PATHS = frozenset({"/sw.js", "/manifest.json"})
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") != "http" or scope.get("path") not in self.NO_CACHE_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_no_cache(message):
+            if message["type"] == "http.response.start":
+                # Replace any existing cache-control header rather than
+                # appending so a downstream Starlette middleware can't
+                # accidentally end up with two conflicting values.
+                headers = [
+                    (k, v) for k, v in message.get("headers", [])
+                    if k.lower() != b"cache-control" and k.lower() != b"pragma" and k.lower() != b"expires"
+                ]
+                headers.append((b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"))
+                headers.append((b"pragma", b"no-cache"))
+                headers.append((b"expires", b"0"))
+                message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_no_cache)

@@ -62,6 +62,11 @@ VOICE_TTS_DONE = "voice.tts_done"
 # Notification events
 NOTIFICATION_SENT = "notification.sent"
 
+# Scene events
+SCENE_ACTIVATE = "scene.activate"        # request to run a scene's actions (telemetry)
+SCENE_ACTIVATED = "scene.activated"      # actions completed successfully
+SCENE_FAILED = "scene.failed"            # one or more actions failed
+
 # Registry events
 REGISTRY_ENTITY_CHANGED = "registry.entity_changed"
 # payload: {"entity_type": "radio_station"|"device"|"scene"|"module",
