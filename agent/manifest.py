@@ -64,11 +64,23 @@ def create_manifest() -> dict[str, str]:
 
 
 def load_manifest() -> dict[str, str]:
-    """Load manifest from disk."""
+    """Load manifest from disk.
+
+    Translates ``PermissionError`` (e.g. when ``/secure/`` is locked down on
+    a dev workstation) into ``FileNotFoundError`` so callers don't have to
+    care about the difference between *missing* and *unreadable* — both
+    mean "no manifest available, regenerate it".
+    """
     p = Path(MANIFEST_PATH)
-    if not p.exists():
-        raise FileNotFoundError(f"Manifest not found: {MANIFEST_PATH}")
-    return json.loads(p.read_text())
+    try:
+        text = p.read_text()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Manifest not found: {MANIFEST_PATH}") from exc
+    except PermissionError as exc:
+        raise FileNotFoundError(
+            f"Manifest unreadable (permission denied): {MANIFEST_PATH}"
+        ) from exc
+    return json.loads(text)
 
 
 def verify_manifest_hash() -> bool:
@@ -94,3 +106,25 @@ def check_files(manifest: dict[str, str]) -> list[dict[str, str]]:
                 "actual": actual,
             })
     return changed
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    parser = argparse.ArgumentParser(description="SelenaCore integrity manifest tool")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Recompute manifest + master hash from current core files",
+    )
+    args = parser.parse_args()
+
+    if args.rebuild:
+        manifest = create_manifest()
+        print(f"manifest rebuilt: {len(manifest)} files", file=sys.stderr)
+    else:
+        parser.print_help()
+        sys.exit(2)
