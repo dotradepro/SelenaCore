@@ -41,7 +41,7 @@
         };
 
         function load() {
-            apiGet('/update/status')
+            apiGet('/status')
                 .then(function (s) {
                     $('cur-ver').textContent = s.current_version || '—';
                     $('latest-ver').textContent = s.latest_version || '—';
@@ -55,7 +55,7 @@
 
         function checkNow(btn) {
             withLoading(btn, function () {
-                return apiPost('/update/check').then(function (r) {
+                return apiPost('/check').then(function (r) {
                     showToast(
                         r.update_available ? t('update_available') + r.version : t('up_to_date'),
                         r.update_available ? 'info' : 'success'

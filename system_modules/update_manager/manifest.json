@@ -1,7 +1,7 @@
 {
     "name": "update-manager",
-    "version": "1.0.0",
-    "description": "OTA update management: check, download with SHA256 verification, apply, and rollback",
+    "version": "1.1.0",
+    "description": "OTA update management: GitHub Releases as source of truth, mandatory SHA256 verification, version history UI, rollback via external script under systemd-run (ReadOnlyPaths-safe)",
     "type": "SYSTEM",
     "ui_profile": "FULL",
     "api_version": "1.0",
