@@ -83,6 +83,12 @@ class ImportM3UBody(BaseModel):
     content: str
 
 
+class WidgetActionBody(BaseModel):
+    """Body for ``POST /widget/action/{set_mode|step}`` (Dashboard V2)."""
+    id: str
+    value: float | None = None
+
+
 class ImportRBBody(BaseModel):
     tag: str = ""
     name: str = ""
@@ -374,6 +380,74 @@ class MediaPlayerModule(SystemModule):
             enabled = bool(body.get("enabled", not svc._player._shuffle))
             svc._player.set_shuffle(enabled)
             return {"shuffle": svc._player._shuffle}
+
+        # ── Dashboard V2 control-panel template ─────────────────────────────
+        # Title goes in primary, transport modes go in modes (segmented),
+        # volume goes in steppers. The "current" mode reflects play/pause/stop
+        # so the active button highlights without an extra round-trip.
+        TRANSPORT_OPTIONS = [
+            {"id": "play", "label": "▶"},
+            {"id": "pause", "label": "❚❚"},
+            {"id": "stop", "label": "■"},
+            {"id": "next", "label": "⏭"},
+        ]
+
+        @router.get("/widget/data/state")
+        async def widget_state() -> dict:
+            status = svc._player.get_status()
+            track = status.get("track") or {}
+            state = status.get("state", "stopped")
+            volume = int(status.get("volume", 0))
+
+            title = track.get("title") or "Nothing playing"
+            artist = track.get("artist") or ""
+            return {
+                "label": "Media",
+                "primary": {
+                    "value": title[:40],
+                    "secondary": artist[:40] if artist else None,
+                },
+                "modes": {
+                    "current": state if state in {"play", "pause", "stop"} else "stop",
+                    "options": TRANSPORT_OPTIONS,
+                },
+                "steppers": [
+                    {
+                        "id": "volume",
+                        "label": "Vol",
+                        "value": str(volume),
+                        "unit": "%",
+                        "min": 0, "max": 100, "step": 5,
+                    }
+                ],
+            }
+
+        @router.post("/widget/action/set_mode")
+        async def widget_set_mode(body: WidgetActionBody) -> dict:
+            if body.id == "play":
+                state = svc._player.get_state()
+                if state == "pause":
+                    await svc._player.pause()  # toggle resume
+                # If nothing's loaded, no-op gracefully.
+                return {"ok": True, "state": svc._player.get_state()}
+            if body.id == "pause":
+                await svc._player.pause()
+                return {"ok": True, "state": svc._player.get_state()}
+            if body.id == "stop":
+                await svc._player.stop()
+                return {"ok": True, "state": svc._player.get_state()}
+            if body.id == "next":
+                await svc._player.next()
+                return {"ok": True, "state": svc._player.get_state()}
+            raise HTTPException(422, f"Unknown transport id {body.id!r}")
+
+        @router.post("/widget/action/step")
+        async def widget_step(body: WidgetActionBody) -> dict:
+            if body.id != "volume" or body.value is None:
+                raise HTTPException(422, "Stepper id must be 'volume' with a numeric value")
+            vol = max(0, min(100, int(body.value)))
+            await svc._player.set_volume(vol)
+            return {"ok": True, "volume": svc._player._volume}
 
         # ── Sources ───────────────────────────────────────────────────────────
 
