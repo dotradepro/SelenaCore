@@ -19,7 +19,9 @@ class TestVersion:
         with patch("core.version._get_patch", return_value=42), \
              patch("core.version._get_commit_hash", return_value="abc1234"):
             v = get_version()
-            assert "0.3.42" in v
+            # MAJOR/MINOR are read live from core/version.py — don't hard-code
+            # them in the assertion or the test rots every release cycle.
+            assert f"{MAJOR}.{MINOR}.42" in v
             assert "abc1234" in v
             if LABEL:
                 assert LABEL in v
