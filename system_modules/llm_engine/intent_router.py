@@ -355,6 +355,8 @@ class IntentRouter:
         tts_lang: str | None = None,
         native_text: str | None = None,
         trace: bool = False,
+        default_location: str | None = None,
+        origin_target: tuple[str, str] | None = None,
     ) -> IntentResult | tuple[IntentResult, list[dict[str, Any]]]:
         """Route user text: Module Bus → Embedding → Assistant LLM → Fallback.
 
@@ -371,6 +373,11 @@ class IntentRouter:
                 the catalog filter considers tokens from BOTH ``text``
                 and ``native_text``. Defaults to ``text`` when there
                 was no translation step.
+            default_location: Location hint from the audio source — e.g.
+                the room a satellite speaker is placed in. Used only as a
+                fallback when the classifier did NOT extract a location
+                from the utterance itself; an explicit "в спальне" always
+                wins over this default.
 
         Returns IntentResult (or (IntentResult, trace_steps) when trace=True).
         """
@@ -411,7 +418,7 @@ class IntentRouter:
                             "ms": _elapsed(),
                             "detail": bus_result.get("module", "?"),
                         })
-                    await self._publish_event(result, raw_text=text, lang=lang)
+                    await self._publish_event(result, raw_text=text, lang=lang, origin_target=origin_target)
                     return (result, steps) if trace else result
                 # Module unavailable
                 reason = bus_result.get("reason", "")
@@ -437,7 +444,7 @@ class IntentRouter:
                             "ms": _elapsed(),
                             "detail": bus_error,
                         })
-                    await self._publish_event(result, raw_text=text, lang=lang)
+                    await self._publish_event(result, raw_text=text, lang=lang, origin_target=origin_target)
                     return (result, steps) if trace else result
         except Exception as exc:
             logger.warning("Module bus error: %s", exc)
@@ -500,7 +507,9 @@ class IntentRouter:
             emb_result.lang = lang
             emb_result.user_id = user_id
             emb_result = await self._resolve_entity_ref(emb_result)
-            emb_result = await self._disambiguate_device(emb_result, tts_lang)
+            emb_result = await self._disambiguate_device(
+                emb_result, tts_lang, default_location=default_location,
+            )
             await self._publish_event(emb_result, raw_text=text, lang=lang)
             return (emb_result, steps) if trace else emb_result
 
@@ -1375,6 +1384,7 @@ class IntentRouter:
 
     async def _disambiguate_device(
         self, result: IntentResult, tts_lang: str,
+        default_location: str | None = None,
     ) -> IntentResult:
         """Resolve a voice intent's target device(s) by type + location.
 
@@ -1396,7 +1406,17 @@ class IntentRouter:
         """
         params = result.params or {}
         entity = params.get("entity")
-        location = params.get("location")
+        # Classifier-extracted location always wins; default_location (e.g.
+        # from a satellite's assigned room) fills in when the utterance
+        # itself was underspecified ("turn on the lights" at the kitchen
+        # satellite → location=kitchen).
+        location = params.get("location") or default_location
+        if location and not params.get("location"):
+            # Persist the resolved location in params so downstream logging,
+            # group-action candidates, and the clarification fallback all
+            # see the same effective room.
+            params = {**params, "location": location}
+            result.params = params
 
         # If the classifier extracted no entity word but the intent has
         # a declared ``entity_types`` constraint (e.g. device.set_temperature
@@ -1526,25 +1546,35 @@ class IntentRouter:
         """
         return dict(params) if params else {}
 
-    async def _publish_event(self, result: IntentResult, raw_text: str = "", lang: str = "en") -> None:
+    async def _publish_event(
+        self, result: IntentResult, raw_text: str = "", lang: str = "en",
+        origin_target: tuple[str, str] | None = None,
+    ) -> None:
         try:
             from core.eventbus.bus import get_event_bus
             from core.eventbus.types import VOICE_INTENT
             normalized_params = self._normalize_params(result.params)
+            payload: dict[str, Any] = {
+                "intent": result.intent,
+                "response": result.response,
+                "action": result.action,
+                "params": normalized_params,
+                "source": result.source,
+                "user_id": result.user_id,
+                "latency_ms": result.latency_ms,
+                "raw_text": raw_text,
+                "lang": lang,
+            }
+            if origin_target is not None:
+                # Satellite-sourced: downstream modules' speak()/speak_action()
+                # will auto-populate this into voice.speak payload via the
+                # ContextVar wired into SystemModule.subscribe — no per-module
+                # plumbing needed.
+                payload["origin_target"] = list(origin_target)
             await get_event_bus().publish(
                 type=VOICE_INTENT,
                 source="core.intent_router",
-                payload={
-                    "intent": result.intent,
-                    "response": result.response,
-                    "action": result.action,
-                    "params": normalized_params,
-                    "source": result.source,
-                    "user_id": result.user_id,
-                    "latency_ms": result.latency_ms,
-                    "raw_text": raw_text,
-                    "lang": lang,
-                },
+                payload=payload,
             )
         except Exception as e:
             logger.debug("Intent event publish failed: %s", e)

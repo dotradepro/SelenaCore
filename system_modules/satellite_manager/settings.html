@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Satellite Manager</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        body { padding: 16px; max-width: 900px; margin: 0 auto; }
+        h1 { margin: 0 0 4px; font-size: 20px; color: var(--tx); }
+        .subtitle { color: var(--tx2); font-size: 13px; margin-bottom: 20px; }
+
+        .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--bd); margin-bottom: 16px; }
+        .tab { padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent;
+               color: var(--tx2); font-weight: 600; font-size: 13px; }
+        .tab.active { color: var(--ac); border-color: var(--ac); }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--bd); }
+        th { color: var(--tx2); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+        tr:last-child td { border-bottom: 0; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .badge.online { background: rgba(46, 201, 138, .15); color: var(--gr); }
+        .badge.offline { background: rgba(224, 84, 84, .15); color: var(--rd); }
+
+        .btn { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--bd);
+               background: var(--bg2); color: var(--tx); cursor: pointer; font-size: 12px; font-weight: 600; }
+        .btn:hover { border-color: var(--ac); color: var(--ac); }
+        .btn.primary { background: var(--ac); color: #fff; border-color: var(--ac); }
+        .btn.primary:hover { opacity: .9; }
+        .btn.danger { color: var(--rd); }
+        .btn.danger:hover { border-color: var(--rd); background: rgba(224, 84, 84, .08); }
+        .btn:disabled { opacity: .5; cursor: wait; }
+
+        .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .row + .row { margin-top: 12px; }
+
+        input[type="text"], input[type="password"], select {
+            padding: 6px 10px; border-radius: 6px; border: 1px solid var(--bd);
+            background: var(--bg2); color: var(--tx); font-size: 13px; min-width: 220px;
+        }
+        label { font-size: 12px; color: var(--tx2); font-weight: 600; }
+
+        .wizard-step { display: none; }
+        .wizard-step.active { display: block; }
+        .wizard-step h3 { margin: 0 0 4px; color: var(--tx); font-size: 15px; }
+        .wizard-step .hint { color: var(--tx2); font-size: 12px; margin-bottom: 14px; }
+        .wizard-nav { margin-top: 16px; display: flex; gap: 8px; }
+
+        .scan-list { border: 1px solid var(--bd); border-radius: 8px; overflow: hidden; }
+        .scan-item { padding: 10px 14px; border-bottom: 1px solid var(--bd); cursor: pointer;
+                     display: flex; justify-content: space-between; align-items: center; }
+        .scan-item:last-child { border-bottom: 0; }
+        .scan-item:hover { background: var(--bg2); }
+        .scan-item.selected { background: rgba(79, 140, 247, .12); border-color: var(--ac); }
+        .scan-item .mac { font-family: monospace; font-size: 11px; color: var(--tx2); }
+
+        .empty { padding: 24px; text-align: center; color: var(--tx2); font-size: 13px; }
+
+        .vol-cell { display: flex; align-items: center; gap: 6px; min-width: 160px; }
+        .vol-cell input[type="range"] { width: 90px; }
+        .vol-cell .vol-val { font-size: 11px; color: var(--tx2); min-width: 28px; text-align: right; }
+        .mute-btn { padding: 4px 8px; font-size: 11px; }
+        .mute-btn.muted { background: rgba(224, 84, 84, .15); color: var(--rd); border-color: var(--rd); }
+    </style>
+</head>
+<body>
+    <h1 data-i18n="title">Satellite Speakers</h1>
+    <div class="subtitle" data-i18n="subtitle">Manage ESP32 satellite speakers connected to this hub</div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="list" data-i18n="tab_list">Satellites</div>
+        <div class="tab" data-tab="wizard" data-i18n="tab_wizard">Add Satellite</div>
+        <div class="tab" data-tab="ota" data-i18n="tab_ota">Firmware</div>
+    </div>
+
+    <!-- ── Tab: Satellites list ───────────────────────────── -->
+    <div class="tab-panel active" data-panel="list">
+        <div class="row" style="margin-bottom: 12px;">
+            <button class="btn" id="refreshList" data-i18n="refresh">Refresh</button>
+        </div>
+        <div id="satList"></div>
+    </div>
+
+    <!-- ── Tab: Add Satellite wizard ───────────────────────── -->
+    <div class="tab-panel" data-panel="wizard">
+        <!-- Step 1: scan -->
+        <div class="wizard-step active" data-step="1">
+            <h3 data-i18n="wiz_step1_title">Step 1: Scan for satellites</h3>
+            <div class="hint" data-i18n="wiz_step1_hint">Power on the ESP32 satellite and hold the pairing button for 3 seconds until the LED blinks blue.</div>
+            <button class="btn primary" id="scanBtn" data-i18n="wiz_scan">Scan</button>
+        </div>
+        <!-- Step 2: select -->
+        <div class="wizard-step" data-step="2">
+            <h3 data-i18n="wiz_step2_title">Step 2: Choose a device</h3>
+            <div class="hint" data-i18n="wiz_step2_hint">Tap the satellite you want to add.</div>
+            <div class="scan-list" id="scanList"></div>
+        </div>
+        <!-- Step 3: Wi-Fi -->
+        <div class="wizard-step" data-step="3">
+            <h3 data-i18n="wiz_step3_title">Step 3: Wi-Fi credentials</h3>
+            <div class="hint" data-i18n="wiz_step3_hint">The satellite will join this network and connect back to the hub.</div>
+            <div class="row"><label data-i18n="wifi_ssid">Wi-Fi SSID</label><input type="text" id="wifiSsid"></div>
+            <div class="row"><label data-i18n="wifi_pass">Password</label><input type="password" id="wifiPass"></div>
+        </div>
+        <!-- Step 4: identity -->
+        <div class="wizard-step" data-step="4">
+            <h3 data-i18n="wiz_step4_title">Step 4: Name &amp; location</h3>
+            <div class="hint" data-i18n="wiz_step4_hint">Give the satellite a name and assign it to a room.</div>
+            <div class="row"><label data-i18n="sat_name">Name</label><input type="text" id="satName"></div>
+            <div class="row"><label data-i18n="sat_location">Location</label>
+                <select id="satLocation"><option value=""></option></select>
+                <input type="text" id="satLocationNew" placeholder="new room…" style="min-width: 140px;">
+            </div>
+        </div>
+        <div class="wizard-nav">
+            <button class="btn" id="wizBack" data-i18n="wiz_back" style="display:none;">Back</button>
+            <button class="btn primary" id="wizNext" data-i18n="wiz_next">Next</button>
+        </div>
+    </div>
+
+    <!-- ── Tab: OTA (stub) ─────────────────────────────── -->
+    <div class="tab-panel" data-panel="ota">
+        <div class="empty" data-i18n="ota_stub">Firmware upload will be available in a future release.</div>
+    </div>
+
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
+            en: {
+                title: 'Satellite Speakers', subtitle: 'Manage ESP32 satellite speakers connected to this hub',
+                tab_list: 'Satellites', tab_wizard: 'Add Satellite', tab_ota: 'Firmware',
+                refresh: 'Refresh', online: 'Online', offline: 'Offline',
+                no_sats: 'No satellites paired yet. Use "Add Satellite" to get started.',
+                name: 'Name', location: 'Location', volume: 'Volume', status: 'Status', actions: '',
+                test_mic: 'Test mic', test_spk: 'Test speaker', remove: 'Remove',
+                mute: 'Mute', unmute: 'Unmute', listening: 'Listening…',
+                mic_test_ok: 'Mic OK:', mic_test_fail: 'Mic test failed',
+                wiz_step1_title: 'Step 1: Scan for satellites',
+                wiz_step1_hint: 'Power on the ESP32 satellite and hold the pairing button for 3 seconds until the LED blinks blue.',
+                wiz_step2_title: 'Step 2: Choose a device',
+                wiz_step2_hint: 'Tap the satellite you want to add.',
+                wiz_step3_title: 'Step 3: Wi-Fi credentials',
+                wiz_step3_hint: 'The satellite will join this network and connect back to the hub.',
+                wiz_step4_title: 'Step 4: Name & location',
+                wiz_step4_hint: 'Give the satellite a name and assign it to a room.',
+                wiz_scan: 'Scan', wiz_next: 'Next', wiz_back: 'Back', wiz_finish: 'Finish',
+                wifi_ssid: 'Wi-Fi SSID', wifi_pass: 'Password',
+                sat_name: 'Name', sat_location: 'Location',
+                scanning: 'Scanning…', scan_empty: 'No satellites found. Check the satellite is in pairing mode.',
+                provisioning: 'Provisioning…', provisioned: 'Satellite added',
+                prov_failed: 'Provisioning failed',
+                confirm_remove: 'Remove this satellite?',
+                ota_stub: 'Firmware upload will be available in a future release.'
+            },
+            uk: {
+                title: 'Сателіти', subtitle: 'Керування ESP32-сателітами, підключеними до хабу',
+                tab_list: 'Сателіти', tab_wizard: 'Додати сателіт', tab_ota: 'Прошивка',
+                refresh: 'Оновити', online: 'У мережі', offline: 'Офлайн',
+                no_sats: 'Жодного сателіту ще не додано. Натисніть «Додати сателіт», щоб почати.',
+                name: 'Назва', location: 'Розташування', volume: 'Гучність', status: 'Статус', actions: '',
+                test_mic: 'Тест мікрофона', test_spk: 'Тест динаміка', remove: 'Видалити',
+                mute: 'Тиша', unmute: 'Увімкнути', listening: 'Слухаю…',
+                mic_test_ok: 'Мікрофон OK:', mic_test_fail: 'Тест провалено',
+                wiz_step1_title: 'Крок 1: Сканування сателітів',
+                wiz_step1_hint: 'Увімкніть ESP32-сателіт і утримуйте кнопку сполучення 3 секунди, поки світлодіод не почне блимати синім.',
+                wiz_step2_title: 'Крок 2: Оберіть пристрій',
+                wiz_step2_hint: 'Торкніться сателіту, який хочете додати.',
+                wiz_step3_title: 'Крок 3: Дані Wi-Fi',
+                wiz_step3_hint: 'Сателіт підʼєднається до цієї мережі та вийде на звʼязок із хабом.',
+                wiz_step4_title: 'Крок 4: Назва та розташування',
+                wiz_step4_hint: 'Дайте сателіту назву та привʼяжіть його до кімнати.',
+                wiz_scan: 'Сканувати', wiz_next: 'Далі', wiz_back: 'Назад', wiz_finish: 'Готово',
+                wifi_ssid: 'SSID Wi-Fi', wifi_pass: 'Пароль',
+                sat_name: 'Назва', sat_location: 'Розташування',
+                scanning: 'Сканування…', scan_empty: 'Сателіти не знайдено. Переконайтеся, що пристрій у режимі сполучення.',
+                provisioning: 'Налаштовую…', provisioned: 'Сателіт додано',
+                prov_failed: 'Помилка налаштування',
+                confirm_remove: 'Видалити цей сателіт?',
+                ota_stub: 'Завантаження прошивки зʼявиться у наступній версії.'
+            }
+        };
+
+        var state = { sats: [], locations: [], scan: [], selectedMac: null, wizStep: 1 };
+
+        // ── Tabs ───────────────────────────────────────────────────
+        document.querySelectorAll('.tab').forEach(function (t) {
+            t.addEventListener('click', function () {
+                document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+                document.querySelectorAll('.tab-panel').forEach(function (x) { x.classList.remove('active'); });
+                t.classList.add('active');
+                document.querySelector('[data-panel="' + t.dataset.tab + '"]').classList.add('active');
+            });
+        });
+
+        // ── Satellites list ────────────────────────────────────────
+        function renderList() {
+            var root = document.getElementById('satList');
+            if (state.sats.length === 0) {
+                root.innerHTML = '<div class="empty">' + t('no_sats') + '</div>';
+                return;
+            }
+            var rows = state.sats.map(function (s) {
+                var online = !!(s.state && s.state.online);
+                var vol = s.state && s.state.volume != null ? s.state.volume : 75;
+                var muted = !!(s.state && s.state.muted);
+                return '<tr data-id="' + s.device_id + '">' +
+                    '<td>' + escapeHtml(s.name || s.device_id) + '</td>' +
+                    '<td>' + escapeHtml(s.location || '—') + '</td>' +
+                    '<td><div class="vol-cell">' +
+                        '<input type="range" min="0" max="100" value="' + vol +
+                            '" data-act="volume" data-id="' + s.device_id + '"' +
+                            (muted ? ' disabled' : '') + '>' +
+                        '<span class="vol-val" data-volval="' + s.device_id + '">' + vol + '%</span>' +
+                    '</div></td>' +
+                    '<td><span class="badge ' + (online ? 'online' : 'offline') + '">' +
+                        t(online ? 'online' : 'offline') + '</span></td>' +
+                    '<td>' +
+                        '<button class="btn mute-btn' + (muted ? ' muted' : '') +
+                            '" data-act="mute" data-id="' + s.device_id + '">' +
+                            t(muted ? 'unmute' : 'mute') + '</button> ' +
+                        '<button class="btn" data-act="test-spk" data-id="' + s.device_id + '">' + t('test_spk') + '</button> ' +
+                        '<button class="btn" data-act="test-mic" data-id="' + s.device_id + '">' + t('test_mic') + '</button> ' +
+                        '<button class="btn danger" data-act="remove" data-id="' + s.device_id + '">' + t('remove') + '</button>' +
+                    '</td>' +
+                '</tr>';
+            }).join('');
+            root.innerHTML = '<table>' +
+                '<thead><tr><th>' + t('name') + '</th><th>' + t('location') + '</th>' +
+                '<th>' + t('volume') + '</th><th>' + t('status') + '</th><th></th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table>';
+            // Volume slider: debounced PATCH on release / change
+            var volDebounce = {};
+            root.querySelectorAll('[data-act="volume"]').forEach(function (slider) {
+                var id = slider.dataset.id;
+                slider.addEventListener('input', function () {
+                    var val = slider.value;
+                    var label = root.querySelector('[data-volval="' + id + '"]');
+                    if (label) label.textContent = val + '%';
+                });
+                slider.addEventListener('change', function () {
+                    clearTimeout(volDebounce[id]);
+                    volDebounce[id] = setTimeout(function () {
+                        apiPatch('/satellites/' + id, { volume: parseInt(slider.value, 10) })
+                            .catch(showErr);
+                    }, 150);
+                });
+            });
+
+            // Buttons (mute/unmute, test-spk, test-mic, remove)
+            root.querySelectorAll('button[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var id = b.dataset.id, act = b.dataset.act;
+                    if (act === 'remove') {
+                        if (!confirm(t('confirm_remove'))) return;
+                        apiDelete('/satellites/' + id).then(loadList).catch(showErr);
+                    } else if (act === 'test-spk') {
+                        apiPost('/satellites/' + id + '/test/speaker', {}).catch(showErr);
+                    } else if (act === 'test-mic') {
+                        b.disabled = true; b.textContent = t('listening');
+                        apiPost('/satellites/' + id + '/test/mic', {}).then(function (r) {
+                            var ok = r && r.status === 'audio_end' && r.samples > 0;
+                            var msg = ok
+                                ? t('mic_test_ok') + ' ' + r.duration_ms + 'ms · RMS ' + Math.round(r.rms || 0)
+                                : t('mic_test_fail') + ' (' + (r && r.status || '') + ')';
+                            showToast(msg, ok ? 'success' : 'error');
+                        }).catch(showErr).finally(function () {
+                            b.disabled = false; b.textContent = t('test_mic');
+                        });
+                    } else if (act === 'mute') {
+                        var current = state.sats.find(function (s) { return s.device_id === id; });
+                        var nextMuted = !(current && current.state && current.state.muted);
+                        apiPatch('/satellites/' + id, { muted: nextMuted })
+                            .then(loadList).catch(showErr);
+                    }
+                });
+            });
+        }
+
+        function loadList() {
+            return apiGet('/satellites').then(function (d) {
+                state.sats = (d && d.satellites) || [];
+                state.locations = (d && d.locations) || [];
+                renderList();
+                populateLocations();
+            }).catch(showErr);
+        }
+        document.getElementById('refreshList').addEventListener('click', loadList);
+
+        // ── Wizard ────────────────────────────────────────────────
+        function showStep(n) {
+            state.wizStep = n;
+            document.querySelectorAll('.wizard-step').forEach(function (el) {
+                el.classList.toggle('active', +el.dataset.step === n);
+            });
+            document.getElementById('wizBack').style.display = n > 1 ? '' : 'none';
+            var btn = document.getElementById('wizNext');
+            btn.textContent = n === 4 ? t('wiz_finish') : t('wiz_next');
+        }
+
+        function populateScanList() {
+            var root = document.getElementById('scanList');
+            if (!state.scan.length) {
+                root.innerHTML = '<div class="empty">' + t('scan_empty') + '</div>';
+                return;
+            }
+            root.innerHTML = state.scan.map(function (s) {
+                return '<div class="scan-item' + (state.selectedMac === s.mac ? ' selected' : '') +
+                    '" data-mac="' + s.mac + '">' +
+                    '<div><div>' + escapeHtml(s.name) + '</div>' +
+                        '<div class="mac">' + escapeHtml(s.mac) + ' · RSSI ' + s.rssi + '</div></div>' +
+                    '<div class="mac">' + escapeHtml(s.firmware) + '</div>' +
+                '</div>';
+            }).join('');
+            root.querySelectorAll('.scan-item').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    state.selectedMac = el.dataset.mac;
+                    populateScanList();
+                });
+            });
+        }
+
+        function populateLocations() {
+            var sel = document.getElementById('satLocation');
+            var current = sel.value;
+            sel.innerHTML = '<option value=""></option>' +
+                state.locations.map(function (l) {
+                    return '<option value="' + escapeHtml(l) + '"' + (current === l ? ' selected' : '') + '>' +
+                        escapeHtml(l) + '</option>';
+                }).join('');
+        }
+
+        document.getElementById('scanBtn').addEventListener('click', function () {
+            var btn = this; btn.disabled = true; btn.textContent = t('scanning');
+            apiPost('/ble/scan', {}).then(function (d) {
+                state.scan = (d && d.satellites) || [];
+                showStep(2); populateScanList();
+            }).catch(showErr).finally(function () {
+                btn.disabled = false; btn.textContent = t('wiz_scan');
+            });
+        });
+
+        document.getElementById('wizBack').addEventListener('click', function () {
+            if (state.wizStep > 1) showStep(state.wizStep - 1);
+        });
+
+        document.getElementById('wizNext').addEventListener('click', function () {
+            if (state.wizStep === 1) return document.getElementById('scanBtn').click();
+            if (state.wizStep === 2) {
+                if (!state.selectedMac) return showToast(t('scan_empty'), 'error');
+                return showStep(3);
+            }
+            if (state.wizStep === 3) return showStep(4);
+            // Step 4 → provision
+            var loc = document.getElementById('satLocationNew').value.trim() ||
+                      document.getElementById('satLocation').value;
+            var body = {
+                mac: state.selectedMac,
+                wifi_ssid: document.getElementById('wifiSsid').value,
+                wifi_pass: document.getElementById('wifiPass').value,
+                name: document.getElementById('satName').value || null,
+                location: loc || null
+            };
+            var btn = this; btn.disabled = true; btn.textContent = t('provisioning');
+            apiPost('/ble/provision', body).then(function (d) {
+                if (d.status === 'ok') {
+                    showToast(t('provisioned'), 'success');
+                    showStep(1);
+                    state.selectedMac = null;
+                    loadList();
+                } else {
+                    showToast(t('prov_failed') + ': ' + (d.error || ''), 'error');
+                }
+            }).catch(showErr).finally(function () {
+                btn.disabled = false; btn.textContent = t('wiz_next');
+            });
+        });
+
+        // ── Shared helpers ────────────────────────────────────────
+        function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+        }); }
+        function showErr(e) { showToast(String(e && e.message || e), 'error'); }
+
+        window.refresh = function () { renderList(); populateLocations(); };
+        applyLang();
+        loadList();
+    </script>
+</body>
+</html>

@@ -53,11 +53,11 @@ tinytuya>=1.13.0             # Tuya local LAN protocol (push events via persiste
 tuya-device-sharing-sdk>=0.2  # Tuya Smart Life / Tuya Smart OAuth via user-code (no developer account needed)
 greeclimate>=2.1             # Gree / Pular WiFi A/C local LAN protocol (UDP 7000, AES, async)
 
-# Optional: BLE support (presence_detection BLE scanner + plejd_native provider).
-# Installed on demand by the plejd_native ProviderLoader entry; also picked up
-# by presence_detection via try/except when present. Keeping it opt-in avoids
-# adding the bluez/dbus binding weight to every deployment.
-#   pip install 'bleak>=0.21,<0.23'
+# BLE support. Required by satellite-manager for Wi-Fi provisioning of ESP32
+# satellite speakers over GATT. Also picked up opportunistically by
+# presence_detection BLE scanner and the plejd_native provider — both degrade
+# gracefully if bleak is missing, but satellite provisioning cannot.
+bleak>=0.21,<0.23
 
 # Optional: Zigbee scanner (system_modules/network_scanner/zigbee_scanner.py).
 # Only required if a USB Zigbee coordinator dongle is plugged in. Install

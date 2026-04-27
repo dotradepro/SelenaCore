@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Satellites</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 6px;
+        }
+        .count {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--ac);
+            line-height: 1;
+        }
+        .count.zero { color: var(--tx2); }
+        .count.stale { color: var(--rd); }
+        .label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .04em;
+            color: var(--tx2);
+            text-align: center;
+        }
+        .sub {
+            font-size: 10px;
+            color: var(--tx2);
+            opacity: .75;
+        }
+    </style>
+</head>
+<body>
+    <div class="count" id="count">–</div>
+    <div class="label" data-i18n="satellites">Satellites</div>
+    <div class="sub"><span id="online">0</span>/<span id="total">0</span> <span data-i18n="online">online</span></div>
+
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
+            en: { satellites: 'Satellites', online: 'online' },
+            uk: { satellites: 'Сателіти', online: 'у мережі' }
+        };
+
+        (function () {
+            function render(total, online) {
+                var el = document.getElementById('count');
+                el.textContent = online;
+                el.className = 'count' + (online === 0 ? ' zero' : '') + (online < total ? ' stale' : '');
+                document.getElementById('online').textContent = online;
+                document.getElementById('total').textContent = total;
+            }
+
+            function load() {
+                apiGet('/satellites')
+                    .then(function (data) {
+                        var list = (data && data.satellites) || [];
+                        var online = list.filter(function (s) {
+                            return s.state && s.state.online;
+                        }).length;
+                        render(list.length, online);
+                    })
+                    .catch(function () { render(0, 0); });
+            }
+            window.refresh = load;
+
+            // Live updates via UI sync WS
+            var ws = null, reconnectTimer = null;
+            function connectSync() {
+                if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+                try {
+                    var proto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+                    ws = new WebSocket(proto + location.host + '/api/ui/sync');
+                } catch (e) { return scheduleReconnect(); }
+                ws.addEventListener('message', function (ev) {
+                    var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
+                    if (msg.type === 'ping') {
+                        try { ws.send(JSON.stringify({ type: 'pong' })); } catch (_) {}
+                        return;
+                    }
+                    var events = msg.type === 'event' ? [msg]
+                               : (msg.type === 'replay' && Array.isArray(msg.events)) ? msg.events : [];
+                    var relevant = events.some(function (e) {
+                        var et = e.event_type || e.type;
+                        return et === 'satellite.registered' || et === 'satellite.offline'
+                            || et === 'device.state_changed';
+                    });
+                    if (relevant) load();
+                });
+                ws.addEventListener('close', scheduleReconnect);
+                ws.addEventListener('error', function () { try { ws.close(); } catch (_) {} });
+            }
+            function scheduleReconnect() {
+                if (reconnectTimer) return;
+                reconnectTimer = setTimeout(connectSync, 2500);
+            }
+
+            applyLang();
+            load();
+            connectSync();
+        })();
+    </script>
+</body>
+</html>

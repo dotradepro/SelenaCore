@@ -18,12 +18,22 @@ Subclass contract:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable
+
+# Carries the audio source that triggered the currently-processing voice.intent.
+# Set automatically by subscribe() when a voice.intent carries `origin_target`
+# in its payload. Read automatically by speak() / speak_action() so module
+# acks get routed back to the originating satellite instead of the hub's
+# local speaker. Format: ("satellite", session_id) | None.
+_current_origin_target: contextvars.ContextVar[tuple[str, str] | None] = (
+    contextvars.ContextVar("_selena_origin_target", default=None)
+)
 
 if TYPE_CHECKING:
     from fastapi import APIRouter
@@ -80,12 +90,34 @@ class SystemModule(ABC):
 
         The callback signature must be: ``async def handler(event: Event) -> None``
         Returns the subscription ID.
+
+        When a `voice.intent` event carries `origin_target` in its payload
+        (set by voice-core for satellite-sourced commands), we stash that on
+        a ContextVar for the duration of the callback. Any `speak()` or
+        `speak_action()` call made from the handler — or from descendant
+        asyncio tasks it spawns — then auto-populates `origin_target` in
+        the resulting `voice.speak` event, so the module's ack lands on
+        the satellite that asked the question rather than the hub's local
+        speaker. No per-module plumbing required.
         """
         if self._bus is None:
             raise RuntimeError(
                 f"Module '{self.name}': setup() must be called before subscribe()"
             )
-        sub_id = self._bus.subscribe_direct(self.name, event_types, callback)
+
+        async def _wrapped(event: Any) -> None:
+            payload = getattr(event, "payload", None) or {}
+            origin = payload.get("origin_target") if isinstance(payload, dict) else None
+            if origin and isinstance(origin, (list, tuple)) and len(origin) == 2:
+                token = _current_origin_target.set((str(origin[0]), str(origin[1])))
+                try:
+                    await callback(event)
+                finally:
+                    _current_origin_target.reset(token)
+            else:
+                await callback(event)
+
+        sub_id = self._bus.subscribe_direct(self.name, event_types, _wrapped)
         self._direct_sub_ids.append(sub_id)
         return sub_id
 
@@ -117,7 +149,11 @@ class SystemModule(ABC):
 
         sub_id = self.subscribe(["voice.speak_done"], _on_speak_done)
         try:
-            await self.publish("voice.speak", {"text": text, "speech_id": speech_id})
+            payload: dict[str, Any] = {"text": text, "speech_id": speech_id}
+            origin = _current_origin_target.get()
+            if origin is not None:
+                payload["origin_target"] = list(origin)
+            await self.publish("voice.speak", payload)
             await asyncio.wait_for(done.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             logger.debug("speak() timeout for '%s' (speech_id=%s)", text[:40], speech_id)
@@ -148,10 +184,14 @@ class SystemModule(ABC):
 
         sub_id = self.subscribe(["voice.speak_done"], _on_done)
         try:
-            await self.publish("voice.speak", {
+            payload: dict[str, Any] = {
                 "action_context": {"intent": intent, **context},
                 "speech_id": speech_id,
-            })
+            }
+            origin = _current_origin_target.get()
+            if origin is not None:
+                payload["origin_target"] = list(origin)
+            await self.publish("voice.speak", payload)
             await asyncio.wait_for(done.wait(), timeout=timeout)
         except asyncio.TimeoutError:
             logger.debug(
