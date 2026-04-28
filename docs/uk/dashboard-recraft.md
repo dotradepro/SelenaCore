@@ -101,11 +101,13 @@ Pill не клікабельний у стані OK і веде на `/settings/
 
 Стан вкладки зберігається у клієнтському `useState`. Він не персистує між перезавантаженнями — відкриття панелі завжди починається на «Усі». Це збігається з ментальною моделлю розумного дому: поверхня для поточного моменту, а не для продовження з місця.
 
-### 2.5 Bento-сітка
+### 2.5 Фіксована сітка 5×4
 
-Сітка — `display: grid; grid-template-columns: repeat(N, minmax(0, 1fr)); grid-auto-flow: dense; gap: 10px`, де N залежить від екрана (3 на планшеті, 4 на десктопі, 6 на 1080p kiosk, 1 на телефоні). CSS кожного віджета `grid-column: span W; grid-row: span H` використовує оголошений у маніфесті розмір `WxH`.
+Після польових випробувань bento auto-flow панель повернулась до V1-сітки: **5 колонок × 4 рядки на десктопі / 1080p kiosk**, **4 колонки на планшеті (480–900 px)**, **одна колонка з вертикальним скролом на телефоні (<480 px)**. `grid-column: span W; grid-row: span H` обчислюється з manifest `WxH`; anchor-клітинка береться з `widgetLayout.positions[name]` (V1-карта переюзана — `slot = (col-1) + (row-1)*5`).
 
-`dense`-flow свідомий: дозволяє браузеру заповнювати ранні пропуски пізнішими маленькими віджетами, видаючи щільніший bento-layout без ручного розміщення.
+Розмір клітинки адаптивний: `cellHeight = (availableH − gaps) / 4`, `cellWidth = (availableW − gaps) / 5`. У edit-режимі рендеряться порожні слоти як `+` drop-таргети + м'які пунктирні лінії сітки, щоб користувач бачив куди приземлиться віджет при drag.
+
+`grid-auto-flow: dense` лишається на контейнері — щоб out-of-bounds віджет (наприклад після зміни manifest size) не лишав дірки, але типовий випадок — повністю явне розміщення.
 
 ### 2.6 Дизайн-токени
 
@@ -179,7 +181,9 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 
 ### 3.3 Шаблони
 
-Кожен шаблон специфікує: призначення, рекомендовані розміри, схему payload, контракт actions та гарантії рендеру.
+Поточний набір — **8 шаблонів**: 5 generic-примітивів (3.3.1–3.3.5) і 3 спеціалізовані layout-и для частих rich-кейсів (3.3.6–3.3.8). Кожен шаблон специфікує: призначення, рекомендовані розміри, схему payload, контракт actions, гарантії рендеру.
+
+Усі шаблони приймають імена іконок як звичайні рядки. Frontend-helper [`Icon`](#37-icon-system) резолвить їх у emoji-мапу (☀️ 🌧️ 💡 🔌 ⚡ 🎵 🎙️ 📡 🛡️ ...) — для дашборд-віджетів SVG-icon-бібліотека не bundle-иться. Модулі постачають lucide-style імена (`cloud`, `droplets`, `lightbulb`), helper підбирає glyph; невідомі імена fall-back-ять на `fallback` або саме ім'я.
 
 #### 3.3.1 `metric`
 
@@ -202,6 +206,8 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 | `trend.magnitude`, `trend.period` | Попередньо відформатовані стрічки |
 | `tone` | `"neutral" \| "info" \| "ok" \| "warn" \| "alert"` |
 
+**Опціональні поля Phase 6:** `icon` (lucide-style ім'я, рендериться у верхньому правому куті). Використовують `device-watchdog` (`activity`), `clock` (`alarm-clock`), `automation-engine` (`workflow`), `satellite-manager` (`satellite`).
+
 **Actions:** немає.
 
 #### 3.3.2 `sparkline`
@@ -218,7 +224,11 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 }
 ```
 
-`series` ≤ 60 точок для візуальної ясності. Sparkline масштабується автоматично, межі Y `[min, max]` з 8 % padding, без сітки.
+`series` ≤ 60 точок для візуальної ясності. Sparkline масштабується автоматично, межі Y `[min, max]` з 8 % padding, без сітки. Endpoint-крапка на «зараз» якорить останнє значення; gradient-fill keyed off `tone` темнішає до нуля.
+
+**Опціональні поля Phase 6:**
+- `icon` — leading glyph біля значення
+- `breakdown: CardSpec[]` — топ-N contributor-карток нижче chart'а (use-case `energy-monitor`: топ-3 пристрої-споживачі поряд із загальним)
 
 #### 3.3.3 `toggle-list`
 
@@ -237,6 +247,8 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 ```
 
 **Actions:** `toggle` (обов'язковий) приймає `{"id": "<item_id>"}`. `set_secondary` (опц.) — long-press affordance для slider/picker.
+
+**Опціональні поля Phase 6:** `items[].icon` — glyph per item. `lights-switches` мапить `entity_type → icon`: light → `lightbulb`, switch → `power`, outlet → `zap`. Неактивні items render-ять icon dim, активні — у accent-кольорі.
 
 #### 3.3.4 `control-panel`
 
@@ -263,6 +275,8 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 
 **Actions:** `set_mode` приймає `{"id": "<mode_id>"}`. `step` приймає `{"id": "<stepper_id>", "value": <number>}`.
 
+**Опціональні поля Phase 6:** `secondary_pills: IconStripItem[]` — додаткові показники inline нижче primary. `climate` тут показує humidity / fan speed / estimated wattage — один віджет покриває те, що V1 розмазував по двох iframe.
+
 #### 3.3.5 `status`
 
 Pill здоров'я зверху, далі 1–4 рядки key-value. **Розміри:** `2x1`, `2x2` (бажано), не більше `4x2`.
@@ -278,7 +292,95 @@ Pill здоров'я зверху, далі 1–4 рядки key-value. **Роз
 }
 ```
 
-`pill.tone` ∈ {ok, info, warn, alert, neutral}. `pill.icon` ∈ {check, clock, alert, x, refresh}. До 4 рядків. **Actions:** опц. `refresh`.
+`pill.tone` ∈ {ok, info, warn, alert, neutral}. `pill.icon` приймає будь-яке ім'я з [Icon](#37-icon-system) (lucide-style; legacy short-codes `check / clock / alert / x / refresh` теж працюють). До 4 рядків. **Actions:** опц. `refresh`.
+
+**Опціональні поля Phase 6:**
+- `rows[].icon` — leading glyph для кожного рядка (наприклад `protocol-bridge` показує server-icon біля broker-host'а)
+- `strip: IconStripItem[]` — компактний горизонтальний рядок icon + value; використовує `protocol-bridge` для здоров'я MQTT/Zigbee/Z-Wave
+- `cards: CardSpec[]` — рядок mini-cards внизу; `notification-router` показує там превью останніх повідомлень
+- `actions: ActionSpec[]` — inline кнопки в header'і; `update-manager` має `Check`, що тригерить upstream-перевірку через `POST /api/v1/modules/{name}/action/check_now`
+
+#### 3.3.6 `weather` (спеціалізований)
+
+Hero-condition + телеметричні pills + 3-денний forecast. **Розміри:** `4x2` (бажано), мін `2x2`.
+
+```json
+{
+    "location": "Київ",
+    "current": {
+        "icon": "cloud-rain",
+        "emoji": "🌧️",
+        "temperature": 14,
+        "unit": "°C",
+        "condition": "Дощ",
+        "feels_like": 12
+    },
+    "pills": [
+        {"icon": "droplets", "value": "82%"},
+        {"icon": "wind",     "value": "9 km/h"},
+        {"icon": "cloud-rain", "value": "1.2 mm"}
+    ],
+    "forecast": [
+        {"day": "Вт", "icon": "sun",        "high": 22, "low": 12, "unit": "°C"},
+        {"day": "Ср", "icon": "cloud",      "high": 18, "low": 10, "unit": "°C"},
+        {"day": "Чт", "icon": "cloud-rain", "high": 15, "low":  8, "unit": "°C"}
+    ]
+}
+```
+
+Рендериться як Apple-Weather-style hero (велика emoji + 38 px температура + condition · feels-like), icon-strip для телеметрії та 3 forecast-картки (high у `--am`, low у `--ac`). Hero має м'який radial-gradient, тонований за `current.icon` (sun → бурштиновий, cloud → прохолодно-сірий, cloud-rain → синій, zap → пурпурний). `current.emoji` — fallback коли `current.icon` невідомий.
+
+**Actions:** немає.
+
+#### 3.3.7 `media` (спеціалізований)
+
+Cover art + track meta + transport row + volume slider. **Розміри:** `4x2` (бажано), мін `2x2`.
+
+```json
+{
+    "state": "play",
+    "track": {
+        "title": "Hit FM",
+        "artist": "Now playing",
+        "album": null,
+        "cover_url": "https://.../cover.jpg",
+        "source_type": "radio",
+        "duration_sec": null
+    },
+    "volume": 35,
+    "position_sec": 12.5,
+    "shuffle": false
+}
+```
+
+Рендерить cover 64 px (повільно обертається при play), title + artist + source-type-бейдж, чотири круглі transport-кнопки (`previous` / `play` / `pause` / `next` — `play` більший і accent-glow коли активний), горизонтальний volume-slider зі speaker-іконкою.
+
+`track` дорівнює `null` коли нічого не завантажено — шаблон показує cover-плейсхолдер, текст «Nothing playing» і dim-ить усі transport-кнопки крім `play`.
+
+**Actions:**
+- `set_mode` приймає `{"id": "play" | "pause" | "stop" | "previous" | "next"}` — викликає відповідний player-call
+- `step` приймає `{"id": "volume", "value": <0..100>}`
+
+#### 3.3.8 `presence` (спеціалізований)
+
+Header pill + grid юзер-карток. **Розміри:** `2x1` (компактна summary), `2x2` (бажано), макс `4x2`.
+
+```json
+{
+    "summary": {"tone": "info", "text": "2/3 home", "icon": "home"},
+    "users": [
+        {"id": "u1", "name": "Alice", "state": "home",    "last_seen": "just now"},
+        {"id": "u2", "name": "Bob",   "state": "away",    "last_seen": "23m ago"},
+        {"id": "u3", "name": "Eve",   "state": "unknown", "last_seen": null,
+         "icon": "user-check", "badge": "guest"}
+    ],
+    "empty_text": "Користувачів ще нема"
+}
+```
+
+Кожен user — карточка з gradient-аватаром (initial-літера або `icon`), status-кружок overlay (зелений/бурштиновий/сірий), name + tone-кольорове `last_seen` (або `Home`/`Away`/`—` fallback). Опціональний `badge` показується як маленький uppercase-чіп. Empty-state — центрована 👤 emoji + `empty_text`.
+
+**Actions:** у базовому шаблоні немає; PIN-gated edit-flow живе у settings-сторінці модуля.
 
 ### 3.4 Custom-вид
 
@@ -316,6 +418,34 @@ type WidgetMessage =
 **Polling (запасний).** Маніфест декларує `refresh.poll_interval_s`. Ловить дрейф, пропущені після reconnect події, та модулі без подій стану.
 
 Обидва можуть співіснувати. Рекомендація: events для змін за write-тригерами, poll на 30 с для sensor-style даних. Для custom-віджетів — events форвардяться як `theme_changed` / `request_refresh` postMessage.
+
+### 3.7 Icon-система
+
+Модулі постачають іконки як рядкові імена. Helper [`Icon`](../../src/components/dashboard/templates/Icon.tsx) резолвить ім'я через emoji-таблицю і рендерить `<span>` із системним emoji-шрифтом (`Apple Color Emoji` / `Segoe UI Emoji` / `Noto Color Emoji` / `Twemoji Mozilla`). Для дашборд-віджетів SVG-icon-бібліотека не bundle-иться.
+
+```tsx
+<Icon name="cloud-rain" size={20} />          // → 🌧️
+<Icon name="lightbulb" size={14} />           // → 💡
+<Icon name="unknown-key" fallback="✦" />      // → ✦  (graceful fallback)
+<Icon name={null} fallback="?" />             // → ?
+```
+
+Curated-набір (~50 імен) покриває категорії що використовуються сьогодні: weather (`cloud`, `cloud-rain`, `cloud-snow`, `sun`, `moon`, `wind`, `droplets`, `snowflake`, `thermometer`, `zap`), devices (`lightbulb`, `power`, `tv`, `radio`, `music`, `volume-2`, `mic`), system (`cpu`, `server`, `globe`, `network`, `wifi`, `bluetooth`, `satellite`, `settings`), people (`user`, `user-check`, `user-x`, `home`), status (`check`, `check-circle`, `clock`, `alert-triangle`, `x`, `refresh-cw`, `shield`, `sparkles`, `bell`, `eye`, `activity`), other (`alarm-clock`, `calendar`, `workflow`, `chevron-right`).
+
+Додавання нових: розширити `EMOJI_MAP` у `Icon.tsx`. Імена слідують lucide-react конвенції (kebab-case), щоб майбутня міграція на векторні іконки була механічною.
+
+### 3.8 Block-примітиви
+
+Reusable React-компоненти у [`templates/blocks/`](../../src/components/dashboard/templates/blocks/), розшарені між спеціалізованими і generic-шаблонами. Module-автори не імпортують їх напряму — вони постачають payload-поля, які шаблони рендерять через ці примітиви.
+
+| Примітив        | Використовується у                                   | Поле в payload     | Форма                                                                       |
+|-----------------|------------------------------------------------------|--------------------|-----------------------------------------------------------------------------|
+| `Pill`          | Status, Weather (forecast tone), Presence (summary) | implicit           | `{tone: PillTone, text: string, icon?: string}`                             |
+| `IconStrip`     | Weather, Status, ControlPanel.secondary_pills        | `strip`, `pills`, `secondary_pills` | `{icon?, value: string, label?, tone?}[]`                                   |
+| `CardRow`       | Weather (forecast), Sparkline (breakdown), Status (cards) | `cards`, `breakdown`, `forecast` | `{title?, value: string, secondary?, icon?, tone?}[]` — equal-width grid    |
+| `ActionButton`  | Status (header)                                      | `actions`          | `{id: string, label: string, icon?, body?, tone?}` — POSTs до action-проксі |
+
+`PillTone`, `IconStripItem`, `CardSpec`, `ActionSpec` — експортовані типи, точні інтерфейси у файлових заголовках.
 
 ---
 
@@ -385,19 +515,30 @@ type WidgetMessage =
 - In-place міграція `widgetLayout` v1 → v2; `Reset layout` в Налаштуваннях.
 - **Перемкнути `dashboardV2Enabled` дефолт на `true`.**
 
-### 5.6 Фаза 5 — видалення V1 (постійно)
+### 5.6 Фаза 5 — видалення V1 (✅ виконано)
 
-- Видалити `widget.html` файли з усіх системних модулів.
-- Видалити WidgetShell-логіку з [Dashboard.tsx](../../src/components/Dashboard.tsx); файл стає тонким wrapper над DashboardV2 або видаляється.
-- Видалити iframe-шлях з `WidgetFrame.tsx`. Marketplace-модулі продовжують через `kind: "custom"`.
-- Видалити старі postMessage-аліаси.
+- Видалено `widget.html` файли у всіх 13 мігрованих system-модулях.
+- Видалено WidgetShell + DashboardV1-логіку з [Dashboard.tsx](../../src/components/Dashboard.tsx); файл став 9-рядковим wrapper'ом, що монтує `DashboardV2`.
+- Прибрано `dashboardV2Enabled` opt-in (V2 — єдиний шлях).
+- Агресивний `Cache-Control: no-store` на `/sw.js` та `/manifest.json` через raw ASGI middleware [`NoCacheForPaths`](../../core/api/middleware.py); `index.html` несе inline-скрипт unregister-всіх-SW + покинення caches, щоб legacy-SW із `/join` invite-flow більше не перехоплювали kiosk-перезавантаження.
 
-### 5.7 Гарантії зворотної сумісності
+### 5.7 Фаза 6 — спеціалізовані шаблони + emoji-first Icon (✅ виконано)
+
+- 3 нові спеціалізовані шаблони: `weather`, `media`, `presence` — зареєстровані в [`templates/registry.ts`](../../src/components/dashboard/templates/registry.ts).
+- [`Icon.tsx`](../../src/components/dashboard/templates/Icon.tsx) переписано як emoji-first (lucide-імпорти прибрано з dashboard-bundle, ~45-glyph мапа покриває усі поточні модулі).
+- Block-примітиви у [`templates/blocks/`](../../src/components/dashboard/templates/blocks/): `Pill`, `IconStrip`, `CardRow`, `ActionButton`.
+- Generic-шаблони отримали опціональні rich-слоти — `Metric.icon`, `Status.{cards, strip, actions, rows[].icon, pill.icon як lucide-name}`, `Sparkline.{icon, breakdown}`, `ControlPanel.secondary_pills`, `ToggleList.items[].icon`.
+- Сітка 5×4 повернута з bento auto-flow (тестувався в Phase 1); явне розміщення через `widgetLayout.positions` + видимі пунктирні гайдлайни в edit-режимі.
+- Усі 14 in-tree widget-endpoints видають Phase-6-shape payload-и. Pydantic-схема приймає нові template-name; додано size envelopes: `weather`/`media` ≥ 2×2, `presence` ≥ 2×1.
+- `media-player` повертається на template (V1 widget.html, який ненадовго повернувся в Phase 5, видалено знову — новий `media`-шаблон покриває cover art + transport + volume scrubber нативно).
+
+### 5.8 Гарантії зворотної сумісності
 
 - Маніфести з `widget.kind` за замовчуванням лишаються `custom` — поточна iframe-поведінка.
-- Існуючі файли `widget.html` завантажуються та рендеряться точно як раніше.
-- Старі імена postMessage працюють у custom-режимі з deprecation warning одну major-версію.
-- Фіксована сітка 5×4 заміняється `auto-flow: dense`, але розміри віджетів (`WxH`) шануються точно.
+- Існуючі файли `widget.html` завантажуються та рендеряться точно як раніше для `kind: "custom"` модулів.
+- Усі Phase-6-поля на generic-шаблонах опціональні — старіші payload-и продовжують рендеритися (icon-слот рендериться нічим якщо відсутній).
+- Status `pill.icon` приймає і legacy short codes (`check`, `clock`, `alert`, `x`, `refresh`), і будь-яке ім'я з [Icon](#37-icon-system).
+- Прибрано: pre-Phase-4 postMessage-імена (`openWidgetModal`, `closeWidgetModal`, `openSettings`, `refresh`) — Phase 5 видалила аліаси. Custom-модулі мають використовувати канонічні `WidgetMessage`-типи з [`src/lib/widgetMessages.ts`](../../src/lib/widgetMessages.ts).
 
 ---
 
@@ -406,42 +547,56 @@ type WidgetMessage =
 ```
 src/
 ├── components/
-│   ├── Dashboard.tsx               (refactor: feature-flag-бранч)
+│   ├── Dashboard.tsx                  (9-рядковий wrapper — монтує DashboardV2)
 │   └── dashboard/
-│       ├── DashboardV2.tsx         (новий)
-│       ├── Hero.tsx                (новий)
-│       ├── SceneRow.tsx            (новий)
-│       ├── RoomTabs.tsx            (новий)
-│       ├── BentoGrid.tsx           (новий)
-│       ├── WidgetChrome.tsx        (новий)
-│       ├── WidgetFrame.tsx         (новий — iframe + template router)
+│       ├── DashboardV2.tsx            (композиційний корінь)
+│       ├── Hero.tsx                   (привітання + клок + status pill + погода)
+│       ├── SceneRow.tsx               (чіпи → POST /scenes/{id}/activate)
+│       ├── RoomTabs.tsx               (derived з manifest.room)
+│       ├── BentoGrid.tsx              (фіксовані 5×4 з explicit positioning)
+│       ├── WidgetChrome.tsx           (status-dot + edit-bar + resize-handle)
+│       ├── WidgetFrame.tsx            (router template-registry, iframe-fallback)
+│       ├── AddWidgetDrawer.tsx        (bottom-sheet для pin'ингу нових віджетів)
 │       └── templates/
-│           ├── Metric.tsx          (новий)
-│           ├── Sparkline.tsx       (новий)
-│           ├── ToggleList.tsx      (новий)
-│           ├── ControlPanel.tsx    (новий)
-│           ├── Status.tsx          (новий)
-│           ├── Skeleton.tsx        (новий)
-│           └── registry.ts         (новий)
+│           ├── Icon.tsx               (emoji-first; ~50-name lucide-style мапа)
+│           ├── registry.ts            (8 шаблонів: 5 generic + 3 спеціалізовані)
+│           ├── Skeleton.tsx           (один skeleton-варіант per template)
+│           ├── Metric.tsx             (generic — primary + tone)
+│           ├── Sparkline.tsx          (generic — value + chart + breakdown)
+│           ├── ToggleList.tsx         (generic — Apple-Home tile-grid)
+│           ├── ControlPanel.tsx       (generic — primary + modes + steppers)
+│           ├── Status.tsx             (generic — pill + rows + cards/actions)
+│           ├── Weather.tsx            (спеціалізований — hero + pills + forecast)
+│           ├── Media.tsx              (спеціалізований — cover + transport + volume)
+│           ├── Presence.tsx           (спеціалізований — avatar circles + state-dot)
+│           └── blocks/
+│               ├── Pill.tsx           (tone + text + icon)
+│               ├── IconStrip.tsx      (icon + value горизонтально)
+│               ├── CardRow.tsx        (equal-width grid mini-cards)
+│               └── ActionButton.tsx   (POSTs /modules/{name}/action/{id})
 ├── store/
-│   └── useStore.ts                 (extend: dashboardV2Enabled, widgetLayout.version)
+│   └── useStore.ts                    (Module.room, widgetLayout.version, swapWidgets V2)
 ├── hooks/
-│   ├── useBentoEdit.ts             (новий — лифт drag/drop/resize)
-│   ├── useWidgetData.ts            (новий)
-│   └── useTimeOfDay.ts             (новий)
-└── index.css                       (нові токени з §2.6)
+│   ├── useBentoEdit.ts                (drag-to-empty + drag-to-swap + resize)
+│   ├── useWidgetData.ts               (fetch + EventBus subscribe + poll)
+│   └── useTimeOfDay.ts                (data-tod атрибут кожні 15 хв)
+├── lib/
+│   └── widgetMessages.ts              (типізований postMessage-протокол)
+└── index.css                          (--hero-tint, --widget-glow-on, --motion-spring, --skeleton-bg)
 
 core/
 ├── module_loader/
-│   ├── manifest_schema.py          ✅ Phase 0
-│   └── validator.py                ✅ Phase 0
+│   ├── manifest_schema.py             (Pydantic — 8 template-name + size envelopes)
+│   └── validator.py                   (делегування в Pydantic)
 └── api/
+    ├── middleware.py                  (NoCacheForPaths ASGI для /sw.js + /manifest.json)
     ├── routes/
-    │   ├── module_data.py          ✅ Phase 0 (заглушка → Phase 2 повна)
-    │   └── scenes.py               ✅ Phase 0 (+ /activate)
-    └── sync_bridge.py              ✅ Phase 0 (+ scene.* whitelist)
+    │   ├── module_data.py             (proxy /api/v1/modules/{name}/data|action/{key})
+    │   ├── modules.py                 (ModuleResponse експонує room)
+    │   └── scenes.py                  (POST /{id}/activate + scene.* events)
+    └── sync_bridge.py                 (whitelist scene.activate / activated / failed)
 
-system_modules/                     ✅ усі 18 манифестів отримали room
+system_modules/                        (всі 18 манифестів декларують room; 13 видають template-payload-и)
 ```
 
 ---
