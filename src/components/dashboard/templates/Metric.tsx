@@ -1,8 +1,9 @@
+import { motion } from 'motion/react';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { MetricSkeleton } from './Skeleton';
+import Icon from './Icon';
 import type { TemplateProps } from './registry';
 
-/** Payload shape — see docs/dashboard-recraft.md §3.3.1. */
 export interface MetricPayload {
   label: string;
   value: string;
@@ -13,6 +14,7 @@ export interface MetricPayload {
     period: string;
   } | null;
   tone?: 'neutral' | 'info' | 'ok' | 'warn' | 'alert';
+  icon?: string | null;
 }
 
 const TONE_COLOR: Record<NonNullable<MetricPayload['tone']>, string> = {
@@ -23,8 +25,16 @@ const TONE_COLOR: Record<NonNullable<MetricPayload['tone']>, string> = {
   alert: 'var(--rd)',
 };
 
+const TONE_TINT: Record<NonNullable<MetricPayload['tone']>, string> = {
+  neutral: 'transparent',
+  info: 'radial-gradient(ellipse at 80% -10%, rgba(90,150,255,.10), transparent 60%)',
+  ok: 'radial-gradient(ellipse at 80% -10%, rgba(52,214,147,.10), transparent 60%)',
+  warn: 'radial-gradient(ellipse at 80% -10%, rgba(245,169,58,.12), transparent 60%)',
+  alert: 'radial-gradient(ellipse at 80% -10%, rgba(224,84,84,.14), transparent 60%)',
+};
+
 const TREND_GLYPH: Record<'up' | 'down' | 'flat', string> = {
-  up: '▲', down: '▼', flat: '→',
+  up: '↑', down: '↓', flat: '→',
 };
 
 export default function MetricTemplate({ mod }: TemplateProps) {
@@ -41,43 +51,78 @@ export default function MetricTemplate({ mod }: TemplateProps) {
   if (!data) return <MetricSkeleton />;
 
   const tone = data.tone ?? 'neutral';
+  const accent = TONE_COLOR[tone];
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      padding: '12px 14px',
-      display: 'flex', flexDirection: 'column',
-      justifyContent: 'space-between',
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-        {data.label}
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{
+        width: '100%',
+        height: '100%',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        background: TONE_TINT[tone],
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          color: 'var(--tx3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.08em',
+        }}>
+          {data.label}
+        </div>
+        {data.icon && <Icon name={data.icon} size={22} />}
       </div>
+
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--tx)', lineHeight: 1 }}>
+          <span style={{
+            fontSize: 34,
+            fontWeight: 600,
+            color: 'var(--tx)',
+            lineHeight: 1,
+            letterSpacing: '-.015em',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
             {data.value}
           </span>
           {data.unit && (
-            <span style={{ fontSize: 11, color: 'var(--tx3)' }}>{data.unit}</span>
+            <span style={{ fontSize: 11, color: 'var(--tx3)', fontWeight: 500 }}>
+              {data.unit}
+            </span>
           )}
         </div>
         {data.trend && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 6, fontSize: 10, color: TONE_COLOR[tone] }}>
-            <span aria-hidden>{TREND_GLYPH[data.trend.direction]}</span>
-            <span>{data.trend.magnitude}</span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            marginTop: 6,
+            fontSize: 10,
+            color: accent,
+            fontVariantNumeric: 'tabular-nums',
+          }}>
+            <span aria-hidden style={{ fontWeight: 600 }}>{TREND_GLYPH[data.trend.direction]}</span>
+            <span style={{ fontWeight: 500 }}>{data.trend.magnitude}</span>
             <span style={{ color: 'var(--tx3)' }}>· {data.trend.period}</span>
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div style={{
-      width: '100%', height: '100%',
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
+      width: '100%', height: '100%', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: 6, padding: 10,
     }}>
       <div style={{ fontSize: 11, color: 'var(--rd)' }}>Unavailable</div>

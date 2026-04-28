@@ -3,9 +3,9 @@ import { motion } from 'motion/react';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { ControlPanelSkeleton } from './Skeleton';
 import { useStore } from '../../../store/useStore';
+import IconStrip, { type IconStripItem } from './blocks/IconStrip';
 import type { TemplateProps } from './registry';
 
-/** Payload shape — see docs/dashboard-recraft.md §3.3.4. */
 export interface ControlPanelPayload {
   label: string;
   primary: { value: string; unit?: string; secondary?: string };
@@ -22,6 +22,7 @@ export interface ControlPanelPayload {
     max?: number;
     step?: number;
   }[];
+  secondary_pills?: IconStripItem[];
 }
 
 export default function ControlPanelTemplate({ mod }: TemplateProps) {
@@ -77,27 +78,57 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
   if (!data) return <ControlPanelSkeleton />;
 
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      padding: '10px 14px 12px',
-      display: 'flex', flexDirection: 'column', gap: 8,
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      style={{
+        width: '100%',
+        height: '100%',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{
+        fontSize: 9.5,
+        fontWeight: 600,
+        color: 'var(--tx3)',
+        textTransform: 'uppercase',
+        letterSpacing: '.08em',
+      }}>
         {data.label}
       </div>
+
       <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 28, fontWeight: 600, color: 'var(--tx)', lineHeight: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+          <span style={{
+            fontSize: 38,
+            fontWeight: 300,
+            color: 'var(--tx)',
+            lineHeight: 1,
+            letterSpacing: '-.02em',
+            fontVariantNumeric: 'tabular-nums',
+          }}>
             {data.primary.value}
           </span>
           {data.primary.unit && (
-            <span style={{ fontSize: 13, color: 'var(--tx2)' }}>{data.primary.unit}</span>
+            <span style={{ fontSize: 16, color: 'var(--tx2)', fontWeight: 300 }}>
+              {data.primary.unit}
+            </span>
           )}
         </div>
         {data.primary.secondary && (
-          <div style={{ fontSize: 10, color: 'var(--tx3)', marginTop: 2 }}>{data.primary.secondary}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 4 }}>
+            {data.primary.secondary}
+          </div>
         )}
       </div>
+
+      {data.secondary_pills && data.secondary_pills.length > 0 && (
+        <IconStrip items={data.secondary_pills} />
+      )}
 
       {data.modes && data.modes.options.length > 0 && (
         <ModeRow
@@ -109,7 +140,12 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
       )}
 
       {data.steppers && data.steppers.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'auto' }}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          marginTop: 'auto',
+        }}>
           {data.steppers.map((s) => (
             <StepperRow
               key={s.id}
@@ -126,11 +162,13 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 
-function ModeRow({ options, current, pending, onSelect }: {
+function ModeRow({
+  options, current, pending, onSelect,
+}: {
   options: { id: string; label: string }[];
   current: string;
   pending: string | null;
@@ -142,6 +180,10 @@ function ModeRow({ options, current, pending, onSelect }: {
       display: 'grid',
       gridTemplateColumns: `repeat(${cols}, 1fr)`,
       gap: 4,
+      padding: 3,
+      borderRadius: 8,
+      background: 'var(--sf2)',
+      border: '1px solid var(--b)',
     }}>
       {options.map((o) => {
         const active = o.id === current;
@@ -152,19 +194,19 @@ function ModeRow({ options, current, pending, onSelect }: {
             onClick={() => onSelect(o.id)}
             disabled={busy}
             whileTap={{ scale: 0.96 }}
-            transition={{ duration: 0.18, ease: [0.5, 1.4, 0.5, 1] }}
+            transition={{ duration: 0.15, ease: [0.5, 1.4, 0.5, 1] }}
             style={{
               padding: '6px 4px',
               borderRadius: 6,
               fontSize: 10,
-              fontWeight: 500,
+              fontWeight: 600,
               cursor: busy ? 'wait' : 'pointer',
               opacity: busy ? 0.6 : 1,
-              background: active ? 'var(--ac)' : 'var(--sf)',
+              background: active ? 'var(--ac)' : 'transparent',
               color: active ? 'var(--on-accent)' : 'var(--tx2)',
-              border: `1px solid ${active ? 'var(--ac)' : 'var(--b)'}`,
+              border: 'none',
               boxShadow: active ? 'var(--widget-glow-on)' : 'none',
-              transition: 'background .15s, border-color .15s, color .15s',
+              transition: 'background .15s, color .15s',
             }}
           >
             {o.label}
@@ -175,22 +217,37 @@ function ModeRow({ options, current, pending, onSelect }: {
   );
 }
 
-function StepperRow({ spec, busy, onStep }: {
-  spec: ControlPanelPayload['steppers'] extends (infer T)[] | undefined ? T : never;
+function StepperRow({
+  spec, busy, onStep,
+}: {
+  spec: NonNullable<ControlPanelPayload['steppers']>[number];
   busy: boolean;
   onStep: (delta: 1 | -1) => void;
 }) {
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '4px 6px', borderRadius: 8,
-      background: 'var(--sf2)', border: '1px solid var(--b)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '5px 8px',
+      borderRadius: 8,
+      background: 'var(--sf2)',
+      border: '1px solid var(--b)',
       opacity: busy ? 0.6 : 1,
     }}>
-      <span style={{ fontSize: 10, color: 'var(--tx3)' }}>{spec.label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 10, color: 'var(--tx3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+        {spec.label}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <StepBtn label="−" onClick={() => onStep(-1)} disabled={busy} />
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--tx)', minWidth: 36, textAlign: 'center' }}>
+        <span style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: 'var(--tx)',
+          minWidth: 42,
+          textAlign: 'center',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
           {spec.value}{spec.unit ?? ''}
         </span>
         <StepBtn label="+" onClick={() => onStep(1)} disabled={busy} />
@@ -201,19 +258,20 @@ function StepperRow({ spec, busy, onStep }: {
 
 function StepBtn({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) {
   return (
-    <button
+    <motion.button
       onClick={onClick}
       disabled={disabled}
+      whileTap={{ scale: 0.92 }}
       style={{
-        width: 22, height: 22, borderRadius: 6,
-        background: 'var(--sf)', color: 'var(--tx2)',
+        width: 26, height: 26, borderRadius: 6,
+        background: 'var(--sf)', color: 'var(--tx)',
         border: '1px solid var(--b)',
-        fontSize: 14, lineHeight: 1,
+        fontSize: 14, fontWeight: 500, lineHeight: 1,
         cursor: disabled ? 'wait' : 'pointer',
       }}
     >
       {label}
-    </button>
+    </motion.button>
   );
 }
 
@@ -223,12 +281,20 @@ function clamp(n: number, lo: number, hi: number): number {
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+    <div style={{
+      width: '100%', height: '100%', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 6,
+    }}>
       <div style={{ fontSize: 11, color: 'var(--rd)' }}>Unavailable</div>
       <button
         onClick={onRetry}
         title={message}
-        style={{ fontSize: 10, padding: '3px 10px', borderRadius: 6, background: 'var(--sf2)', color: 'var(--tx2)', border: '1px solid var(--b)', cursor: 'pointer' }}
+        style={{
+          fontSize: 10, padding: '3px 10px', borderRadius: 6,
+          background: 'var(--sf2)', color: 'var(--tx2)',
+          border: '1px solid var(--b)', cursor: 'pointer',
+        }}
       >Retry</button>
     </div>
   );

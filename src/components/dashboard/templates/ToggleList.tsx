@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { ToggleListSkeleton } from './Skeleton';
+import Icon from './Icon';
 import type { TemplateProps } from './registry';
 
-/** Payload shape — see docs/dashboard-recraft.md §3.3.3. */
 export interface ToggleItem {
   id: string;
   name: string;
   state: 'on' | 'off' | 'unknown';
   secondary?: string | null;
+  icon?: string | null;
 }
 
 export interface ToggleListPayload {
@@ -27,7 +28,6 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
     pollIntervalS: widget?.refresh?.poll_interval_s,
   });
 
-  // Track in-flight toggle ids so we can disable repeat clicks.
   const [pending, setPending] = useState<Set<string>>(new Set());
 
   async function toggle(id: string) {
@@ -40,16 +40,16 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
         body: JSON.stringify({ id }),
       });
       if (!r.ok) throw new Error(await r.text());
-      // Optimistic refresh — proxy invalidates cache on every action so
-      // refetch returns the new state. Event-driven refresh from
-      // device.state_changed will arrive shortly via useWidgetData.
       await refetch();
     } catch {
-      // Surface as a toast via the global store.
       const showToast = (await import('../../../store/useStore')).useStore.getState().showToast;
       showToast('Toggle failed', 'error');
     } finally {
-      setPending((p) => { const n = new Set(p); n.delete(id); return n; });
+      setPending((p) => {
+        const n = new Set(p);
+        n.delete(id);
+        return n;
+      });
     }
   }
 
@@ -57,25 +57,47 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <ToggleListSkeleton />;
 
+  const onCount = data.items.filter((i) => i.state === 'on').length;
+  const summary = data.summary ?? `${onCount} on`;
+
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      padding: '10px 12px 12px',
-      display: 'flex', flexDirection: 'column', gap: 8,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      style={{
+        width: '100%',
+        height: '100%',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+      }}>
+        <div style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          color: 'var(--tx3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.08em',
+        }}>
           {data.label}
         </div>
-        {data.summary && (
-          <div style={{ fontSize: 10, color: 'var(--tx3)' }}>{data.summary}</div>
-        )}
+        <div style={{ fontSize: 10, color: 'var(--tx3)', fontVariantNumeric: 'tabular-nums' }}>
+          {summary}
+        </div>
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
         gap: 6,
         overflowY: 'auto',
+        alignContent: 'start',
       }}>
         {data.items.map((item) => (
           <ToggleCell
@@ -86,10 +108,12 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
           />
         ))}
         {data.items.length === 0 && (
-          <div style={{ fontSize: 10, color: 'var(--tx3)', padding: '8px 0' }}>—</div>
+          <div style={{ fontSize: 10.5, color: 'var(--tx3)', padding: '8px 0' }}>
+            No items
+          </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -97,40 +121,66 @@ function ToggleCell({
   item, busy, onClick,
 }: { item: ToggleItem; busy: boolean; onClick: () => void }) {
   const isOn = item.state === 'on';
+  const isUnknown = item.state === 'unknown';
   return (
     <motion.button
       onClick={onClick}
-      disabled={busy || item.state === 'unknown'}
+      disabled={busy || isUnknown}
       whileTap={{ scale: 0.96 }}
       transition={{ duration: 0.18, ease: [0.5, 1.4, 0.5, 1] }}
       style={{
         textAlign: 'left',
         padding: '8px 10px',
-        borderRadius: 8,
-        background: isOn ? 'color-mix(in srgb, var(--ac) 18%, var(--sf))' : 'var(--sf)',
+        borderRadius: 10,
+        background: isOn ? 'color-mix(in srgb, var(--ac) 14%, var(--sf))' : 'var(--sf)',
         border: `1px solid ${isOn ? 'var(--ac)' : 'var(--b)'}`,
         color: 'var(--tx)',
-        cursor: busy ? 'wait' : 'pointer',
-        opacity: busy ? 0.6 : 1,
+        cursor: busy ? 'wait' : isUnknown ? 'default' : 'pointer',
+        opacity: busy ? 0.6 : isUnknown ? 0.5 : 1,
         boxShadow: isOn ? 'var(--widget-glow-on)' : 'none',
         transition: 'background .15s, border-color .15s, box-shadow .15s',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {item.name}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          minWidth: 0, flex: 1,
+        }}>
+          {item.icon ? (
+            <Icon name={item.icon} size={15} />
+          ) : (
+            <span aria-hidden style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: isOn ? 'var(--gr)' : 'var(--tx3)',
+              flexShrink: 0,
+            }} />
+          )}
+          <span style={{
+            fontSize: 11.5,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            color: isOn ? 'var(--tx)' : 'var(--tx2)',
+          }}>
+            {item.name}
+          </span>
         </span>
-        <span
-          aria-hidden
-          style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: isOn ? 'var(--gr)' : 'var(--tx3)',
+        {isOn && (
+          <span aria-hidden style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: 'var(--gr)',
             flexShrink: 0,
-          }}
-        />
+          }} />
+        )}
       </div>
       {item.secondary && (
-        <div style={{ marginTop: 3, fontSize: 9, color: 'var(--tx3)' }}>
+        <div style={{
+          marginTop: 3,
+          fontSize: 9.5,
+          color: isOn ? 'var(--ac)' : 'var(--tx3)',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
           {item.secondary}
         </div>
       )}
@@ -141,10 +191,9 @@ function ToggleCell({
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div style={{
-      width: '100%', height: '100%',
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      gap: 6, padding: 10,
+      width: '100%', height: '100%', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 6,
     }}>
       <div style={{ fontSize: 11, color: 'var(--rd)' }}>Unavailable</div>
       <button

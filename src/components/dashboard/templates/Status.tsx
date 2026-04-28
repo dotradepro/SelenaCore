@@ -1,32 +1,32 @@
+import { motion } from 'motion/react';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { StatusSkeleton } from './Skeleton';
+import Icon from './Icon';
+import Pill from './blocks/Pill';
+import CardRow, { type CardSpec } from './blocks/CardRow';
+import IconStrip, { type IconStripItem } from './blocks/IconStrip';
+import ActionButton, { type ActionSpec } from './blocks/ActionButton';
 import type { TemplateProps } from './registry';
 
-/** Payload shape — see docs/dashboard-recraft.md §3.3.5. */
 export interface StatusPayload {
   label: string;
   pill: {
     tone: 'ok' | 'info' | 'warn' | 'alert' | 'neutral';
     text: string;
-    icon?: 'check' | 'clock' | 'alert' | 'x' | 'refresh';
+    icon?: string;
   };
-  rows?: { label: string; value: string }[];
+  rows?: { label: string; value: string; icon?: string }[];
+  cards?: CardSpec[];
+  strip?: IconStripItem[];
+  actions?: ActionSpec[];
 }
 
-const TONE_COLOR: Record<StatusPayload['pill']['tone'], string> = {
-  ok: 'var(--gr)',
-  info: 'var(--ac)',
-  warn: 'var(--am)',
-  alert: 'var(--rd)',
-  neutral: 'var(--tx2)',
-};
-
-const ICON_GLYPH: Record<NonNullable<StatusPayload['pill']['icon']>, string> = {
-  check: '✓',
-  clock: '◷',
-  alert: '!',
-  x: '✕',
-  refresh: '↻',
+const TONE_TINT: Record<StatusPayload['pill']['tone'], string> = {
+  neutral: 'transparent',
+  info: 'radial-gradient(ellipse at 80% -10%, rgba(90,150,255,.10), transparent 60%)',
+  ok: 'radial-gradient(ellipse at 80% -10%, rgba(52,214,147,.10), transparent 60%)',
+  warn: 'radial-gradient(ellipse at 80% -10%, rgba(245,169,58,.12), transparent 60%)',
+  alert: 'radial-gradient(ellipse at 80% -10%, rgba(224,84,84,.14), transparent 60%)',
 };
 
 export default function StatusTemplate({ mod }: TemplateProps) {
@@ -42,53 +42,109 @@ export default function StatusTemplate({ mod }: TemplateProps) {
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <StatusSkeleton />;
 
-  const tone = TONE_COLOR[data.pill.tone];
-  const glyph = data.pill.icon ? ICON_GLYPH[data.pill.icon] : null;
-
   return (
-    <div style={{
-      width: '100%', height: '100%',
-      padding: '10px 14px 12px',
-      display: 'flex', flexDirection: 'column', gap: 6,
-    }}>
-      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx3)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-        {data.label}
-      </div>
-      <span style={{
-        alignSelf: 'flex-start',
-        display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '3px 9px',
-        borderRadius: 999,
-        fontSize: 10.5, fontWeight: 500,
-        color: tone,
-        background: 'color-mix(in srgb, var(--sf2) 70%, transparent)',
-        border: `1px solid ${tone}`,
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      style={{
+        width: '100%',
+        height: '100%',
+        padding: '12px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        background: TONE_TINT[data.pill.tone],
+      }}
+    >
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 8,
       }}>
-        {glyph && <span aria-hidden style={{ fontSize: 11, lineHeight: 1 }}>{glyph}</span>}
-        {data.pill.text}
-      </span>
+        <div style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          color: 'var(--tx3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.08em',
+        }}>
+          {data.label}
+        </div>
+        {data.actions && data.actions.length > 0 && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {data.actions.slice(0, 2).map((a) => (
+              <ActionButton key={a.id} module={mod.name} spec={a} onSuccess={refetch} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Pill
+        tone={data.pill.tone}
+        text={data.pill.text}
+        icon={data.pill.icon}
+        emphasis
+        style={{ alignSelf: 'flex-start' }}
+      />
+
+      {data.strip && data.strip.length > 0 && <IconStrip items={data.strip} />}
+
       {data.rows && data.rows.length > 0 && (
-        <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
           {data.rows.slice(0, 4).map((r, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
-              <span style={{ color: 'var(--tx3)' }}>{r.label}</span>
-              <span style={{ color: 'var(--tx2)' }}>{r.value}</span>
+            <div key={i} style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: 10.5,
+              gap: 8,
+              padding: '2px 0',
+              borderBottom: i < data.rows!.slice(0, 4).length - 1 ? '1px solid color-mix(in srgb, var(--b) 60%, transparent)' : 'none',
+            }}>
+              <span style={{
+                color: 'var(--tx3)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+              }}>
+                {r.icon && <Icon name={r.icon} size={11} />}
+                {r.label}
+              </span>
+              <span style={{ color: 'var(--tx)', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+                {r.value}
+              </span>
             </div>
           ))}
         </div>
       )}
-    </div>
+
+      {data.cards && data.cards.length > 0 && (
+        <div style={{ marginTop: 'auto' }}>
+          <CardRow cards={data.cards} />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+    <div style={{
+      width: '100%', height: '100%', display: 'flex',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 6,
+    }}>
       <div style={{ fontSize: 11, color: 'var(--rd)' }}>Unavailable</div>
       <button
         onClick={onRetry}
         title={message}
-        style={{ fontSize: 10, padding: '3px 10px', borderRadius: 6, background: 'var(--sf2)', color: 'var(--tx2)', border: '1px solid var(--b)', cursor: 'pointer' }}
+        style={{
+          fontSize: 10, padding: '3px 10px', borderRadius: 6,
+          background: 'var(--sf2)', color: 'var(--tx2)',
+          border: '1px solid var(--b)', cursor: 'pointer',
+        }}
       >Retry</button>
     </div>
   );
