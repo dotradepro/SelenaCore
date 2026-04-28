@@ -17,8 +17,8 @@
         "icon": "icon.svg",
         "widget": {
             "kind": "template",
-            "template": "status",
-            "size": "2x2",
+            "template": "weather",
+            "size": "4x2",
             "max_size": "4x2",
             "data_endpoints": {
                 "state": {"path": "/widget/data/state", "cache_ttl_s": 60}

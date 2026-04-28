@@ -19,7 +19,7 @@
         "icon": "icon.svg",
         "widget": {
             "kind": "template",
-            "template": "status",
+            "template": "presence",
             "size": "2x2",
             "max_size": "4x2",
             "data_endpoints": {
