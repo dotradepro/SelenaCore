@@ -151,6 +151,48 @@ class TestWidget:
         with pytest.raises(ValidationError):
             ModuleManifest.model_validate(manifest)
 
+    def test_template_weather_ok_at_4x2(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "weather", "size": "4x2"}}
+        )
+        m = ModuleManifest.model_validate(manifest)
+        assert m.ui.widget.template == "weather"
+
+    def test_template_weather_too_small(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "weather", "size": "1x1"}}
+        )
+        with pytest.raises(ValidationError):
+            ModuleManifest.model_validate(manifest)
+
+    def test_template_media_too_small(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "media", "size": "1x1"}}
+        )
+        with pytest.raises(ValidationError):
+            ModuleManifest.model_validate(manifest)
+
+    def test_template_media_ok_at_4x2(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "media", "size": "4x2"}}
+        )
+        m = ModuleManifest.model_validate(manifest)
+        assert m.ui.widget.template == "media"
+
+    def test_template_presence_ok_at_2x1(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "presence", "size": "2x1"}}
+        )
+        m = ModuleManifest.model_validate(manifest)
+        assert m.ui.widget.template == "presence"
+
+    def test_template_presence_too_narrow(self):
+        manifest = _base_manifest(
+            ui={"widget": {"kind": "template", "template": "presence", "size": "1x2"}}
+        )
+        with pytest.raises(ValidationError):
+            ModuleManifest.model_validate(manifest)
+
     def test_invalid_size_format(self):
         manifest = _base_manifest(ui={"widget": {"size": "huge"}})
         with pytest.raises(ValidationError):

@@ -79,7 +79,18 @@ class WidgetSpec(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     kind: Literal["template", "custom"] = "custom"
-    template: Literal["metric", "sparkline", "toggle-list", "control-panel", "status"] | None = None
+    template: Literal[
+        "metric",
+        "sparkline",
+        "toggle-list",
+        "control-panel",
+        "status",
+        # Phase 6 specialized templates — modules with rich layouts that
+        # don't fit the 5 generic primitives.
+        "weather",
+        "media",
+        "presence",
+    ] | None = None
 
     file: str | None = None  # legacy iframe HTML path; required for kind=custom unless headless
     size: str | None = None
@@ -125,6 +136,15 @@ class WidgetSpec(BaseModel):
             raise ValueError(f"template 'control-panel' min size is 2x2, got {self.size}")
         if self.template == "status" and (cols > 4 or rows > 2):
             raise ValueError(f"template 'status' max size is 4x2, got {self.size}")
+        # Phase 6 specialized templates have stricter envelopes — they assume
+        # enough room for a hero + secondary content; squeezing them into
+        # 1x1 produces an unreadable jumble.
+        if self.template == "weather" and (cols < 2 or rows < 2):
+            raise ValueError(f"template 'weather' min size is 2x2, got {self.size}")
+        if self.template == "media" and (cols < 2 or rows < 2):
+            raise ValueError(f"template 'media' min size is 2x2, got {self.size}")
+        if self.template == "presence" and (cols < 2 or rows < 1):
+            raise ValueError(f"template 'presence' min size is 2x1, got {self.size}")
 
 
 class UISpec(BaseModel):
