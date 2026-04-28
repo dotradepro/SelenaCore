@@ -140,6 +140,15 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             else None
         )
         location = device.get("location") or ""
+
+        secondary_pills: list[dict[str, Any]] = []
+        if (humidity := state.get("humidity")) is not None:
+            secondary_pills.append({"icon": "droplets", "value": f"{int(humidity)}%"})
+        if (fan := state.get("fan_speed")) is not None:
+            secondary_pills.append({"icon": "wind", "value": str(fan).title()})
+        if (watts := state.get("estimated_watts")) is not None and watts:
+            secondary_pills.append({"icon": "zap", "value": f"{watts:.0f} W"})
+
         return {
             "_device_id": device["device_id"],  # echoed back in actions
             "label": f"Climate · {location}" if location else "Climate",
@@ -161,6 +170,7 @@ def build_router(svc: "ClimateModule") -> APIRouter:
                     "min": 16, "max": 30, "step": 0.5,
                 }
             ] if isinstance(target, (int, float)) else [],
+            "secondary_pills": secondary_pills,
         }
 
     async def _apply_to_primary(state_patch: dict[str, Any]) -> dict[str, Any]:

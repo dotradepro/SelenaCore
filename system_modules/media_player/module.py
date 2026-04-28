@@ -381,45 +381,39 @@ class MediaPlayerModule(SystemModule):
             svc._player.set_shuffle(enabled)
             return {"shuffle": svc._player._shuffle}
 
-        # ── Dashboard V2 control-panel template ─────────────────────────────
-        # Title goes in primary, transport modes go in modes (segmented),
-        # volume goes in steppers. The "current" mode reflects play/pause/stop
-        # so the active button highlights without an extra round-trip.
-        TRANSPORT_OPTIONS = [
-            {"id": "play", "label": "▶"},
-            {"id": "pause", "label": "❚❚"},
-            {"id": "stop", "label": "■"},
-            {"id": "next", "label": "⏭"},
-        ]
-
+        # ── Dashboard V2 media template (Phase 6) ───────────────────────────
+        # Returns the rich media-shape payload — cover URL + transport state
+        # + volume — so the V2 dashboard can render album art and a real
+        # volume slider instead of the V1-style 4-button stepper grid.
         @router.get("/widget/data/state")
         async def widget_state() -> dict:
             status = svc._player.get_status()
-            track = status.get("track") or {}
-            state = status.get("state", "stopped")
+            raw_state = status.get("state", "stopped")
+            # Normalize to template's enum.
+            state = raw_state if raw_state in {"play", "pause", "stop", "idle"} else "stop"
             volume = int(status.get("volume", 0))
+            track_obj = status.get("track")
 
-            title = track.get("title") or "Nothing playing"
-            artist = track.get("artist") or ""
+            track_payload: dict | None = None
+            if track_obj:
+                # Player returns absolute paths for local files; cover_url
+                # is already relative when fetched via cover_fetcher.
+                cover = track_obj.get("cover_url")
+                track_payload = {
+                    "title": track_obj.get("title") or "—",
+                    "artist": track_obj.get("artist") or None,
+                    "album": track_obj.get("album") or None,
+                    "cover_url": cover,
+                    "source_type": track_obj.get("source_type") or None,
+                    "duration_sec": track_obj.get("duration_sec"),
+                }
+
             return {
-                "label": "Media",
-                "primary": {
-                    "value": title[:40],
-                    "secondary": artist[:40] if artist else None,
-                },
-                "modes": {
-                    "current": state if state in {"play", "pause", "stop"} else "stop",
-                    "options": TRANSPORT_OPTIONS,
-                },
-                "steppers": [
-                    {
-                        "id": "volume",
-                        "label": "Vol",
-                        "value": str(volume),
-                        "unit": "%",
-                        "min": 0, "max": 100, "step": 5,
-                    }
-                ],
+                "state": state,
+                "track": track_payload,
+                "volume": volume,
+                "position_sec": status.get("position"),
+                "shuffle": bool(status.get("shuffle", False)),
             }
 
         @router.post("/widget/action/set_mode")
@@ -438,6 +432,9 @@ class MediaPlayerModule(SystemModule):
                 return {"ok": True, "state": svc._player.get_state()}
             if body.id == "next":
                 await svc._player.next()
+                return {"ok": True, "state": svc._player.get_state()}
+            if body.id == "previous":
+                await svc._player.previous()
                 return {"ok": True, "state": svc._player.get_state()}
             raise HTTPException(422, f"Unknown transport id {body.id!r}")
 

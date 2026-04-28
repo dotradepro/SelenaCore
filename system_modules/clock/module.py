@@ -223,6 +223,7 @@ class ClockModule(SystemModule):
                 "unit": None,
                 "trend": trend,
                 "tone": tone,
+                "icon": "alarm-clock",
             }
 
         # ── Alarms ─────────────────────────────────────────────────────────

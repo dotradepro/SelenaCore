@@ -419,6 +419,27 @@ class EnergyMonitorModule(SystemModule):
                 for idx, w in last_per_bucket.items():
                     buckets[idx] += w
 
+            # Top-3 contributors by today's kWh — rendered as breakdown
+            # cards under the sparkline. The Device-registry join gives
+            # us the human-friendly device name (per-device id is
+            # opaque). Skips devices with 0 kWh so cards stay relevant.
+            current_power = svc._monitor.get_current_power()
+            try:
+                joined = await svc._join_devices()
+            except Exception:
+                joined = []
+            ranked = [d for d in joined if (d.get("kwh_today") or 0) > 0]
+            ranked.sort(key=lambda d: float(d.get("kwh_today") or 0), reverse=True)
+            breakdown = []
+            for d in ranked[:3]:
+                watts = current_power.get(d["device_id"]) or 0
+                breakdown.append({
+                    "title": (d.get("name") or "—")[:14],
+                    "value": f"{watts:.0f} W",
+                    "secondary": f"{float(d.get('kwh_today') or 0):.1f} kWh",
+                    "tone": "info",
+                })
+
             tone = "warn" if current_total_w > 3000 else "info"
             return {
                 "label": "Energy",
@@ -428,6 +449,8 @@ class EnergyMonitorModule(SystemModule):
                 "series": [round(b, 2) for b in buckets],
                 "series_window_s": window_s,
                 "tone": tone,
+                "icon": "zap",
+                "breakdown": breakdown,
             }
 
         svc._register_html_routes(router, __file__)

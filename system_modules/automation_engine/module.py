@@ -208,6 +208,7 @@ class AutomationEngineModule(SystemModule):
                 "unit": f"of {total}" if total else None,
                 "trend": trend,
                 "tone": tone,
+                "icon": "workflow",
             }
 
         svc._register_html_routes(router, __file__)

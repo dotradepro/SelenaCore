@@ -108,7 +108,7 @@ class ProtocolBridgeModule(SystemModule):
             if svc._bridge is None:
                 return {
                     "label": "Protocol bridge",
-                    "pill": {"tone": "neutral", "text": "Not running", "icon": "alert"},
+                    "pill": {"tone": "neutral", "text": "Not running", "icon": "alert-triangle"},
                     "rows": [],
                 }
             s = svc._bridge.get_status()
@@ -120,16 +120,41 @@ class ProtocolBridgeModule(SystemModule):
             if not mqtt.get("enabled"):
                 pill = {"tone": "neutral", "text": "Disabled", "icon": "clock"}
             elif mqtt_on:
-                pill = {"tone": "ok", "text": "Connected", "icon": "check"}
+                pill = {"tone": "ok", "text": "Connected", "icon": "check-circle"}
             else:
-                pill = {"tone": "warn", "text": "MQTT offline", "icon": "alert"}
+                pill = {"tone": "warn", "text": "MQTT offline", "icon": "alert-triangle"}
 
-            rows = [
-                {"label": "MQTT", "value": mqtt.get("host") or "—" if mqtt.get("enabled") else "off"},
-                {"label": "Zigbee", "value": "on" if zigbee.get("enabled") else "off"},
-                {"label": "Z-Wave", "value": "on" if zwave.get("enabled") else "off"},
+            # Compact icon strip — one entry per protocol, color-coded
+            # (green when active, neutral when disabled).
+            strip = [
+                {
+                    "icon": "network",
+                    "value": "MQTT",
+                    "label": "online" if mqtt_on else "off",
+                    "tone": "ok" if mqtt_on else "neutral",
+                },
+                {
+                    "icon": "wifi",
+                    "value": "Zigbee",
+                    "label": "on" if zigbee.get("enabled") else "off",
+                    "tone": "ok" if zigbee.get("enabled") else "neutral",
+                },
+                {
+                    "icon": "radio",
+                    "value": "Z-Wave",
+                    "label": "on" if zwave.get("enabled") else "off",
+                    "tone": "ok" if zwave.get("enabled") else "neutral",
+                },
             ]
-            return {"label": "Protocol bridge", "pill": pill, "rows": rows}
+            rows = [
+                {"label": "MQTT host", "value": mqtt.get("host") or "—" if mqtt.get("enabled") else "off", "icon": "server"},
+            ]
+            return {
+                "label": "Protocol bridge",
+                "pill": pill,
+                "rows": rows,
+                "strip": strip,
+            }
 
         svc._register_html_routes(router, __file__)
         return router

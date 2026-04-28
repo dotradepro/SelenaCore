@@ -173,31 +173,56 @@ class PresenceDetectionModule(SystemModule):
                 raise HTTPException(503, "Not running")
             return svc._detector.get_status()
 
-        # ── Dashboard V2 status template endpoint ───────────────────────────
+        # ── Dashboard V2 presence template endpoint (Phase 6) ──────────────
         @router.get("/widget/data/state")
         async def widget_state() -> dict:
             if svc._detector is None:
                 raise HTTPException(503, "Not running")
             status = svc._detector.get_status()
+            users = svc._detector.list_users()
             home = int(status.get("users_home", 0))
             away = int(status.get("users_away", 0))
             total = int(status.get("users_total", 0))
 
             if total == 0:
-                pill = {"tone": "neutral", "text": "No users", "icon": "alert"}
+                summary = {"tone": "neutral", "text": "No users", "icon": "user"}
             elif home == 0:
-                pill = {"tone": "warn", "text": "Everyone away", "icon": "x"}
+                summary = {"tone": "warn", "text": "All away", "icon": "user-x"}
             elif away == 0:
-                pill = {"tone": "ok", "text": "Everyone home", "icon": "check"}
+                summary = {"tone": "ok", "text": "All home", "icon": "user-check"}
             else:
-                pill = {"tone": "info", "text": f"{home} home · {away} away", "icon": "check"}
+                summary = {"tone": "info", "text": f"{home}/{total} home", "icon": "home"}
 
-            method = status.get("detection_method", "—")
-            rows = [
-                {"label": "Total users", "value": str(total)},
-                {"label": "Method", "value": str(method)},
-            ]
-            return {"label": "Presence", "pill": pill, "rows": rows}
+            def _last_seen(ts: float | None) -> str | None:
+                if ts is None:
+                    return None
+                import time
+                age = max(0, int(time.time() - ts))
+                if age < 60:
+                    return "just now"
+                if age < 3600:
+                    return f"{age // 60}m ago"
+                if age < 86400:
+                    return f"{age // 3600}h ago"
+                return f"{age // 86400}d ago"
+
+            users_payload = []
+            for u in users:
+                state = u.get("state", "unknown")
+                if state not in {"home", "away"}:
+                    state = "unknown"
+                users_payload.append({
+                    "id": u.get("user_id"),
+                    "name": u.get("name") or "—",
+                    "state": state,
+                    "last_seen": _last_seen(u.get("last_seen")),
+                })
+
+            return {
+                "summary": summary,
+                "users": users_payload,
+                "empty_text": "No users registered",
+            }
 
         @router.get("/users")
         async def list_users() -> dict:

@@ -183,7 +183,7 @@ class UpdateManagerModule(SystemModule):
             if svc._manager is None:
                 return {
                     "label": "Updates",
-                    "pill": {"tone": "neutral", "text": "Not ready", "icon": "alert"},
+                    "pill": {"tone": "neutral", "text": "Not ready", "icon": "alert-triangle"},
                     "rows": [],
                 }
             s = svc._manager.get_status()
@@ -197,23 +197,50 @@ class UpdateManagerModule(SystemModule):
             if error:
                 pill = {"tone": "alert", "text": str(error)[:30], "icon": "x"}
             elif state == "checking":
-                pill = {"tone": "info", "text": "Checking", "icon": "refresh"}
+                pill = {"tone": "info", "text": "Checking", "icon": "refresh-cw"}
             elif state == "downloading":
-                pill = {"tone": "info", "text": "Downloading", "icon": "refresh"}
+                pill = {"tone": "info", "text": "Downloading", "icon": "refresh-cw"}
             elif state == "installing":
                 pill = {"tone": "warn", "text": "Installing", "icon": "clock"}
             elif available:
-                pill = {"tone": "warn", "text": f"v{latest} available", "icon": "alert"}
+                pill = {"tone": "warn", "text": f"v{latest} available", "icon": "alert-triangle"}
             else:
-                pill = {"tone": "ok", "text": "Up to date", "icon": "check"}
+                pill = {"tone": "ok", "text": "Up to date", "icon": "check-circle"}
 
             rows = [
-                {"label": "Current", "value": str(current)},
-                {"label": "Channel", "value": str(channel)},
+                {"label": "Current", "value": str(current), "icon": "server"},
+                {"label": "Channel", "value": str(channel), "icon": "settings"},
             ]
             if available and latest != current:
-                rows.append({"label": "Latest", "value": str(latest)})
-            return {"label": "Updates", "pill": pill, "rows": rows[:4]}
+                rows.append({"label": "Latest", "value": str(latest), "icon": "sparkles"})
+
+            # Inline action — manifest exposes /widget/action/check_now
+            # which the new ActionButton block dispatches via the proxy.
+            actions = []
+            if state not in {"checking", "downloading", "installing"} and not error:
+                actions.append({
+                    "id": "check_now",
+                    "label": "Check",
+                    "icon": "refresh-cw",
+                    "tone": "info",
+                })
+            return {
+                "label": "Updates",
+                "pill": pill,
+                "rows": rows[:4],
+                "actions": actions,
+            }
+
+        # Action endpoint that ActionButton dispatches to via proxy.
+        @router.post("/widget/action/check_now")
+        async def widget_check_now() -> dict:
+            if svc._manager is None:
+                raise HTTPException(503, "Service not ready")
+            try:
+                info = await svc._manager.check()
+            except Exception as exc:
+                raise HTTPException(502, f"check failed: {exc}") from exc
+            return {"ok": True, **info}
 
         svc._register_html_routes(router, __file__)
         return router

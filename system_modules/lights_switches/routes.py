@@ -86,6 +86,12 @@ def build_router(svc: "LightsSwitchesModule") -> APIRouter:
     # so the V2 dashboard renders this module as a `toggle-list` template
     # instead of the legacy widget.html iframe.
 
+    ENTITY_ICON = {
+        "light": "lightbulb",
+        "switch": "power",
+        "outlet": "zap",
+    }
+
     @router.get("/widget/data/state")
     async def widget_state() -> dict[str, Any]:
         devices = await svc.list_devices()
@@ -110,6 +116,7 @@ def build_router(svc: "LightsSwitchesModule") -> APIRouter:
                 "name": d["name"],
                 "state": "on" if is_on else "off",
                 "secondary": secondary,
+                "icon": ENTITY_ICON.get(d.get("entity_type", "")),
             })
         return {
             "label": "Lights",

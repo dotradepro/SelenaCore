@@ -125,22 +125,46 @@ class NotificationRouterModule(SystemModule):
             channels = int(s.get("channels", 0))
             rules = int(s.get("rules", 0))
             sent = int(s.get("total_sent", 0))
-            history = svc._router_svc.get_history(limit=10)
-            recent = len(history)
+            history = svc._router_svc.get_history(limit=3)
 
             if channels == 0:
-                pill = {"tone": "warn", "text": "No channels configured", "icon": "alert"}
+                pill = {"tone": "warn", "text": "No channels", "icon": "alert-triangle"}
             elif sent == 0:
                 pill = {"tone": "neutral", "text": "Idle", "icon": "clock"}
             else:
-                pill = {"tone": "ok", "text": f"{sent} sent", "icon": "check"}
+                pill = {"tone": "ok", "text": f"{sent} sent", "icon": "bell"}
 
             rows = [
-                {"label": "Channels", "value": str(channels)},
-                {"label": "Rules", "value": str(rules)},
-                {"label": "Recent", "value": str(recent)},
+                {"label": "Channels", "value": str(channels), "icon": "network"},
+                {"label": "Rules", "value": str(rules), "icon": "workflow"},
             ]
-            return {"label": "Notifications", "pill": pill, "rows": rows}
+
+            # Recent notifications as small cards (icon + level + truncated
+            # message). Falls back to empty array when nothing has fired
+            # yet — Status template just hides the cards row.
+            cards: list[dict] = []
+            for item in history[-3:]:
+                level = (item.get("level") or "info").lower()
+                level_icon = {
+                    "info": "bell",
+                    "warning": "alert-triangle",
+                    "error": "alert-circle",
+                    "success": "check-circle",
+                }.get(level, "bell")
+                msg = (item.get("message") or "")[:18]
+                cards.append({
+                    "title": level.title(),
+                    "value": msg or "—",
+                    "icon": level_icon,
+                    "tone": {"info": "info", "warning": "warn", "error": "alert", "success": "ok"}.get(level, "neutral"),
+                })
+
+            return {
+                "label": "Notifications",
+                "pill": pill,
+                "rows": rows,
+                "cards": cards,
+            }
 
         @router.post("/channels", status_code=201)
         async def add_channel(req: ChannelRequest) -> JSONResponse:

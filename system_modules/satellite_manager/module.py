@@ -248,7 +248,7 @@ class SatelliteManagerModule(SystemModule):
     async def _widget_state(self) -> dict:
         """Dashboard V2 metric — online / total satellites."""
         if self._registry is None:
-            return {"label": "Satellites", "value": "—", "tone": "neutral"}
+            return {"label": "Satellites", "value": "—", "tone": "neutral", "icon": "satellite"}
         sats = await self._registry.list_all()
         online = sum(1 for s in sats if (s.get("state") or {}).get("online"))
         total = len(sats)
@@ -258,6 +258,7 @@ class SatelliteManagerModule(SystemModule):
                 "value": "0",
                 "trend": {"direction": "flat", "magnitude": "none", "period": "registered"},
                 "tone": "neutral",
+                "icon": "satellite",
             }
         offline = total - online
         tone = "ok" if offline == 0 else "warn"
@@ -270,6 +271,7 @@ class SatelliteManagerModule(SystemModule):
             "unit": f"of {total}",
             "trend": trend,
             "tone": tone,
+            "icon": "satellite",
         }
 
     async def _api_update(self, device_id: str, body: dict) -> dict:

@@ -2966,20 +2966,20 @@ class VoiceCoreModule(SystemModule):
             stt_lang = svc._config.get("stt_lang") or "—"
 
             if privacy:
-                pill = {"tone": "neutral", "text": "Privacy on", "icon": "x"}
+                pill = {"tone": "neutral", "text": "Privacy on", "icon": "shield"}
             elif state == "listening":
-                pill = {"tone": "info", "text": "Listening", "icon": "refresh"}
+                pill = {"tone": "info", "text": "Listening", "icon": "mic"}
             elif state == "speaking":
-                pill = {"tone": "info", "text": "Speaking", "icon": "refresh"}
+                pill = {"tone": "info", "text": "Speaking", "icon": "volume-2"}
             elif state == "error":
-                pill = {"tone": "alert", "text": "Error", "icon": "x"}
+                pill = {"tone": "alert", "text": "Error", "icon": "alert-triangle"}
             else:
-                pill = {"tone": "ok", "text": "Ready", "icon": "check"}
+                pill = {"tone": "ok", "text": "Ready", "icon": "check-circle"}
 
             rows = [
-                {"label": "Wake word", "value": str(wake_word) if wake_enabled else "always-on"},
-                {"label": "STT lang", "value": str(stt_lang)},
-                {"label": "Privacy", "value": "on" if privacy else "off"},
+                {"label": "Wake word", "value": str(wake_word) if wake_enabled else "always-on", "icon": "sparkles"},
+                {"label": "STT lang", "value": str(stt_lang), "icon": "globe"},
+                {"label": "Privacy", "value": "on" if privacy else "off", "icon": "shield"},
             ]
             return {"label": "Voice", "pill": pill, "rows": rows[:4]}
 

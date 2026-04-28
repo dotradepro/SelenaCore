@@ -20,6 +20,20 @@ from system_modules.weather_service.voice_handler import WeatherVoiceHandler
 logger = logging.getLogger(__name__)
 
 
+def _short_day_from_iso(iso_date: str | None) -> str:
+    """Format an ISO date string (``YYYY-MM-DD``) as a 3-letter weekday
+    abbreviation (``Tue``, ``Wed``, ...). Falls back to the raw value
+    if parsing fails so the widget still shows something."""
+    if not iso_date:
+        return "—"
+    try:
+        from datetime import datetime
+        dt = datetime.fromisoformat(iso_date)
+        return dt.strftime("%a")
+    except (ValueError, TypeError):
+        return iso_date[:3]
+
+
 class ConfigRequest(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
@@ -144,51 +158,100 @@ class WeatherServiceModule(SystemModule):
                 raise HTTPException(503, "No weather data yet")
             return JSONResponse(current)
 
-        # ── Dashboard V2 status template endpoint ───────────────────────────
+        # ── Dashboard V2 weather template endpoint (Phase 6) ────────────────
+        # Maps Open-Meteo WMO weather codes to lucide icon names so the
+        # dashboard can render real icons instead of just emoji. Keeps the
+        # original emoji in the payload for terminals that don't render
+        # SVGs (and as Icon's fallback prop).
+        WMO_TO_ICON = {
+            0: ("sun", "Clear"),
+            1: ("sun", "Mostly clear"),
+            2: ("cloud", "Partly cloudy"),
+            3: ("cloud", "Overcast"),
+            45: ("cloud", "Fog"),
+            48: ("cloud", "Fog"),
+            51: ("cloud-rain", "Light drizzle"),
+            53: ("cloud-rain", "Drizzle"),
+            55: ("cloud-rain", "Heavy drizzle"),
+            61: ("cloud-rain", "Light rain"),
+            63: ("cloud-rain", "Rain"),
+            65: ("cloud-rain", "Heavy rain"),
+            71: ("cloud-snow", "Light snow"),
+            73: ("cloud-snow", "Snow"),
+            75: ("cloud-snow", "Heavy snow"),
+            80: ("cloud-rain", "Showers"),
+            81: ("cloud-rain", "Heavy showers"),
+            82: ("cloud-rain", "Violent showers"),
+            95: ("zap", "Thunderstorm"),
+            96: ("zap", "Storm + hail"),
+            99: ("zap", "Severe storm"),
+        }
+
+        def _icon_for_code(code: int | None) -> str:
+            if code is None:
+                return "cloud"
+            entry = WMO_TO_ICON.get(int(code))
+            return entry[0] if entry else "cloud"
+
         @router.get("/widget/data/state")
         async def widget_state() -> dict:
             if svc._weather is None:
                 raise HTTPException(503, "Service not ready")
             current = svc._weather.get_current()
+            forecast = svc._weather.get_forecast()
             status = svc._weather.get_status()
             location = status.get("location_name") or ""
             unit = "°C" if status.get("units") != "fahrenheit" else "°F"
 
+            # Empty state — service didn't manage to fetch yet. Status
+            # shape so WidgetFrame still renders something useful (the
+            # Weather template isn't a great fit for "no data yet").
             if current is None:
-                tone = "warn"
-                text = status.get("error") or "No data yet"
-                pill = {"tone": tone, "text": str(text)[:40], "icon": "alert"}
-                rows: list[dict] = []
-                if location:
-                    rows.append({"label": "Location", "value": location})
-                return {"label": "Weather", "pill": pill, "rows": rows}
+                return {
+                    "location": location or None,
+                    "current": {
+                        "icon": "alert-triangle",
+                        "emoji": "⚠️",
+                        "temperature": 0,
+                        "unit": unit,
+                        "condition": status.get("error") or "No data yet",
+                        "feels_like": None,
+                    },
+                    "pills": [],
+                    "forecast": [],
+                }
 
-            condition = current.get("condition") or "—"
-            emoji = current.get("condition_emoji") or ""
-            temp = current.get("temperature")
-            feels = current.get("feels_like")
-            humidity = current.get("humidity")
-            wind = current.get("wind_speed")
+            wmo = current.get("wmo_code")
+            payload = {
+                "location": location or None,
+                "current": {
+                    "icon": _icon_for_code(wmo),
+                    "emoji": current.get("condition_emoji"),
+                    "temperature": float(current.get("temperature") or 0),
+                    "unit": unit,
+                    "condition": current.get("condition") or "—",
+                    "feels_like": current.get("feels_like"),
+                },
+                "pills": [],
+                "forecast": [],
+            }
+            if (humidity := current.get("humidity")) is not None:
+                payload["pills"].append({"icon": "droplets", "value": f"{int(humidity)}%"})
+            if (wind := current.get("wind_speed")) is not None:
+                payload["pills"].append({"icon": "wind", "value": f"{wind:.0f} km/h"})
+            if (precip := current.get("precipitation")) is not None and precip:
+                payload["pills"].append({"icon": "cloud-rain", "value": f"{precip:.1f} mm"})
 
-            pill_text = f"{emoji} {condition}".strip() if emoji else condition
-            pill = {"tone": "info", "text": pill_text, "icon": "check"}
-
-            def _fmt(v: object, suffix: str) -> str:
-                if isinstance(v, (int, float)):
-                    return f"{v:.1f}{suffix}" if isinstance(v, float) else f"{v}{suffix}"
-                return "—"
-
-            rows = []
-            if location:
-                rows.append({"label": "Location", "value": location})
-            rows.append({"label": "Temp", "value": _fmt(temp, unit)})
-            if feels is not None:
-                rows.append({"label": "Feels", "value": _fmt(feels, unit)})
-            if wind is not None:
-                rows.append({"label": "Wind", "value": _fmt(wind, " km/h")})
-            if humidity is not None:
-                rows.append({"label": "Humidity", "value": _fmt(humidity, "%")})
-            return {"label": "Weather", "pill": pill, "rows": rows[:4]}
+            for entry in (forecast or [])[:3]:
+                f_code = entry.get("wmo_code")
+                payload["forecast"].append({
+                    "day": _short_day_from_iso(entry.get("date")),
+                    "icon": _icon_for_code(f_code),
+                    "high": float(entry.get("temp_max") or 0),
+                    "low": float(entry.get("temp_min") or 0),
+                    "unit": unit,
+                })
+            return payload
 
         @router.get("/weather/forecast")
         async def get_forecast() -> JSONResponse:
