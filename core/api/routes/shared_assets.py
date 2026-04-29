@@ -314,7 +314,7 @@ tr:hover td{background:var(--sf2)}
    only when the element has neither class already — modules that set
    their own body class keep full control). ───────────────────────────── */
 body.sc-widget{background:transparent;overflow:hidden}
-body.sc-settings{background:var(--bg);overflow-x:hidden;overflow-y:auto;padding:20px;height:auto;min-height:100%}
+body.sc-settings{background:var(--bg);overflow-x:hidden;overflow-y:auto;padding:20px;height:100%}
 body.sc-settings>*{max-width:800px;margin-left:auto;margin-right:auto}
 """
 

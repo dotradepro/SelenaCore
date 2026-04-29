@@ -149,6 +149,10 @@ def _device_to_dict(device: Device) -> dict[str, Any]:
         "last_seen": device.last_seen.timestamp() if device.last_seen else None,
         "module_id": device.module_id,
         "meta": device.get_meta(),
+        "entity_type": device.entity_type,
+        "location": device.location,
+        "keywords_user": device.get_keywords_user(),
+        "keywords_en": device.get_keywords_en(),
     }
 
 
