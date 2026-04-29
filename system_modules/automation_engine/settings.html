@@ -92,11 +92,20 @@
             <div class="field"><label data-i18n="f_event_type"></label><input type="text" id="f-trig-event" placeholder="device.state_changed"></div>
         </div>
         <div class="dyn-fields" id="trig-device">
-            <div class="field"><label data-i18n="f_device_id"></label><input type="text" id="f-trig-dev-id" placeholder="uuid-..."></div>
-            <div class="grid-2">
-                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-trig-key" placeholder="state"></div>
-                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-trig-val" placeholder="ON"></div>
+            <div class="field">
+                <label data-i18n="f_device_id"></label>
+                <input type="text" id="f-trig-dev-search" data-placeholder-i18n="f_search_device" oninput="filterDevices('trig')" autocomplete="off">
+                <select id="f-trig-dev-id" size="6" onchange="onDeviceSelected('trig')" style="width:100%;margin-top:6px"></select>
+                <div class="tiny mt8" id="f-trig-empty" style="display:none;color:var(--tx3)">
+                    <span data-i18n="f_no_devices"></span> · <a href="/modules/device_control" data-i18n="f_open_device_mgr"></a>
+                </div>
             </div>
+            <div class="grid-2">
+                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-trig-key" placeholder="state" list="caps-trig" autocomplete="off"></div>
+                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-trig-val" placeholder="ON" list="caps-trig-vals" autocomplete="off"></div>
+            </div>
+            <datalist id="caps-trig"></datalist>
+            <datalist id="caps-trig-vals"></datalist>
         </div>
         <div class="dyn-fields" id="trig-presence">
             <div class="field"><label data-i18n="f_user_id"></label><input type="text" id="f-trig-user" placeholder="user-uuid-001"></div>
@@ -111,11 +120,20 @@
 
         <!-- Action dynamic fields -->
         <div class="dyn-fields visible" id="act-device_command">
-            <div class="field"><label data-i18n="f_act_device_id"></label><input type="text" id="f-act-dev-id" placeholder="uuid-..."></div>
-            <div class="grid-2">
-                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-act-key" placeholder="state"></div>
-                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-act-val" placeholder="ON"></div>
+            <div class="field">
+                <label data-i18n="f_act_device_id"></label>
+                <input type="text" id="f-act-dev-search" data-placeholder-i18n="f_search_device" oninput="filterDevices('act')" autocomplete="off">
+                <select id="f-act-dev-id" size="6" onchange="onDeviceSelected('act')" style="width:100%;margin-top:6px"></select>
+                <div class="tiny mt8" id="f-act-empty" style="display:none;color:var(--tx3)">
+                    <span data-i18n="f_no_devices"></span> · <a href="/modules/device_control" data-i18n="f_open_device_mgr"></a>
+                </div>
             </div>
+            <div class="grid-2">
+                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-act-key" placeholder="state" list="caps-act" autocomplete="off"></div>
+                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-act-val" placeholder="ON" list="caps-act-vals" autocomplete="off"></div>
+            </div>
+            <datalist id="caps-act"></datalist>
+            <datalist id="caps-act-vals"></datalist>
         </div>
         <div class="dyn-fields" id="act-publish_event">
             <div class="field"><label data-i18n="f_pub_event_type"></label><input type="text" id="f-pub-event" placeholder="custom.my_event"></div>
@@ -171,6 +189,83 @@
         if (LANG !== 'en') targets.push(LANG);
         await Promise.all(targets.map(loadI18nBundle));
     }
+
+        var _devices = [];
+
+        async function loadDevices() {
+            try {
+                var r = await fetch('/api/ui/devices');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                var d = await r.json();
+                _devices = Array.isArray(d.devices) ? d.devices : [];
+            } catch (e) {
+                console.warn('[automation-engine] devices load failed:', e);
+                _devices = [];
+            }
+            renderDeviceOptions('trig', '');
+            renderDeviceOptions('act', '');
+        }
+
+        function _devLabel(d) {
+            var label = d.name || d.device_id;
+            if (d.location) label += ' — ' + d.location;
+            var kind = d.entity_type || d.type;
+            if (kind) label += ' · ' + kind;
+            return label;
+        }
+
+        function renderDeviceOptions(scope, filter) {
+            var sel = $('f-' + scope + '-dev-id');
+            var emptyHint = $('f-' + scope + '-empty');
+            if (!sel) return;
+            if (_devices.length === 0) {
+                sel.innerHTML = '';
+                if (emptyHint) emptyHint.style.display = '';
+                return;
+            }
+            if (emptyHint) emptyHint.style.display = 'none';
+            var q = (filter || '').toLowerCase().trim();
+            var list = _devices.filter(function (d) {
+                if (!q) return true;
+                var hay = [d.name, d.location, d.entity_type, d.type, d.protocol]
+                    .concat(d.keywords_user || [])
+                    .concat(d.keywords_en || [])
+                    .filter(Boolean).join(' ').toLowerCase();
+                return hay.indexOf(q) !== -1;
+            });
+            sel.innerHTML = list.map(function (d) {
+                return '<option value="' + esc(d.device_id) + '">' + esc(_devLabel(d)) + '</option>';
+            }).join('');
+        }
+
+        function filterDevices(scope) {
+            var input = $('f-' + scope + '-dev-search');
+            renderDeviceOptions(scope, input ? input.value : '');
+        }
+
+        function onDeviceSelected(scope) {
+            var sel = $('f-' + scope + '-dev-id');
+            if (!sel || !sel.value) return;
+            var dev = _devices.find(function (d) { return d.device_id === sel.value; });
+            if (!dev) return;
+            var caps = Array.isArray(dev.capabilities) ? dev.capabilities : [];
+            var stateKeys = dev.state && typeof dev.state === 'object' ? Object.keys(dev.state) : [];
+            var keys = [];
+            caps.concat(stateKeys).forEach(function (k) { if (k && keys.indexOf(k) === -1) keys.push(k); });
+            var dl = $('caps-' + scope);
+            if (dl) dl.innerHTML = keys.map(function (k) { return '<option value="' + esc(k) + '">'; }).join('');
+            var dlVals = $('caps-' + scope + '-vals');
+            if (dlVals) {
+                var vals = ['ON', 'OFF'];
+                if (dev.state && typeof dev.state === 'object') {
+                    Object.keys(dev.state).forEach(function (k) {
+                        var v = dev.state[k];
+                        if (v != null && vals.indexOf(String(v)) === -1) vals.push(String(v));
+                    });
+                }
+                dlVals.innerHTML = vals.map(function (v) { return '<option value="' + esc(v) + '">'; }).join('');
+            }
+        }
 
         async function loadStatus() {
             try {
@@ -259,7 +354,8 @@
             } else if (trigType === 'event') {
                 trigger.event_type = $('f-trig-event').value.trim();
             } else if (trigType === 'device') {
-                trigger.device_id = $('f-trig-dev-id').value.trim();
+                trigger.device_id = $('f-trig-dev-id').value;
+                if (!trigger.device_id) { showToast(t('err_pick_device'), 'error'); return; }
                 var key = $('f-trig-key').value.trim();
                 var val = $('f-trig-val').value.trim();
                 if (key) { trigger.state = {}; trigger.state[key] = val; }
@@ -269,7 +365,8 @@
             }
 
             if (actType === 'device_command') {
-                action.device_id = $('f-act-dev-id').value.trim();
+                action.device_id = $('f-act-dev-id').value;
+                if (!action.device_id) { showToast(t('err_pick_device'), 'error'); return; }
                 var akey = $('f-act-key').value.trim();
                 var aval = $('f-act-val').value.trim();
                 action.state = {};
@@ -318,12 +415,14 @@
         function refresh() {
             loadRules();
             loadStatus();
+            loadDevices();
         }
 
         loadI18n().then(function () {
             applyLang();
             loadStatus();
             loadRules();
+            loadDevices();
             setInterval(loadStatus, 10000);
         });
     </script>
