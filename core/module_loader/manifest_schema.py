@@ -36,7 +36,7 @@ ALLOWED_PERMISSIONS = {
 
 INTEGRATION_ONLY_PERMISSIONS = {"secrets.oauth", "secrets.proxy"}
 
-VALID_TEMPLATES = {"metric", "sparkline", "toggle-list", "control-panel", "status"}
+VALID_TEMPLATES = {"metric", "sparkline", "toggle-list", "control-panel", "status", "clock"}
 
 VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9\-]{0,62}[a-z0-9]$")
@@ -90,6 +90,7 @@ class WidgetSpec(BaseModel):
         "weather",
         "media",
         "presence",
+        "clock",
     ] | None = None
 
     file: str | None = None  # legacy iframe HTML path; required for kind=custom unless headless

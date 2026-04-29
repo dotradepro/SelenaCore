@@ -26,14 +26,14 @@
         "icon": "icon.svg",
         "widget": {
             "kind": "template",
-            "template": "metric",
-            "size": "2x1",
+            "template": "clock",
+            "size": "2x2",
             "max_size": "2x2",
             "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 30}
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
             },
             "refresh": {
-                "poll_interval_s": 60
+                "poll_interval_s": 30
             }
         },
         "settings": "settings.html"

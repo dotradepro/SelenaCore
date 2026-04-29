@@ -8,6 +8,7 @@ import StatusTemplate from './Status';
 import WeatherTemplate from './Weather';
 import MediaTemplate from './Media';
 import PresenceTemplate from './Presence';
+import ClockTemplate from './Clock';
 
 export interface TemplateProps {
   mod: Module;
@@ -26,7 +27,8 @@ export type TemplateName =
   | 'status'
   | 'weather'
   | 'media'
-  | 'presence';
+  | 'presence'
+  | 'clock';
 
 const REGISTRY: Partial<Record<TemplateName, ComponentType<TemplateProps>>> = {
   'metric': MetricTemplate,
@@ -37,6 +39,7 @@ const REGISTRY: Partial<Record<TemplateName, ComponentType<TemplateProps>>> = {
   'weather': WeatherTemplate,
   'media': MediaTemplate,
   'presence': PresenceTemplate,
+  'clock': ClockTemplate,
 };
 
 export function getTemplate(name: string | undefined): ComponentType<TemplateProps> | null {

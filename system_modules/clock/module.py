@@ -6,8 +6,10 @@ Mounted at /api/ui/modules/clock/ by the Plugin Manager.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,6 +20,40 @@ from .service import ClockService
 from .voice_handler import ClockVoiceHandler
 
 logger = logging.getLogger(__name__)
+
+
+# ── Widget config (persisted in core.yaml under "clock") ────────────────────
+_VALID_STYLE = {"digital", "analog"}
+_VALID_FORMAT = {"12h", "24h"}
+
+
+def _detect_local_tz() -> str:
+    """Best-effort local IANA timezone, falling back to UTC."""
+    try:
+        from datetime import datetime as _dt
+        local = _dt.now().astimezone()
+        name = getattr(local.tzinfo, "key", None)
+        if name:
+            return name
+    except Exception:
+        pass
+    name = time.tzname[0] if time.tzname else "UTC"
+    return name or "UTC"
+
+
+def _config_view() -> dict[str, str]:
+    """Read clock widget config from core.yaml with defaults."""
+    try:
+        from core.config_writer import read_config
+        cfg = read_config().get("clock", {}) or {}
+    except Exception:
+        cfg = {}
+    style = cfg.get("style") if cfg.get("style") in _VALID_STYLE else "digital"
+    fmt = cfg.get("format") if cfg.get("format") in _VALID_FORMAT else "24h"
+    tz = cfg.get("timezone")
+    if not isinstance(tz, str) or not tz:
+        tz = _detect_local_tz()
+    return {"style": style, "format": fmt, "timezone": tz}
 
 
 # ── Pydantic request bodies ────────────────────────────────────────────────
@@ -56,6 +92,12 @@ class ReminderCreateBody(BaseModel):
 class CityCreateBody(BaseModel):
     label: str
     tz_name: str
+
+
+class ClockConfigBody(BaseModel):
+    style: str | None = None
+    format: str | None = None
+    timezone: str | None = None
 
 
 class ClockModule(SystemModule):
@@ -187,44 +229,58 @@ class ClockModule(SystemModule):
         async def get_state() -> dict:
             return await _service().get_state()
 
-        # ── Dashboard V2 metric template ───────────────────────────────────
+        # ── Dashboard V2 clock template ────────────────────────────────────
         @router.get("/widget/data/state")
         async def widget_state() -> dict:
             state = await _service().get_state()
-            alarms = state.get("alarms") or []
-            enabled_count = sum(1 for a in alarms if a.get("enabled", True))
+            cfg = _config_view()
+            now_iso = datetime.now(timezone.utc).isoformat()
             next_alarm = state.get("next_alarm")
-
-            if next_alarm:
-                hour = int(next_alarm.get("hour", 0))
-                minute = int(next_alarm.get("minute", 0))
-                value = f"{hour:02d}:{minute:02d}"
-                trend = {
-                    "direction": "flat",
-                    "magnitude": next_alarm.get("label") or "alarm",
-                    "period": "next",
-                }
-                tone = "info"
-            elif enabled_count > 0:
-                value = str(enabled_count)
-                trend = {
-                    "direction": "flat",
-                    "magnitude": "set",
-                    "period": "no upcoming",
-                }
-                tone = "neutral"
-            else:
-                value = "—"
-                trend = None
-                tone = "neutral"
             return {
-                "label": "Alarms",
-                "value": value,
-                "unit": None,
-                "trend": trend,
-                "tone": tone,
-                "icon": "alarm-clock",
+                "now_iso": now_iso,
+                "timezone": cfg["timezone"],
+                "format": cfg["format"],
+                "style": cfg["style"],
+                "next_alarm": (
+                    {
+                        "hour": int(next_alarm["hour"]),
+                        "minute": int(next_alarm["minute"]),
+                        "label": next_alarm.get("label") or None,
+                        "next_run": next_alarm.get("next_run"),
+                    }
+                    if next_alarm
+                    else None
+                ),
+                "active_timers_count": len(state.get("active_timers") or []),
+                "pending_reminders_count": int(state.get("pending_reminders_count") or 0),
+                "ringing_alarms_count": len(state.get("ringing_alarms") or []),
             }
+
+        @router.get("/widget/data/config")
+        async def widget_config_get() -> dict:
+            return _config_view()
+
+        @router.post("/widget/data/config")
+        async def widget_config_post(body: ClockConfigBody) -> dict:
+            updates: dict[str, str] = {}
+            if body.style is not None:
+                if body.style not in _VALID_STYLE:
+                    raise HTTPException(status_code=400, detail="style must be 'digital' or 'analog'")
+                updates["style"] = body.style
+            if body.format is not None:
+                if body.format not in _VALID_FORMAT:
+                    raise HTTPException(status_code=400, detail="format must be '12h' or '24h'")
+                updates["format"] = body.format
+            if body.timezone is not None:
+                try:
+                    ZoneInfo(body.timezone)
+                except (ZoneInfoNotFoundError, ValueError):
+                    raise HTTPException(status_code=400, detail="invalid IANA timezone")
+                updates["timezone"] = body.timezone
+            if updates:
+                from core.config_writer import update_section
+                update_section("clock", updates)
+            return _config_view()
 
         # ── Alarms ─────────────────────────────────────────────────────────
         @router.get("/alarms")
