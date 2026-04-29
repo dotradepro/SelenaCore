@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Manager Settings</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .row + .row { margin-top: 8px; }
+        .grow { flex: 1 1 auto; }
+        .check-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; }
+        .check-row .lbl { font-weight: 600; }
+        .check-row .hint { font-size: 0.82rem; color: var(--tx2); margin-top: 2px; }
+        .backup-list { display: flex; flex-direction: column; gap: 8px; }
+        .backup-row { display: grid; grid-template-columns: 1.6fr 0.6fr 1fr 0.6fr auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--sf2); border: 1px solid var(--b); border-radius: 8px; font-size: 0.9rem; }
+        .backup-row .name { font-family: var(--mono, monospace); font-size: 0.82rem; word-break: break-all; }
+        .backup-row .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+        .pill-kind { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.72rem; font-weight: 600; }
+        .pill-kind.regular { background: rgba(46,201,138,.15); color: var(--gr); }
+        .pill-kind.prerestore { background: rgba(245,169,58,.15); color: var(--am); }
+        .empty { color: var(--tx2); padding: 18px; text-align: center; border: 1px dashed var(--b); border-radius: 8px; }
+        .modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-card { background: var(--sf); border: 1px solid var(--b); border-radius: 12px; padding: 18px; width: min(440px, 92vw); }
+        .modal-card .title { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; }
+        .modal-card .body { font-size: 0.9rem; color: var(--tx2); margin-bottom: 12px; line-height: 1.45; }
+        .modal-card input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--b); background: var(--b1); color: var(--tx); font-family: var(--mono, monospace); font-size: 0.85rem; }
+        .modal-card .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+        .hidden { display: none !important; }
+        select.input, input.input { padding: 6px 10px; }
+        input[type="number"].input { width: 80px; }
+    </style>
+</head>
+<body class="sc-settings">
+    <h2 data-i18n="title"></h2>
+
+    <!-- Categories -->
+    <div class="card">
+        <div class="section-title" data-i18n="h_categories"></div>
+        <div class="check-row">
+            <input type="checkbox" id="cat-core" checked disabled>
+            <div>
+                <div class="lbl" data-i18n="cat_core"></div>
+                <div class="hint" data-i18n="cat_core_hint"></div>
+            </div>
+        </div>
+        <div class="check-row">
+            <input type="checkbox" id="cat-secrets">
+            <div>
+                <div class="lbl" data-i18n="cat_secrets"></div>
+                <div class="hint" data-i18n="cat_secrets_hint"></div>
+            </div>
+        </div>
+        <div class="row">
+            <span class="label-xs" data-i18n="lbl_max_backups"></span>
+            <input type="number" min="1" max="50" id="max-backups" class="input" value="5">
+        </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="card">
+        <div class="section-title" data-i18n="h_schedule"></div>
+        <div class="row">
+            <span class="label-xs" data-i18n="lbl_schedule_mode"></span>
+            <select class="input" id="sel-mode">
+                <option value="disabled" data-i18n="mode_disabled"></option>
+                <option value="daily" data-i18n="mode_daily"></option>
+                <option value="weekly" data-i18n="mode_weekly"></option>
+                <option value="custom" data-i18n="mode_custom"></option>
+            </select>
+        </div>
+        <div class="row" id="row-time">
+            <span class="label-xs" data-i18n="lbl_schedule_time"></span>
+            <input type="time" class="input" id="sched-time" value="03:00">
+        </div>
+        <div class="row hidden" id="row-cron">
+            <span class="label-xs" data-i18n="lbl_schedule_cron"></span>
+            <input type="text" class="input grow" id="sched-cron" placeholder="cron:0 3 * * *">
+        </div>
+        <div class="row" style="margin-top: 12px;">
+            <button class="btn" id="btn-save" data-i18n="save_btn"></button>
+        </div>
+    </div>
+
+    <!-- Manual actions -->
+    <div class="card">
+        <div class="section-title" data-i18n="h_actions"></div>
+        <div class="row">
+            <button class="btn btn-primary" id="btn-create" data-i18n="create_btn"></button>
+            <label class="btn btn-sec" for="upload-file">
+                <span data-i18n="upload_btn"></span>
+            </label>
+            <input type="file" id="upload-file" accept=".tar.gz,application/gzip,application/x-gzip" hidden>
+        </div>
+    </div>
+
+    <!-- Backup list -->
+    <div class="card">
+        <div class="section-title" data-i18n="h_backups"></div>
+        <div id="backup-list" class="backup-list">
+            <div class="empty" data-i18n="loading"></div>
+        </div>
+    </div>
+
+    <!-- Restore confirm modal -->
+    <div id="restore-modal" class="modal-back hidden">
+        <div class="modal-card">
+            <div class="title" data-i18n="restore_warn_title"></div>
+            <div class="body" data-i18n="restore_warn_body"></div>
+            <div class="body"><strong id="rm-name"></strong></div>
+            <div class="body" data-i18n="restore_confirm_label"></div>
+            <input type="text" id="rm-confirm" autocomplete="off" autocapitalize="off">
+            <div class="modal-actions">
+                <button class="btn btn-sec" id="rm-cancel" data-i18n="cancel"></button>
+                <button class="btn btn-danger" id="rm-go" data-i18n="restore_btn"></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = { en: {}, uk: {} };
+
+        Promise.all([
+            fetch('/api/i18n/bundle/backup-manager?lang=en').then(function (r) { return r.json(); }).catch(function () { return {}; }),
+            fetch('/api/i18n/bundle/backup-manager?lang=uk').then(function (r) { return r.json(); }).catch(function () { return {}; })
+        ]).then(function (out) {
+            L.en = out[0] || {};
+            L.uk = out[1] || {};
+            applyLang();
+            init();
+        });
+
+        var _settings = null;
+        var _modeRow = { daily: 'time', weekly: 'time', custom: 'cron', disabled: null };
+
+        function fmtDate(ts) {
+            if (!ts) return t('never');
+            try { return new Date(ts * 1000).toLocaleString(); } catch (e) { return String(ts); }
+        }
+
+        function fmtSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+        }
+
+        function showRow(which) {
+            $('row-time').classList.toggle('hidden', which !== 'time');
+            $('row-cron').classList.toggle('hidden', which !== 'cron');
+        }
+
+        function loadSettingsToForm(s) {
+            _settings = s;
+            $('cat-secrets').checked = !!s.categories.secrets;
+            $('max-backups').value = s.max_backups;
+
+            var trig = (s.schedule && s.schedule.trigger) || '';
+            var enabled = !!(s.schedule && s.schedule.enabled);
+            var mode = 'disabled';
+            var hh = '03', mm = '00';
+            var dailyMatch = trig.match(/^cron:(\d+)\s+(\d+)\s+\*\s+\*\s+\*$/);
+            var weeklyMatch = trig.match(/^cron:(\d+)\s+(\d+)\s+\*\s+\*\s+0$/);
+            if (enabled) {
+                if (weeklyMatch) {
+                    mode = 'weekly'; mm = weeklyMatch[1]; hh = weeklyMatch[2];
+                } else if (dailyMatch) {
+                    mode = 'daily'; mm = dailyMatch[1]; hh = dailyMatch[2];
+                } else {
+                    mode = 'custom';
+                }
+            }
+            $('sel-mode').value = mode;
+            $('sched-time').value = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+            if (mode === 'custom') $('sched-cron').value = trig;
+            showRow(_modeRow[mode]);
+        }
+
+        function buildSettingsFromForm() {
+            var mode = $('sel-mode').value;
+            var enabled = mode !== 'disabled';
+            var trigger = (_settings && _settings.schedule && _settings.schedule.trigger) || 'cron:0 3 * * *';
+            if (mode === 'daily' || mode === 'weekly') {
+                var parts = $('sched-time').value.split(':');
+                var hh = parseInt(parts[0] || '3', 10);
+                var mm = parseInt(parts[1] || '0', 10);
+                if (isNaN(hh) || hh < 0 || hh > 23) hh = 3;
+                if (isNaN(mm) || mm < 0 || mm > 59) mm = 0;
+                var dow = mode === 'weekly' ? '0' : '*';
+                trigger = 'cron:' + mm + ' ' + hh + ' * * ' + dow;
+            } else if (mode === 'custom') {
+                trigger = ($('sched-cron').value || '').trim() || 'cron:0 3 * * *';
+            }
+            return {
+                categories: { core: true, secrets: $('cat-secrets').checked },
+                schedule: { enabled: enabled, trigger: trigger },
+                max_backups: parseInt($('max-backups').value, 10) || 5
+            };
+        }
+
+        function loadBackups() {
+            return apiGet('/list').then(function (data) {
+                renderBackups(data.backups || []);
+            }).catch(function (err) {
+                $('backup-list').innerHTML = '<div class="empty">' + esc(t('err_load')) + ': ' + esc(err.message) + '</div>';
+            });
+        }
+
+        function renderBackups(rows) {
+            var box = $('backup-list');
+            if (!rows || rows.length === 0) {
+                box.innerHTML = '<div class="empty">' + esc(t('no_backups')) + '</div>';
+                return;
+            }
+            var html = '';
+            rows.forEach(function (b) {
+                var kindLabel = b.kind === 'prerestore' ? t('kind_prerestore') : t('kind_regular');
+                html +=
+                  '<div class="backup-row">' +
+                    '<div class="name">' + esc(b.name) + '</div>' +
+                    '<div>' + esc(fmtSize(b.size_bytes)) + '</div>' +
+                    '<div>' + esc(fmtDate(b.created)) + '</div>' +
+                    '<div><span class="pill-kind ' + esc(b.kind) + '">' + esc(kindLabel) + '</span></div>' +
+                    '<div class="actions">' +
+                      '<a class="btn btn-sec" href="' + BASE + '/backup/' + encodeURIComponent(b.name) + '/download">' + esc(t('download')) + '</a>' +
+                      '<button class="btn btn-danger" data-act="delete" data-name="' + esc(b.name) + '">' + esc(t('delete')) + '</button>' +
+                      '<button class="btn btn-warn" data-act="restore" data-name="' + esc(b.name) + '">' + esc(t('restore')) + '</button>' +
+                    '</div>' +
+                  '</div>';
+            });
+            box.innerHTML = html;
+            box.querySelectorAll('button[data-act]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var name = btn.getAttribute('data-name');
+                    if (btn.getAttribute('data-act') === 'delete') deleteBackup(name, btn);
+                    else openRestoreModal(name);
+                });
+            });
+        }
+
+        function deleteBackup(name, btn) {
+            if (!confirm(t('delete_confirm') + '\n' + name)) return;
+            withLoading(btn, function () {
+                return apiDelete('/backup/' + encodeURIComponent(name)).then(function () {
+                    showToast(t('delete') + ': ' + name, 'success');
+                    return loadBackups();
+                }).catch(function (e) {
+                    showToast(t('err_delete') + e.message, 'error');
+                });
+            });
+        }
+
+        function openRestoreModal(name) {
+            $('rm-name').textContent = name;
+            $('rm-confirm').value = '';
+            $('restore-modal').classList.remove('hidden');
+            setTimeout(function () { $('rm-confirm').focus(); }, 50);
+            $('rm-go').onclick = function () {
+                var typed = $('rm-confirm').value.trim();
+                if (typed !== name) {
+                    showToast(t('err_restore') + 'name mismatch', 'error');
+                    return;
+                }
+                withLoading($('rm-go'), function () {
+                    return apiPost('/backup/' + encodeURIComponent(name) + '/restore',
+                                   { confirm: name })
+                        .then(function (res) {
+                            $('restore-modal').classList.add('hidden');
+                            showToast(t('restored'), 'success');
+                            return loadBackups();
+                        })
+                        .catch(function (e) {
+                            showToast(t('err_restore') + e.message, 'error');
+                        });
+                });
+            };
+        }
+
+        function init() {
+            $('sel-mode').addEventListener('change', function () {
+                showRow(_modeRow[$('sel-mode').value]);
+            });
+
+            $('btn-save').addEventListener('click', function () {
+                var btn = this;
+                withLoading(btn, function () {
+                    return apiPatch('/config', buildSettingsFromForm()).then(function (res) {
+                        loadSettingsToForm(res.settings);
+                        showToast(t('saved'), 'success');
+                    });
+                });
+            });
+
+            $('btn-create').addEventListener('click', function () {
+                var btn = this;
+                withLoading(btn, function () {
+                    return apiPost('/backup/create').then(function () {
+                        showToast(t('created'), 'success');
+                        return loadBackups();
+                    }).catch(function (e) {
+                        showToast(t('err_create') + e.message, 'error');
+                    });
+                });
+            });
+
+            $('upload-file').addEventListener('change', function (e) {
+                var f = e.target.files && e.target.files[0];
+                if (!f) return;
+                var fd = new FormData();
+                fd.append('file', f, f.name);
+                showToast(t('uploading'), 'info');
+                fetch(BASE + '/backup/upload', { method: 'POST', body: fd })
+                    .then(function (r) {
+                        if (!r.ok) return r.text().then(function (txt) {
+                            var m; try { m = JSON.parse(txt).detail; } catch (_) { m = r.statusText; }
+                            return Promise.reject(new Error(m || r.statusText));
+                        });
+                        return r.json();
+                    })
+                    .then(function () {
+                        showToast(t('uploaded'), 'success');
+                        e.target.value = '';
+                        return loadBackups();
+                    })
+                    .catch(function (err) {
+                        showToast(t('err_upload') + err.message, 'error');
+                        e.target.value = '';
+                    });
+            });
+
+            $('rm-cancel').addEventListener('click', function () {
+                $('restore-modal').classList.add('hidden');
+            });
+
+            apiGet('/config').then(function (data) {
+                loadSettingsToForm(data.settings);
+                return loadBackups();
+            }).catch(function (err) {
+                showToast(t('err_load') + ': ' + err.message, 'error');
+            });
+        }
+    </script>
+</body>
+</html>

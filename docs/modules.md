@@ -243,7 +243,15 @@ Clock app: alarms, timers, reminders, world clock, stopwatch with voice control.
 
 **Type:** SYSTEM
 
-Local USB / SD backup, E2E cloud backup (PBKDF2 + AES-256-GCM), QR-code secret transfer between devices.
+Local backup manager: manual + scheduled tar.gz archives of SelenaCore data
+with pre-restore snapshot safety net. Categories (core / secrets) are
+opt-in per archive; SQLite is captured via the Online Backup API to avoid
+torn writes. Restore flow includes double-confirmation in the UI and an
+automatic `systemctl restart selena-core` once extraction completes. Cloud
+E2E backup and QR-code device transfer (`cloud_backup.py`, `qr_transfer.py`)
+ship in the source tree but are not yet wired up — phase 2.
+
+See [backup.md](backup.md) for the full guide.
 
 ---
 

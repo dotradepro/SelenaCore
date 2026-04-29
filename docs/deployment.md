@@ -376,12 +376,25 @@ Alternatively, use the `update_manager` system module for automatic over-the-air
 
 ## Backup
 
-The `backup_manager` system module handles automated backups:
+Local backup is handled by the `backup_manager` system module — see
+[backup.md](backup.md) for the full module guide.
 
-- **Local backups:** SQLite database and configuration files
-- **Cloud backups:** To configured remote storage
+Quick reference:
 
-For manual backup, copy the data and secrets directories:
+- **Manual backup**: open the module's *Settings* page in the dashboard and
+  press *Backup now*. Archives land in `/var/lib/selena/backups/`.
+- **Scheduled backup**: in the same Settings page, choose *Daily*, *Weekly*,
+  or a custom cron expression. Schedules are dispatched by the `scheduler`
+  system module.
+- **Restore**: click *Restore* next to an archive in the list and type the
+  archive name to confirm. A pre-restore snapshot is created automatically,
+  and `selena-core` is restarted via `systemctl` once extraction completes.
+- **Categories**: the *core* category (SQLite DB, dashboard layout, module
+  state, `/etc/selena`) is always included; the *secrets* category
+  (`/secure/` minus `vault_key`) is opt-in.
+
+For an offline copy without using the module, archive the data and secrets
+directories manually:
 
 ```bash
 sudo cp -r /var/lib/selena/ /path/to/backup/selena_data/
