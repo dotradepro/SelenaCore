@@ -2,17 +2,22 @@
 
 This guide covers how to build UI widgets, settings pages, and icons for SelenaCore modules.
 
-> **Template engine first.** As of the dashboard recraft (Phase 5 shipped), the
-> primary path for new widgets is the **template engine**: declare a payload
-> shape in your manifest and let the dashboard render it. Only fall back to
-> custom HTML in an iframe when a built-in template doesn't fit. See
-> [dashboard-recraft.md](dashboard-recraft.md) §3 for the five available
-> templates (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`),
-> their payload schemas, and the `data_endpoints` / `actions` contract.
+> **Template engine first.** As of the dashboard recraft (Phase 5/6 shipped),
+> the primary path for new widgets is the **template engine**: declare a
+> payload shape in your manifest and let the dashboard render it. Only fall
+> back to custom HTML in an iframe when none of the 8 built-in templates
+> fits. See [dashboard-recraft.md](dashboard-recraft.md) §3 for full payload
+> schemas — **5 generic templates** (`metric`, `sparkline`, `toggle-list`,
+> `control-panel`, `status`) and **3 specialized layouts** (`weather`,
+> `media`, `presence`) — plus the `data_endpoints` / `actions` contract,
+> the emoji-first [Icon system](dashboard-recraft.md#37-icon-system) and
+> the reusable [block primitives](dashboard-recraft.md#38-block-primitives)
+> (Pill / IconStrip / CardRow / ActionButton).
 >
-> This document still applies to **`kind: "custom"` iframe widgets**. The
-> legacy postMessage names (`openWidgetModal`, `closeWidgetModal`,
-> `openSettings`, `refresh`) were removed — use the canonical names
+> This document covers manifest setup, settings pages, icons, and **`kind:
+> "custom"` iframe widgets** for the rare case where a template doesn't
+> fit. Phase 5 removed the legacy postMessage names (`openWidgetModal`,
+> `closeWidgetModal`, `openSettings`, `refresh`) — use the canonical names
 > documented in [`src/lib/widgetMessages.ts`](../src/lib/widgetMessages.ts).
 > Modules and configuration interfaces are served through the core at
 > `/api/ui/modules/{module_name}/`.
@@ -51,13 +56,50 @@ A background service with no user-facing controls should use `HEADLESS`. A modul
 
 ## manifest.json UI Section
 
-Add a `ui` block to your module's `manifest.json` to declare all UI assets:
+Every manifest declares a top-level `room` field (required since Phase 0 — `"system"` for diagnostic modules, `"home"` for cross-room user-facing aggregators, or any custom room name) and an optional `ui` block.
+
+### Template widget (preferred — 13/14 in-tree modules)
 
 ```json
 {
+    "room": "home",
     "ui": {
         "icon": "icon.svg",
         "widget": {
+            "kind": "template",
+            "template": "control-panel",
+            "size": "4x2",
+            "max_size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
+            },
+            "actions": {
+                "set_mode": {"path": "/widget/action/mode"},
+                "step":     {"path": "/widget/action/temp"}
+            },
+            "refresh": {
+                "events": ["device.state_changed"],
+                "poll_interval_s": 30
+            }
+        },
+        "settings": "settings.html"
+    }
+}
+```
+
+The dashboard renders the React component matching `template`. Pick from the 8 built-in names: `metric`, `sparkline`, `toggle-list`, `control-panel`, `status`, `weather`, `media`, `presence`. Each has a payload schema documented in [dashboard-recraft.md §3.3](dashboard-recraft.md#33-templates).
+
+### Custom (iframe) widget — fallback
+
+Use `kind: "custom"` only when none of the 8 templates fits (e.g. canvas visualizations, room-plan editors, embedded games):
+
+```json
+{
+    "room": "home",
+    "ui": {
+        "icon": "icon.svg",
+        "widget": {
+            "kind": "custom",
             "file": "widget.html",
             "size": "2x2",
             "max_size": "4x4"
@@ -69,13 +111,20 @@ Add a `ui` block to your module's `manifest.json` to declare all UI assets:
 
 ### Field Reference
 
-| Field             | Type   | Description                                          |
-|-------------------|--------|------------------------------------------------------|
-| `ui.icon`         | string | Path to the SVG icon file (relative to module root)  |
-| `ui.widget.file`  | string | HTML file for the dashboard widget                   |
-| `ui.widget.size`  | string | Default grid size (`"WxH"`, e.g. `"2x2"`)           |
-| `ui.widget.max_size` | string | Maximum grid size the user can resize to          |
-| `ui.settings`     | string | HTML file for the module settings page               |
+| Field                     | Type    | Required           | Description                                                                                  |
+|---------------------------|---------|--------------------|----------------------------------------------------------------------------------------------|
+| `room`                    | string  | Yes                | Room tag — derives the dashboard's room filter. Use `"system"` for non-user-facing diagnostics. |
+| `ui.icon`                 | string  | No                 | Path to the SVG icon file (relative to module root).                                         |
+| `ui.widget.kind`          | enum    | No, default custom | `"template"` to use the engine; `"custom"` to ship `widget.html` in an iframe.               |
+| `ui.widget.template`      | enum    | When kind=template | One of the 8 built-in template names. See dashboard-recraft.md §3.3.                         |
+| `ui.widget.data_endpoints[k]` | `{path, cache_ttl_s?}` | No | Path on the module's HTTP surface; dashboard hits `GET /api/v1/modules/{name}/data/{k}`.     |
+| `ui.widget.actions[k]`    | `{path}`| No                 | Path for write actions; dashboard hits `POST /api/v1/modules/{name}/action/{k}`.             |
+| `ui.widget.refresh.events` | string[] | No                | EventBus topics that trigger a dashboard refetch (e.g. `device.state_changed`).              |
+| `ui.widget.refresh.poll_interval_s` | int (≥1) | No        | Polling fallback interval in seconds.                                                        |
+| `ui.widget.file`          | string  | When kind=custom   | HTML file for the iframe. Ignored for `kind: "template"`.                                    |
+| `ui.widget.size`          | string  | No                 | Default grid size (`"WxH"`, e.g. `"4x2"`).                                                   |
+| `ui.widget.max_size`      | string  | No                 | Maximum grid size the user can resize to (V2 dashboard uses fixed 5×4 — span clamped).       |
+| `ui.settings`             | string  | No                 | HTML file for the module settings page.                                                      |
 
 All file paths are relative to the module's root directory.
 
@@ -224,7 +273,13 @@ All tokens flip automatically between light/dark and adapt to `has-wallpaper` mo
 
 ## Widget HTML Structure
 
-Widgets are embedded as iframes in the dashboard. Each widget is a self-contained HTML file that loads the shared component library (see previous section) and adds module-specific markup + script.
+> **Applies only to `kind: "custom"`.** For template widgets (`kind: "template"`)
+> the dashboard renders a React component from your JSON payload — no HTML
+> file is needed. See [dashboard-recraft.md §3.3](dashboard-recraft.md#33-templates)
+> for payload schemas. The rest of this section describes the iframe path
+> for the rare cases where templates don't fit.
+
+Custom widgets are embedded as iframes in the dashboard. Each widget is a self-contained HTML file that loads the shared component library (see previous section) and adds module-specific markup + script.
 
 ### Minimal Example
 
@@ -400,6 +455,34 @@ const data = await res.json();
 ```
 
 Alternatively, implement the `handle_api_request()` method in your `SmartHomeModule` subclass to handle incoming API requests programmatically.
+
+### Typed postMessage protocol (custom widgets ↔ dashboard)
+
+Custom iframe widgets communicate with the dashboard chrome via a fixed message contract. Phase 5 removed the legacy aliases; the only accepted shapes are:
+
+```ts
+type WidgetMessage =
+    | { type: "ready" }                                                          // sent by iframe on load
+    | { type: "modal_open"; module: string; width?: number; height?: number }    // expand to fullscreen
+    | { type: "modal_close"; module: string }                                    // collapse from fullscreen
+    | { type: "modal_resize"; width: number; height: number }                    // resize hint
+    | { type: "open_settings"; module: string }                                  // navigate to settings page
+    | { type: "request_refresh" }                                                // ask dashboard to refetch
+    | { type: "theme_changed"; theme: "dark" | "light" };                        // sent by core on theme switch
+```
+
+```javascript
+// iframe → parent: open this widget in a fullscreen modal
+window.parent.postMessage({type: 'modal_open', module: 'lights-switches', width: 480, height: 560}, '*');
+
+// iframe → parent: close the modal
+window.parent.postMessage({type: 'modal_close', module: 'lights-switches'}, '*');
+
+// iframe → parent: open the module's settings page
+window.parent.postMessage({type: 'open_settings', module: 'lights-switches'}, '*');
+```
+
+Removed in Phase 5: `openWidgetModal`, `closeWidgetModal`, `openSettings`, `refresh` — pre-Phase-4 aliases. They no longer reach the dashboard handler. The canonical names above are the only accepted form. See [`src/lib/widgetMessages.ts`](../src/lib/widgetMessages.ts) for the runtime normalizer.
 
 ### Real-Time Updates
 

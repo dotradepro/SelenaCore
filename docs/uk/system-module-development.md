@@ -35,7 +35,7 @@
 - **Прямий доступ до бази даних** через спільну фабрику асинхронних сесій SQLAlchemy
 - **Необов'язковий FastAPI-роутер**, що монтується на `/api/ui/modules/{name}/`
 - Розташовані у каталозі `system_modules/`
-- Наразі **21 вбудовані** системні модулі поставляються з SelenaCore
+- Наразі **24 вбудованих** системних модулів поставляються з SelenaCore
 
 Використовуйте системний модуль, коли потрібна тісна інтеграція з ядром, низька затримка або прямий доступ до бази даних. Використовуйте [користувацький модуль](user-module-development.md), коли потрібна ізоляція, незалежне розгортання або розширюваність третіми сторонами.
 
@@ -97,6 +97,7 @@ from .module import MyModule as module_class
     "version": "1.0.0",
     "type": "SYSTEM",
     "runtime_mode": "always_on",
+    "room": "system",
     "group": "system",
     "intents": ["mymodule.do_action"],
     "entities": ["mydevice"],
@@ -110,10 +111,13 @@ from .module import MyModule as module_class
 | `version` | Так | Рядок семантичної версії. |
 | `type` | Так | Повинен бути `"SYSTEM"` для системних модулів. |
 | `runtime_mode` | Так | `"always_on"` (запускається при завантаженні) або `"on_demand"` (запускається за потребою). |
+| `room` | Так | Тег кімнати — керує room-табами дашборду. Діагностичні/інфраструктурні системні модулі зазвичай використовують `"system"`; user-facing агрегатори (clima, lights, media) — `"home"`. |
 | `group` | Так | Функціональна категорія: `media`, `automation`, `voice`, `security`, `energy`, `weather`, `presence`, `notification`, `network`, `backup`, `system`. |
 | `intents` | Так | Список імен інтентів, які модуль обробляє (наприклад, `["media.play", "media.stop"]`). Використовується ModuleRegistry для маршрутизації. |
 | `entities` | Так | Список типів сутностей, з якими модуль працює (наприклад, `["radio", "music"]`). Використовується для розрізнення пристроїв. |
 | `permissions` | Ні | Список рядків дозволів, які потребує модуль (наприклад, `["devices.read", "devices.write"]`). |
+
+> **Endpoint-и віджета.** Системний модуль, що постачає dashboard-віджет, повинен змонтувати роутер (див. [Додавання REST API](#додавання-rest-api)), який експонує або `/widget/data/{key}` (для `kind: "template"` — переважний шлях), або `/widget` (для `kind: "custom"` iframe). Per-template payload-схеми: [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-шаблони).
 
 Системні модулі **не** вказують поле `port`. Вони використовують спільний процес ядра і, за потреби, монтують FastAPI-роутер.
 

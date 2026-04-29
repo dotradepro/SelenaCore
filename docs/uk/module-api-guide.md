@@ -716,13 +716,48 @@ var L = {
 
 ### PostMessage-події (інформаційно)
 
-`widget-common.js` вже обробляє ці події — слухайте лише якщо вам потрібна додаткова поведінка поверх вбудованої:
+`widget-common.js` вже обробляє ці події — слухайте лише якщо вам потрібна додаткова поведінка поверх вбудованої. Канонічні імена подій нижче походять з типизованого протоколу в [src/lib/widgetMessages.ts](../../src/lib/widgetMessages.ts); legacy-аліаси видалено у Phase 5.
 
-| Подія | Тригер | Вбудований обробник |
+| Подія (канонічна) | Напрямок | Вбудований обробник |
 |---|---|---|
-| `theme_changed` | Батьківська панель перемикає light/dark | Перемикає клас `.light` на `<html>` |
-| `theme_vars_changed` | Батьківська панель змінює токени теми | Перезавантажує `/api/shared/theme.css` з cache-bust |
-| `lang_changed` | Батьківська панель перемикає EN↔UK | Перезапускає `applyLang()` + ваш `refresh`/`load`/`loadStatus` |
+| `theme_changed` | parent → widget | Перемикає клас `.light` на `<html>` |
+| `theme_vars_changed` | parent → widget | Перезавантажує `/api/shared/theme.css` з cache-bust |
+| `lang_changed` | parent → widget | Перезапускає `applyLang()` + ваш `refresh`/`load`/`loadStatus` |
+| `modal_open` | widget → parent | Відкрити модальне вікно у дашборд-shell |
+| `modal_close` | widget → parent | Закрити модальне вікно дашборду |
+| `open_settings` | widget → parent | Відкрити панель налаштувань модуля |
+| `request_refresh` | widget → parent | Попросити батьківський дашборд перевантажити дані віджета |
+
+> **Видалено у Phase 5:** `openWidgetModal`, `closeWidgetModal`, `openSettings`, `refresh` (legacy-аліаси). Використовуйте канонічні імена вище.
+
+---
+
+## Контракт template-віджета
+
+Для віджетів `kind: "template"` дашборд рендерить віджет нативно з JSON-payload — `widget.html` не поставляється. Модуль експонує data- та action-endpoint-и, які дашборд викликає через проксі `/api/v1/modules/{name}/...`.
+
+**Data-endpoint (читання):**
+
+```
+GET /api/v1/modules/{module}/data/{key}
+```
+
+Дашборд звертається до payload, оголошеного у `manifest.json` під `ui.widget.data_endpoints[key].path` (відносно mount-point модуля), застосовуючи опціональний `cache_ttl_s`. Форма відповіді залежить від обраного шаблону — див. [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-шаблони).
+
+**Action-endpoint (запис):**
+
+```
+POST /api/v1/modules/{module}/action/{key}
+Content-Type: application/json
+
+{ "id": "...", "value": ... }
+```
+
+Дашборд POSTить на `ui.widget.actions[key].path` модуля. Поширені ключі дій: `toggle` (toggle-list), `set_mode` / `step` (control-panel), `transport` / `volume` (media), `select` (presence). Будь-який 2xx означає успіх; не-2xx показує toast у дашборді.
+
+**Підказки про оновлення:**
+
+`ui.widget.refresh.events` перелічує типи подій EventBus, які мають інвалідувати кеш та одразу рефетчити. `ui.widget.refresh.poll_interval_s` задає fallback-каденцію опитування, коли події не приходять.
 
 ### Обов'язкові правила для HTML
 
@@ -899,6 +934,7 @@ class WeatherModule(SmartHomeModule):
     "api_version": "1.0",
     "runtime_mode": "always_on",
     "port": 8100,
+    "room": "home",
     "permissions": [
         "device.read",
         "device.write",
@@ -908,8 +944,17 @@ class WeatherModule(SmartHomeModule):
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "file": "widget.html",
-            "size": "2x1"
+            "kind": "template",
+            "template": "control-panel",
+            "size": "2x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 30}
+            },
+            "actions": {
+                "set_mode": {"path": "/widget/action/set_mode"},
+                "step": {"path": "/widget/action/step"}
+            },
+            "refresh": {"events": ["climate.changed"]}
         },
         "settings": "settings.html"
     },
@@ -933,6 +978,8 @@ class WeatherModule(SmartHomeModule):
 }
 ```
 
+> **`kind: "template"` — переважний шлях.** Дашборд рендерить віджет нативно з JSON-payload; `widget.html` потрібен лише для `kind: "custom"`. Повну довідку по 8 шаблонах — див. [widget-development.md](widget-development.md) та [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-шаблони).
+
 ### Обов'язкові поля
 
 | Поле | Тип | Опис |
@@ -942,6 +989,7 @@ class WeatherModule(SmartHomeModule):
 | `type` | `string` | Тип модуля (див. таблицю нижче). |
 | `api_version` | `string` | Версія Core API: `"1.0"`. |
 | `port` | `integer` | Порт для прослуховування (тільки для USER модулів). |
+| `room` | `string` | **Тільки для UI-модулів.** Тег кімнати — керує room-табами дашборду. `"system"`, `"home"` або власна назва. |
 | `permissions` | `string[]` | Список необхідних дозволів. |
 
 ### Необов'язкові поля
@@ -951,7 +999,7 @@ class WeatherModule(SmartHomeModule):
 | `description` | `string` | `""` | Опис модуля. |
 | `ui_profile` | `string` | `"HEADLESS"` | Профіль UI. |
 | `runtime_mode` | `string` | `"always_on"` | Режим запуску. |
-| `ui` | `object` | `null` | Налаштування UI (іконка, віджет, налаштування). |
+| `ui` | `object` | `null` | Налаштування UI: `{icon, widget, settings}`. `widget` — це або `{kind: "template", template, size, data_endpoints, actions?, refresh?}` (переважний), або `{kind: "custom", file, size}` (legacy iframe). |
 | `intents` | `array` | `[]` | Оголошені інтенти (для USER модулів). |
 | `oauth` | `object` | `null` | Конфігурація OAuth. |
 | `resources` | `object` | `null` | Обмеження ресурсів. |

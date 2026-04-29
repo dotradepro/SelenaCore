@@ -50,6 +50,7 @@ The manifest declares your module's identity, capabilities, permissions, and res
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
+    "room": "home",
     "permissions": ["devices.read", "events.publish"],
     "intents": [
         {
@@ -64,12 +65,26 @@ The manifest declares your module's identity, capabilities, permissions, and res
     "publishes": ["weather.module_started"],
     "ui": {
         "icon": "icon.svg",
-        "widget": {"file": "widget.html", "size": "2x2"},
+        "widget": {
+            "kind": "template",
+            "template": "weather",
+            "size": "4x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
+            }
+        },
         "settings": "settings.html"
     },
     "resources": {"memory_mb": 128, "cpu": 0.25}
 }
 ```
+
+> **`kind: "template"` is the preferred path** — pick one of the 8 built-in
+> templates (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`,
+> `weather`, `media`, `presence`) and emit a JSON payload from
+> `data_endpoints[k].path`. Use `kind: "custom"` with `widget.file: "widget.html"`
+> only when no template fits. See [widget-development.md](widget-development.md)
+> and [dashboard-recraft.md](dashboard-recraft.md#33-templates) for full schemas.
 
 ### Field Reference
 
@@ -81,10 +96,13 @@ The manifest declares your module's identity, capabilities, permissions, and res
 | `ui_profile` | string | `HEADLESS` (no UI), `SETTINGS_ONLY`, `ICON_SETTINGS`, or `FULL` (widget + settings). |
 | `api_version` | string | Currently `"1.0"`. |
 | `runtime_mode` | string | `always_on` (runs continuously), `on_demand` (started when needed), `scheduled` (runs on a timer). |
+| `room` | string | **Required.** Room tag — drives the dashboard's room-tab filter. Use `"system"` for diagnostic modules, `"home"` for cross-room user-facing aggregators, or any custom room name. |
 | `permissions` | array | Capabilities the module requires. See [Permissions](#permissions) below. |
 | `intents` | array | Voice intent definitions. See [Intents](#intents) below. |
 | `publishes` | array | Event types the module may emit. Events not listed here are rejected by the bus. |
-| `ui` | object | UI asset references: `icon` (SVG path), `widget` (HTML file + grid size), `settings` (HTML file). |
+| `ui.icon` | string | Path to SVG icon. |
+| `ui.widget` | object | Widget definition. `kind: "template"` (use built-in renderer) or `kind: "custom"` (iframe with `widget.file`). See [widget-development.md](widget-development.md). |
+| `ui.settings` | string | Optional HTML file for the module settings page. |
 | `resources` | object | Docker container limits: `memory_mb` (integer) and `cpu` (float, where 1.0 = one full core). |
 
 ### Permissions

@@ -855,13 +855,49 @@ Call `applyLang()` once during initialization (before the first `refresh()` / `l
 
 ### PostMessage events (informational)
 
-`widget-common.js` already handles these — listen only if you need extra behavior beyond what it does:
+`widget-common.js` already handles these — listen only if you need extra behavior beyond what it does. The canonical event names below come from the typed
+protocol in [src/lib/widgetMessages.ts](../src/lib/widgetMessages.ts); legacy aliases were removed in Phase 5.
 
-| Event | Trigger | Built-in handler |
+| Event (canonical) | Direction | Built-in handler |
 |---|---|---|
-| `theme_changed` | Parent toggles light/dark | Toggles `.light` class on `<html>` |
-| `theme_vars_changed` | Parent edits theme tokens | Reloads `/api/shared/theme.css` with a cache-bust |
-| `lang_changed` | Parent switches EN↔UK | Re-runs `applyLang()` + your `refresh`/`load`/`loadStatus` |
+| `theme_changed` | parent → widget | Toggles `.light` class on `<html>` |
+| `theme_vars_changed` | parent → widget | Reloads `/api/shared/theme.css` with a cache-bust |
+| `lang_changed` | parent → widget | Re-runs `applyLang()` + your `refresh`/`load`/`loadStatus` |
+| `modal_open` | widget → parent | Open a modal in the dashboard shell |
+| `modal_close` | widget → parent | Close the dashboard modal |
+| `open_settings` | widget → parent | Open the module's settings panel |
+| `request_refresh` | widget → parent | Ask parent to re-fetch widget data |
+
+> **Removed in Phase 5:** `openWidgetModal`, `closeWidgetModal`, `openSettings`, `refresh` (legacy aliases). Use the canonical names above.
+
+---
+
+## Template Widget Contract
+
+For `kind: "template"` widgets, the dashboard renders the widget natively from a JSON payload — no `widget.html` is shipped. The module exposes data and action endpoints that the dashboard calls through the `/api/v1/modules/{name}/...` proxy.
+
+**Data endpoint (read):**
+
+```
+GET /api/v1/modules/{module}/data/{key}
+```
+
+The dashboard fetches the payload declared in `manifest.json` under `ui.widget.data_endpoints[key].path` (relative to the module's mount point) and applies the optional `cache_ttl_s`. Response shape depends on the chosen template — see [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-templates).
+
+**Action endpoint (write):**
+
+```
+POST /api/v1/modules/{module}/action/{key}
+Content-Type: application/json
+
+{ "id": "...", "value": ... }
+```
+
+The dashboard POSTs to `ui.widget.actions[key].path` on the module. Common action keys: `toggle` (toggle-list), `set_mode` / `step` (control-panel), `transport` / `volume` (media), `select` (presence). Modules return any 2xx on success; non-2xx surfaces a toast in the dashboard.
+
+**Refresh hints:**
+
+`ui.widget.refresh.events` lists EventBus event types that should invalidate the cache and re-fetch immediately. `ui.widget.refresh.poll_interval_s` provides a fallback polling cadence when no events fire.
 
 ---
 
@@ -878,7 +914,8 @@ Call `applyLang()` once during initialization (before the first `refresh()` / `l
 | `port` | `integer` | No | **User modules only.** Listening port (8100-8200). SYSTEM modules must NOT have this field. |
 | `group` | `string` | No | Module group for UI grouping |
 | `permissions` | `array` | No | `["device.read", "device.write", "events.subscribe", "events.publish", "secrets.oauth", "secrets.proxy"]` |
-| `ui` | `object` | No | `{icon, widget: {file, size}, settings}` |
+| `room` | `string` | Yes (UI) | Room tag — drives the dashboard's room-tab filter. `"system"`, `"home"`, or any custom room name. |
+| `ui` | `object` | No | `{icon, widget, settings}`. `widget` is either `{kind: "template", template, size, data_endpoints, actions?, refresh?}` (preferred) or `{kind: "custom", file, size}` (legacy iframe). See [widget-development.md](widget-development.md). |
 | `intents` | `array` | No | Intent patterns for Module Bus registration |
 | `entities` | `array` | No | Entity definitions for registry |
 | `publishes` | `array` | No | Event types this module may publish |
@@ -900,7 +937,7 @@ Call `applyLang()` once during initialization (before the first `refresh()` / `l
 }
 ```
 
-**User module example:**
+**User module example (template widget — preferred):**
 
 ```json
 {
@@ -910,10 +947,22 @@ Call `applyLang()` once during initialization (before the first `refresh()` / `l
     "api_version": "1.0",
     "runtime_mode": "always_on",
     "port": 8101,
+    "room": "home",
     "permissions": ["device.read", "device.write", "events.subscribe", "events.publish"],
     "ui": {
         "icon": "icon.svg",
-        "widget": {"file": "widget.html", "size": "2x1"},
+        "widget": {
+            "kind": "template",
+            "template": "toggle-list",
+            "size": "2x2",
+            "data_endpoints": {
+                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
+            },
+            "actions": {
+                "toggle": {"path": "/widget/action/toggle"}
+            },
+            "refresh": {"events": ["devices.changed"]}
+        },
         "settings": "settings.html"
     },
     "intents": [

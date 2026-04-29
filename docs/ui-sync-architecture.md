@@ -2,6 +2,8 @@
 
 > Real-time synchronization of UI state (theme, language, widget layout) across all connected clients: kiosk display, phone browser, PC browser.
 
+> **Phase 5/6 status:** V2 only. The dashboard renders from `widgetLayout.positions` for the fixed 5×4 grid; room-tab filtering uses `manifest.room` per module. Layout changes propagate via the same `layout_changed` event described below. Pre-V2 layout fields are no longer emitted.
+
 ---
 
 ## Overview

@@ -348,14 +348,16 @@ The dashboard 1×1 tile (Total Power + Active count + Today kWh) is now
 
 - Whole body has `cursor: pointer` + `pointer-events: none` on children
 - `pointerdown` + `click` triggers (defends against cross-iframe focus)
-- On click → `postMessage({type:'openWidgetModal', module:'energy-monitor', width:760, height:580})`
+- On click → `postMessage({type:'modal_open', module:'energy-monitor', width:760, height:580})`
+
+> See [src/lib/widgetMessages.ts](../src/lib/widgetMessages.ts) for the full typed postMessage protocol. The legacy aliases `openWidgetModal` / `closeWidgetModal` were removed in Phase 5 — use the canonical names `modal_open` / `modal_close`.
 
 The widget's modal mode (`?modal=1`) renders a different layout:
 - 4 KPI cards on top
 - Filter bar
 - Same sortable unified table
 
-`Esc` or close button → `closeWidgetModal` postMessage. This becomes
+`Esc` or close button → `modal_close` postMessage. This becomes
 the de-facto "all my devices" view, replacing the old device-control
 widget.
 
@@ -437,7 +439,7 @@ and green for switches/outlets.
 
 `Dashboard.tsx` accepts `modal_resize { width, height }` postMessage
 events from any widget. When opening a modal, the widget can also pass
-an `openWidgetModal { module, width, height }` payload to set the
+a `modal_open { module, width, height }` payload to set the
 initial size up front (avoids the "open big → flash → resize small"
 flicker). The panel transitions smoothly (`transition: width .18s
 ease-out, height .18s ease-out`).

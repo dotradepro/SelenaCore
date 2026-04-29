@@ -96,15 +96,27 @@ from .module import <Name>Module as module_class
   "ui_profile": "FULL | HEADLESS | SETTINGS_ONLY | ICON_SETTINGS",
   "api_version": "1.0",
   "runtime_mode": "always_on",
+  "room": "system | home | <custom>",
   "permissions": [...],
   "ui": {
     "icon": "icon.svg",
-    "widget": { "file": "widget.html", "size": "NxM" },
+    "widget": {
+      "kind": "template",
+      "template": "metric | sparkline | toggle-list | control-panel | status | weather | media | presence",
+      "size": "NxM",
+      "data_endpoints": { "state": { "path": "/widget/data/state", "cache_ttl_s": <N> } }
+    },
     "settings": "settings.html"
   },
   "resources": { "memory_mb": <N>, "cpu": <0.N> }
 }
 ```
+
+> **Notes (Phase 5/6):**
+> - `room` is **required** — drives the dashboard's room-tab filter. System/diagnostic modules use `"system"`; user-facing aggregators (climate, lights, media, weather, energy, presence, clock) use `"home"`.
+> - Prefer `kind: "template"` and emit a JSON payload from `data_endpoints[k]`. Use `kind: "custom"` with `widget.file: "widget.html"` only when no template fits.
+> - The dashboard fetches data via `GET /api/v1/modules/{name}/data/{key}` and triggers actions via `POST /api/v1/modules/{name}/action/{key}` — modules never expose those routes directly. See [api-reference.md](api-reference.md#widget-data--action-endpoints).
+> - Scene activation emits `scene.activate` / `scene.activated` / `scene.failed` on the EventBus.
 
 ---
 
@@ -3418,7 +3430,7 @@ tailscale              # system package on host
 | 20 | notify_push | SYSTEM | SETTINGS_ONLY | 32 MB | 0.1 | Web Push VAPID notifications |
 | 21 | remote_access | SYSTEM | SETTINGS_ONLY | 32 MB | 0.15 | Tailscale VPN remote access |
 
-**Total RAM consumption (all 21 modules):** ~1.8 GB (without LLM model) / ~4 GB (with LLM phi3:mini)
+**Total RAM consumption (all 24 modules):** ~1.8 GB (without LLM model) / ~4 GB (with LLM phi3:mini)
 
 ---
 

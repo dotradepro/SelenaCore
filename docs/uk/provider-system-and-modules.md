@@ -308,10 +308,12 @@ ready-to-render список.
 
 - `pointer-events: none` на дочірніх + `cursor: pointer` на body
 - `pointerdown` + `click` triggers (захист від cross-iframe focus)
-- Клік → `postMessage({type:'openWidgetModal', module:'energy-monitor', width:760, height:580})`
+- Клік → `postMessage({type:'modal_open', module:'energy-monitor', width:760, height:580})`
+
+> Повний типизований postMessage-протокол — у [src/lib/widgetMessages.ts](../../src/lib/widgetMessages.ts). Legacy-аліаси `openWidgetModal` / `closeWidgetModal` видалено у Phase 5 — використовуйте канонічні `modal_open` / `modal_close`.
 
 Modal-режим (`?modal=1`) рендерить інший layout: 4 KPI картки + filter
-bar + та сама сортована таблиця. `Esc` або × → `closeWidgetModal`.
+bar + та сама сортована таблиця. `Esc` або × → `modal_close`.
 Це стає де-факто "усі мої пристрої" view, замінюючи старий
 device-control widget.
 
@@ -385,7 +387,7 @@ ellipsis активується лише коли реально немає мі
 
 `Dashboard.tsx` приймає `modal_resize { width, height }` postMessage
 від будь-якого віджета. При відкритті модалки віджет може передати
-`openWidgetModal { module, width, height }` payload щоб виставити
+`modal_open { module, width, height }` payload щоб виставити
 початковий розмір (уникає мерехтіння "відкрилось велике → resize до
 малого"). Панель плавно transition'ить (`transition: width .18s
 ease-out, height .18s ease-out`).
