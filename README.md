@@ -178,7 +178,7 @@ Total runtime footprint: **~1.5 GB RAM** for the entire stack on a Pi 4. See [do
 | `notify_push`       | Web Push (VAPID) implementation                                                    |
 | `network_scanner`   | ARP / mDNS / SSDP / Zigbee discovery                                               |
 | `clock`             | Alarms, timers, reminders, world clock, stopwatch                                  |
-| `backup_manager`    | Local USB / SD and E2E cloud backup                                                |
+| `backup_manager`    | Local manual + scheduled tar.gz backups (cloud + QR planned for phase 2)           |
 | `remote_access`     | Tailscale-based remote access                                                      |
 
 Full reference: [docs/modules.md](docs/modules.md).

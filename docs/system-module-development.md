@@ -697,7 +697,7 @@ SelenaCore ships with 22 system modules:
 | `media_player` | Audio playback with VLC |
 | `presence_detection` | WiFi/BLE occupancy tracking |
 | `hw_monitor` | CPU, RAM, disk, and temperature monitoring |
-| `backup_manager` | Local and cloud backups |
+| `backup_manager` | Local manual + scheduled tar.gz backups (cloud + QR planned for phase 2) |
 | `remote_access` | Tailscale VPN integration |
 | `network_scanner` | Network device discovery (ARP, mDNS, SSDP) |
 | `device_control` | Smart device manager (Tuya via tuya-device-sharing-sdk) + `device.on/off` intents |

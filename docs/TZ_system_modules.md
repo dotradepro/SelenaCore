@@ -3124,100 +3124,138 @@ qrcode>=7.4           # QR for AP mode
 
 **Type:** SYSTEM
 **ui_profile:** SETTINGS_ONLY
-**Memory:** 96 MB
-**CPU:** 0.3
+**Memory:** 64 MB
+**CPU:** 0.1
 
 ### Purpose
 
-Local and cloud backup. Local backups to USB/SD in .tar.gz. Cloud backups with E2E encryption (PBKDF2-HMAC-SHA256 + AES-256-GCM). QR secret transfer between devices.
+Local backup of SelenaCore data. Phase 1 (current) implements manual +
+scheduled `.tar.gz` archives with categorized contents, SQLite-consistent
+snapshots, and a pre-restore safety snapshot. Cloud E2E upload and QR
+secret transfer ship in the source tree (`cloud_backup.py`,
+`qr_transfer.py`) but are **not** wired up — phase 2.
 
-### 19.1 Local backup
+### 19.1 Local backup (phase 1)
 
 ```python
-# Directories: /var/lib/selena/ (registry, history) + /etc/selena/ (config)
-# Exclusions: /secure/vault_key (NEVER backed up)
-# Format: .tar.gz without encryption
-# Name: selena_backup_{YYYYMMDDTHHMMSSZ}.tar.gz
-# Retention: 5 most recent (configurable via MAX_LOCAL_BACKUPS)
-# Directory: /var/lib/selena/backups/
+# Categories (resolved by state.py):
+#   core    — /var/lib/selena/selena.db, widget_layout.json,
+#             /var/lib/selena/modules/, /etc/selena/   (always on)
+#   secrets — /secure/                                  (opt-in)
+# Exclusions: /secure/vault_key  (NEVER backed up — re-derived on boot)
+# SQLite: copied via the SQLite Online Backup API into a tempfile, then
+#         added to the archive — no torn DB even under writes.
+# Format: .tar.gz, unencrypted (encryption belongs to phase-2 cloud)
+# Name:   selena_backup_{YYYYMMDDTHHMMSSZ}.tar.gz       (regular pool)
+#         selena_prerestore_{YYYYMMDDTHHMMSSZ}.tar.gz   (auto-snapshot pool)
+# Retention: per-pool. settings.json::max_backups (default 5, range 1-50)
+#            for regular; PRERESTORE_RETENTION env (default 3) for the
+#            auto-snapshots taken before a restore.
+# Directory:   /var/lib/selena/backups/
 # Permissions: 0o600 (owner only)
 ```
 
-### 19.2 Cloud backup (E2E)
+### 19.2 Schedule integration
+
+Schedules use the existing `scheduler` system module — no second
+scheduler is shipped with backup_manager.
 
 ```python
-# Encryption: PBKDF2-HMAC-SHA256 + AES-256-GCM
-# PBKDF2: 600,000 iterations, random 16-byte salt per backup
-# Nonce: random 12-byte per backup (in header)
-# File format: salt(16) + nonce(12) + ciphertext
-
-# Upload: POST to PLATFORM_BACKUP_URL
-# Headers:
-#   X-Selena-Device: {device_hash}
-#   X-Archive-Hash: {SHA256 plaintext}
-#   Content-Type: application/octet-stream
+# On settings save (or module start) backup_manager publishes:
+#   scheduler.register {
+#     job_id: "backup-manager.scheduled",
+#     trigger: "<cron / every / HH:MM>",
+#     event_type: "backup.scheduled.fire",
+#     payload: {},
+#     owner: "backup-manager",
+#   }
+# It subscribes to `backup.scheduled.fire` and runs create_backup() when
+# the scheduler dispatches it. Disabling publishes scheduler.unregister.
+# Re-publishing scheduler.register is suppressed when the (enabled,
+# trigger) tuple is unchanged — prevents next-fire-time churn.
 ```
 
-### 19.3 QR secret transfer
+### 19.3 Restore (phase 1)
 
 ```python
-# Encode secrets into QR code (compressed chunks)
-# For transfer between devices
-# Read via camera on the new device
+# Two-step gate: caller passes {"confirm": "<archive_name>"} in the body.
+# Step 1: take a pre-restore snapshot under selena_prerestore_*.tar.gz.
+# Step 2: extract the chosen archive to / with tarfile filter="data".
+#         Path-traversal members are rejected before extraction begins.
+# Step 3: subprocess.Popen(["systemctl", "restart", "selena-core"]) —
+#         detached so the response returns before the service goes down.
+#         If systemctl is absent (dev env), the response includes
+#         {"restart": {"attempted": false, "reason": "..."}} and the
+#         operator restarts manually.
 ```
 
-### 19.4 Module API
+### 19.4 Cloud backup (phase 2 — not wired)
 
-REST endpoints mounted at `/api/ui/modules/backup_manager/` via `get_router()`:
+`cloud_backup.py` exists with PBKDF2-HMAC-SHA256 (600 000 iterations) +
+AES-256-GCM E2E encryption and POST to `PLATFORM_BACKUP_URL`, but no
+endpoint or settings field references it yet. Reserved for phase 2.
+
+### 19.5 QR secret transfer (phase 2 — not wired)
+
+`qr_transfer.py` exists with an AES-256-GCM-protected secrets payload
+behind a 6-digit PIN, generating a PNG QR code, but no endpoint or UI
+references it yet. Reserved for phase 2.
+
+### 19.6 Module API (phase 1)
+
+REST endpoints mounted at `/api/ui/modules/backup-manager/` via
+`get_router()`:
 
 ```
-POST /api/backup/local/create        -> create local backup
-GET  /api/backup/local/list          -> list local backups
-POST /api/backup/cloud/create        -> create and upload cloud backup
-GET  /api/backup/cloud/list          -> list cloud backups
-POST /api/backup/restore             -> restore from backup
-GET  /api/backup/status              -> current operation status
-GET  /health                         -> {"status": "ok"}
+GET    /config                       -> current settings (categories, schedule, max_backups)
+PATCH  /config                       -> save settings; re-syncs scheduler if changed
+GET    /list                         -> all archives (regular + prerestore)
+POST   /backup/create                -> manual backup honouring saved categories
+DELETE /backup/{name}                -> remove an archive
+GET    /backup/{name}/download       -> stream the .tar.gz
+POST   /backup/upload                -> multipart upload of an external archive
+POST   /backup/{name}/restore        -> body {"confirm": "<name>"}; pre-snapshot + restart
+GET    /widget/data/state            -> pill + rows + actions for a future widget
+POST   /widget/action/create         -> ActionButton "Backup now" handler
+GET    /settings                     -> the HTML settings page
 ```
 
-### 19.5 Events
+### 19.7 Events
 
 **Published:**
 
 ```
-backup.created_local   { path, size_mb, sha256 }
-backup.created_cloud   { backup_id, size_mb, encrypted: true }
-backup.restored        { source, restored_at }
-backup.failed          { operation, error }
+backup.created    { archive, prefix, size_bytes }
+backup.restored   { archive, pre_snapshot }
+scheduler.register / scheduler.unregister  (forwarded to scheduler module)
+module.started / module.stopped
 ```
 
 ### Settings (settings.html)
 
 ```
-Local backup:
-  Directory: /var/lib/selena/backups
-  Maximum copies: 5
-  [Create Backup Now]
+Categories:
+  [x] Core data (DB, layout, configs)        (locked on)
+  [ ] Secrets (/secure minus vault_key)
+  Keep most recent:  [5]
 
-Cloud backup:
-  Encryption password: [input]
-  [Create E2E Backup]
+Schedule:
+  Mode:  [Disabled | Daily | Weekly (Sunday) | Custom cron]
+  Time:  [03:00]                             (Daily/Weekly)
+  Cron:  [cron:0 3 * * *]                    (Custom)
+  [Save settings]
 
-Restore:
-  File selection / upload
-  [Restore]
+Actions:
+  [Backup now]   [Upload archive]
 
-QR transfer:
-  [Generate Secrets QR]
+Backups:
+  <archive name>  <size>  <date>  <kind>  [Download] [Delete] [Restore]
+  …
 ```
 
-**Dependencies:**
-
-```
-cryptography>=46.0
-httpx>=0.27
-qrcode>=7.4
-```
+**Dependencies (phase 1):** none beyond the standard library + FastAPI.
+Cloud / QR (phase 2) will pull in `cryptography>=46.0`, `httpx>=0.27`,
+and `qrcode>=7.4`.
 
 **Tests:**
 
@@ -3426,7 +3464,7 @@ tailscale              # system package on host
 | 16 | hw_monitor | SYSTEM | ICON_SETTINGS | 32 MB | 0.05 | CPU / RAM / Disk monitoring |
 | 17 | network_scanner | SYSTEM | FULL | 64 MB | 0.3 | ARP / mDNS / SSDP scanner |
 | 18 | ui_core | SYSTEM | -- | 96 MB | 0.2 | PWA server :80 + Wizard + proxy |
-| 19 | backup_manager | SYSTEM | SETTINGS_ONLY | 96 MB | 0.3 | Local + E2E cloud backup |
+| 19 | backup_manager | SYSTEM | SETTINGS_ONLY | 64 MB | 0.1 | Local manual + scheduled backup (cloud + QR planned) |
 | 20 | notify_push | SYSTEM | SETTINGS_ONLY | 32 MB | 0.1 | Web Push VAPID notifications |
 | 21 | remote_access | SYSTEM | SETTINGS_ONLY | 32 MB | 0.15 | Tailscale VPN remote access |
 

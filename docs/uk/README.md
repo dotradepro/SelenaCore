@@ -185,7 +185,7 @@ HTTPS :443 ---> TLS-проксі (asyncio, ~5 МБ RAM) ---> :80
 | `notify_push`        | Web Push (VAPID)                                                                   |
 | `network_scanner`    | ARP / mDNS / SSDP / Zigbee discovery                                               |
 | `clock`              | Будильники, таймери, нагадування, світовий годинник, секундомір                    |
-| `backup_manager`     | Локальний USB / SD і E2E хмарний бекап                                             |
+| `backup_manager`     | Локальний бекап (ручний + за розкладом); хмарний + QR — фаза 2                     |
 | `remote_access`      | Віддалений доступ через Tailscale                                                  |
 
 Повний довідник: [docs/modules.md](../modules.md).

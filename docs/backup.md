@@ -109,11 +109,9 @@ All endpoints are mounted at `/api/ui/modules/backup-manager/`.
 | DELETE | `/backup/{name}` | Remove archive |
 | GET | `/backup/{name}/download` | Stream `.tar.gz` |
 | POST | `/backup/upload` | Multipart upload of an external `.tar.gz` |
-| GET | `/widget/data/state` | Reserved for a future dashboard widget |
+| GET | `/widget/data/state` | Pill + rows + actions payload for a future dashboard widget (already wired) |
+| POST | `/widget/action/create` | Inline "Backup now" handler dispatched by the widget's ActionButton |
 | GET | `/settings` | The HTML settings page |
-
-`/status`, `/backup/local` and `/restore/local` are kept as legacy aliases
-pointing at the same handlers.
 
 ## Configuration
 
@@ -131,5 +129,6 @@ Environment overrides:
   platform URL + UI.
 - QR transfer for new-device bootstrap (`qr_transfer.py`).
 - Voice models and recordings as separate categories.
-- Dashboard widget — the `/widget/data/state` endpoint is already in
-  place; only the manifest entry and a template registration are missing.
+- Dashboard widget — the `/widget/data/state` and
+  `/widget/action/create` endpoints are already in place; only the
+  manifest's `widget` block and a template registration are missing.

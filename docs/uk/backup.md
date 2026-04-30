@@ -108,10 +108,9 @@ pre-restore-знімків.
 | DELETE | `/backup/{name}` | Видалити архів |
 | GET | `/backup/{name}/download` | Стрім `.tar.gz` |
 | POST | `/backup/upload` | Multipart-завантаження зовнішнього `.tar.gz` |
-| GET | `/widget/data/state` | Зарезервовано для майбутнього віджета |
+| GET | `/widget/data/state` | Pill + rows + actions для майбутнього віджета (уже підключено) |
+| POST | `/widget/action/create` | Обробник «Створити зараз» для ActionButton віджета |
 | GET | `/settings` | HTML-сторінка налаштувань |
-
-`/status`, `/backup/local` і `/restore/local` залишені як legacy-аліаси.
 
 ## Конфігурація
 
@@ -129,5 +128,6 @@ pre-restore-знімків.
   URL платформи та UI.
 - QR-перенос для bootstrap нового пристрою (`qr_transfer.py`).
 - Голосові моделі та записи як окремі категорії.
-- Віджет на дашборді — ендпоінт `/widget/data/state` уже є; залишається
-  лише запис у маніфесті та реєстрація шаблону.
+- Віджет на дашборді — ендпоінти `/widget/data/state` і
+  `/widget/action/create` уже є; залишається лише блок `widget` у
+  маніфесті та реєстрація шаблону.
