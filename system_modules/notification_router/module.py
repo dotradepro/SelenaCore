@@ -128,15 +128,36 @@ class NotificationRouterModule(SystemModule):
             history = svc._router_svc.get_history(limit=3)
 
             if channels == 0:
-                pill = {"tone": "warn", "text": "No channels", "icon": "alert-triangle"}
+                pill = {
+                    "tone": "warn", "text": "No channels",
+                    "text_key": "widgets.notificationRouter.pillNoChannels",
+                    "icon": "alert-triangle",
+                }
             elif sent == 0:
-                pill = {"tone": "neutral", "text": "Idle", "icon": "clock"}
+                pill = {
+                    "tone": "neutral", "text": "Idle",
+                    "text_key": "widgets.notificationRouter.pillIdle",
+                    "icon": "clock",
+                }
             else:
-                pill = {"tone": "ok", "text": f"{sent} sent", "icon": "bell"}
+                pill = {
+                    "tone": "ok", "text": f"{sent} sent",
+                    "text_key": "widgets.notificationRouter.pillSent",
+                    "text_args": {"count": sent},
+                    "icon": "bell",
+                }
 
             rows = [
-                {"label": "Channels", "value": str(channels), "icon": "network"},
-                {"label": "Rules", "value": str(rules), "icon": "workflow"},
+                {
+                    "label": "Channels",
+                    "label_key": "widgets.notificationRouter.rowChannels",
+                    "value": str(channels), "icon": "network",
+                },
+                {
+                    "label": "Rules",
+                    "label_key": "widgets.notificationRouter.rowRules",
+                    "value": str(rules), "icon": "workflow",
+                },
             ]
 
             # Recent notifications as small cards (icon + level + truncated
@@ -161,6 +182,7 @@ class NotificationRouterModule(SystemModule):
 
             return {
                 "label": "Notifications",
+                "label_key": "widgets.notificationRouter.label",
                 "pill": pill,
                 "rows": rows,
                 "cards": cards,

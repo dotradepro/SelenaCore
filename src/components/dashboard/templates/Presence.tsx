@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import Icon from './Icon';
 import Pill from './blocks/Pill';
@@ -9,15 +10,29 @@ export interface PresenceUser {
   id: string;
   name: string;
   state: 'home' | 'away' | 'unknown';
+  /** Raw last-seen string (server-formatted English by default). */
   last_seen?: string | null;
+  /** i18n key for last_seen, with `last_seen` as defaultValue. */
+  last_seen_key?: string;
+  last_seen_args?: Record<string, string | number>;
   icon?: string | null;
   badge?: string | null;
 }
 
 export interface PresencePayload {
-  summary: { tone: 'ok' | 'info' | 'warn' | 'neutral'; text: string; icon?: string };
+  summary: {
+    tone: 'ok' | 'info' | 'warn' | 'neutral';
+    /** Raw English text fallback, e.g. "All home" / "2/3 home". */
+    text: string;
+    /** i18n key for the summary text. */
+    text_key?: string;
+    text_args?: Record<string, string | number>;
+    icon?: string;
+  };
   users: PresenceUser[];
+  /** Raw English empty-state fallback, e.g. "No users registered". */
   empty_text?: string;
+  empty_text_key?: string;
 }
 
 const STATE_DOT: Record<PresenceUser['state'], string> = {
@@ -26,13 +41,22 @@ const STATE_DOT: Record<PresenceUser['state'], string> = {
   unknown: 'var(--tx3)',
 };
 
-const STATE_LABEL: Record<PresenceUser['state'], string> = {
+/** i18n keys for the per-user state label. Falls back to the English literal
+ *  on the right when key is missing in the active bundle. */
+const STATE_LABEL_KEY: Record<PresenceUser['state'], string> = {
+  home: 'widgets.presenceDetection.stateHome',
+  away: 'widgets.presenceDetection.stateAway',
+  unknown: 'widgets.presenceDetection.stateUnknown',
+};
+
+const STATE_LABEL_FALLBACK: Record<PresenceUser['state'], string> = {
   home: 'Home',
   away: 'Away',
   unknown: '—',
 };
 
 export default function PresenceTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<PresencePayload>({
     module: mod.name,
@@ -44,6 +68,16 @@ export default function PresenceTemplate({ mod }: TemplateProps) {
   if (loading && !data) return <PresenceSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <PresenceSkeleton />;
+
+  const summaryText = data.summary.text_key
+    ? t(data.summary.text_key, {
+        ...(data.summary.text_args ?? {}),
+        defaultValue: data.summary.text,
+      })
+    : data.summary.text;
+  const emptyText = data.empty_text_key
+    ? t(data.empty_text_key, { defaultValue: data.empty_text ?? 'No users yet' })
+    : data.empty_text ?? 'No users yet';
 
   return (
     <motion.div
@@ -64,9 +98,9 @@ export default function PresenceTemplate({ mod }: TemplateProps) {
           fontSize: 9.5, fontWeight: 600, color: 'var(--tx3)',
           textTransform: 'uppercase', letterSpacing: '.08em',
         }}>
-          Presence
+          {t('widgets.presenceDetection.label', { defaultValue: 'Presence' })}
         </div>
-        <Pill tone={data.summary.tone} text={data.summary.text} icon={data.summary.icon} />
+        <Pill tone={data.summary.tone} text={summaryText} icon={data.summary.icon} />
       </div>
 
       {data.users.length === 0 ? (
@@ -81,7 +115,7 @@ export default function PresenceTemplate({ mod }: TemplateProps) {
           fontSize: 11,
         }}>
           <span style={{ fontSize: 28 }}>👤</span>
-          {data.empty_text ?? 'No users yet'}
+          {emptyText}
         </div>
       ) : (
         <div style={{
@@ -93,7 +127,7 @@ export default function PresenceTemplate({ mod }: TemplateProps) {
           alignContent: 'start',
         }}>
           {data.users.map((user) => (
-            <UserCard key={user.id} user={user} />
+            <UserCard key={user.id} user={user} t={t} />
           ))}
         </div>
       )}
@@ -101,9 +135,23 @@ export default function PresenceTemplate({ mod }: TemplateProps) {
   );
 }
 
-function UserCard({ user }: { user: PresenceUser }) {
+function UserCard({
+  user, t,
+}: {
+  user: PresenceUser;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
   const dot = STATE_DOT[user.state];
   const initial = (user.name || '?').trim().charAt(0).toUpperCase() || '?';
+  const stateLabel = t(STATE_LABEL_KEY[user.state], {
+    defaultValue: STATE_LABEL_FALLBACK[user.state],
+  });
+  const lastSeen = user.last_seen_key
+    ? t(user.last_seen_key, {
+        ...(user.last_seen_args ?? {}),
+        defaultValue: user.last_seen ?? stateLabel,
+      })
+    : user.last_seen ?? stateLabel;
 
   return (
     <div style={{
@@ -137,7 +185,7 @@ function UserCard({ user }: { user: PresenceUser }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}>
-          {user.last_seen ?? STATE_LABEL[user.state]}
+          {lastSeen}
         </div>
       </div>
       {user.badge && (

@@ -1,21 +1,35 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { ControlPanelSkeleton } from './Skeleton';
 import { useStore } from '../../../store/useStore';
 import IconStrip, { type IconStripItem } from './blocks/IconStrip';
+import { resolveLabel } from './i18n';
 import type { TemplateProps } from './registry';
 
 export interface ControlPanelPayload {
+  /** Raw English label, kept as fallback when `label_key` is missing. */
   label: string;
-  primary: { value: string; unit?: string; secondary?: string };
+  label_key?: string;
+  /** Optional interpolation params for `label_key` (e.g. `{location: 'Living'}`). */
+  label_args?: Record<string, string | number>;
+  primary: {
+    value: string;
+    unit?: string;
+    /** Raw English secondary line (e.g. "→ set 23.0°"); fallback for secondary_key. */
+    secondary?: string;
+    secondary_key?: string;
+    secondary_args?: Record<string, string | number>;
+  };
   modes?: {
     current: string;
-    options: { id: string; label: string }[];
+    options: { id: string; label: string; label_key?: string }[];
   };
   steppers?: {
     id: string;
     label: string;
+    label_key?: string;
     value: string;
     unit?: string;
     min?: number;
@@ -26,6 +40,7 @@ export interface ControlPanelPayload {
 }
 
 export default function ControlPanelTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<ControlPanelPayload>({
     module: mod.name,
@@ -77,6 +92,19 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <ControlPanelSkeleton />;
 
+  const label = resolveLabel(t, data.label, data.label_key, data.label_args);
+  const primarySecondary = resolveLabel(
+    t, data.primary.secondary, data.primary.secondary_key, data.primary.secondary_args,
+  );
+  const modeOptions = data.modes?.options.map((o) => ({
+    ...o,
+    label: resolveLabel(t, o.label, o.label_key),
+  }));
+  const stepperSpecs = data.steppers?.map((s) => ({
+    ...s,
+    label: resolveLabel(t, s.label, s.label_key),
+  }));
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
@@ -98,7 +126,7 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
         textTransform: 'uppercase',
         letterSpacing: '.08em',
       }}>
-        {data.label}
+        {label}
       </div>
 
       <div>
@@ -119,9 +147,9 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
             </span>
           )}
         </div>
-        {data.primary.secondary && (
+        {primarySecondary && (
           <div style={{ fontSize: 10.5, color: 'var(--tx3)', marginTop: 4 }}>
-            {data.primary.secondary}
+            {primarySecondary}
           </div>
         )}
       </div>
@@ -130,23 +158,23 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
         <IconStrip items={data.secondary_pills} />
       )}
 
-      {data.modes && data.modes.options.length > 0 && (
+      {data.modes && modeOptions && modeOptions.length > 0 && (
         <ModeRow
-          options={data.modes.options}
+          options={modeOptions}
           current={data.modes.current}
           pending={pendingMode}
           onSelect={setMode}
         />
       )}
 
-      {data.steppers && data.steppers.length > 0 && (
+      {stepperSpecs && stepperSpecs.length > 0 && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
           marginTop: 'auto',
         }}>
-          {data.steppers.map((s) => (
+          {stepperSpecs.map((s) => (
             <StepperRow
               key={s.id}
               spec={s}

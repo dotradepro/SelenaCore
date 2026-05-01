@@ -1,17 +1,25 @@
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { MetricSkeleton } from './Skeleton';
 import Icon from './Icon';
+import { resolveLabel } from './i18n';
 import type { TemplateProps } from './registry';
 
 export interface MetricPayload {
+  /** Raw English label, kept as fallback when `label_key` is missing. */
   label: string;
+  /** Optional i18n key — convention `widgets.<module>.<slot>`. */
+  label_key?: string;
   value: string;
   unit?: string | null;
   trend?: {
     direction: 'up' | 'down' | 'flat';
     magnitude: string;
     period: string;
+    /** Optional i18n key for the trend period. Falls back to raw `period`. */
+    period_key?: string;
+    period_args?: Record<string, string | number>;
   } | null;
   tone?: 'neutral' | 'info' | 'ok' | 'warn' | 'alert';
   icon?: string | null;
@@ -38,6 +46,7 @@ const TREND_GLYPH: Record<'up' | 'down' | 'flat', string> = {
 };
 
 export default function MetricTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<MetricPayload>({
     module: mod.name,
@@ -52,6 +61,10 @@ export default function MetricTemplate({ mod }: TemplateProps) {
 
   const tone = data.tone ?? 'neutral';
   const accent = TONE_COLOR[tone];
+  const label = resolveLabel(t, data.label, data.label_key);
+  const trendPeriod = resolveLabel(
+    t, data.trend?.period, data.trend?.period_key, data.trend?.period_args,
+  );
   return (
     <motion.div
       initial={{ opacity: 0, y: 4 }}
@@ -75,7 +88,7 @@ export default function MetricTemplate({ mod }: TemplateProps) {
           textTransform: 'uppercase',
           letterSpacing: '.08em',
         }}>
-          {data.label}
+          {label}
         </div>
         {data.icon && <Icon name={data.icon} size={22} />}
       </div>
@@ -110,7 +123,7 @@ export default function MetricTemplate({ mod }: TemplateProps) {
           }}>
             <span aria-hidden style={{ fontWeight: 600 }}>{TREND_GLYPH[data.trend.direction]}</span>
             <span style={{ fontWeight: 500 }}>{data.trend.magnitude}</span>
-            <span style={{ color: 'var(--tx3)' }}>· {data.trend.period}</span>
+            <span style={{ color: 'var(--tx3)' }}>· {trendPeriod}</span>
           </div>
         )}
       </div>

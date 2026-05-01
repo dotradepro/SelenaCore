@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { ToggleListSkeleton } from './Skeleton';
 import Icon from './Icon';
+import { resolveLabel } from './i18n';
+import { ALL_ROOM, SYSTEM_ROOM } from '../RoomTabs';
 import type { TemplateProps } from './registry';
 
 export interface ToggleItem {
@@ -11,15 +14,31 @@ export interface ToggleItem {
   state: 'on' | 'off' | 'unknown';
   secondary?: string | null;
   icon?: string | null;
+  /** Room/location tag emitted by the module so the dashboard can scope
+   *  rendered items when a room tab other than "All"/"System" is active. */
+  location?: string | null;
 }
 
 export interface ToggleListPayload {
+  /** Raw English label — kept as fallback when `label_key` is missing or
+   *  the active i18n bundle doesn't translate it. SDKs that ignore i18n
+   *  can still render this directly. */
   label: string;
+  /** Optional i18n key (`widgets.<module>.<slot>` convention) resolved by
+   *  the template via `t(label_key, { defaultValue: label })`. */
+  label_key?: string;
+  /** Raw English summary string. Pre-formatted with counts. */
   summary?: string;
+  /** Optional i18n key for the summary line. When present, the template
+   *  passes `summary_args` as interpolation params and falls back to the
+   *  raw `summary` if the key is missing. */
+  summary_key?: string;
+  summary_args?: Record<string, string | number>;
   items: ToggleItem[];
 }
 
-export default function ToggleListTemplate({ mod }: TemplateProps) {
+export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<ToggleListPayload>({
     module: mod.name,
@@ -53,12 +72,28 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
     }
   }
 
+  // Scope items to the active room tab. Sentinel rooms (`__all__`, `system`)
+  // mean "no filter" — we still show everything. Items without a `location`
+  // field always pass through (back-compat for modules that don't yet emit it).
+  const items = useMemo(() => {
+    if (!data) return [];
+    if (!activeRoom || activeRoom === ALL_ROOM || activeRoom === SYSTEM_ROOM) {
+      return data.items;
+    }
+    return data.items.filter((i) => {
+      if (i.location == null || i.location === '') return true;
+      return i.location === activeRoom;
+    });
+  }, [data, activeRoom]);
+
   if (loading && !data) return <ToggleListSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <ToggleListSkeleton />;
 
-  const onCount = data.items.filter((i) => i.state === 'on').length;
-  const summary = data.summary ?? `${onCount} on`;
+  const onCount = items.filter((i) => i.state === 'on').length;
+  const label = resolveLabel(t, data.label, data.label_key);
+  const rawSummary = data.summary ?? `${onCount} on`;
+  const summary = resolveLabel(t, rawSummary, data.summary_key, data.summary_args);
 
   return (
     <motion.div
@@ -86,7 +121,7 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
           textTransform: 'uppercase',
           letterSpacing: '.08em',
         }}>
-          {data.label}
+          {label}
         </div>
         <div style={{ fontSize: 10, color: 'var(--tx3)', fontVariantNumeric: 'tabular-nums' }}>
           {summary}
@@ -99,7 +134,7 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
         overflowY: 'auto',
         alignContent: 'start',
       }}>
-        {data.items.map((item) => (
+        {items.map((item) => (
           <ToggleCell
             key={item.id}
             item={item}
@@ -107,7 +142,7 @@ export default function ToggleListTemplate({ mod }: TemplateProps) {
             onClick={() => toggle(item.id)}
           />
         ))}
-        {data.items.length === 0 && (
+        {items.length === 0 && (
           <div style={{ fontSize: 10.5, color: 'var(--tx3)', padding: '8px 0' }}>
             No items
           </div>

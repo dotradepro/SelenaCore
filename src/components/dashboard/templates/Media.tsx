@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { useStore } from '../../../store/useStore';
 import Icon from './Icon';
@@ -13,12 +14,18 @@ export interface MediaPayload {
     artist?: string | null;
     album?: string | null;
     cover_url?: string | null;
+    /** Raw English source-type badge (e.g. "radio", "spotify"). */
     source_type?: string | null;
+    /** i18n key for source-type, with `source_type` as fallback. */
+    source_type_key?: string;
     duration_sec?: number | null;
   } | null;
   volume: number;
   position_sec?: number | null;
   shuffle?: boolean;
+  /** Optional i18n key for the "Nothing playing" empty state. */
+  empty_text_key?: string;
+  empty_text?: string;
 }
 
 /** 4 transport buttons rendered as icon-only round controls. The PLAY
@@ -32,6 +39,7 @@ const TRANSPORT: { id: string; emoji: string; primary?: boolean }[] = [
 ];
 
 export default function MediaTemplate({ mod }: TemplateProps) {
+  const { t: tr } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<MediaPayload>({
     module: mod.name,
@@ -86,6 +94,12 @@ export default function MediaTemplate({ mod }: TemplateProps) {
   const track = data.track;
   const isPlaying = data.state === 'play';
   const hasTrack = !!track;
+  const emptyTitle = data.empty_text_key
+    ? tr(data.empty_text_key, { defaultValue: data.empty_text ?? 'Nothing playing' })
+    : data.empty_text ?? tr('widgets.mediaPlayer.nothingPlaying', { defaultValue: 'Nothing playing' });
+  const sourceType = track?.source_type_key
+    ? tr(track.source_type_key, { defaultValue: track.source_type ?? '' })
+    : track?.source_type;
 
   return (
     <motion.div
@@ -114,7 +128,7 @@ export default function MediaTemplate({ mod }: TemplateProps) {
             textOverflow: 'ellipsis',
             lineHeight: 1.25,
           }}>
-            {track?.title ?? 'Nothing playing'}
+            {track?.title ?? emptyTitle}
           </div>
           {track?.artist && (
             <div style={{
@@ -127,7 +141,7 @@ export default function MediaTemplate({ mod }: TemplateProps) {
               {track.artist}
             </div>
           )}
-          {track?.source_type && (
+          {sourceType && (
             <div style={{
               alignSelf: 'flex-start',
               marginTop: 4,
@@ -141,7 +155,7 @@ export default function MediaTemplate({ mod }: TemplateProps) {
               background: 'var(--sf2)',
               border: '1px solid var(--b)',
             }}>
-              {track.source_type}
+              {sourceType}
             </div>
           )}
         </div>

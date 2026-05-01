@@ -23,6 +23,9 @@ export interface WidgetFrameProps {
   row?: number;
   isDragging?: boolean;
   isDropOver?: boolean;
+  /** Active room tab — passed through to template components so they can
+   *  scope their rendered items (e.g. toggle-list filters by device location). */
+  activeRoom?: string;
   onUnpin?: () => void;
   onPointerDown?: (e: ReactPointerEvent) => void;
   onResizeHandleDown?: (e: ReactPointerEvent) => void;
@@ -33,7 +36,7 @@ const BASELINE_CELL_PX = 90;
 export default function WidgetFrame(props: WidgetFrameProps) {
   const {
     mod, spanCols, spanRows, cellHeight, editMode,
-    col, row, isDragging, isDropOver,
+    col, row, isDragging, isDropOver, activeRoom,
     onUnpin, onPointerDown, onResizeHandleDown,
   } = props;
 
@@ -91,6 +94,14 @@ export default function WidgetFrame(props: WidgetFrameProps) {
     return () => window.removeEventListener('message', handleMsg);
   }, [mod.name, navigate]);
 
+  // Debug-style hover label (`<name> · :<port>`) is only useful for legacy
+  // iframe widgets — they don't render their own header. Template widgets
+  // already show a localized title inside their own JSX, so the overlay
+  // would just duplicate text and add visual noise. Suppress it there.
+  const chromeLabel = isTemplate && TemplateComponent
+    ? undefined
+    : `${mod.name} · :${mod.port}`;
+
   return (
     <WidgetChrome
       name={mod.name}
@@ -105,11 +116,11 @@ export default function WidgetFrame(props: WidgetFrameProps) {
       onUnpin={onUnpin}
       onPointerDown={onPointerDown}
       onResizeHandleDown={onResizeHandleDown}
-      label={`${mod.name} · :${mod.port}`}
+      label={chromeLabel}
     >
       {isRunning && TemplateComponent ? (
         <div style={{ width: '100%', height: '100%', pointerEvents: editMode ? 'none' : 'auto' }}>
-          <TemplateComponent mod={mod} />
+          <TemplateComponent mod={mod} activeRoom={activeRoom} />
         </div>
       ) : isRunning ? (
         <iframe

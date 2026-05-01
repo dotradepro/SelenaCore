@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Icon from '../Icon';
 import { useStore } from '../../../../store/useStore';
 
@@ -6,6 +7,9 @@ export interface ActionSpec {
   /** Logical key — must match a manifest ``ui.widget.actions[key]``. */
   id: string;
   label: string;
+  /** Optional i18n key resolved via t(), with `label` as defaultValue. */
+  label_key?: string;
+  label_args?: Record<string, string | number>;
   icon?: string | null;
   /** Optional body to send as JSON; bare string means simple ``{id: <id>}``
    *  bodies (which is what most actions expect). */
@@ -42,10 +46,14 @@ const TONE_FG: Record<NonNullable<ActionSpec['tone']>, string> = {
  *  toast. Used by Status/Weather to invoke side-effects (refresh,
  *  apply-update, run-scene). */
 export default function ActionButton({ module, spec, onSuccess }: ActionButtonProps) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const tone = spec.tone ?? 'neutral';
   const bg = TONE_BG[tone];
   const fg = TONE_FG[tone];
+  const label = spec.label_key
+    ? t(spec.label_key, { ...(spec.label_args ?? {}), defaultValue: spec.label })
+    : spec.label;
 
   async function run() {
     if (busy) return;
@@ -60,7 +68,7 @@ export default function ActionButton({ module, spec, onSuccess }: ActionButtonPr
       if (onSuccess) await onSuccess();
     } catch (e) {
       const showToast = useStore.getState().showToast;
-      showToast(`${spec.label} failed`, 'error');
+      showToast(`${label} failed`, 'error');
     } finally {
       setBusy(false);
     }
@@ -87,7 +95,7 @@ export default function ActionButton({ module, spec, onSuccess }: ActionButtonPr
       }}
     >
       {spec.icon && <Icon name={spec.icon} size={11} color={fg} />}
-      {spec.label}
+      {label}
     </button>
   );
 }

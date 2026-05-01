@@ -1,15 +1,22 @@
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { SparklineSkeleton } from './Skeleton';
 import Icon from './Icon';
 import CardRow, { type CardSpec } from './blocks/CardRow';
+import { resolveLabel } from './i18n';
 import type { TemplateProps } from './registry';
 
 export interface SparklinePayload {
+  /** Raw English label, kept as fallback when `label_key` is missing. */
   label: string;
+  label_key?: string;
   value: string;
   unit?: string;
+  /** Raw English footnote (e.g. "today · 8.7 kWh"), fallback for footnote_key. */
   footnote?: string;
+  footnote_key?: string;
+  footnote_args?: Record<string, string | number>;
   series: number[];
   series_window_s?: number;
   tone?: 'neutral' | 'info' | 'ok' | 'warn' | 'alert';
@@ -34,6 +41,7 @@ const TONE_RGB: Record<NonNullable<SparklinePayload['tone']>, string> = {
 };
 
 export default function SparklineTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<SparklinePayload>({
     module: mod.name,
@@ -49,6 +57,8 @@ export default function SparklineTemplate({ mod }: TemplateProps) {
   const tone = data.tone ?? 'info';
   const stroke = TONE_STROKE[tone];
   const rgb = TONE_RGB[tone];
+  const label = resolveLabel(t, data.label, data.label_key);
+  const footnote = resolveLabel(t, data.footnote, data.footnote_key, data.footnote_args);
 
   return (
     <motion.div
@@ -77,11 +87,11 @@ export default function SparklineTemplate({ mod }: TemplateProps) {
           textTransform: 'uppercase',
           letterSpacing: '.08em',
         }}>
-          {data.label}
+          {label}
         </div>
-        {data.footnote && (
+        {footnote && (
           <div style={{ fontSize: 9.5, color: 'var(--tx3)', textAlign: 'right' }}>
-            {data.footnote}
+            {footnote}
           </div>
         )}
       </div>

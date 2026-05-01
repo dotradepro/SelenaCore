@@ -248,15 +248,27 @@ class SatelliteManagerModule(SystemModule):
     async def _widget_state(self) -> dict:
         """Dashboard V2 metric — online / total satellites."""
         if self._registry is None:
-            return {"label": "Satellites", "value": "—", "tone": "neutral", "icon": "satellite"}
+            return {
+                "label": "Satellites",
+                "label_key": "widgets.satelliteManager.label",
+                "value": "—",
+                "tone": "neutral",
+                "icon": "satellite",
+            }
         sats = await self._registry.list_all()
         online = sum(1 for s in sats if (s.get("state") or {}).get("online"))
         total = len(sats)
         if total == 0:
             return {
                 "label": "Satellites",
+                "label_key": "widgets.satelliteManager.label",
                 "value": "0",
-                "trend": {"direction": "flat", "magnitude": "none", "period": "registered"},
+                "trend": {
+                    "direction": "flat",
+                    "magnitude": "none",
+                    "period": "registered",
+                    "period_key": "widgets.satelliteManager.periodRegistered",
+                },
                 "tone": "neutral",
                 "icon": "satellite",
             }
@@ -264,9 +276,15 @@ class SatelliteManagerModule(SystemModule):
         tone = "ok" if offline == 0 else "warn"
         trend = None
         if offline > 0:
-            trend = {"direction": "down", "magnitude": f"-{offline}", "period": "offline"}
+            trend = {
+                "direction": "down",
+                "magnitude": f"-{offline}",
+                "period": "offline",
+                "period_key": "widgets.satelliteManager.periodOffline",
+            }
         return {
             "label": "Satellites",
+            "label_key": "widgets.satelliteManager.label",
             "value": str(online),
             "unit": f"of {total}",
             "trend": trend,

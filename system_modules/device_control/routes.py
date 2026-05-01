@@ -34,6 +34,12 @@ from sqlalchemy import delete, select
 
 from core.api.helpers import on_entity_changed, translate_to_en
 
+from core.api.widget_helpers import (
+    LIGHTS_SWITCHES_ENTITY_TYPES,
+    coerce_onoff_state,
+    entity_icon,
+)
+
 from .drivers import DriverError, list_driver_types
 from .drivers.gree import AC_CAPABILITIES
 from .drivers.tuya_cloud import TuyaCloudClient
@@ -86,6 +92,10 @@ class PatchDeviceBody(BaseModel):
 
 class CommandBody(BaseModel):
     state: dict[str, Any]
+
+
+class WidgetToggleBody(BaseModel):
+    id: str
 
 
 class WizardStartBody(BaseModel):
@@ -1895,5 +1905,90 @@ def build_router(svc: "DeviceControlModule") -> APIRouter:
             await svc.remove_device_watcher(did)
             await svc.publish("device.removed", {"device_id": did})
         return {"removed_node_id": int(node_id), "deleted_devices": deleted}
+
+    # ── Dashboard widget surface (toggle-list template) ─────────────────
+    # device-control widget shows devices NOT covered by lights-switches —
+    # lights/switches/outlets already get a curated widget there, so
+    # surfacing them again here just produces duplicates. Read-only or
+    # non-on-off devices render with state="unknown" (toggle disabled in
+    # the template). Per-item `location` lets the dashboard scope the list
+    # to the active room tab. Entity-type exclusion set, icon mapping, and
+    # state coercion live in `core.api.widget_helpers` (shared with
+    # `lights-switches`).
+
+    @router.get("/widget/data/state")
+    async def widget_state() -> dict[str, Any]:
+        from core.registry.models import Device
+        async with svc._db_session() as session:
+            res = await session.execute(
+                select(Device).where(Device.module_id == svc.name)
+            )
+            rows = list(res.scalars())
+
+        items: list[dict[str, Any]] = []
+        on_count = 0
+        for d in rows:
+            if not bool(d.enabled):
+                continue
+            if (d.entity_type or "").lower() in LIGHTS_SWITCHES_ENTITY_TYPES:
+                continue
+            state_obj = json.loads(d.state) if d.state else {}
+            tristate = coerce_onoff_state(state_obj)
+            if tristate == "on":
+                on_count += 1
+            items.append({
+                "id": d.device_id,
+                "name": d.name,
+                "state": tristate,
+                "secondary": None,
+                "icon": entity_icon(d.entity_type),
+                "location": d.location or None,
+            })
+        # i18n: emit a translation key alongside the raw English string so
+        # the frontend ToggleList template can localize via t(label_key)
+        # with the raw `label` as defaultValue.
+        if items:
+            summary_key = "widgets.deviceControl.summarySomeOn"
+            summary = f"{on_count} of {len(items)} on"
+            summary_args: dict[str, Any] | None = {
+                "on": on_count, "total": len(items),
+            }
+        else:
+            summary_key = "widgets.deviceControl.summaryEmpty"
+            summary = "No devices"
+            summary_args = None
+        out: dict[str, Any] = {
+            "label": "Devices",
+            "label_key": "widgets.deviceControl.label",
+            "summary": summary,
+            "summary_key": summary_key,
+            "items": items,
+        }
+        if summary_args is not None:
+            out["summary_args"] = summary_args
+        return out
+
+    @router.post("/widget/action/toggle")
+    async def widget_toggle(body: WidgetToggleBody) -> dict[str, Any]:
+        from core.registry.models import Device
+        async with svc._db_session() as session:
+            res = await session.execute(
+                select(Device).where(Device.device_id == body.id)
+            )
+            row = res.scalar_one_or_none()
+        if row is None or row.module_id != svc.name:
+            raise HTTPException(404, "Device not found")
+        state_obj = json.loads(row.state) if row.state else {}
+        tristate = coerce_onoff_state(state_obj)
+        if tristate == "unknown":
+            raise HTTPException(409, "Device is not toggleable")
+        next_on = tristate != "on"
+        try:
+            await svc.execute_command(body.id, {"on": next_on})
+        except DriverError as exc:
+            raise HTTPException(502, str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc))
+        return {"status": "ok", "id": body.id, "on": next_on}
 
     return router

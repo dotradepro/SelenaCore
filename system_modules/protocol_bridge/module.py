@@ -108,7 +108,12 @@ class ProtocolBridgeModule(SystemModule):
             if svc._bridge is None:
                 return {
                     "label": "Protocol bridge",
-                    "pill": {"tone": "neutral", "text": "Not running", "icon": "alert-triangle"},
+                    "label_key": "widgets.protocolBridge.label",
+                    "pill": {
+                        "tone": "neutral", "text": "Not running",
+                        "text_key": "widgets.protocolBridge.pillNotRunning",
+                        "icon": "alert-triangle",
+                    },
                     "rows": [],
                 }
             s = svc._bridge.get_status()
@@ -118,11 +123,23 @@ class ProtocolBridgeModule(SystemModule):
 
             mqtt_on = bool(mqtt.get("connected"))
             if not mqtt.get("enabled"):
-                pill = {"tone": "neutral", "text": "Disabled", "icon": "clock"}
+                pill = {
+                    "tone": "neutral", "text": "Disabled",
+                    "text_key": "widgets.protocolBridge.pillDisabled",
+                    "icon": "clock",
+                }
             elif mqtt_on:
-                pill = {"tone": "ok", "text": "Connected", "icon": "check-circle"}
+                pill = {
+                    "tone": "ok", "text": "Connected",
+                    "text_key": "widgets.protocolBridge.pillConnected",
+                    "icon": "check-circle",
+                }
             else:
-                pill = {"tone": "warn", "text": "MQTT offline", "icon": "alert-triangle"}
+                pill = {
+                    "tone": "warn", "text": "MQTT offline",
+                    "text_key": "widgets.protocolBridge.pillMqttOffline",
+                    "icon": "alert-triangle",
+                }
 
             # Compact icon strip — one entry per protocol, color-coded
             # (green when active, neutral when disabled).
@@ -147,10 +164,16 @@ class ProtocolBridgeModule(SystemModule):
                 },
             ]
             rows = [
-                {"label": "MQTT host", "value": mqtt.get("host") or "—" if mqtt.get("enabled") else "off", "icon": "server"},
+                {
+                    "label": "MQTT host",
+                    "label_key": "widgets.protocolBridge.rowMqttHost",
+                    "value": mqtt.get("host") or "—" if mqtt.get("enabled") else "off",
+                    "icon": "server",
+                },
             ]
             return {
                 "label": "Protocol bridge",
+                "label_key": "widgets.protocolBridge.label",
                 "pill": pill,
                 "rows": rows,
                 "strip": strip,

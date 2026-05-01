@@ -227,27 +227,44 @@ class BackupManagerModule(SystemModule):
             )
             sched = settings["schedule"]
             if sched["enabled"]:
-                pill = {"tone": "ok", "text": "Scheduled", "icon": "clock"}
+                pill = {
+                    "tone": "ok", "text": "Scheduled",
+                    "text_key": "widgets.backupManager.pillScheduled",
+                    "icon": "clock",
+                }
             else:
-                pill = {"tone": "neutral", "text": "Manual only", "icon": "save"}
+                pill = {
+                    "tone": "neutral", "text": "Manual only",
+                    "text_key": "widgets.backupManager.pillManualOnly",
+                    "icon": "save",
+                }
             rows = [
                 {
                     "label": "Latest",
+                    "label_key": "widgets.backupManager.rowLatest",
                     "value": latest["name"] if latest else "—",
                     "icon": "archive",
                 },
                 {
                     "label": "Total",
+                    "label_key": "widgets.backupManager.rowTotal",
                     "value": str(len(backups)),
                     "icon": "list",
                 },
             ]
             return {
                 "label": "Backup",
+                "label_key": "widgets.backupManager.label",
                 "pill": pill,
                 "rows": rows,
                 "actions": [
-                    {"id": "create", "label": "Backup now", "icon": "save", "tone": "info"},
+                    {
+                        "id": "create",
+                        "label": "Backup now",
+                        "label_key": "widgets.backupManager.actionBackupNow",
+                        "icon": "save",
+                        "tone": "info",
+                    },
                 ],
             }
 

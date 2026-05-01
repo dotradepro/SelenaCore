@@ -106,10 +106,10 @@ def build_router(svc: "ClimateModule") -> APIRouter:
     # in a later phase rather than spawning a per-room widget.
 
     MODE_OPTIONS = [
-        {"id": "auto", "label": "Auto"},
-        {"id": "cool", "label": "Cool"},
-        {"id": "heat", "label": "Heat"},
-        {"id": "dry",  "label": "Dry"},
+        {"id": "auto", "label": "Auto", "label_key": "widgets.climate.modeAuto"},
+        {"id": "cool", "label": "Cool", "label_key": "widgets.climate.modeCool"},
+        {"id": "heat", "label": "Heat", "label_key": "widgets.climate.modeHeat"},
+        {"id": "dry",  "label": "Dry",  "label_key": "widgets.climate.modeDry"},
     ]
 
     def _primary_device(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -134,11 +134,14 @@ def build_router(svc: "ClimateModule") -> APIRouter:
         target = state.get("target_temp")
         current = state.get("current_temp") or state.get("temperature") or target or 0
         mode = (state.get("mode") or "auto").lower()
-        secondary = (
-            f"→ set {target:g}°"
-            if isinstance(target, (int, float))
-            else None
-        )
+        if isinstance(target, (int, float)):
+            secondary: str | None = f"→ set {target:g}°"
+            secondary_key: str | None = "widgets.climate.secondarySetpoint"
+            secondary_args: dict[str, Any] | None = {"temp": f"{target:g}"}
+        else:
+            secondary = None
+            secondary_key = None
+            secondary_args = None
         location = device.get("location") or ""
 
         secondary_pills: list[dict[str, Any]] = []
@@ -149,14 +152,29 @@ def build_router(svc: "ClimateModule") -> APIRouter:
         if (watts := state.get("estimated_watts")) is not None and watts:
             secondary_pills.append({"icon": "zap", "value": f"{watts:.0f} W"})
 
-        return {
+        primary: dict[str, Any] = {
+            "value": f"{float(current):.1f}",
+            "unit": "°",
+            "secondary": secondary,
+        }
+        if secondary_key:
+            primary["secondary_key"] = secondary_key
+            primary["secondary_args"] = secondary_args
+
+        if location:
+            label = f"Climate · {location}"
+            label_key = "widgets.climate.labelLocation"
+            label_args: dict[str, Any] | None = {"location": location}
+        else:
+            label = "Climate"
+            label_key = "widgets.climate.label"
+            label_args = None
+
+        out: dict[str, Any] = {
             "_device_id": device["device_id"],  # echoed back in actions
-            "label": f"Climate · {location}" if location else "Climate",
-            "primary": {
-                "value": f"{float(current):.1f}",
-                "unit": "°",
-                "secondary": secondary,
-            },
+            "label": label,
+            "label_key": label_key,
+            "primary": primary,
             "modes": {
                 "current": mode if mode in {o["id"] for o in MODE_OPTIONS} else "auto",
                 "options": MODE_OPTIONS,
@@ -165,6 +183,7 @@ def build_router(svc: "ClimateModule") -> APIRouter:
                 {
                     "id": "temp",
                     "label": "Temp",
+                    "label_key": "widgets.climate.stepperTemp",
                     "value": f"{float(target):.1f}" if isinstance(target, (int, float)) else "—",
                     "unit": "°",
                     "min": 16, "max": 30, "step": 0.5,
@@ -172,6 +191,9 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             ] if isinstance(target, (int, float)) else [],
             "secondary_pills": secondary_pills,
         }
+        if label_args:
+            out["label_args"] = label_args
+        return out
 
     async def _apply_to_primary(state_patch: dict[str, Any]) -> dict[str, Any]:
         devices = await svc.list_climate_devices()

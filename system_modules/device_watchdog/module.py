@@ -149,9 +149,11 @@ class DeviceWatchdogModule(SystemModule):
                     "direction": "down",
                     "magnitude": f"-{offline}",
                     "period": "offline",
+                    "period_key": "widgets.deviceWatchdog.periodOffline",
                 }
             return {
                 "label": "Devices",
+                "label_key": "widgets.deviceWatchdog.label",
                 "value": str(online),
                 "unit": f"of {total}" if total else None,
                 "trend": trend,

@@ -20,18 +20,29 @@ from system_modules.weather_service.voice_handler import WeatherVoiceHandler
 logger = logging.getLogger(__name__)
 
 
-def _short_day_from_iso(iso_date: str | None) -> str:
-    """Format an ISO date string (``YYYY-MM-DD``) as a 3-letter weekday
-    abbreviation (``Tue``, ``Wed``, ...). Falls back to the raw value
-    if parsing fails so the widget still shows something."""
+_DAY_I18N_KEYS = (
+    "widgets.weatherService.dayMon",
+    "widgets.weatherService.dayTue",
+    "widgets.weatherService.dayWed",
+    "widgets.weatherService.dayThu",
+    "widgets.weatherService.dayFri",
+    "widgets.weatherService.daySat",
+    "widgets.weatherService.daySun",
+)
+
+
+def _short_day_from_iso(iso_date: str | None) -> tuple[str, str | None]:
+    """Format an ISO date string (``YYYY-MM-DD``) as a 3-letter English
+    weekday abbreviation (``Tue``, ``Wed``...) and return an i18n key for
+    the same day. Falls back to the raw value if parsing fails."""
     if not iso_date:
-        return "—"
+        return ("—", None)
     try:
         from datetime import datetime
         dt = datetime.fromisoformat(iso_date)
-        return dt.strftime("%a")
+        return (dt.strftime("%a"), _DAY_I18N_KEYS[dt.weekday()])
     except (ValueError, TypeError):
-        return iso_date[:3]
+        return (iso_date[:3], None)
 
 
 class ConfigRequest(BaseModel):
@@ -215,10 +226,15 @@ class WeatherServiceModule(SystemModule):
                         "temperature": 0,
                         "unit": unit,
                         "condition": status.get("error") or "No data yet",
+                        "condition_key": (
+                            None if status.get("error")
+                            else "widgets.weatherService.noDataYet"
+                        ),
                         "feels_like": None,
                     },
                     "pills": [],
                     "forecast": [],
+                    "feels_like_key": "widgets.weatherService.feelsLike",
                 }
 
             wmo = current.get("wmo_code")
@@ -234,6 +250,7 @@ class WeatherServiceModule(SystemModule):
                 },
                 "pills": [],
                 "forecast": [],
+                "feels_like_key": "widgets.weatherService.feelsLike",
             }
             if (humidity := current.get("humidity")) is not None:
                 payload["pills"].append({"icon": "droplets", "value": f"{int(humidity)}%"})
@@ -244,13 +261,17 @@ class WeatherServiceModule(SystemModule):
 
             for entry in (forecast or [])[:3]:
                 f_code = entry.get("wmo_code")
-                payload["forecast"].append({
-                    "day": _short_day_from_iso(entry.get("date")),
+                day_short, day_key = _short_day_from_iso(entry.get("date"))
+                forecast_item: dict = {
+                    "day": day_short,
                     "icon": _icon_for_code(f_code),
                     "high": float(entry.get("temp_max") or 0),
                     "low": float(entry.get("temp_min") or 0),
                     "unit": unit,
-                })
+                }
+                if day_key:
+                    forecast_item["day_key"] = day_key
+                payload["forecast"].append(forecast_item)
             return payload
 
         @router.get("/weather/forecast")

@@ -34,12 +34,15 @@ const DEFAULT_SECURITY: SecurityFlags = {
 export default function DashboardV2() {
   const { t } = useTranslation();
   const modules = useStore((s) => s.modules);
+  const devices = useStore((s) => s.devices);
   const fetchModules = useStore((s) => s.fetchModules);
+  const fetchDevices = useStore((s) => s.fetchDevices);
   const widgetLayout = useStore((s) => s.widgetLayout);
   const unpinModule = useStore((s) => s.unpinModule);
   const resetWidgetLayout = useStore((s) => s.resetWidgetLayout);
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
+  useEffect(() => { fetchDevices(); }, [fetchDevices]);
 
   const [editMode, setEditMode] = useState(false);
   const [showAddDrawer, setShowAddDrawer] = useState(false);
@@ -77,10 +80,12 @@ export default function DashboardV2() {
   });
 
   // Resolve the ordered list of pinned widgets, filtered by the active room tab.
+  // A module matches a room either by its own `module.room` or by owning at
+  // least one device tagged with that location.
   const pinnedMods: Module[] = widgetLayout.pinned
     .map((name) => modules.find((m) => m.name === name))
     .filter((m): m is Module => Boolean(m))
-    .filter((m) => moduleMatchesRoom(m, activeRoom));
+    .filter((m) => moduleMatchesRoom(m, activeRoom, devices));
 
   function spanFor(m: Module): { cols: number; rows: number } {
     const saved = widgetLayout.spans?.[m.name];
@@ -114,7 +119,7 @@ export default function DashboardV2() {
     >
       <Hero />
       <SceneRow />
-      <RoomTabs modules={modules} active={activeRoom} onChange={setActiveRoom} />
+      <RoomTabs modules={modules} devices={devices} active={activeRoom} onChange={setActiveRoom} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px 8px', flexShrink: 0 }}>
         <div style={{ fontSize: 11, color: 'var(--tx3)' }}>
@@ -232,6 +237,7 @@ export default function DashboardV2() {
                   spanRows={Math.min(span.rows, GRID_ROWS - row + 1)}
                   cellHeight={cellSize.cellHeight}
                   editMode={editMode}
+                  activeRoom={activeRoom}
                   isDragging={dragName === mod.name}
                   isDropOver={dropTarget === `widget-${mod.name}` || dropTarget === mod.name}
                   onUnpin={() => unpinModule(mod.name)}

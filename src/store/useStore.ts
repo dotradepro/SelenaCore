@@ -12,9 +12,30 @@ export interface Device {
   module_id: string | null;
   meta: Record<string, unknown>;
   entity_type?: string | null;
+  /** Backend-canonical room/location name. Used by intent regex builders
+   *  and the IntentRouter keyword filter, so renaming the column would
+   *  ripple too far — both `location` and `room` are kept. */
   location?: string | null;
+  /** Frontend-side alias of `location`. Populated by the store on every
+   *  device payload that lands from the API / WebSocket so dashboard code
+   *  can read `device.room` symmetrically with `module.room`. Always
+   *  mirrors `location`; treat the two as the same value. */
+  room?: string | null;
   keywords_user?: string[];
   keywords_en?: string[];
+}
+
+/** Mirror `location` → `room` when devices land from the API or WebSocket.
+ *  Backend stays on `location` (intent regex builders depend on it), but
+ *  the dashboard reads the unified `room` field. Idempotent: if a payload
+ *  already carries `room`, it wins. */
+function normalizeDevice(d: Device): Device {
+  if (d.room !== undefined && d.room !== null) return d;
+  return { ...d, room: d.location ?? null };
+}
+
+function normalizeDevices(list: Device[]): Device[] {
+  return list.map(normalizeDevice);
 }
 
 export interface Module {
@@ -617,7 +638,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ devicesLoading: true });
     try {
       const data = await apiFetch('/api/ui/devices');
-      set({ devices: data?.devices ?? [] });
+      set({ devices: normalizeDevices(data?.devices ?? []) });
     } catch (e) {
       console.error('fetchDevices failed', e);
     } finally {
@@ -874,7 +895,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Devices snapshot (from enriched hello)
       if (Array.isArray(msg.devices)) {
-        set({ devices: msg.devices as Device[] });
+        set({ devices: normalizeDevices(msg.devices as Device[]) });
       }
 
       // Modules snapshot

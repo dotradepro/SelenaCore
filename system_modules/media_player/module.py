@@ -399,14 +399,22 @@ class MediaPlayerModule(SystemModule):
                 # Player returns absolute paths for local files; cover_url
                 # is already relative when fetched via cover_fetcher.
                 cover = track_obj.get("cover_url")
+                source_type = track_obj.get("source_type") or None
                 track_payload = {
                     "title": track_obj.get("title") or "—",
                     "artist": track_obj.get("artist") or None,
                     "album": track_obj.get("album") or None,
                     "cover_url": cover,
-                    "source_type": track_obj.get("source_type") or None,
+                    "source_type": source_type,
                     "duration_sec": track_obj.get("duration_sec"),
                 }
+                # Source-type label is one of a small set ("radio", "spotify",
+                # "local", "youtube", ...). We emit a key for each known type
+                # so the badge localizes; unknown types fall through.
+                if source_type:
+                    track_payload["source_type_key"] = (
+                        f"widgets.mediaPlayer.source_{source_type}"
+                    )
 
             return {
                 "state": state,
@@ -414,6 +422,8 @@ class MediaPlayerModule(SystemModule):
                 "volume": volume,
                 "position_sec": status.get("position"),
                 "shuffle": bool(status.get("shuffle", False)),
+                "empty_text": "Nothing playing",
+                "empty_text_key": "widgets.mediaPlayer.nothingPlaying",
             }
 
         @router.post("/widget/action/set_mode")

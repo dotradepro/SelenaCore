@@ -183,7 +183,12 @@ class UpdateManagerModule(SystemModule):
             if svc._manager is None:
                 return {
                     "label": "Updates",
-                    "pill": {"tone": "neutral", "text": "Not ready", "icon": "alert-triangle"},
+                    "label_key": "widgets.updateManager.label",
+                    "pill": {
+                        "tone": "neutral", "text": "Not ready",
+                        "text_key": "widgets.updateManager.pillNotReady",
+                        "icon": "alert-triangle",
+                    },
                     "rows": [],
                 }
             s = svc._manager.get_status()
@@ -197,22 +202,55 @@ class UpdateManagerModule(SystemModule):
             if error:
                 pill = {"tone": "alert", "text": str(error)[:30], "icon": "x"}
             elif state == "checking":
-                pill = {"tone": "info", "text": "Checking", "icon": "refresh-cw"}
+                pill = {
+                    "tone": "info", "text": "Checking",
+                    "text_key": "widgets.updateManager.pillChecking",
+                    "icon": "refresh-cw",
+                }
             elif state == "downloading":
-                pill = {"tone": "info", "text": "Downloading", "icon": "refresh-cw"}
+                pill = {
+                    "tone": "info", "text": "Downloading",
+                    "text_key": "widgets.updateManager.pillDownloading",
+                    "icon": "refresh-cw",
+                }
             elif state == "installing":
-                pill = {"tone": "warn", "text": "Installing", "icon": "clock"}
+                pill = {
+                    "tone": "warn", "text": "Installing",
+                    "text_key": "widgets.updateManager.pillInstalling",
+                    "icon": "clock",
+                }
             elif available:
-                pill = {"tone": "warn", "text": f"v{latest} available", "icon": "alert-triangle"}
+                pill = {
+                    "tone": "warn", "text": f"v{latest} available",
+                    "text_key": "widgets.updateManager.pillAvailable",
+                    "text_args": {"version": latest},
+                    "icon": "alert-triangle",
+                }
             else:
-                pill = {"tone": "ok", "text": "Up to date", "icon": "check-circle"}
+                pill = {
+                    "tone": "ok", "text": "Up to date",
+                    "text_key": "widgets.updateManager.pillUpToDate",
+                    "icon": "check-circle",
+                }
 
             rows = [
-                {"label": "Current", "value": str(current), "icon": "server"},
-                {"label": "Channel", "value": str(channel), "icon": "settings"},
+                {
+                    "label": "Current",
+                    "label_key": "widgets.updateManager.rowCurrent",
+                    "value": str(current), "icon": "server",
+                },
+                {
+                    "label": "Channel",
+                    "label_key": "widgets.updateManager.rowChannel",
+                    "value": str(channel), "icon": "settings",
+                },
             ]
             if available and latest != current:
-                rows.append({"label": "Latest", "value": str(latest), "icon": "sparkles"})
+                rows.append({
+                    "label": "Latest",
+                    "label_key": "widgets.updateManager.rowLatest",
+                    "value": str(latest), "icon": "sparkles",
+                })
 
             # Inline action — manifest exposes /widget/action/check_now
             # which the new ActionButton block dispatches via the proxy.
@@ -226,6 +264,7 @@ class UpdateManagerModule(SystemModule):
                 })
             return {
                 "label": "Updates",
+                "label_key": "widgets.updateManager.label",
                 "pill": pill,
                 "rows": rows[:4],
                 "actions": actions,

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.api.widget_helpers import entity_icon
+
 if TYPE_CHECKING:
     from .module import LightsSwitchesModule
 
@@ -84,13 +86,8 @@ def build_router(svc: "LightsSwitchesModule") -> APIRouter:
     # ── Dashboard V2 template-engine endpoints ──────────────────────────────
     # Manifest declares these paths under ui.widget.data_endpoints / actions
     # so the V2 dashboard renders this module as a `toggle-list` template
-    # instead of the legacy widget.html iframe.
-
-    ENTITY_ICON = {
-        "light": "lightbulb",
-        "switch": "power",
-        "outlet": "zap",
-    }
+    # instead of the legacy widget.html iframe. Icon mapping comes from the
+    # shared `core.api.widget_helpers.ENTITY_ICON` table — see file header.
 
     @router.get("/widget/data/state")
     async def widget_state() -> dict[str, Any]:
@@ -116,13 +113,31 @@ def build_router(svc: "LightsSwitchesModule") -> APIRouter:
                 "name": d["name"],
                 "state": "on" if is_on else "off",
                 "secondary": secondary,
-                "icon": ENTITY_ICON.get(d.get("entity_type", "")),
+                "icon": entity_icon(d.get("entity_type")),
+                "location": d.get("location") or None,
             })
-        return {
+        # i18n: emit a translation key alongside the raw English string so the
+        # frontend ToggleList template can localize via t(label_key) with the
+        # raw `label` as defaultValue. Modules without keys keep working as
+        # before — the template falls through to the raw string.
+        if items:
+            summary_key = "widgets.lightsSwitches.summarySomeOn"
+            summary = f"{on_count} of {len(items)} on"
+            summary_args = {"on": on_count, "total": len(items)}
+        else:
+            summary_key = "widgets.lightsSwitches.summaryEmpty"
+            summary = "No lights"
+            summary_args = None
+        out: dict[str, Any] = {
             "label": "Lights",
-            "summary": f"{on_count} of {len(items)} on" if items else "No lights",
+            "label_key": "widgets.lightsSwitches.label",
+            "summary": summary,
+            "summary_key": summary_key,
             "items": items,
         }
+        if summary_args is not None:
+            out["summary_args"] = summary_args
+        return out
 
     @router.post("/widget/action/toggle")
     async def widget_toggle(body: ToggleBody) -> dict[str, Any]:

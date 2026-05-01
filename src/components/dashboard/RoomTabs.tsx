@@ -1,44 +1,23 @@
 import { useTranslation } from 'react-i18next';
 import { useMemo } from 'react';
-import type { Module } from '../../store/useStore';
+import type { Device, Module } from '../../store/useStore';
+import { ALL_ROOM, SYSTEM_ROOM, deriveRooms } from './RoomTabs.utils';
 
-/** Sentinel room values:
- *   ALL      — show every widget (default)
- *   SYSTEM   — show only modules with room === "system"
- *   <other>  — show modules whose room matches this string
- *  We surface "All" first, "System" last, and any other discovered rooms in
- *  between, alphabetically. Devices' room metadata isn't queried here — for
- *  Phase 1 the tabs are derived purely from module manifests; device-level
- *  room filtering arrives in Phase 3 when sensor widgets land. */
-export const ALL_ROOM = '__all__';
-export const SYSTEM_ROOM = 'system';
+// Re-export pure helpers so existing import sites (DashboardV2, ToggleList)
+// keep working without churn. The implementations live in RoomTabs.utils.ts
+// to make them testable without React imports.
+export { ALL_ROOM, SYSTEM_ROOM, deriveRooms, moduleMatchesRoom } from './RoomTabs.utils';
 
 export interface RoomTabsProps {
   modules: Module[];
+  devices: Device[];
   active: string;
   onChange: (room: string) => void;
 }
 
-export function deriveRooms(modules: Module[]): string[] {
-  const seen = new Set<string>();
-  for (const m of modules) {
-    if (m.room) seen.add(m.room);
-  }
-  const others = [...seen].filter((r) => r !== SYSTEM_ROOM).sort();
-  const rooms: string[] = [ALL_ROOM, ...others];
-  if (seen.has(SYSTEM_ROOM)) rooms.push(SYSTEM_ROOM);
-  return rooms;
-}
-
-/** True when the module should appear under the given room tab. */
-export function moduleMatchesRoom(mod: Module, room: string): boolean {
-  if (room === ALL_ROOM) return true;
-  return mod.room === room;
-}
-
-export default function RoomTabs({ modules, active, onChange }: RoomTabsProps) {
+export default function RoomTabs({ modules, devices, active, onChange }: RoomTabsProps) {
   const { t } = useTranslation();
-  const rooms = useMemo(() => deriveRooms(modules), [modules]);
+  const rooms = useMemo(() => deriveRooms(modules, devices), [modules, devices]);
 
   // Hide the strip when only "All" is left — no value in showing a single tab.
   if (rooms.length <= 1) return null;

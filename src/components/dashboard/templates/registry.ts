@@ -12,6 +12,10 @@ import ClockTemplate from './Clock';
 
 export interface TemplateProps {
   mod: Module;
+  /** Currently active room tab. Templates that surface device-bound content
+   *  (toggle-list, presence) filter their items to this location. Sentinel
+   *  values `__all__` and `system` mean "do not filter". */
+  activeRoom?: string;
 }
 
 /** Registry mapping ``manifest.ui.widget.template`` → React renderer.

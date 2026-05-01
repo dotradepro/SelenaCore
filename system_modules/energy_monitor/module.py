@@ -443,9 +443,12 @@ class EnergyMonitorModule(SystemModule):
             tone = "warn" if current_total_w > 3000 else "info"
             return {
                 "label": "Energy",
+                "label_key": "widgets.energyMonitor.label",
                 "value": f"{current_total_w / 1000:.2f}" if current_total_w >= 1000 else f"{current_total_w:.0f}",
                 "unit": "kW" if current_total_w >= 1000 else "W",
                 "footnote": f"today · {kwh_today:.1f} kWh",
+                "footnote_key": "widgets.energyMonitor.footnoteToday",
+                "footnote_args": {"kwh": f"{kwh_today:.1f}"},
                 "series": [round(b, 2) for b in buckets],
                 "series_window_s": window_s,
                 "tone": tone,

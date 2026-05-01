@@ -180,7 +180,7 @@ export default function Devices() {
                                     <span className="lr-title" style={{ flexShrink: 1, minWidth: 0 }}>{device.name}</span>
                                     <Badge tone="neutral">{device.protocol}</Badge>
                                     <Badge tone={tone}>{device.type}</Badge>
-                                    {device.location && <Badge tone="info">{device.location}</Badge>}
+                                    {(device.room ?? device.location) && <Badge tone="info">{device.room ?? device.location}</Badge>}
                                 </div>
                                 {preview && (
                                     <div style={{

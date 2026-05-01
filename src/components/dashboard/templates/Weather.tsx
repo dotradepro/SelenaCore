@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import Icon from './Icon';
 import type { TemplateProps } from './registry';
@@ -9,22 +10,42 @@ import type { TemplateProps } from './registry';
  *  weather-service already had). */
 export interface WeatherPayload {
   location?: string;
+  /** i18n key for the location label (e.g. ``widgets.weatherService.locationKyiv``).
+   *  Falls back to raw `location` when key is absent. */
+  location_key?: string;
   current: {
     icon?: string | null;
     emoji?: string | null;
     temperature: number;
     unit?: '°C' | '°F';
+    /** Raw English condition (e.g. "Light rain"). Some weather sources
+     *  pre-localize this; others hardcode WMO-mapped English strings.
+     *  When `condition_key` is set, the template prefers the i18n value. */
     condition: string;
+    condition_key?: string;
+    condition_args?: Record<string, string | number>;
     feels_like?: number | null;
   };
-  pills?: { icon?: string; value: string; label?: string }[];
+  pills?: {
+    icon?: string;
+    value: string;
+    label?: string;
+    /** i18n key for the pill label, with `label` as fallback. */
+    label_key?: string;
+  }[];
   forecast?: {
+    /** Raw English short weekday (e.g. "Tue"). i18n key takes precedence. */
     day: string;
+    day_key?: string;
     icon?: string;
     high: number;
     low: number;
     unit?: '°C' | '°F';
   }[];
+  /** Optional i18n key for the "feels like X°" sentence. The default
+   *  template renders "feels {{temp}}°" inline; backend can override
+   *  via ``feels_like_key``. */
+  feels_like_key?: string;
 }
 
 /** Soft gradient backgrounds keyed off the lucide icon name — gives the
@@ -38,6 +59,7 @@ const HERO_GRADIENT: Record<string, string> = {
 };
 
 export default function WeatherTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<WeatherPayload>({
     module: mod.name,
@@ -52,6 +74,27 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
 
   const unit = data.current.unit ?? '°C';
   const heroBg = data.current.icon ? HERO_GRADIENT[data.current.icon] : undefined;
+  const location = data.location_key
+    ? t(data.location_key, { defaultValue: data.location ?? '' })
+    : data.location;
+  const condition = data.current.condition_key
+    ? t(data.current.condition_key, {
+        ...(data.current.condition_args ?? {}),
+        defaultValue: data.current.condition,
+      })
+    : data.current.condition;
+  const feelsLike = data.current.feels_like;
+  const feelsLikeText = data.feels_like_key && feelsLike !== undefined && feelsLike !== null
+    ? t(data.feels_like_key, {
+        temp: Math.round(feelsLike),
+        defaultValue: `feels ${Math.round(feelsLike)}°`,
+      })
+    : feelsLike !== undefined && feelsLike !== null
+      ? t('widgets.weatherService.feelsLike', {
+          temp: Math.round(feelsLike),
+          defaultValue: `feels ${Math.round(feelsLike)}°`,
+        })
+      : null;
 
   return (
     <motion.div
@@ -68,12 +111,12 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
         background: heroBg,
       }}
     >
-      {data.location && (
+      {location && (
         <div style={{
           fontSize: 9.5, fontWeight: 600, color: 'var(--tx3)',
           textTransform: 'uppercase', letterSpacing: '.08em',
         }}>
-          {data.location}
+          {location}
         </div>
       )}
 
@@ -101,10 +144,10 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
           }}>
-            {data.current.condition}
-            {data.current.feels_like !== undefined && data.current.feels_like !== null && (
+            {condition}
+            {feelsLikeText && (
               <span style={{ color: 'var(--tx3)' }}>
-                {'  ·  '}feels {Math.round(data.current.feels_like)}°
+                {'  ·  '}{feelsLikeText}
               </span>
             )}
           </div>
@@ -121,7 +164,11 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
             }}>
               <Icon name={p.icon} size={13} />
               <span>{p.value}</span>
-              {p.label && <span style={{ color: 'var(--tx3)' }}>{p.label}</span>}
+              {(p.label_key || p.label) && (
+                <span style={{ color: 'var(--tx3)' }}>
+                  {p.label_key ? t(p.label_key, { defaultValue: p.label ?? '' }) : p.label}
+                </span>
+              )}
             </div>
           ))}
         </div>
@@ -135,7 +182,7 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
           marginTop: 'auto',
         }}>
           {data.forecast.slice(0, 3).map((f, i) => (
-            <ForecastCard key={i} f={f} unitFallback={unit} />
+            <ForecastCard key={i} f={f} unitFallback={unit} t={t} />
           ))}
         </div>
       )}
@@ -144,9 +191,14 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
 }
 
 function ForecastCard({
-  f, unitFallback,
-}: { f: NonNullable<WeatherPayload['forecast']>[0]; unitFallback: '°C' | '°F' }) {
+  f, unitFallback, t,
+}: {
+  f: NonNullable<WeatherPayload['forecast']>[0];
+  unitFallback: '°C' | '°F';
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
   const u = f.unit ?? unitFallback;
+  const day = f.day_key ? t(f.day_key, { defaultValue: f.day }) : f.day;
   return (
     <div style={{
       display: 'flex',
@@ -163,7 +215,7 @@ function ForecastCard({
         fontSize: 9, fontWeight: 600, color: 'var(--tx3)',
         textTransform: 'uppercase', letterSpacing: '.06em',
       }}>
-        {f.day}
+        {day}
       </div>
       <Icon name={f.icon} size={22} />
       <div style={{ fontSize: 11, color: 'var(--tx)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.01em' }}>

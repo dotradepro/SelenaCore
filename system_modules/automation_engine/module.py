@@ -199,11 +199,22 @@ class AutomationEngineModule(SystemModule):
             tone = "alert" if errors > 0 else ("ok" if enabled > 0 else "neutral")
             trend: dict | None = None
             if errors > 0:
-                trend = {"direction": "down", "magnitude": f"-{errors}", "period": "errors"}
+                trend = {
+                    "direction": "down",
+                    "magnitude": f"-{errors}",
+                    "period": "errors",
+                    "period_key": "widgets.automationEngine.periodErrors",
+                }
             elif runs > 0:
-                trend = {"direction": "up", "magnitude": f"{runs}", "period": "runs"}
+                trend = {
+                    "direction": "up",
+                    "magnitude": f"{runs}",
+                    "period": "runs",
+                    "period_key": "widgets.automationEngine.periodRuns",
+                }
             return {
                 "label": "Automations",
+                "label_key": "widgets.automationEngine.label",
                 "value": str(enabled),
                 "unit": f"of {total}" if total else None,
                 "trend": trend,

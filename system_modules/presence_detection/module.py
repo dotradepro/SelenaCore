@@ -185,43 +185,71 @@ class PresenceDetectionModule(SystemModule):
             total = int(status.get("users_total", 0))
 
             if total == 0:
-                summary = {"tone": "neutral", "text": "No users", "icon": "user"}
+                summary = {
+                    "tone": "neutral", "text": "No users",
+                    "text_key": "widgets.presenceDetection.summaryNoUsers",
+                    "icon": "user",
+                }
             elif home == 0:
-                summary = {"tone": "warn", "text": "All away", "icon": "user-x"}
+                summary = {
+                    "tone": "warn", "text": "All away",
+                    "text_key": "widgets.presenceDetection.summaryAllAway",
+                    "icon": "user-x",
+                }
             elif away == 0:
-                summary = {"tone": "ok", "text": "All home", "icon": "user-check"}
+                summary = {
+                    "tone": "ok", "text": "All home",
+                    "text_key": "widgets.presenceDetection.summaryAllHome",
+                    "icon": "user-check",
+                }
             else:
-                summary = {"tone": "info", "text": f"{home}/{total} home", "icon": "home"}
+                summary = {
+                    "tone": "info", "text": f"{home}/{total} home",
+                    "text_key": "widgets.presenceDetection.summarySomeHome",
+                    "text_args": {"home": home, "total": total},
+                    "icon": "home",
+                }
 
-            def _last_seen(ts: float | None) -> str | None:
+            # Returns (raw English string, optional i18n key, optional args).
+            def _last_seen(ts: float | None) -> tuple[str | None, str | None, dict | None]:
                 if ts is None:
-                    return None
+                    return (None, None, None)
                 import time
                 age = max(0, int(time.time() - ts))
                 if age < 60:
-                    return "just now"
+                    return ("just now", "widgets.presenceDetection.lastSeenJustNow", None)
                 if age < 3600:
-                    return f"{age // 60}m ago"
+                    mins = age // 60
+                    return (f"{mins}m ago", "widgets.presenceDetection.lastSeenMinutes", {"count": mins})
                 if age < 86400:
-                    return f"{age // 3600}h ago"
-                return f"{age // 86400}d ago"
+                    hrs = age // 3600
+                    return (f"{hrs}h ago", "widgets.presenceDetection.lastSeenHours", {"count": hrs})
+                days = age // 86400
+                return (f"{days}d ago", "widgets.presenceDetection.lastSeenDays", {"count": days})
 
             users_payload = []
             for u in users:
                 state = u.get("state", "unknown")
                 if state not in {"home", "away"}:
                     state = "unknown"
-                users_payload.append({
+                ls_text, ls_key, ls_args = _last_seen(u.get("last_seen"))
+                user_entry: dict = {
                     "id": u.get("user_id"),
                     "name": u.get("name") or "—",
                     "state": state,
-                    "last_seen": _last_seen(u.get("last_seen")),
-                })
+                    "last_seen": ls_text,
+                }
+                if ls_key:
+                    user_entry["last_seen_key"] = ls_key
+                if ls_args:
+                    user_entry["last_seen_args"] = ls_args
+                users_payload.append(user_entry)
 
             return {
                 "summary": summary,
                 "users": users_payload,
                 "empty_text": "No users registered",
+                "empty_text_key": "widgets.presenceDetection.emptyText",
             }
 
         @router.get("/users")

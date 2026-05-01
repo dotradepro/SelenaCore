@@ -1,4 +1,5 @@
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { StatusSkeleton } from './Skeleton';
 import Icon from './Icon';
@@ -6,16 +7,29 @@ import Pill from './blocks/Pill';
 import CardRow, { type CardSpec } from './blocks/CardRow';
 import IconStrip, { type IconStripItem } from './blocks/IconStrip';
 import ActionButton, { type ActionSpec } from './blocks/ActionButton';
+import { resolveLabel } from './i18n';
 import type { TemplateProps } from './registry';
 
 export interface StatusPayload {
+  /** Raw English label, kept as fallback when `label_key` is missing. */
   label: string;
+  label_key?: string;
   pill: {
     tone: 'ok' | 'info' | 'warn' | 'alert' | 'neutral';
+    /** Raw English pill text, fallback when `text_key` is missing. */
     text: string;
+    text_key?: string;
+    text_args?: Record<string, string | number>;
     icon?: string;
   };
-  rows?: { label: string; value: string; icon?: string }[];
+  rows?: {
+    label: string;
+    label_key?: string;
+    value: string;
+    value_key?: string;
+    value_args?: Record<string, string | number>;
+    icon?: string;
+  }[];
   cards?: CardSpec[];
   strip?: IconStripItem[];
   actions?: ActionSpec[];
@@ -30,6 +44,7 @@ const TONE_TINT: Record<StatusPayload['pill']['tone'], string> = {
 };
 
 export default function StatusTemplate({ mod }: TemplateProps) {
+  const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<StatusPayload>({
     module: mod.name,
@@ -41,6 +56,9 @@ export default function StatusTemplate({ mod }: TemplateProps) {
   if (loading && !data) return <StatusSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data) return <StatusSkeleton />;
+
+  const label = resolveLabel(t, data.label, data.label_key);
+  const pillText = resolveLabel(t, data.pill.text, data.pill.text_key, data.pill.text_args);
 
   return (
     <motion.div
@@ -70,7 +88,7 @@ export default function StatusTemplate({ mod }: TemplateProps) {
           textTransform: 'uppercase',
           letterSpacing: '.08em',
         }}>
-          {data.label}
+          {label}
         </div>
         {data.actions && data.actions.length > 0 && (
           <div style={{ display: 'flex', gap: 4 }}>
@@ -83,7 +101,7 @@ export default function StatusTemplate({ mod }: TemplateProps) {
 
       <Pill
         tone={data.pill.tone}
-        text={data.pill.text}
+        text={pillText}
         icon={data.pill.icon}
         emphasis
         style={{ alignSelf: 'flex-start' }}
@@ -110,10 +128,10 @@ export default function StatusTemplate({ mod }: TemplateProps) {
                 gap: 5,
               }}>
                 {r.icon && <Icon name={r.icon} size={11} />}
-                {r.label}
+                {resolveLabel(t, r.label, r.label_key)}
               </span>
               <span style={{ color: 'var(--tx)', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
-                {r.value}
+                {resolveLabel(t, r.value, r.value_key, r.value_args)}
               </span>
             </div>
           ))}

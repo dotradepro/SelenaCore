@@ -2966,22 +2966,79 @@ class VoiceCoreModule(SystemModule):
             stt_lang = svc._config.get("stt_lang") or "—"
 
             if privacy:
-                pill = {"tone": "neutral", "text": "Privacy on", "icon": "shield"}
+                pill = {
+                    "tone": "neutral", "text": "Privacy on",
+                    "text_key": "widgets.voiceCore.pillPrivacyOn",
+                    "icon": "shield",
+                }
             elif state == "listening":
-                pill = {"tone": "info", "text": "Listening", "icon": "mic"}
+                pill = {
+                    "tone": "info", "text": "Listening",
+                    "text_key": "widgets.voiceCore.pillListening",
+                    "icon": "mic",
+                }
             elif state == "speaking":
-                pill = {"tone": "info", "text": "Speaking", "icon": "volume-2"}
+                pill = {
+                    "tone": "info", "text": "Speaking",
+                    "text_key": "widgets.voiceCore.pillSpeaking",
+                    "icon": "volume-2",
+                }
             elif state == "error":
-                pill = {"tone": "alert", "text": "Error", "icon": "alert-triangle"}
+                pill = {
+                    "tone": "alert", "text": "Error",
+                    "text_key": "widgets.voiceCore.pillError",
+                    "icon": "alert-triangle",
+                }
             else:
-                pill = {"tone": "ok", "text": "Ready", "icon": "check-circle"}
+                pill = {
+                    "tone": "ok", "text": "Ready",
+                    "text_key": "widgets.voiceCore.pillReady",
+                    "icon": "check-circle",
+                }
 
+            # Wake word value: literal "always-on" needs i18n; the actual word
+            # (e.g. "selena") is data and stays raw.
+            if wake_enabled:
+                wake_value = str(wake_word)
+                wake_value_key: str | None = None
+            else:
+                wake_value = "always-on"
+                wake_value_key = "widgets.voiceCore.alwaysOn"
+            wake_row: dict[str, Any] = {
+                "label": "Wake word",
+                "label_key": "widgets.voiceCore.rowWakeWord",
+                "value": wake_value,
+                "icon": "sparkles",
+            }
+            if wake_value_key:
+                wake_row["value_key"] = wake_value_key
+
+            privacy_value = "on" if privacy else "off"
+            privacy_value_key = (
+                "widgets.voiceCore.privacyOn" if privacy else "widgets.voiceCore.privacyOff"
+            )
             rows = [
-                {"label": "Wake word", "value": str(wake_word) if wake_enabled else "always-on", "icon": "sparkles"},
-                {"label": "STT lang", "value": str(stt_lang), "icon": "globe"},
-                {"label": "Privacy", "value": "on" if privacy else "off", "icon": "shield"},
+                wake_row,
+                {
+                    "label": "STT lang",
+                    "label_key": "widgets.voiceCore.rowSttLang",
+                    "value": str(stt_lang),
+                    "icon": "globe",
+                },
+                {
+                    "label": "Privacy",
+                    "label_key": "widgets.voiceCore.rowPrivacy",
+                    "value": privacy_value,
+                    "value_key": privacy_value_key,
+                    "icon": "shield",
+                },
             ]
-            return {"label": "Voice", "pill": pill, "rows": rows[:4]}
+            return {
+                "label": "Voice",
+                "label_key": "widgets.voiceCore.label",
+                "pill": pill,
+                "rows": rows[:4],
+            }
 
         svc._register_html_routes(router, __file__)
 

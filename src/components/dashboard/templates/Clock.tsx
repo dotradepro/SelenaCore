@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { GenericSkeleton } from './Skeleton';
 import type { TemplateProps } from './registry';
@@ -68,6 +69,7 @@ function ampm(h: number): string {
 }
 
 export default function ClockTemplate({ mod }: TemplateProps) {
+  const { t: tr } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<ClockPayload>({
     module: mod.name,
@@ -126,7 +128,7 @@ export default function ClockTemplate({ mod }: TemplateProps) {
           : <DigitalClock h={parts.hour} m={parts.minute} s={parts.second} format={data.format} />}
       </div>
 
-      <Chips data={data} />
+      <Chips data={data} tr={tr} />
     </motion.div>
   );
 }
@@ -206,22 +208,29 @@ function Hand({ cx, cy, angle, length, width, color }: {
   );
 }
 
-function Chips({ data }: { data: ClockPayload }) {
+function Chips({
+  data, tr,
+}: {
+  data: ClockPayload;
+  tr: (key: string, opts?: Record<string, unknown>) => string;
+}) {
   const chips: { key: string; text: string; tone: 'alert' | 'info' | 'neutral'; title?: string }[] = [];
   if (data.ringing_alarms_count > 0) {
-    chips.push({
-      key: 'ringing',
-      text: `🔔 Ringing${data.ringing_alarms_count > 1 ? ` (${data.ringing_alarms_count})` : ''}`,
-      tone: 'alert',
-    });
+    const ringingText = data.ringing_alarms_count > 1
+      ? tr('widgets.clock.chipRingingMany', {
+          count: data.ringing_alarms_count,
+          defaultValue: `🔔 Ringing (${data.ringing_alarms_count})`,
+        })
+      : tr('widgets.clock.chipRinging', { defaultValue: '🔔 Ringing' });
+    chips.push({ key: 'ringing', text: ringingText, tone: 'alert' });
   }
   if (data.next_alarm) {
-    const t = formatHM(data.next_alarm.hour, data.next_alarm.minute, data.format);
+    const at = formatHM(data.next_alarm.hour, data.next_alarm.minute, data.format);
     chips.push({
       key: 'alarm',
-      text: `⏰ ${t}`,
+      text: `⏰ ${at}`,
       tone: 'info',
-      title: data.next_alarm.label || 'Next alarm',
+      title: data.next_alarm.label || tr('widgets.clock.nextAlarm', { defaultValue: 'Next alarm' }),
     });
   }
   if (data.active_timers_count > 0) {
