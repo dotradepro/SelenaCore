@@ -95,9 +95,13 @@ If the scenes API returns no scenes (fresh install), the row is hidden entirely.
 
 ### 2.4 Room tabs
 
-Horizontal scrolling room filter. Tabs derived at runtime from the `room` field of registered devices and modules. First tab is always "All", last tab is always "System" (modules with `room: "system"` — `cloud-sync`, `integrity`, `device-watchdog` — diagnostic surfaces for the homeowner without exposing them to guests).
+Horizontal scrolling room filter. Tabs derived at runtime from the union of `module.room` (manifest) ∪ `device.location` (per-device tag), so user-tagged rooms (Living, Kitchen, Bedroom) appear even when no module declares them. First tab is always "All", last tab is always "System" (modules with `room: "system"` — `device-watchdog`, `update-manager`, `protocol-bridge`, `voice-core`, etc. — diagnostic surfaces for the homeowner without exposing them to guests).
+
+A module is visible under room R if either its `module.room === R` **or** at least one of its devices (`device.module_id === module.name`) has `location === R`. Widgets that surface device-bound items (currently `toggle-list`) further scope their visible items to the active room — items without a `location` field always render (back-compat for modules that don't yet emit it).
 
 Tab state in client `useState` only — does not persist across reloads. Opening the dashboard always starts on "All". Matches the smart-home mental model: a surface for the current moment, not for resuming.
+
+> **Naming note:** `Module.room` and `Device.location` mean the same thing semantically (the room name). They have different field names because `device.location` is reused by the voice-intent backend (`device-control`'s regex builders, `IntentRouter` keyword filter). Renaming to a single field would ripple through too much. The dashboard treats them as one set; both can carry localized strings or canonical English.
 
 ### 2.5 Fixed 5×4 grid
 
@@ -248,6 +252,8 @@ Named toggleables with on/off state and optional secondary metric. **Sizes:** `2
 
 **Optional Phase 6 fields:** `items[].icon` — per-item glyph. `lights-switches` maps `entity_type → icon`: light → `lightbulb`, switch → `power`, outlet → `zap`. Inactive items render the icon dimmed; active items render in accent colour.
 
+**Optional Phase 3-room field (added):** `items[].location?: string | null` — room/location tag. When the dashboard's active room tab is something other than "All"/"System", the template filters items down to those whose `location` matches the active room. Items with `location === null` (or absent) always pass through; this preserves back-compat for modules that haven't been updated to emit it. Both `lights-switches` and `device-control` emit this field today.
+
 #### 3.3.4 `control-panel`
 
 Primary value, segmented mode selector, optional stepper row. **Sizes:** `4x2` (preferred), never smaller than `2x2`.
@@ -281,11 +287,11 @@ Health pill on top, then 1–4 key-value rows. **Sizes:** `2x1`, `2x2` (preferre
 
 ```json
 {
-    "label": "Cloud sync",
-    "pill": {"tone": "ok", "text": "Synced", "icon": "check"},
+    "label": "Updates",
+    "pill": {"tone": "ok", "text": "Up to date", "icon": "check"},
     "rows": [
-        {"label": "Heartbeat", "value": "18s ago"},
-        {"label": "Backoff",   "value": "5s"}
+        {"label": "Last check", "value": "2h ago"},
+        {"label": "Channel",    "value": "stable"}
     ]
 }
 ```
@@ -445,6 +451,44 @@ Reusable React components in [`templates/blocks/`](../src/components/dashboard/t
 
 `PillTone`, `IconStripItem`, `CardSpec`, `ActionSpec` are exported types — see file headers for the precise interfaces.
 
+### 3.9 i18n payload convention
+
+Every payload field that surfaces user-visible text comes in two parts:
+
+- **Raw field** (e.g. `label`, `pill.text`, `summary`, `rows[].label`) — English string the backend has always emitted. SDK clients that ignore i18n still render it.
+- **Companion key field** (`label_key`, `pill.text_key`, `summary_key`, …) — translation key under the convention `widgets.<moduleCamel>.<slot>`. When present, the dashboard's i18next instance resolves it; when absent, the raw value renders.
+- **Optional args** (`label_args`, `summary_args`, `pill.text_args`, …) — interpolation params for `{{name}}` placeholders inside the translated string.
+
+The frontend resolution rule lives in [`templates/i18n.ts`](../src/components/dashboard/templates/i18n.ts) as `resolveLabel(t, raw, key?, args?)`. All five generic templates and the four specialized templates use it; module authors should keep the same shape on new payload fields.
+
+```python
+# Backend module — emit both raw and key:
+return {
+    "label": "Devices",
+    "label_key": "widgets.deviceControl.label",
+    "summary": f"{on} of {total} on",
+    "summary_key": "widgets.deviceControl.summarySomeOn",
+    "summary_args": {"on": on, "total": total},
+    "items": [...],
+}
+```
+
+```ts
+// Frontend template — resolve via the helper:
+const label = resolveLabel(t, data.label, data.label_key);
+const summary = resolveLabel(t, rawSummary, data.summary_key, data.summary_args);
+```
+
+Translation strings live in [`src/i18n/locales/en.ts`](../src/i18n/locales/en.ts) and [`src/i18n/locales/uk.ts`](../src/i18n/locales/uk.ts) under the `widgets` namespace. As of phase-3-tail, all 14 widgets in the tree emit i18n keys (lights-switches, device-control, device-watchdog, automation-engine, satellite-manager, energy-monitor, notification-router, update-manager, protocol-bridge, climate, voice-core, backup-manager, weather-service, presence-detection; clock handles its labels client-side).
+
+### 3.10 Backend widget helpers
+
+Cross-module utilities for widget endpoints live in [`core/api/widget_helpers.py`](../core/api/widget_helpers.py):
+
+- `entity_icon(entity_type)` — `entity_type → lucide-style icon name` mapping shared by every toggle-list emitter. Adding a new entity type means updating this table.
+- `coerce_onoff_state(state)` — return `"on"` / `"off"` / `"unknown"` from a heterogeneous state dict (handles boolean `on` flag and string `power` field). Used by `device-control` widget so read-only sensors render gracefully (greyed out, toggle disabled).
+- `LIGHTS_SWITCHES_ENTITY_TYPES` — frozen set of entity types claimed by the lights-switches widget; the device-control widget excludes these to avoid duplicates when both are pinned.
+
 ---
 
 ## 4. Native vs iframe — decision matrix
@@ -493,7 +537,7 @@ Isolation matters only for **untrusted third-party code**. Templates accept JSON
 
 ### 5.3 Phase 2 — template engine + 2 templates (5–7 days)
 
-- `WidgetEngine.tsx`, `templates/Skeleton.tsx`, `templates/registry.ts`.
+- `WidgetFrame.tsx` (initially planned as `WidgetEngine.tsx` — renamed during implementation), `templates/Skeleton.tsx`, `templates/registry.ts`.
 - Templates: `Metric`, `ToggleList`.
 - Full `core/api/routes/module_data.py` (Module Bus dispatch, TTL cache, 800 ms timeout, stale-while-revalidate).
 - `useWidgetData()` hook — fetch + EventBus subscribe + poll fallback.
@@ -501,9 +545,17 @@ Isolation matters only for **untrusted third-party code**. Templates accept JSON
 
 **Exit criterion:** two real modules render via templates; bento contains template + iframe mix.
 
-### 5.4 Phase 3 — remaining templates + 4 modules (5–7 days)
+### 5.4 Phase 3 — remaining templates + module migrations (5–7 days)
 
-`Sparkline`, `ControlPanel`, `Status` + migrate `energy-monitor`, `climate`, `cloud-sync`, `integrity-agent`. Pydantic enforces `size` against `template`.
+`Sparkline`, `ControlPanel`, `Status` + migrate `energy-monitor` → `sparkline`, `climate` → `control-panel`. Pydantic enforces `size` against `template`.
+
+`cloud-sync` and `integrity-agent` were originally listed here but are not standalone system modules: cloud sync is an internal subsystem under `core/cloud_sync/`, and integrity is an aggregated value. Both are exposed as `health.cloud` / `health.integrity` on `/api/ui/system` and consumed directly by the Hero status pill — no dedicated widgets. The `status` template was instead populated in Phase 5/6 by `notification-router`, `protocol-bridge`, `voice-core`, and `update-manager`.
+
+**Phase 3 device-aware filtering (added later):**
+- [`RoomTabs.tsx`](../src/components/dashboard/RoomTabs.tsx) — `deriveRooms(modules, devices)` returns the union of `module.room` ∪ `device.location`; `moduleMatchesRoom(mod, room, devices)` matches a module either by its own room or by ownership of at least one device tagged with that location.
+- [`ToggleList.tsx`](../src/components/dashboard/templates/ToggleList.tsx) — items can carry a `location` field; the template filters by the active room when one is selected (`__all__` and `system` mean "no filter").
+- [`device-control/manifest.json`](../system_modules/device_control/manifest.json) — added a `toggle-list` widget showing every writable device the module owns **except** those covered by `lights-switches` (`light` / `switch` / `outlet`), so pinning both widgets doesn't duplicate items. Read-only / non-on-off devices render with `state: "unknown"` (toggle disabled).
+- [`lights-switches/routes.py`](../system_modules/lights_switches/routes.py) — `widget_state` now emits per-item `location`.
 
 ### 5.5 Phase 4 — custom-widget polish (3–4 days)
 

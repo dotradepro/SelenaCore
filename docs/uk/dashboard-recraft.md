@@ -73,7 +73,7 @@
 
 #### 2.2.1 Стани status pill
 
-Status pill — найважливіший індикатор на панелі. Це місце для існуючого здоров'я `IntegrityAgent`, подій `module.error` та банера SAFE MODE. Pill має чотири стани:
+Status pill — найважливіший індикатор на панелі. Агрегує `health.integrity` з `/api/ui/system`, події `module.error` та банер SAFE MODE. Pill має чотири стани:
 
 | Стан       | Колір          | Текст                                       | Тригер                                          |
 |------------|----------------|---------------------------------------------|-------------------------------------------------|
@@ -97,9 +97,13 @@ Pill не клікабельний у стані OK і веде на `/settings/
 
 ### 2.4 Вкладки кімнат
 
-Горизонтальний ряд фільтрів кімнат зі скролом при overflow. Вкладки виводяться під час виконання з полів `room` зареєстрованих пристроїв та модулів. Перша вкладка завжди «Усі», остання завжди «Система» (показує лише модулі з `room: "system"` — `cloud-sync`, `integrity`, `device-watchdog` тощо для діагностичних потреб господаря дому без винесення цього на гостей).
+Горизонтальний ряд фільтрів кімнат зі скролом при overflow. Вкладки виводяться під час виконання з об'єднання `module.room` (маніфест) ∪ `device.location` (тег пристрою), тож кімнати, які користувач задав на пристроях (Вітальня, Кухня, Спальня), з'являються навіть коли жодний модуль їх не декларує. Перша вкладка завжди «Усі», остання завжди «Система» (показує лише модулі з `room: "system"` — `device-watchdog`, `update-manager`, `protocol-bridge`, `voice-core` тощо для діагностичних потреб господаря дому без винесення цього на гостей).
+
+Модуль видно під вкладкою R, якщо або його `module.room === R`, **або** хоча б один його пристрій (`device.module_id === module.name`) має `location === R`. Шаблони, що рендерять device-bound items (наразі `toggle-list`), додатково скоупують свої елементи до активної кімнати — items без поля `location` рендеряться завжди (зворотна сумісність для модулів, які ще не емітять його).
 
 Стан вкладки зберігається у клієнтському `useState`. Він не персистує між перезавантаженнями — відкриття панелі завжди починається на «Усі». Це збігається з ментальною моделлю розумного дому: поверхня для поточного моменту, а не для продовження з місця.
+
+> **Замітка про іменування:** `Module.room` і `Device.location` означають одне й те саме (назва кімнати). Поля називаються по-різному, бо `device.location` уже використовується voice-intent бекендом (regex-білдери `device-control`, keyword-фільтр `IntentRouter`). Перейменування одного поля в інше зачепило б забагато коду. Дашборд трактує їх як один набір; обидва можуть нести локалізовані рядки або канонічну англійську.
 
 ### 2.5 Фіксована сітка 5×4
 
@@ -250,6 +254,8 @@ Pydantic-схема: [`core/module_loader/manifest_schema.py`](../../core/module
 
 **Опціональні поля Phase 6:** `items[].icon` — glyph per item. `lights-switches` мапить `entity_type → icon`: light → `lightbulb`, switch → `power`, outlet → `zap`. Неактивні items render-ять icon dim, активні — у accent-кольорі.
 
+**Опціональне поле Phase 3-room (додано):** `items[].location?: string | null` — тег кімнати. Коли активна вкладка не «Усі»/«Система», шаблон фільтрує items до тих, чий `location` відповідає активній кімнаті. Items з `location === null` (або без поля) рендеряться завжди — це зберігає сумісність з модулями, які ще не оновили payload. На сьогодні поле емітять `lights-switches` та `device-control`.
+
 #### 3.3.4 `control-panel`
 
 Основне значення, сегментований селектор режимів, опціональний ряд step-контролів. **Розміри:** `4x2` (бажано), ніколи менше за `2x2`.
@@ -283,11 +289,11 @@ Pill здоров'я зверху, далі 1–4 рядки key-value. **Роз
 
 ```json
 {
-    "label": "Cloud sync",
-    "pill": {"tone": "ok", "text": "Синхронізовано", "icon": "check"},
+    "label": "Оновлення",
+    "pill": {"tone": "ok", "text": "Актуальна версія", "icon": "check"},
     "rows": [
-        {"label": "Heartbeat", "value": "18s ago"},
-        {"label": "Backoff",   "value": "5s"}
+        {"label": "Остання перевірка", "value": "2г тому"},
+        {"label": "Канал",             "value": "stable"}
     ]
 }
 ```
@@ -447,6 +453,44 @@ Reusable React-компоненти у [`templates/blocks/`](../../src/component
 
 `PillTone`, `IconStripItem`, `CardSpec`, `ActionSpec` — експортовані типи, точні інтерфейси у файлових заголовках.
 
+### 3.9 Конвенція i18n у payload
+
+Кожне поле, що містить видимий користувачеві текст, постачається у двох частинах:
+
+- **Сире поле** (наприклад `label`, `pill.text`, `summary`, `rows[].label`) — англійська строка, яку бекенд завжди емітив. SDK-клієнти без i18n рендерять її.
+- **Парний key-поле** (`label_key`, `pill.text_key`, `summary_key`, ...) — ключ перекладу у конвенції `widgets.<moduleCamel>.<slot>`. Коли є — i18next інстанс резолвить; коли немає — рендериться сире.
+- **Необов'язкові args** (`label_args`, `summary_args`, `pill.text_args`, ...) — параметри інтерполяції для placeholder'ів `{{name}}` у перекладеній строці.
+
+Frontend-правило резолву живе у [`templates/i18n.ts`](../../src/components/dashboard/templates/i18n.ts) як `resolveLabel(t, raw, key?, args?)`. Усі п'ять generic-шаблонів і чотири спеціалізовані використовують його; module-автори мають дотримуватися тієї ж форми на нових payload-полях.
+
+```python
+# Бекенд-модуль — емітить і сире, і ключ:
+return {
+    "label": "Devices",
+    "label_key": "widgets.deviceControl.label",
+    "summary": f"{on} of {total} on",
+    "summary_key": "widgets.deviceControl.summarySomeOn",
+    "summary_args": {"on": on, "total": total},
+    "items": [...],
+}
+```
+
+```ts
+// Frontend-шаблон — резолвить через хелпер:
+const label = resolveLabel(t, data.label, data.label_key);
+const summary = resolveLabel(t, rawSummary, data.summary_key, data.summary_args);
+```
+
+Строки перекладу живуть у [`src/i18n/locales/en.ts`](../../src/i18n/locales/en.ts) та [`src/i18n/locales/uk.ts`](../../src/i18n/locales/uk.ts) під namespace `widgets`. Станом на phase-3-tail усі 14 віджетів дерева емітять i18n-ключі.
+
+### 3.10 Бекенд-хелпери віджетів
+
+Cross-module утиліти для widget-endpoint'ів живуть у [`core/api/widget_helpers.py`](../../core/api/widget_helpers.py):
+
+- `entity_icon(entity_type)` — мапа `entity_type → lucide-style icon name`, спільна для усіх toggle-list-емітерів. Додавання нового типу сутності означає оновлення цієї таблиці.
+- `coerce_onoff_state(state)` — повертає `"on"` / `"off"` / `"unknown"` з гетерогенного state-словника (обробляє і булевий `on`, і строковий `power`). Використовує `device-control` widget, щоб read-only сенсори рендерилися gracefully (приглушені, toggle вимкнено).
+- `LIGHTS_SWITCHES_ENTITY_TYPES` — заморожений набір entity-типів, що покриваються `lights-switches`; `device-control` widget виключає їх щоб уникнути дублювання при закріпленні обох.
+
 ---
 
 ## 4. Native vs iframe — матриця рішень
@@ -495,7 +539,7 @@ Reusable React-компоненти у [`templates/blocks/`](../../src/component
 
 ### 5.3 Фаза 2 — шаблонний движок + 2 шаблони (5–7 днів)
 
-- `WidgetEngine.tsx`, `templates/Skeleton.tsx`, `templates/registry.ts`.
+- `WidgetFrame.tsx` (планувався як `WidgetEngine.tsx` — перейменовано під час імплементації), `templates/Skeleton.tsx`, `templates/registry.ts`.
 - Шаблони: `Metric`, `ToggleList`.
 - Повна реалізація `core/api/routes/module_data.py` (Module Bus dispatch, TTL cache, 800 мс таймаут, stale-while-revalidate).
 - `useWidgetData()` хук — fetch + EventBus subscribe + poll fallback.
@@ -503,9 +547,17 @@ Reusable React-компоненти у [`templates/blocks/`](../../src/component
 
 **Критерій виходу:** два реальних модулі рендеряться через шаблони; bento-сітка містить мікс шаблонних та iframe-віджетів.
 
-### 5.4 Фаза 3 — решта шаблонів + 4 модулів (5–7 днів)
+### 5.4 Фаза 3 — решта шаблонів + міграція модулів (5–7 днів)
 
-`Sparkline`, `ControlPanel`, `Status` + міграція `energy-monitor`, `climate`, `cloud-sync`, `integrity-agent`. Pydantic валідує `size` проти `template`.
+`Sparkline`, `ControlPanel`, `Status` + міграція `energy-monitor` → `sparkline`, `climate` → `control-panel`. Pydantic валідує `size` проти `template`.
+
+`cloud-sync` та `integrity-agent` спочатку були в цьому списку, але вони не є окремими system-модулями: cloud sync — внутрішня підсистема під `core/cloud_sync/`, integrity — агрегований показник. Обидва експонуються як `health.cloud` / `health.integrity` на `/api/ui/system` і споживаються напряму status-pill'ом у Hero — окремих віджетів немає. Шаблон `status` натомість заповнили в Phase 5/6 модулі `notification-router`, `protocol-bridge`, `voice-core` та `update-manager`.
+
+**Device-aware фільтрація (додано пізніше):**
+- [`RoomTabs.tsx`](../../src/components/dashboard/RoomTabs.tsx) — `deriveRooms(modules, devices)` повертає об'єднання `module.room` ∪ `device.location`; `moduleMatchesRoom(mod, room, devices)` вважає модуль таким, що відповідає кімнаті, або через його власний `room`, або через володіння хоча б одним пристроєм з відповідним `location`.
+- [`ToggleList.tsx`](../../src/components/dashboard/templates/ToggleList.tsx) — items можуть мати поле `location`; шаблон фільтрує за активною кімнатою (sentinel'и `__all__` та `system` означають «без фільтра»).
+- [`device-control/manifest.json`](../../system_modules/device_control/manifest.json) — додано `toggle-list` віджет, що показує кожен writable пристрій модуля **окрім** тих, що покриває `lights-switches` (`light` / `switch` / `outlet`), щоб закріплення обох віджетів одночасно не давало дублікатів. Read-only / non-on-off пристрої рендеряться зі `state: "unknown"` (toggle вимкнено).
+- [`lights-switches/routes.py`](../../system_modules/lights_switches/routes.py) — `widget_state` тепер емітить `location` per item.
 
 ### 5.5 Фаза 4 — поліровка custom-віджетів (3–4 дні)
 
