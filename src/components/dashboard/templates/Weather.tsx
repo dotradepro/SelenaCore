@@ -175,11 +175,15 @@ export default function WeatherTemplate({ mod }: TemplateProps) {
       )}
 
       {data.forecast && data.forecast.length > 0 && (
+        // No `marginTop: 'auto'` — when the widget is taller than the
+        // content needs, leaving the forecast cards anchored to the
+        // bottom creates an ugly empty band above them. Letting the
+        // forecast flow right after the telemetry pills keeps the
+        // layout balanced at any size.
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${Math.min(3, data.forecast.length)}, minmax(0, 1fr))`,
           gap: 6,
-          marginTop: 'auto',
         }}>
           {data.forecast.slice(0, 3).map((f, i) => (
             <ForecastCard key={i} f={f} unitFallback={unit} t={t} />

@@ -397,7 +397,12 @@ body,
 
 .ws.edit-mode {
   cursor: grab;
-  animation: wobble .5s ease-in-out infinite alternate;
+  /* Wobble was too aggressive — ±0.8deg at 0.5s made the resize
+     handle in the bottom-right corner physically dance away from the
+     pointer, so users couldn't grab it reliably. Halved amplitude and
+     tripled duration so the affordance reads as "edit mode active"
+     without preventing precise corner pointer-targeting. */
+  animation: wobble 1.5s ease-in-out infinite alternate;
 }
 
 .ws.edit-mode:active {
@@ -422,11 +427,11 @@ body,
 
 @keyframes wobble {
   0% {
-    transform: rotate(-0.8deg);
+    transform: rotate(-0.3deg);
   }
 
   100% {
-    transform: rotate(0.8deg);
+    transform: rotate(0.3deg);
   }
 }
 
@@ -573,20 +578,23 @@ body,
   color: var(--rd);
 }
 
-/* ── Widget resize handle (bottom-right corner drag) ── */
+/* ── Widget resize handle (bottom-right corner drag) ──
+   Larger hit-target (28×28 vs the original 18×18) to be touch-friendly
+   on kiosk screens, and higher opacity in edit mode so users see where
+   to grab without hovering. The visible diagonal is unchanged. */
 .ws-resize-handle {
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 18px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
   cursor: nwse-resize;
   z-index: 20;
   display: none;
   border-radius: 0 0 var(--r) 0;
-  background: linear-gradient(135deg, transparent 50%, var(--ac) 50%);
-  opacity: 0.5;
-  transition: opacity .15s;
+  background: linear-gradient(135deg, transparent 60%, var(--ac) 60%);
+  opacity: 0.75;
+  transition: opacity .15s, transform .15s;
   touch-action: none;
 }
 
@@ -599,7 +607,8 @@ body,
 }
 
 .ws-resize-handle:hover {
-  opacity: 0.9;
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 /* ── Edit toggle ── */

@@ -19,6 +19,75 @@ from system_modules.energy_monitor.voice_handler import EnergyVoiceHandler
 logger = logging.getLogger(__name__)
 
 
+#: Per-entity-type fallback wattage used when a device has no real power
+#: meter and no ``meta.estimated_watts_on`` override. Tuned to be in the
+#: realistic neighbourhood for a typical residential install — light is
+#: an LED bulb estimate, switch covers small appliances, outlet covers
+#: medium ones, ac/climate is the largest. Treat as defensive defaults,
+#: not a measurement.
+_DEFAULT_WATTS_ON: dict[str, float] = {
+    "light": 10.0,
+    "switch": 50.0,
+    "outlet": 100.0,
+    "fan": 60.0,
+    "ac": 1500.0,
+    "climate": 1500.0,
+    "thermostat": 100.0,
+    "tv": 120.0,
+    "speaker": 25.0,
+    "media_player": 30.0,
+}
+
+
+async def _estimate_synthetic_load(svc: "EnergyMonitorModule") -> float:
+    """Sum estimated watts across registered devices that are currently ON.
+
+    Used as a fallback for the dashboard widget when no real metering
+    sources are configured — without it the widget shows 0W on every
+    fresh install, which the user can't distinguish from "everything is
+    off". Per-device override comes from ``device.meta.estimated_watts_on``;
+    falls back to the entity-type default in :data:`_DEFAULT_WATTS_ON`.
+    Read-only / unknown-state devices contribute zero.
+    """
+    import json as _json
+    from sqlalchemy import select
+    from core.registry.models import Device
+
+    total = 0.0
+    try:
+        async with svc._db_session() as session:
+            res = await session.execute(select(Device))
+            rows = list(res.scalars())
+    except Exception:
+        return 0.0
+
+    for d in rows:
+        if not bool(d.enabled):
+            continue
+        try:
+            state = _json.loads(d.state) if d.state else {}
+        except (ValueError, TypeError):
+            continue
+        is_on = bool(state.get("on")) or (
+            isinstance(state.get("power"), str)
+            and state["power"].lower() == "on"
+        )
+        if not is_on:
+            continue
+        try:
+            meta = _json.loads(d.meta) if d.meta else {}
+        except (ValueError, TypeError):
+            meta = {}
+        watts = meta.get("estimated_watts_on")
+        if watts is None:
+            watts = _DEFAULT_WATTS_ON.get((d.entity_type or "").lower(), 0.0)
+        try:
+            total += float(watts)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
 class ReadingRequest(BaseModel):
     device_id: str
     watts: float
@@ -378,6 +447,12 @@ class EnergyMonitorModule(SystemModule):
         # Returns whole-house power draw + a 12-bucket series of recent
         # device-level readings collapsed into per-minute totals so the line
         # has shape even when individual devices report sparsely.
+        #
+        # When no metering sources exist yet, we fall back to *synthetic*
+        # estimates: ON devices contribute ``meta.estimated_watts_on`` (or
+        # a per-entity-type default) so the widget shows non-zero numbers
+        # for an unconfigured install. Real power readings always win
+        # when present — the synthesised total is only used as a floor.
         @router.get("/widget/data/state")
         async def widget_state() -> dict:
             if svc._monitor is None:
@@ -385,6 +460,14 @@ class EnergyMonitorModule(SystemModule):
 
             current_total_w = svc._monitor.get_total_power()
             kwh_today = svc._monitor.get_total_today_kwh()
+            metered_devices = len(svc._monitor.get_all_devices())
+
+            # Synthetic estimate from ON devices when no real meter exists.
+            synthetic_w = 0.0
+            if metered_devices == 0:
+                synthetic_w = await _estimate_synthetic_load(svc)
+                if synthetic_w > 0:
+                    current_total_w = synthetic_w
 
             # Build a 12-point series — one bucket per 5-minute window over
             # the last hour. Aggregates per-device history into total watts.
@@ -440,21 +523,44 @@ class EnergyMonitorModule(SystemModule):
                     "tone": "info",
                 })
 
-            tone = "warn" if current_total_w > 3000 else "info"
-            return {
+            # Tone & footnote: differentiate "real meter active" from
+            # "synthetic estimate" from "no devices to estimate at all".
+            if metered_devices == 0 and synthetic_w == 0:
+                tone = "neutral"
+                footnote = "no metered devices"
+                footnote_key = "widgets.energyMonitor.footnoteNoMeters"
+                footnote_args: dict[str, Any] | None = None
+            elif metered_devices == 0:
+                tone = "info"
+                footnote = f"estimated · {kwh_today:.1f} kWh today"
+                footnote_key = "widgets.energyMonitor.footnoteEstimated"
+                footnote_args = {"kwh": f"{kwh_today:.1f}"}
+            else:
+                tone = "warn" if current_total_w > 3000 else "info"
+                footnote = f"today · {kwh_today:.1f} kWh"
+                footnote_key = "widgets.energyMonitor.footnoteToday"
+                footnote_args = {"kwh": f"{kwh_today:.1f}"}
+
+            out: dict[str, Any] = {
                 "label": "Energy",
                 "label_key": "widgets.energyMonitor.label",
-                "value": f"{current_total_w / 1000:.2f}" if current_total_w >= 1000 else f"{current_total_w:.0f}",
+                "value": (
+                    f"{current_total_w / 1000:.2f}"
+                    if current_total_w >= 1000
+                    else f"{current_total_w:.0f}"
+                ),
                 "unit": "kW" if current_total_w >= 1000 else "W",
-                "footnote": f"today · {kwh_today:.1f} kWh",
-                "footnote_key": "widgets.energyMonitor.footnoteToday",
-                "footnote_args": {"kwh": f"{kwh_today:.1f}"},
+                "footnote": footnote,
+                "footnote_key": footnote_key,
                 "series": [round(b, 2) for b in buckets],
                 "series_window_s": window_s,
                 "tone": tone,
                 "icon": "zap",
                 "breakdown": breakdown,
             }
+            if footnote_args:
+                out["footnote_args"] = footnote_args
+            return out
 
         svc._register_html_routes(router, __file__)
         return router

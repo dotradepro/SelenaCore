@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { useStore } from '../../../store/useStore';
 import Icon from './Icon';
@@ -40,6 +41,7 @@ const TRANSPORT: { id: string; emoji: string; primary?: boolean }[] = [
 
 export default function MediaTemplate({ mod }: TemplateProps) {
   const { t: tr } = useTranslation();
+  const navigate = useNavigate();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<MediaPayload>({
     module: mod.name,
@@ -200,7 +202,12 @@ export default function MediaTemplate({ mod }: TemplateProps) {
         })}
       </div>
 
-      {/* Volume */}
+      {/* Volume + Sources picker. Sources button restores the V1 widget's
+          ≡ overlay affordance — the V2 React template doesn't yet have an
+          inline picker, so a tap here jumps to the module's settings page
+          (which already hosts the radio library, favourites, USB/SMB
+          mounts). Cheap restore of the lost capability without rebuilding
+          the full overlay UI. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto' }}>
         <Icon name="volume-2" size={14} />
         <input
@@ -226,6 +233,26 @@ export default function MediaTemplate({ mod }: TemplateProps) {
         }}>
           {data.volume}%
         </span>
+        <button
+          onClick={() => navigate(`/modules/${mod.name}`)}
+          title={tr('widgets.mediaPlayer.sourcesTitle', { defaultValue: 'Browse sources' })}
+          aria-label={tr('widgets.mediaPlayer.sourcesTitle', { defaultValue: 'Browse sources' })}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 26, height: 22,
+            borderRadius: 6,
+            border: '1px solid var(--b)',
+            background: 'var(--sf)',
+            color: 'var(--tx2)',
+            cursor: 'pointer',
+            fontSize: 14,
+            lineHeight: 1,
+          }}
+        >
+          ≡
+        </button>
       </div>
     </motion.div>
   );
