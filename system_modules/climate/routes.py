@@ -55,6 +55,16 @@ class WidgetActionBody(BaseModel):
     device_id: str | None = None
 
 
+class WidgetSetStateBody(BaseModel):
+    """Body for ``POST /widget/action/set_state`` — accepts any subset
+    of the device's writable state keys (power on/off, fan_speed, swing,
+    sleep/turbo/quiet/eco/health/light flags, etc.). Validated against
+    :data:`ALLOWED_STATE_KEYS` so the widget can't push arbitrary keys
+    that the driver doesn't understand."""
+    patch: dict[str, Any]
+    device_id: str | None = None
+
+
 def build_router(svc: "ClimateModule") -> APIRouter:
     router = APIRouter()
 
@@ -120,6 +130,33 @@ def build_router(svc: "ClimateModule") -> APIRouter:
         {"id": "dry",  "label": "Dry",  "label_key": "widgets.climate.modeDry"},
     ]
 
+    # Fan-speed options match the canonical names accepted by the Gree
+    # / generic climate driver layer (see ``drivers/gree.py``). We
+    # collapse the 6-step Gree ladder (auto / low / medium_low / medium
+    # / medium_high / high) to a 4-step UI (auto / low / medium / high)
+    # — three buttons in the middle would be a usability mess on a
+    # narrow widget cell, and "medium_low" / "medium_high" are rarely
+    # the user's actual intent.
+    FAN_SPEED_OPTIONS = [
+        {"id": "auto",   "label": "Auto",   "label_key": "widgets.climate.fanAuto"},
+        {"id": "low",    "label": "Low",    "label_key": "widgets.climate.fanLow"},
+        {"id": "medium", "label": "Medium", "label_key": "widgets.climate.fanMed"},
+        {"id": "high",   "label": "High",   "label_key": "widgets.climate.fanHigh"},
+    ]
+
+    #: Boolean flags advertised by Gree-class climate devices. Each entry
+    #: is rendered as a toggle in the widget's "Modes" bank — only the
+    #: flags actually present in ``state`` show up, so unsupported drivers
+    #: get a smaller bank automatically.
+    CLIMATE_FLAGS = [
+        ("sleep",  "Sleep",  "widgets.climate.flagSleep"),
+        ("turbo",  "Turbo",  "widgets.climate.flagTurbo"),
+        ("quiet",  "Quiet",  "widgets.climate.flagQuiet"),
+        ("eco",    "Eco",    "widgets.climate.flagEco"),
+        ("health", "Health", "widgets.climate.flagHealth"),
+        ("light",  "Light",  "widgets.climate.flagLight"),
+    ]
+
     def _build_room_payload(device: dict[str, Any]) -> dict[str, Any]:
         """Build one ControlPanel-shaped payload for a single climate device."""
         state = device.get("state") or {}
@@ -136,11 +173,11 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             secondary_args = None
         location = device.get("location") or ""
 
+        # Read-only readouts only — fan_speed is now an editable selector
+        # below the mode buttons, so it no longer doubles as a pill.
         secondary_pills: list[dict[str, Any]] = []
         if (humidity := state.get("humidity")) is not None:
             secondary_pills.append({"icon": "droplets", "value": f"{int(humidity)}%"})
-        if (fan := state.get("fan_speed")) is not None:
-            secondary_pills.append({"icon": "wind", "value": str(fan).title()})
         if (watts := state.get("estimated_watts")) is not None and watts:
             secondary_pills.append({"icon": "zap", "value": f"{watts:.0f} W"})
 
@@ -162,11 +199,55 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             label_key = "widgets.climate.label"
             label_args = None
 
+        # Power toggle — separate from the mode bank because a device can
+        # be off while still tracking a heat/cool mode (it'll resume that
+        # mode when powered back on). The widget renders this as a
+        # prominent on/off toggle in the header.
+        power = {"on": bool(state.get("on"))}
+
+        # Fan-speed selector. Render as segmented control alongside modes
+        # when the driver advertises ``set_fan_speed``. Also gracefully
+        # handles drivers that report the value but don't expose write
+        # capability — frontend just doesn't fire the action. Drivers
+        # report ladder positions like "medium_low" / "medium_high" that
+        # we collapse onto the 4-step UI bucket so the segmented control
+        # always has an "active" highlight.
+        FAN_LADDER_TO_UI = {
+            "auto": "auto",
+            "low": "low",
+            "medium_low": "low",
+            "medium": "medium",
+            "medium_high": "high",
+            "high": "high",
+        }
+        fan_speed_block: dict[str, Any] | None = None
+        if (raw_fan := state.get("fan_speed")) is not None:
+            normalized = FAN_LADDER_TO_UI.get(str(raw_fan).lower(), "auto")
+            fan_speed_block = {
+                "current": normalized,
+                "options": FAN_SPEED_OPTIONS,
+            }
+
+        # Boolean climate flags. One toggle pill per flag the driver
+        # actually reports; absent flags are hidden, so a thermostat
+        # that only has sleep/eco gets a 2-pill bank instead of 6.
+        flags: list[dict[str, Any]] = []
+        for flag_id, raw_label, label_key in CLIMATE_FLAGS:
+            if flag_id not in state:
+                continue
+            flags.append({
+                "id": flag_id,
+                "label": raw_label,
+                "label_key": label_key,
+                "on": bool(state.get(flag_id)),
+            })
+
         room_payload: dict[str, Any] = {
             "device_id": device["device_id"],
             "room": location or None,
             "label": label,
             "label_key": label_key,
+            "power": power,
             "primary": primary,
             "modes": {
                 "current": mode if mode in {o["id"] for o in MODE_OPTIONS} else "auto",
@@ -184,6 +265,10 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             ] if isinstance(target, (int, float)) else [],
             "secondary_pills": secondary_pills,
         }
+        if fan_speed_block:
+            room_payload["fan_speed"] = fan_speed_block
+        if flags:
+            room_payload["flags"] = flags
         if label_args:
             room_payload["label_args"] = label_args
         return room_payload
@@ -263,5 +348,19 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             raise HTTPException(422, "Stepper id must be 'temp' with a numeric value")
         clamped = max(16.0, min(30.0, float(body.value)))
         return await _apply_to_device(body.device_id, {"target_temp": clamped})
+
+    @router.post("/widget/action/set_state")
+    async def widget_set_state(body: WidgetSetStateBody) -> dict[str, Any]:
+        """Generic state-patch action used by the widget for everything
+        that doesn't fit the mode/step contract: power on/off, fan speed,
+        boolean climate flags, swing direction. Validated against
+        :data:`ALLOWED_STATE_KEYS` so a malicious / buggy frontend can't
+        push keys the driver doesn't understand."""
+        if not body.patch:
+            raise HTTPException(422, "Empty state patch")
+        unknown = set(body.patch) - ALLOWED_STATE_KEYS
+        if unknown:
+            raise HTTPException(422, f"Unsupported state keys: {sorted(unknown)}")
+        return await _apply_to_device(body.device_id, body.patch)
 
     return router

@@ -22,6 +22,11 @@ export interface ControlPanelRoomPayload {
   label: string;
   label_key?: string;
   label_args?: Record<string, string | number>;
+  /** Optional power toggle. Renders as a prominent on/off button in
+   *  the header. Climate devices use this to expose the underlying
+   *  `state.on` flag separately from the heat/cool mode selector — a
+   *  device can be off while still tracking a mode it'll resume on. */
+  power?: { on: boolean };
   primary: {
     value: string;
     unit?: string;
@@ -30,6 +35,13 @@ export interface ControlPanelRoomPayload {
     secondary_args?: Record<string, string | number>;
   };
   modes?: {
+    current: string;
+    options: { id: string; label: string; label_key?: string }[];
+  };
+  /** Optional second segmented control (separate from `modes`). Climate
+   *  uses this for fan-speed (Auto/Low/Med/High); the data shape is
+   *  identical to `modes` so the same renderer handles both. */
+  fan_speed?: {
     current: string;
     options: { id: string; label: string; label_key?: string }[];
   };
@@ -42,6 +54,16 @@ export interface ControlPanelRoomPayload {
     min?: number;
     max?: number;
     step?: number;
+  }[];
+  /** Optional toggle bank rendered below the main controls. Each entry
+   *  is a labelled boolean; tapping flips it via `set_state` action.
+   *  Climate uses this for sleep/turbo/quiet/eco/health/light flags;
+   *  drivers that don't expose a flag simply omit it. */
+  flags?: {
+    id: string;
+    label: string;
+    label_key?: string;
+    on: boolean;
   }[];
   secondary_pills?: IconStripItem[];
 }
@@ -66,6 +88,9 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
 
   const [pendingMode, setPendingMode] = useState<string | null>(null);
   const [pendingStepper, setPendingStepper] = useState<string | null>(null);
+  const [pendingFan, setPendingFan] = useState<string | null>(null);
+  const [pendingPower, setPendingPower] = useState(false);
+  const [pendingFlag, setPendingFlag] = useState<string | null>(null);
   const [carouselIndex, setCarouselIndex] = useState(0);
 
   // Multi-room rooms list (or a single-element array for single-device installs).
@@ -134,6 +159,45 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
     }
   }
 
+  /** Generic state-patch action — used for power on/off, fan speed,
+   *  and boolean climate flags. Funnels through the climate widget's
+   *  ``set_state`` endpoint which validates the patch keys against an
+   *  allow-list before forwarding to the device driver. */
+  async function setState(patch: Record<string, unknown>): Promise<boolean> {
+    if (!current) return false;
+    const body: Record<string, unknown> = { patch };
+    if (current.device_id) body.device_id = current.device_id;
+    try {
+      const r = await fetch(`/api/v1/modules/${mod.name}/action/set_state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await refetch();
+      return true;
+    } catch {
+      useStore.getState().showToast('Action failed', 'error');
+      return false;
+    }
+  }
+
+  async function togglePower() {
+    if (pendingPower || !current?.power) return;
+    setPendingPower(true);
+    try { await setState({ on: !current.power.on }); } finally { setPendingPower(false); }
+  }
+  async function setFanSpeed(id: string) {
+    if (pendingFan) return;
+    setPendingFan(id);
+    try { await setState({ fan_speed: id }); } finally { setPendingFan(null); }
+  }
+  async function toggleFlag(flagId: string, currentValue: boolean) {
+    if (pendingFlag) return;
+    setPendingFlag(flagId);
+    try { await setState({ [flagId]: !currentValue }); } finally { setPendingFlag(null); }
+  }
+
   if (loading && !data) return <ControlPanelSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
   if (!data || !current) return <ControlPanelSkeleton />;
@@ -146,14 +210,27 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
     ...o,
     label: resolveLabel(t, o.label, o.label_key),
   }));
+  const fanOptions = current.fan_speed?.options.map((o) => ({
+    ...o,
+    label: resolveLabel(t, o.label, o.label_key),
+  }));
   const stepperSpecs = current.steppers?.map((s) => ({
     ...s,
     label: resolveLabel(t, s.label, s.label_key),
+  }));
+  const flagItems = current.flags?.map((f) => ({
+    ...f,
+    label: resolveLabel(t, f.label, f.label_key),
   }));
 
   const showCarousel = rooms.length > 1;
   const goPrev = () => setCarouselIndex((i) => (i - 1 + rooms.length) % rooms.length);
   const goNext = () => setCarouselIndex((i) => (i + 1) % rooms.length);
+  // When power is off, dim everything but the toggle so users see at a
+  // glance that the device isn't actively running. Doesn't disable
+  // controls — they may still want to set a target temp before flipping
+  // power on.
+  const isPoweredOff = current.power?.on === false;
 
   return (
     <motion.div
@@ -173,6 +250,10 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
           ◄ arrow / current room / ► arrow + dot indicator below. The
           dots are rendered inline rather than in a separate row to save
           vertical space; for >5 rooms they collapse to "n/N". */}
+      {/* Header — label + (when multi-room) carousel switcher + power
+          toggle. Power lives in the header rather than near the modes
+          because it's the most-tapped control and should be reachable
+          without scrolling on small widget cells. */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -206,9 +287,14 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
             <CarouselButton onClick={goNext} glyph="›" />
           </div>
         )}
+        {current.power && (
+          <PowerButton on={current.power.on} busy={pendingPower} onClick={togglePower} />
+        )}
       </div>
 
-      <div>
+      {/* Primary readout (current temp / current value) — dimmed when
+          the device is powered off, since the reading is stale. */}
+      <div style={{ opacity: isPoweredOff ? 0.55 : 1, transition: 'opacity .15s' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
           <span style={{
             fontSize: 38,
@@ -246,12 +332,22 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
         />
       )}
 
+      {/* Fan speed selector — same shape as modes, just routes to the
+          generic state-patch action instead of `set_mode`. */}
+      {current.fan_speed && fanOptions && fanOptions.length > 0 && (
+        <ModeRow
+          options={fanOptions}
+          current={current.fan_speed.current}
+          pending={pendingFan}
+          onSelect={setFanSpeed}
+        />
+      )}
+
       {stepperSpecs && stepperSpecs.length > 0 && (
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
-          marginTop: 'auto',
         }}>
           {stepperSpecs.map((s) => (
             <StepperRow
@@ -269,7 +365,106 @@ export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps)
           ))}
         </div>
       )}
+
+      {/* Climate flag bank — sleep / turbo / quiet / eco / health /
+          light. Rendered as a 2- or 3-column toggle grid depending on
+          available width; flag count typically 4–6 so the grid stays
+          balanced. */}
+      {flagItems && flagItems.length > 0 && (
+        <div style={{ marginTop: 'auto' }}>
+          <FlagBank
+            flags={flagItems}
+            pendingId={pendingFlag}
+            onToggle={(id, on) => toggleFlag(id, on)}
+          />
+        </div>
+      )}
     </motion.div>
+  );
+}
+
+/** Power on/off toggle in the widget header. Visually distinct from the
+ *  mode-segmented row because it's the master power switch — when it's
+ *  off, mode/temp settings are advisory only (the device resumes them
+ *  on power-on). Glow + accent fill in `on` state mirrors how lights
+ *  show themselves "active". */
+function PowerButton({
+  on, busy, onClick,
+}: { on: boolean; busy: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      type="button"
+      title={on ? 'Power off' : 'Power on'}
+      aria-label={on ? 'Power off' : 'Power on'}
+      style={{
+        width: 26, height: 26,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 999,
+        border: `1px solid ${on ? 'var(--ac)' : 'var(--b)'}`,
+        background: on ? 'var(--ac)' : 'var(--sf2)',
+        color: on ? 'var(--on-accent)' : 'var(--tx2)',
+        cursor: busy ? 'wait' : 'pointer',
+        opacity: busy ? 0.6 : 1,
+        fontSize: 13, lineHeight: 1, padding: 0,
+        boxShadow: on ? 'var(--widget-glow-on)' : 'none',
+        transition: 'background .15s, border-color .15s, box-shadow .15s',
+      }}
+    >
+      ⏻
+    </button>
+  );
+}
+
+/** Compact 2- or 3-column toggle grid for boolean device flags
+ *  (sleep / turbo / quiet / eco / health / light on Gree-class climate
+ *  units). Adapts column count to the number of flags so a 2-flag bank
+ *  doesn't render 4 awkward half-empty cells. */
+function FlagBank({
+  flags, pendingId, onToggle,
+}: {
+  flags: { id: string; label: string; on: boolean }[];
+  pendingId: string | null;
+  onToggle: (id: string, currentOn: boolean) => void;
+}) {
+  const cols = flags.length <= 3 ? flags.length : flags.length <= 4 ? 2 : 3;
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 4,
+    }}>
+      {flags.map((f) => {
+        const busy = pendingId === f.id;
+        return (
+          <button
+            key={f.id}
+            onClick={() => onToggle(f.id, f.on)}
+            disabled={busy}
+            type="button"
+            style={{
+              padding: '5px 8px',
+              borderRadius: 7,
+              fontSize: 10, fontWeight: 500,
+              background: f.on
+                ? 'color-mix(in srgb, var(--ac) 14%, var(--sf))'
+                : 'var(--sf)',
+              border: `1px solid ${f.on ? 'var(--ac)' : 'var(--b)'}`,
+              color: f.on ? 'var(--tx)' : 'var(--tx2)',
+              cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+              boxShadow: f.on ? 'var(--widget-glow-on)' : 'none',
+              transition: 'background .15s, border-color .15s, box-shadow .15s',
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {f.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

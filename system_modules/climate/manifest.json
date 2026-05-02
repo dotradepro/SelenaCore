@@ -27,7 +27,8 @@
             },
             "actions": {
                 "set_mode": {"path": "/widget/action/set_mode"},
-                "step": {"path": "/widget/action/step"}
+                "step": {"path": "/widget/action/step"},
+                "set_state": {"path": "/widget/action/set_state"}
             },
             "refresh": {
                 "events": ["device.state_changed"],
