@@ -44,9 +44,15 @@ class CommandBody(BaseModel):
 
 
 class WidgetActionBody(BaseModel):
-    """Body for ``POST /widget/action/{set_mode|step}`` (Dashboard V2)."""
+    """Body for ``POST /widget/action/{set_mode|step}`` (Dashboard V2).
+
+    ``device_id`` is the multi-room carousel hook: when the widget is
+    showing room N out of M, the action targets that room's device. Old
+    single-device clients omit it and fall back to the primary device.
+    """
     id: str
     value: float | None = None
+    device_id: str | None = None
 
 
 def build_router(svc: "ClimateModule") -> APIRouter:
@@ -100,10 +106,12 @@ def build_router(svc: "ClimateModule") -> APIRouter:
         return {"status": "ok", "state": new_state}
 
     # ── Dashboard V2 control-panel endpoint ─────────────────────────────────
-    # Renders the first climate device the registry returns. Multi-room
-    # composition (siblings array) is open question §1 of the recraft doc —
-    # we lean toward extending this payload with an optional `siblings` field
-    # in a later phase rather than spawning a per-room widget.
+    # Multi-room shape: when there are multiple climate devices, the
+    # response carries the alphabetically-first room as the top-level
+    # payload AND a `rooms: ControlPanelRoomPayload[]` array with every
+    # room (including primary) so the frontend ControlPanel template can
+    # render a carousel switcher. Single-device installs just get the
+    # one room directly with no `rooms` field.
 
     MODE_OPTIONS = [
         {"id": "auto", "label": "Auto", "label_key": "widgets.climate.modeAuto"},
@@ -112,24 +120,8 @@ def build_router(svc: "ClimateModule") -> APIRouter:
         {"id": "dry",  "label": "Dry",  "label_key": "widgets.climate.modeDry"},
     ]
 
-    def _primary_device(devices: list[dict[str, Any]]) -> dict[str, Any] | None:
-        if not devices:
-            return None
-        # Prefer an enabled, on-state device; otherwise first.
-        for d in devices:
-            if d.get("enabled") and (d.get("state") or {}).get("on"):
-                return d
-        for d in devices:
-            if d.get("enabled"):
-                return d
-        return devices[0]
-
-    @router.get("/widget/data/state")
-    async def widget_state() -> dict[str, Any]:
-        devices = await svc.list_climate_devices()
-        device = _primary_device(devices)
-        if device is None:
-            raise HTTPException(503, "No climate device available")
+    def _build_room_payload(device: dict[str, Any]) -> dict[str, Any]:
+        """Build one ControlPanel-shaped payload for a single climate device."""
         state = device.get("state") or {}
         target = state.get("target_temp")
         current = state.get("current_temp") or state.get("temperature") or target or 0
@@ -170,8 +162,9 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             label_key = "widgets.climate.label"
             label_args = None
 
-        out: dict[str, Any] = {
-            "_device_id": device["device_id"],  # echoed back in actions
+        room_payload: dict[str, Any] = {
+            "device_id": device["device_id"],
+            "room": location or None,
             "label": label,
             "label_key": label_key,
             "primary": primary,
@@ -192,34 +185,83 @@ def build_router(svc: "ClimateModule") -> APIRouter:
             "secondary_pills": secondary_pills,
         }
         if label_args:
-            out["label_args"] = label_args
-        return out
+            room_payload["label_args"] = label_args
+        return room_payload
 
-    async def _apply_to_primary(state_patch: dict[str, Any]) -> dict[str, Any]:
+    @router.get("/widget/data/state")
+    async def widget_state() -> dict[str, Any]:
         devices = await svc.list_climate_devices()
-        device = _primary_device(devices)
-        if device is None:
+        # Filter out disabled devices entirely — they can't be controlled.
+        active = [d for d in devices if d.get("enabled", True)]
+        if not active:
             raise HTTPException(503, "No climate device available")
+
+        # Sort by location (alphabetically), with no-location devices last.
+        # Primary (first slide of carousel, default for "All" tab) is the
+        # alphabetically-first room. User picked this rule explicitly.
+        sorted_devices = sorted(
+            active,
+            key=lambda d: ((d.get("location") or "￿").lower(), d.get("name", "")),
+        )
+
+        rooms = [_build_room_payload(d) for d in sorted_devices]
+        primary = dict(rooms[0])  # Top-level mirrors first room
+        if len(rooms) > 1:
+            # Carousel: emit `rooms` array so the frontend renders a switcher.
+            # The primary fields stay at top level for back-compat with any
+            # client that doesn't yet know about the carousel.
+            primary["rooms"] = rooms
+        # Echo legacy `_device_id` for any existing client that still reads it.
+        primary["_device_id"] = primary["device_id"]
+        return primary
+
+    async def _apply_to_device(
+        device_id: str | None, state_patch: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Apply ``state_patch`` to a specific device, or to the primary
+        when ``device_id`` is missing. The frontend carousel always sends
+        the active slide's ``device_id``; older single-device clients omit
+        it and fall through to the primary."""
+        devices = await svc.list_climate_devices()
+        active = [d for d in devices if d.get("enabled", True)]
+        if not active:
+            raise HTTPException(503, "No climate device available")
+
+        target_device: dict[str, Any] | None = None
+        if device_id:
+            for d in active:
+                if d.get("device_id") == device_id:
+                    target_device = d
+                    break
+            if target_device is None:
+                raise HTTPException(404, f"Device {device_id!r} not found")
+        else:
+            sorted_devs = sorted(
+                active,
+                key=lambda d: ((d.get("location") or "￿").lower(), d.get("name", "")),
+            )
+            target_device = sorted_devs[0]
+
         try:
-            new_state = await svc.apply_command(device["device_id"], state_patch)
+            new_state = await svc.apply_command(target_device["device_id"], state_patch)
         except RuntimeError as exc:
             raise HTTPException(503, str(exc))
         except Exception as exc:
             logger.warning("climate widget command failed: %s", exc)
             raise HTTPException(502, f"Command failed: {exc}")
-        return {"status": "ok", "device_id": device["device_id"], "state": new_state}
+        return {"status": "ok", "device_id": target_device["device_id"], "state": new_state}
 
     @router.post("/widget/action/set_mode")
     async def widget_set_mode(body: WidgetActionBody) -> dict[str, Any]:
         if body.id not in {o["id"] for o in MODE_OPTIONS}:
             raise HTTPException(422, f"Unknown mode {body.id!r}")
-        return await _apply_to_primary({"mode": body.id})
+        return await _apply_to_device(body.device_id, {"mode": body.id})
 
     @router.post("/widget/action/step")
     async def widget_step(body: WidgetActionBody) -> dict[str, Any]:
         if body.id != "temp" or body.value is None:
             raise HTTPException(422, "Stepper id must be 'temp' with a numeric value")
         clamped = max(16.0, min(30.0, float(body.value)))
-        return await _apply_to_primary({"target_temp": clamped})
+        return await _apply_to_device(body.device_id, {"target_temp": clamped})
 
     return router

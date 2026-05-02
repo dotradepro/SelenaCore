@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
@@ -6,18 +6,25 @@ import { ControlPanelSkeleton } from './Skeleton';
 import { useStore } from '../../../store/useStore';
 import IconStrip, { type IconStripItem } from './blocks/IconStrip';
 import { resolveLabel } from './i18n';
+import { ALL_ROOM, SYSTEM_ROOM } from '../RoomTabs';
 import type { TemplateProps } from './registry';
 
-export interface ControlPanelPayload {
-  /** Raw English label, kept as fallback when `label_key` is missing. */
+/** One ControlPanel payload — either standalone (single-device install)
+ *  or one slide of the multi-room carousel. The shape is identical so a
+ *  single renderer handles both modes. */
+export interface ControlPanelRoomPayload {
+  /** Backend device id — echoed back in action bodies so multi-device
+   *  installs target the right device. Older single-device payloads
+   *  omit this; actions then fall through to the backend's primary. */
+  device_id?: string;
+  /** Room/location of this slide (drives the active-room→slide jump). */
+  room?: string | null;
   label: string;
   label_key?: string;
-  /** Optional interpolation params for `label_key` (e.g. `{location: 'Living'}`). */
   label_args?: Record<string, string | number>;
   primary: {
     value: string;
     unit?: string;
-    /** Raw English secondary line (e.g. "→ set 23.0°"); fallback for secondary_key. */
     secondary?: string;
     secondary_key?: string;
     secondary_args?: Record<string, string | number>;
@@ -39,7 +46,15 @@ export interface ControlPanelPayload {
   secondary_pills?: IconStripItem[];
 }
 
-export default function ControlPanelTemplate({ mod }: TemplateProps) {
+/** Top-level payload — extends the single-room shape with an optional
+ *  `rooms` array. Backends with one device emit just the primary fields;
+ *  multi-device installs additionally include `rooms: [...]` so the
+ *  template renders a carousel switcher. */
+export interface ControlPanelPayload extends ControlPanelRoomPayload {
+  rooms?: ControlPanelRoomPayload[];
+}
+
+export default function ControlPanelTemplate({ mod, activeRoom }: TemplateProps) {
   const { t } = useTranslation();
   const widget = mod.ui?.widget;
   const { data, loading, error, refetch } = useWidgetData<ControlPanelPayload>({
@@ -51,15 +66,44 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
 
   const [pendingMode, setPendingMode] = useState<string | null>(null);
   const [pendingStepper, setPendingStepper] = useState<string | null>(null);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+
+  // Multi-room rooms list (or a single-element array for single-device installs).
+  // `data.rooms` is present when the backend emits a carousel; otherwise we
+  // wrap the top-level payload as a single-slide list so the renderer is
+  // uniform.
+  const rooms: ControlPanelRoomPayload[] = useMemo(() => {
+    if (!data) return [];
+    if (data.rooms && data.rooms.length > 0) return data.rooms;
+    return [data];
+  }, [data]);
+
+  // When the user picks a specific room tab, jump the carousel to that
+  // slide. ALL/SYSTEM keep the user-driven index (or default to 0).
+  useEffect(() => {
+    if (rooms.length <= 1) return;
+    if (!activeRoom || activeRoom === ALL_ROOM || activeRoom === SYSTEM_ROOM) return;
+    const idx = rooms.findIndex((r) => r.room === activeRoom);
+    if (idx >= 0) setCarouselIndex(idx);
+  }, [activeRoom, rooms]);
+
+  // Clamp index when rooms count shrinks (e.g., a device gets unpaired).
+  useEffect(() => {
+    if (carouselIndex >= rooms.length) setCarouselIndex(Math.max(0, rooms.length - 1));
+  }, [rooms.length, carouselIndex]);
+
+  const current: ControlPanelRoomPayload | undefined = rooms[carouselIndex];
 
   async function setMode(id: string) {
-    if (pendingMode) return;
+    if (pendingMode || !current) return;
     setPendingMode(id);
     try {
+      const body: Record<string, unknown> = { id };
+      if (current.device_id) body.device_id = current.device_id;
       const r = await fetch(`/api/v1/modules/${mod.name}/action/set_mode`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       await refetch();
@@ -71,13 +115,15 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
   }
 
   async function step(id: string, value: number) {
-    if (pendingStepper) return;
+    if (pendingStepper || !current) return;
     setPendingStepper(id);
     try {
+      const body: Record<string, unknown> = { id, value };
+      if (current.device_id) body.device_id = current.device_id;
       const r = await fetch(`/api/v1/modules/${mod.name}/action/step`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, value }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       await refetch();
@@ -90,20 +136,24 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
 
   if (loading && !data) return <ControlPanelSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
-  if (!data) return <ControlPanelSkeleton />;
+  if (!data || !current) return <ControlPanelSkeleton />;
 
-  const label = resolveLabel(t, data.label, data.label_key, data.label_args);
+  const label = resolveLabel(t, current.label, current.label_key, current.label_args);
   const primarySecondary = resolveLabel(
-    t, data.primary.secondary, data.primary.secondary_key, data.primary.secondary_args,
+    t, current.primary.secondary, current.primary.secondary_key, current.primary.secondary_args,
   );
-  const modeOptions = data.modes?.options.map((o) => ({
+  const modeOptions = current.modes?.options.map((o) => ({
     ...o,
     label: resolveLabel(t, o.label, o.label_key),
   }));
-  const stepperSpecs = data.steppers?.map((s) => ({
+  const stepperSpecs = current.steppers?.map((s) => ({
     ...s,
     label: resolveLabel(t, s.label, s.label_key),
   }));
+
+  const showCarousel = rooms.length > 1;
+  const goPrev = () => setCarouselIndex((i) => (i - 1 + rooms.length) % rooms.length);
+  const goNext = () => setCarouselIndex((i) => (i + 1) % rooms.length);
 
   return (
     <motion.div
@@ -119,14 +169,43 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
         gap: 8,
       }}
     >
+      {/* Header — label + (when multi-room) carousel switcher with
+          ◄ arrow / current room / ► arrow + dot indicator below. The
+          dots are rendered inline rather than in a separate row to save
+          vertical space; for >5 rooms they collapse to "n/N". */}
       <div style={{
-        fontSize: 9.5,
-        fontWeight: 600,
-        color: 'var(--tx3)',
-        textTransform: 'uppercase',
-        letterSpacing: '.08em',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 6,
       }}>
-        {label}
+        <div style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          color: 'var(--tx3)',
+          textTransform: 'uppercase',
+          letterSpacing: '.08em',
+          flex: 1,
+          minWidth: 0,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {label}
+        </div>
+        {showCarousel && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <CarouselButton onClick={goPrev} glyph="‹" />
+            <span style={{
+              fontSize: 9, color: 'var(--tx3)',
+              fontVariantNumeric: 'tabular-nums', minWidth: 22,
+              textAlign: 'center',
+            }}>
+              {carouselIndex + 1}/{rooms.length}
+            </span>
+            <CarouselButton onClick={goNext} glyph="›" />
+          </div>
+        )}
       </div>
 
       <div>
@@ -139,11 +218,11 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
             letterSpacing: '-.02em',
             fontVariantNumeric: 'tabular-nums',
           }}>
-            {data.primary.value}
+            {current.primary.value}
           </span>
-          {data.primary.unit && (
+          {current.primary.unit && (
             <span style={{ fontSize: 16, color: 'var(--tx2)', fontWeight: 300 }}>
-              {data.primary.unit}
+              {current.primary.unit}
             </span>
           )}
         </div>
@@ -154,14 +233,14 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
         )}
       </div>
 
-      {data.secondary_pills && data.secondary_pills.length > 0 && (
-        <IconStrip items={data.secondary_pills} />
+      {current.secondary_pills && current.secondary_pills.length > 0 && (
+        <IconStrip items={current.secondary_pills} />
       )}
 
-      {data.modes && modeOptions && modeOptions.length > 0 && (
+      {current.modes && modeOptions && modeOptions.length > 0 && (
         <ModeRow
           options={modeOptions}
-          current={data.modes.current}
+          current={current.modes.current}
           pending={pendingMode}
           onSelect={setMode}
         />
@@ -191,6 +270,31 @@ export default function ControlPanelTemplate({ mod }: TemplateProps) {
         </div>
       )}
     </motion.div>
+  );
+}
+
+/** Tiny round button used by the carousel header. Kept as a separate
+ *  component so the touch target stays a clean 22×22px square that
+ *  doesn't inherit anything from the surrounding flex container. */
+function CarouselButton({ onClick, glyph }: { onClick: () => void; glyph: string }) {
+  return (
+    <button
+      onClick={onClick}
+      type="button"
+      style={{
+        width: 22, height: 22,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        borderRadius: 6,
+        border: '1px solid var(--b)',
+        background: 'var(--sf)',
+        color: 'var(--tx2)',
+        cursor: 'pointer',
+        fontSize: 14, lineHeight: 1, fontWeight: 600,
+        padding: 0,
+      }}
+    >
+      {glyph}
+    </button>
   );
 }
 
