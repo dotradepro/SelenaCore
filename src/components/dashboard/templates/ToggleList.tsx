@@ -1,15 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
-import type {
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-} from 'react';
-import { motion } from 'motion/react';
+import { useEffect, useMemo, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
 import { useStore } from '../../../store/useStore';
 import { ToggleListSkeleton } from './Skeleton';
 import Icon from './Icon';
 import { resolveLabel } from './i18n';
+import DeviceCapabilities from './DeviceCapabilities';
 import { ALL_ROOM, SYSTEM_ROOM } from '../RoomTabs';
 import type { TemplateProps } from './registry';
 
@@ -52,31 +49,6 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
     pollIntervalS: widget?.refresh?.poll_interval_s,
   });
 
-  const [pending, setPending] = useState<Set<string>>(new Set());
-
-  async function toggle(id: string) {
-    if (pending.has(id)) return;
-    setPending((p) => new Set(p).add(id));
-    try {
-      const r = await fetch(`/api/v1/modules/${mod.name}/action/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      if (!r.ok) throw new Error(await r.text());
-      await refetch();
-    } catch {
-      const showToast = (await import('../../../store/useStore')).useStore.getState().showToast;
-      showToast('Toggle failed', 'error');
-    } finally {
-      setPending((p) => {
-        const n = new Set(p);
-        n.delete(id);
-        return n;
-      });
-    }
-  }
-
   // Scope items to the active room tab. Sentinel rooms (`__all__`, `system`)
   // mean "no filter" — we still show everything. Items without a `location`
   // field always pass through (back-compat for modules that don't yet emit it).
@@ -90,6 +62,29 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
       return i.location === activeRoom;
     });
   }, [data, activeRoom]);
+
+  // Drill-in state: when a user taps an item, we replace the list with
+  // that device's full capability panel inside the same widget. When
+  // there's only one item to begin with, we skip the list entirely and
+  // open in detail view — the list view of a one-item list is wasted
+  // chrome. Resets when the active room changes (room switch implies a
+  // different scope of devices).
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => { setSelectedId(null); }, [activeRoom]);
+
+  // If the selected device gets filtered out (room switch, item removed
+  // upstream), drop selection so we don't render against a stale id.
+  useEffect(() => {
+    if (selectedId && !items.some((i) => i.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [items, selectedId]);
+
+  // Auto-detail rule: a single-item list is just an extra tap before
+  // the user can do anything useful. Open detail directly.
+  const autoDetail = items.length === 1;
+  const detailItemId = autoDetail ? items[0]?.id : selectedId;
+  const inDetail = !!detailItemId;
 
   if (loading && !data) return <ToggleListSkeleton />;
   if (error && !data) return <ErrorBlock onRetry={refetch} message={error} />;
@@ -113,6 +108,48 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
         flexDirection: 'column',
         gap: 8,
       }}
+    >
+      <AnimatePresence mode="wait">
+        {inDetail && detailItemId ? (
+          <DetailView
+            key="detail"
+            deviceId={detailItemId}
+            // Only show the back button when the detail view is something
+            // the user explicitly drilled into — auto-detail (single-item
+            // widget) has nothing to go back to.
+            onBack={autoDetail ? null : () => setSelectedId(null)}
+          />
+        ) : (
+          <ListView
+            key="list"
+            label={label}
+            summary={summary}
+            items={items}
+            onPick={setSelectedId}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// ── List view ────────────────────────────────────────────────────────────
+
+function ListView({
+  label, summary, items, onPick,
+}: {
+  label: string;
+  summary: string;
+  items: ToggleItem[];
+  onPick: (id: string) => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}
     >
       <div style={{
         display: 'flex',
@@ -140,13 +177,7 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
         alignContent: 'start',
       }}>
         {items.map((item) => (
-          <ToggleCell
-            key={item.id}
-            item={item}
-            busy={pending.has(item.id)}
-            onClick={() => toggle(item.id)}
-            onDetail={() => useStore.getState().openDeviceDetail(item.id)}
-          />
+          <ToggleCell key={item.id} item={item} onClick={() => onPick(item.id)} />
         ))}
         {items.length === 0 && (
           <div style={{ fontSize: 10.5, color: 'var(--tx3)', padding: '8px 0' }}>
@@ -158,77 +189,104 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
   );
 }
 
-/** Long-press hold-time before opening the device-detail modal. 500ms
- *  is the iOS-standard threshold and gives users a clear distinction
- *  between "tap to toggle" and "hold to inspect". Right-click on
- *  desktop opens the same modal without waiting. */
-const LONG_PRESS_MS = 500;
+// ── Detail view (drill-in or single-item auto-detail) ────────────────────
+
+function DetailView({
+  deviceId, onBack,
+}: {
+  deviceId: string;
+  /** ``null`` → suppress the back button (single-item widget — there's
+   *  no list to go back to). */
+  onBack: (() => void) | null;
+}) {
+  const { t } = useTranslation();
+  // Pull the live device from the store so capability changes
+  // round-trip via the existing WebSocket and re-render automatically.
+  const device = useStore((s) => s.devices.find((d) => d.device_id === deviceId) ?? null);
+  const updateDeviceState = useStore((s) => s.updateDeviceState);
+
+  if (!device) {
+    // Selected item exists in the toggle-list payload but we don't have
+    // the device row in the store yet (race during initial fetch). Show
+    // a tight placeholder so the panel doesn't flash.
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div style={{ fontSize: 10.5, color: 'var(--tx3)' }}>
+          {t('common.loading', { defaultValue: 'Loading...' })}
+        </div>
+      </motion.div>
+    );
+  }
+
+  const onChange = (patch: Record<string, unknown>) => updateDeviceState(deviceId, patch);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 8 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -8 }}
+      transition={{ duration: 0.18 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', overflowY: 'auto' }}
+    >
+      {/* Header: back chevron + device name. Pinned to the top so the
+          user always has a way out of detail view, even when the
+          capability panel scrolls. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+      }}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            aria-label={t('common.back', { defaultValue: 'Back' })}
+            style={{
+              width: 26, height: 26, borderRadius: 6,
+              background: 'var(--sf2)', border: '1px solid var(--b)',
+              color: 'var(--tx2)', cursor: 'pointer',
+              fontSize: 14, lineHeight: 1, padding: 0,
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            ‹
+          </button>
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 600, color: 'var(--tx)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {device.name}
+          </div>
+          {(device.room ?? device.location) && (
+            <div style={{ fontSize: 9.5, color: 'var(--tx3)', marginTop: 1 }}>
+              {device.room ?? device.location}
+            </div>
+          )}
+        </div>
+      </div>
+      <DeviceCapabilities device={device} onChange={onChange} compact />
+    </motion.div>
+  );
+}
+
+// ── Toggle cell (list item) ──────────────────────────────────────────────
 
 function ToggleCell({
-  item, busy, onClick, onDetail,
+  item, onClick,
 }: {
   item: ToggleItem;
-  busy: boolean;
   onClick: () => void;
-  onDetail: () => void;
 }) {
   const isOn = item.state === 'on';
   const isUnknown = item.state === 'unknown';
-
-  // Long-press gating: pointerdown starts a timer; if the user lifts
-  // before the timeout it's a click; if not, we mark `longPressed` and
-  // suppress the upcoming click. ContextMenu (right-click) opens the
-  // modal directly.
-  const timerRef = useRef<number | null>(null);
-  const longPressedRef = useRef(false);
-
-  function clearTimer() {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }
-  function onPointerDown(e: ReactPointerEvent) {
-    if (busy || isUnknown) return;
-    longPressedRef.current = false;
-    // Only respond to primary button (left click / single-finger touch).
-    if (e.button !== 0) return;
-    clearTimer();
-    timerRef.current = window.setTimeout(() => {
-      longPressedRef.current = true;
-      onDetail();
-    }, LONG_PRESS_MS);
-  }
-  function onPointerUp() {
-    clearTimer();
-  }
-  function onPointerCancel() {
-    clearTimer();
-    longPressedRef.current = false;
-  }
-  function onClickGuarded() {
-    if (longPressedRef.current) {
-      // Suppress the synthetic click that follows a long-press.
-      longPressedRef.current = false;
-      return;
-    }
-    onClick();
-  }
-  function onContextMenu(e: ReactMouseEvent) {
-    e.preventDefault();
-    if (busy || isUnknown) return;
-    onDetail();
-  }
-
   return (
     <motion.button
-      onClick={onClickGuarded}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerCancel}
-      onPointerCancel={onPointerCancel}
-      onContextMenu={onContextMenu}
-      disabled={busy || isUnknown}
+      onClick={onClick}
+      disabled={isUnknown}
       whileTap={{ scale: 0.96 }}
       transition={{ duration: 0.18, ease: [0.5, 1.4, 0.5, 1] }}
       style={{
@@ -238,8 +296,8 @@ function ToggleCell({
         background: isOn ? 'color-mix(in srgb, var(--ac) 14%, var(--sf))' : 'var(--sf)',
         border: `1px solid ${isOn ? 'var(--ac)' : 'var(--b)'}`,
         color: 'var(--tx)',
-        cursor: busy ? 'wait' : isUnknown ? 'default' : 'pointer',
-        opacity: busy ? 0.6 : isUnknown ? 0.5 : 1,
+        cursor: isUnknown ? 'default' : 'pointer',
+        opacity: isUnknown ? 0.5 : 1,
         boxShadow: isOn ? 'var(--widget-glow-on)' : 'none',
         transition: 'background .15s, border-color .15s, box-shadow .15s',
         userSelect: 'none',

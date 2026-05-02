@@ -357,12 +357,6 @@ interface AppState {
   fetchWallpapers: () => Promise<void>;
   setWallpaper: (filename: string | null, blur?: number, opacity?: number) => Promise<void>;
 
-  // Device-detail modal — globally tracked because multiple widget
-  // templates (toggle-list today, more later) all open the same sheet.
-  // ``null`` = closed.
-  deviceDetailFor: string | null;
-  openDeviceDetail: (deviceId: string) => void;
-  closeDeviceDetail: () => void;
 }
 
 // ── Request optimizations ─────────────────────────────────────────────────────
@@ -1247,12 +1241,6 @@ export const useStore = create<AppState>((set, get) => ({
   wallpaperBlur: 0,
   wallpaperOpacity: 0.15,
 
-  // Device-detail modal: opened by long-press / right-click on a
-  // toggle-list cell. Stays in the store so any widget can trigger
-  // it without prop-drilling a callback through every template.
-  deviceDetailFor: null,
-  openDeviceDetail: (deviceId) => set({ deviceDetailFor: deviceId }),
-  closeDeviceDetail: () => set({ deviceDetailFor: null }),
   fetchWallpapers: async () => {
     try {
       const data = await apiFetch('/api/ui/wallpapers') as WallpaperInfo[];
