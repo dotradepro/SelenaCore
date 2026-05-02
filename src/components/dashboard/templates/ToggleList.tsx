@@ -1,7 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
 import { motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useWidgetData } from '../../../hooks/useWidgetData';
+import { useStore } from '../../../store/useStore';
 import { ToggleListSkeleton } from './Skeleton';
 import Icon from './Icon';
 import { resolveLabel } from './i18n';
@@ -140,6 +145,7 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
             item={item}
             busy={pending.has(item.id)}
             onClick={() => toggle(item.id)}
+            onDetail={() => useStore.getState().openDeviceDetail(item.id)}
           />
         ))}
         {items.length === 0 && (
@@ -152,14 +158,76 @@ export default function ToggleListTemplate({ mod, activeRoom }: TemplateProps) {
   );
 }
 
+/** Long-press hold-time before opening the device-detail modal. 500ms
+ *  is the iOS-standard threshold and gives users a clear distinction
+ *  between "tap to toggle" and "hold to inspect". Right-click on
+ *  desktop opens the same modal without waiting. */
+const LONG_PRESS_MS = 500;
+
 function ToggleCell({
-  item, busy, onClick,
-}: { item: ToggleItem; busy: boolean; onClick: () => void }) {
+  item, busy, onClick, onDetail,
+}: {
+  item: ToggleItem;
+  busy: boolean;
+  onClick: () => void;
+  onDetail: () => void;
+}) {
   const isOn = item.state === 'on';
   const isUnknown = item.state === 'unknown';
+
+  // Long-press gating: pointerdown starts a timer; if the user lifts
+  // before the timeout it's a click; if not, we mark `longPressed` and
+  // suppress the upcoming click. ContextMenu (right-click) opens the
+  // modal directly.
+  const timerRef = useRef<number | null>(null);
+  const longPressedRef = useRef(false);
+
+  function clearTimer() {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+  function onPointerDown(e: ReactPointerEvent) {
+    if (busy || isUnknown) return;
+    longPressedRef.current = false;
+    // Only respond to primary button (left click / single-finger touch).
+    if (e.button !== 0) return;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      longPressedRef.current = true;
+      onDetail();
+    }, LONG_PRESS_MS);
+  }
+  function onPointerUp() {
+    clearTimer();
+  }
+  function onPointerCancel() {
+    clearTimer();
+    longPressedRef.current = false;
+  }
+  function onClickGuarded() {
+    if (longPressedRef.current) {
+      // Suppress the synthetic click that follows a long-press.
+      longPressedRef.current = false;
+      return;
+    }
+    onClick();
+  }
+  function onContextMenu(e: ReactMouseEvent) {
+    e.preventDefault();
+    if (busy || isUnknown) return;
+    onDetail();
+  }
+
   return (
     <motion.button
-      onClick={onClick}
+      onClick={onClickGuarded}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerCancel}
+      onPointerCancel={onPointerCancel}
+      onContextMenu={onContextMenu}
       disabled={busy || isUnknown}
       whileTap={{ scale: 0.96 }}
       transition={{ duration: 0.18, ease: [0.5, 1.4, 0.5, 1] }}
@@ -174,6 +242,8 @@ function ToggleCell({
         opacity: busy ? 0.6 : isUnknown ? 0.5 : 1,
         boxShadow: isOn ? 'var(--widget-glow-on)' : 'none',
         transition: 'background .15s, border-color .15s, box-shadow .15s',
+        userSelect: 'none',
+        touchAction: 'manipulation',
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, minWidth: 0 }}>

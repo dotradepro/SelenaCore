@@ -158,6 +158,8 @@ const en = {
             energyMonitor: {
                 label: 'Energy',
                 footnoteToday: 'today · {{kwh}} kWh',
+                footnoteEstimated: 'estimated · {{kwh}} kWh today',
+                footnoteNoMeters: 'no metered devices',
             },
             notificationRouter: {
                 label: 'Notifications',
@@ -247,6 +249,7 @@ const en = {
             },
             mediaPlayer: {
                 nothingPlaying: 'Nothing playing',
+                sourcesTitle: 'Browse sources',
                 source_radio: 'radio',
                 source_spotify: 'spotify',
                 source_local: 'local',
@@ -259,6 +262,28 @@ const en = {
                 chipRinging: '🔔 Ringing',
                 chipRingingMany: '🔔 Ringing ({{count}})',
             },
+        },
+
+        // ── Device-detail modal (long-press / right-click on a device) ──
+        deviceDetail: {
+            power: 'Power',
+            brightness: 'Brightness',
+            colorTemp: 'Color temperature',
+            mode: 'Mode',
+            targetTemp: 'Target temperature',
+            fanSpeed: 'Fan speed',
+            fanAuto: 'Auto',
+            fanLow: 'Low',
+            fanMed: 'Med',
+            fanHigh: 'High',
+            volume: 'Volume',
+            flags: 'Modes',
+            flagSleep: 'Sleep',
+            flagTurbo: 'Turbo',
+            flagQuiet: 'Quiet',
+            flagEco: 'Eco',
+            flagHealth: 'Health',
+            flagLight: 'Light',
         },
 
         // ── Devices ──

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, type Module } from '../../store/useStore';
 import { useElevated } from '../../hooks/useElevated';
@@ -9,6 +9,7 @@ import RoomTabs, { ALL_ROOM, moduleMatchesRoom } from './RoomTabs';
 import BentoGrid from './BentoGrid';
 import WidgetFrame from './WidgetFrame';
 import AddWidgetDrawer from './AddWidgetDrawer';
+import DeviceDetailModal from './DeviceDetailModal';
 import { useBentoEdit } from '../../hooks/useBentoEdit';
 
 /** Parse a manifest WxH string. Returns null on missing/malformed input so
@@ -40,6 +41,8 @@ export default function DashboardV2() {
   const widgetLayout = useStore((s) => s.widgetLayout);
   const unpinModule = useStore((s) => s.unpinModule);
   const resetWidgetLayout = useStore((s) => s.resetWidgetLayout);
+  const deviceDetailFor = useStore((s) => s.deviceDetailFor);
+  const closeDeviceDetail = useStore((s) => s.closeDeviceDetail);
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
@@ -299,6 +302,7 @@ export default function DashboardV2() {
       )}
 
       <PinConfirmModal {...pinModalProps} />
+      <DeviceDetailModal deviceId={deviceDetailFor} onClose={closeDeviceDetail} />
     </div>
   );
 }

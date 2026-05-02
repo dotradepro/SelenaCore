@@ -149,7 +149,7 @@ function loadWidgetLayout(): WidgetLayout {
     const raw = localStorage.getItem('selena-widget-layout');
     if (raw) {
       const parsed = JSON.parse(raw) as WidgetLayout;
-      const merged = { hidden: [], screens: 1, positions: {}, spans: {}, version: 1, ...parsed };
+      const merged: WidgetLayout = { hidden: [], screens: 1, positions: {}, spans: {}, version: 1, ...parsed };
       return migrateLayoutToV2(merged);
     }
   } catch { /* ignore */ }
@@ -356,6 +356,13 @@ interface AppState {
   wallpaperOpacity: number;
   fetchWallpapers: () => Promise<void>;
   setWallpaper: (filename: string | null, blur?: number, opacity?: number) => Promise<void>;
+
+  // Device-detail modal — globally tracked because multiple widget
+  // templates (toggle-list today, more later) all open the same sheet.
+  // ``null`` = closed.
+  deviceDetailFor: string | null;
+  openDeviceDetail: (deviceId: string) => void;
+  closeDeviceDetail: () => void;
 }
 
 // ── Request optimizations ─────────────────────────────────────────────────────
@@ -371,18 +378,18 @@ const CACHE_TTL: Record<string, number> = {
   '/api/ui/wizard/requirements': 60_000,
 };
 
-async function apiFetch(path: string, opts?: RequestInit): Promise<unknown> {
+async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
   const isGet = !opts?.method || opts.method.toUpperCase() === 'GET';
   const ttl = isGet ? CACHE_TTL[path] : undefined;
 
   // Serve from TTL cache if still fresh
   if (ttl) {
     const hit = _cache.get(path);
-    if (hit && Date.now() - hit.ts < ttl) return hit.data;
+    if (hit && Date.now() - hit.ts < ttl) return hit.data as T;
   }
 
   // Reuse an already-in-flight GET request (dedup parallel mounts)
-  if (isGet && _inflight.has(path)) return _inflight.get(path)!;
+  if (isGet && _inflight.has(path)) return _inflight.get(path)! as Promise<T>;
 
   const promise = (async () => {
     const res = await fetch(path, opts);
@@ -549,7 +556,7 @@ export const useStore = create<AppState>((set, get) => ({
     const maxRetries = 5;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const data = await apiFetch('/api/ui/wizard/status');
+        const data = await apiFetch<{ completed?: boolean }>('/api/ui/wizard/status');
         set({ isConfigured: data?.completed === true, wizardLoading: false });
         return;
       } catch (e) {
@@ -566,7 +573,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchWizardRequirements: async () => {
     try {
-      const data: WizardRequirements = await apiFetch('/api/ui/wizard/requirements');
+      const data = await apiFetch<WizardRequirements>('/api/ui/wizard/requirements');
       set({ wizardRequirements: data });
     } catch (e) {
       console.error('fetchWizardRequirements failed', e);
@@ -576,11 +583,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchStats: async () => {
     try {
-      const data = await apiFetch('/api/ui/system');
+      type SystemPayload = {
+        hardware?: Record<string, unknown>;
+        core?: Record<string, unknown>;
+        llm_engine?: Record<string, unknown>;
+        native_services?: unknown;
+      };
+      const data = await apiFetch<SystemPayload>('/api/ui/system');
       if (data) {
-        const hw = data.hardware ?? {};
-        const core = data.core ?? {};
-        const llm = data.llm_engine ?? {};
+        const hw = (data.hardware ?? {}) as Record<string, any>;
+        const core = (data.core ?? {}) as Record<string, any>;
+        const llm = (data.llm_engine ?? {}) as Record<string, any>;
         const nativeRaw: Array<Record<string, unknown>> = Array.isArray(data.native_services)
           ? data.native_services
           : [];
@@ -588,7 +601,7 @@ export const useStore = create<AppState>((set, get) => ({
           ? llm.cloud_providers
           : [];
         set({
-          health: core ?? get().health,
+          health: (core as unknown as Health) ?? get().health,
           stats: {
             cpuTemp: hw.cpu_temp ?? 0,
             cpuLoad: hw.cpu_load ?? [0, 0, 0],
@@ -637,7 +650,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchDevices: async () => {
     set({ devicesLoading: true });
     try {
-      const data = await apiFetch('/api/ui/devices');
+      const data = await apiFetch<{ devices?: Device[] }>('/api/ui/devices');
       set({ devices: normalizeDevices(data?.devices ?? []) });
     } catch (e) {
       console.error('fetchDevices failed', e);
@@ -649,7 +662,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchModules: async () => {
     set({ modulesLoading: true });
     try {
-      const data = await apiFetch('/api/ui/modules');
+      const data = await apiFetch<{ modules?: Module[] }>('/api/ui/modules');
       const mods = data?.modules ?? [];
       set({ modules: mods });
       get().initWidgetLayout(mods);
@@ -1233,6 +1246,13 @@ export const useStore = create<AppState>((set, get) => ({
   activeWallpaper: null,
   wallpaperBlur: 0,
   wallpaperOpacity: 0.15,
+
+  // Device-detail modal: opened by long-press / right-click on a
+  // toggle-list cell. Stays in the store so any widget can trigger
+  // it without prop-drilling a callback through every template.
+  deviceDetailFor: null,
+  openDeviceDetail: (deviceId) => set({ deviceDetailFor: deviceId }),
+  closeDeviceDetail: () => set({ deviceDetailFor: null }),
   fetchWallpapers: async () => {
     try {
       const data = await apiFetch('/api/ui/wallpapers') as WallpaperInfo[];

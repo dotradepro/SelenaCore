@@ -156,6 +156,8 @@ const uk = {
             energyMonitor: {
                 label: 'Енергія',
                 footnoteToday: 'сьогодні · {{kwh}} кВт·год',
+                footnoteEstimated: 'оцінка · {{kwh}} кВт·год сьогодні',
+                footnoteNoMeters: 'без лічильників',
             },
             notificationRouter: {
                 label: 'Сповіщення',
@@ -245,6 +247,7 @@ const uk = {
             },
             mediaPlayer: {
                 nothingPlaying: 'Нічого не грає',
+                sourcesTitle: 'Огляд джерел',
                 source_radio: 'радіо',
                 source_spotify: 'spotify',
                 source_local: 'локально',
@@ -257,6 +260,28 @@ const uk = {
                 chipRinging: '🔔 Дзвонить',
                 chipRingingMany: '🔔 Дзвонить ({{count}})',
             },
+        },
+
+        // ── Device-detail modal ──
+        deviceDetail: {
+            power: 'Живлення',
+            brightness: 'Яскравість',
+            colorTemp: 'Колірна температура',
+            mode: 'Режим',
+            targetTemp: 'Цільова температура',
+            fanSpeed: 'Швидкість вентилятора',
+            fanAuto: 'Авто',
+            fanLow: 'Тихо',
+            fanMed: 'Середньо',
+            fanHigh: 'Швидко',
+            volume: 'Гучність',
+            flags: 'Режими',
+            flagSleep: 'Сон',
+            flagTurbo: 'Турбо',
+            flagQuiet: 'Тиша',
+            flagEco: 'Еко',
+            flagHealth: 'Здоров\'я',
+            flagLight: 'Підсвітка',
         },
 
         // ── Devices ──
