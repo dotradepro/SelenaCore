@@ -29,3 +29,7 @@ CLAUDE.md
 
 # Stray pip install output captured to files like "=1.10.2"
 =[0-9]*
+
+# Playwright artifacts (local-only — captured on test failure for debugging)
+test-results/
+playwright-report/
