@@ -6,55 +6,100 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notification Router Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        body {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 24px;
+            min-height: 100%;
+            overflow-y: auto;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin-bottom: 24px;
+        }
+
+        .section {
+            background: var(--sf);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+
+        .section h2 {
+            font-size: 1rem;
+            color: var(--tx2);
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--tx2);
+            margin-bottom: 4px;
+        }
+
+        .msg {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+        }
+
+        .msg.ok {
+            background: rgba(80, 200, 120, 0.15);
+            color: var(--gr);
+        }
+
+        .msg.err {
+            background: rgba(220, 50, 50, 0.15);
+            color: var(--rd);
+        }
+    </style>
 </head>
 
 <body>
-    <h2 data-i18n="title"></h2>
+    <h1 data-i18n="title"></h1>
 
-    <div class="card">
-        <div class="section-title" data-i18n="add_channel"></div>
-        <div class="field">
-            <label data-i18n="channel_type"></label>
-            <select id="ch-type">
-                <option value="telegram" data-i18n="opt_telegram">Telegram</option>
-                <option value="webhook" data-i18n="opt_webhook">Webhook</option>
-                <option value="tts" data-i18n="opt_tts">TTS (voice)</option>
-                <option value="push" data-i18n="opt_push">Web Push</option>
-            </select>
-        </div>
+    <div class="section">
+        <h2 data-i18n="add_channel"></h2>
+        <label data-i18n="channel_type"></label>
+        <select id="ch-type">
+            <option value="telegram" data-i18n="opt_telegram">Telegram</option>
+            <option value="webhook" data-i18n="opt_webhook">Webhook</option>
+            <option value="tts" data-i18n="opt_tts">TTS (voice)</option>
+            <option value="push" data-i18n="opt_push">Web Push</option>
+        </select>
         <div id="ch-fields"></div>
         <button class="btn btn-primary" id="btn-add-channel" data-i18n="add_channel_btn"></button>
+        <div id="ch-msg"></div>
     </div>
 
-    <div class="card">
-        <div class="section-title" data-i18n="add_rule"></div>
-        <div class="field">
-            <label data-i18n="channel_lbl"></label>
-            <select id="rule-channel">
-                <option value="telegram">telegram</option>
-                <option value="webhook">webhook</option>
-                <option value="tts">tts</option>
-                <option value="push">push</option>
-            </select>
-        </div>
-        <div class="field">
-            <label data-i18n="priority_lbl"></label>
-            <input type="number" id="rule-priority" value="100" min="1">
-        </div>
-        <div class="field">
-            <label data-i18n="level_filter"></label>
-            <select id="rule-level">
-                <option value="" data-i18n="opt_all">All</option>
-                <option value="info">info</option>
-                <option value="warning">warning</option>
-                <option value="critical">critical</option>
-            </select>
-        </div>
+    <div class="section">
+        <h2 data-i18n="add_rule"></h2>
+        <label data-i18n="channel_lbl"></label>
+        <select id="rule-channel">
+            <option value="telegram">telegram</option>
+            <option value="webhook">webhook</option>
+            <option value="tts">tts</option>
+            <option value="push">push</option>
+        </select>
+        <label data-i18n="priority_lbl"></label>
+        <input type="number" id="rule-priority" value="100" min="1">
+        <label data-i18n="level_filter"></label>
+        <select id="rule-level">
+            <option value="" data-i18n="opt_all">All</option>
+            <option value="info">info</option>
+            <option value="warning">warning</option>
+            <option value="critical">critical</option>
+        </select>
         <button class="btn btn-primary" id="btn-add-rule" data-i18n="add_rule_btn"></button>
+        <div id="rule-msg"></div>
     </div>
 
-    <div class="card">
-        <div class="section-title" data-i18n="active_channels"></div>
+    <div class="section">
+        <h2 data-i18n="active_channels"></h2>
         <table>
             <thead>
                 <tr>
@@ -66,8 +111,8 @@
         </table>
     </div>
 
-    <div class="card">
-        <div class="section-title" data-i18n="active_rules"></div>
+    <div class="section">
+        <h2 data-i18n="active_rules"></h2>
         <table>
             <thead>
                 <tr>
@@ -115,10 +160,10 @@
             var f = $('ch-fields');
             if (type === 'telegram') {
                 f.innerHTML =
-                    '<div class="field"><label>' + esc(t('tg_token')) + '</label><input id="tg-token" type="password" placeholder="1234:ABCD..."></div>' +
-                    '<div class="field"><label>' + esc(t('tg_chat')) + '</label><input id="tg-chat" placeholder="-1001234567890"></div>';
+                    '<label>' + t('tg_token') + '</label><input id="tg-token" type="password" placeholder="1234:ABCD...">' +
+                    '<label>' + t('tg_chat') + '</label><input id="tg-chat" placeholder="-1001234567890">';
             } else if (type === 'webhook') {
-                f.innerHTML = '<div class="field"><label>' + esc(t('wh_url')) + '</label><input id="wh-url" placeholder="https://..."></div>';
+                f.innerHTML = '<label>' + t('wh_url') + '</label><input id="wh-url" placeholder="https://...">';
             } else {
                 f.innerHTML = '';
             }
@@ -126,7 +171,8 @@
         renderChFields();
 
         $('btn-add-channel').addEventListener('click', function () {
-            withLoading(this, async function () {
+            var btn = this;
+            withLoading(btn, async function () {
                 var name = $('ch-type').value;
                 var config = {};
                 if (name === 'telegram') {
@@ -134,39 +180,60 @@
                 } else if (name === 'webhook') {
                     config = { url: $('wh-url').value };
                 }
-                await apiPost('/channels', { name: name, config: config });
-                showToast(t('ch_added'));
-                await loadStatus();
+                var r = await fetch(BASE + '/channels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, config: config }) });
+                var d = await r.json();
+                if (r.ok) {
+                    showMsg('ch-msg', t('ch_added'), 'ok');
+                    await loadStatus();
+                } else {
+                    throw new Error(d.detail || 'Error');
+                }
             });
         });
 
         $('btn-add-rule').addEventListener('click', function () {
-            withLoading(this, async function () {
+            var btn = this;
+            withLoading(btn, async function () {
                 var body = {
                     channel: $('rule-channel').value,
                     priority: parseInt($('rule-priority').value) || 100,
                     level: $('rule-level').value || null,
                 };
-                await apiPost('/rules', body);
-                showToast(t('rule_added'));
-                await loadStatus();
+                var r = await fetch(BASE + '/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                var d = await r.json();
+                if (r.ok) {
+                    showMsg('rule-msg', t('rule_added'), 'ok');
+                    await loadStatus();
+                } else {
+                    throw new Error(d.detail || 'Error');
+                }
             });
         });
 
         async function loadStatus() {
             try {
-                var results = await Promise.all([apiGet('/channels'), apiGet('/rules')]);
+                var results = await Promise.all([
+                    fetch(BASE + '/channels').then(function (r) { return r.json(); }),
+                    fetch(BASE + '/rules').then(function (r) { return r.json(); }),
+                ]);
                 var chs = results[0];
                 var rules = results[1];
                 $('channels-body').innerHTML = Object.entries(chs.channels || {})
                     .map(function (e) { return '<tr><td>' + esc(e[0]) + '</td><td>' + esc(e[1].stats || 0) + '</td></tr>'; }).join('') ||
-                    '<tr><td colspan="2" style="color:var(--tx3)">' + esc(t('no_channels')) + '</td></tr>';
+                    '<tr><td colspan="2" style="color:var(--tx3)">' + t('no_channels') + '</td></tr>';
                 $('rules-body').innerHTML = (rules.rules || [])
                     .map(function (r) { return '<tr><td>' + esc(r.priority) + '</td><td>' + esc(r.channel) + '</td><td>' + esc(r.level || 'all') + '</td><td>' + esc((r.event_types || []).join(',') || 'all') + '</td></tr>'; })
-                    .join('') || '<tr><td colspan="4" style="color:var(--tx3)">' + esc(t('no_rules')) + '</td></tr>';
+                    .join('') || '<tr><td colspan="4" style="color:var(--tx3)">' + t('no_rules') + '</td></tr>';
             } catch (e) {
                 showToast(e.message || 'Error', 'error');
             }
+        }
+
+        function showMsg(id, text, type) {
+            var el = $(id);
+            el.className = 'msg ' + type;
+            el.textContent = text;
+            setTimeout(function () { el.textContent = ''; el.className = ''; }, 4000);
         }
 
         loadI18n().then(function () {

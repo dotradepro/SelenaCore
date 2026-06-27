@@ -1,9 +1,5 @@
-"""system_modules/update_manager/module.py — In-process SystemModule wrapper.
-
-Endpoints follow ``docs/TZ_system_modules.md §9.4`` — mounted at
-``/api/ui/modules/update-manager/`` by the loader, so paths are bare
-(``/status``, ``/check``, ...). The previous ``/update/...`` paths
-duplicated the segment and have been removed.
+"""
+system_modules/update_manager/module.py — In-process SystemModule wrapper.
 """
 from __future__ import annotations
 
@@ -11,40 +7,13 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from core.module_loader.system_module import SystemModule
-from system_modules.update_manager.updater import UpdateManager, VALID_CHANNELS
+from system_modules.update_manager.updater import UpdateManager
 
 logger = logging.getLogger(__name__)
-
-
-def _read_core_yaml_section() -> dict:
-    """Read the ``update_manager:`` section from config/core.yaml if present."""
-    try:
-        import yaml  # type: ignore
-
-        cfg_path = Path(os.getenv("CORE_CONFIG_PATH", "/opt/selena-core/config/core.yaml"))
-        if not cfg_path.exists():
-            return {}
-        with cfg_path.open() as fh:
-            data = yaml.safe_load(fh) or {}
-        section = data.get("update_manager") or {}
-        return section if isinstance(section, dict) else {}
-    except Exception as exc:
-        logger.debug("could not read core.yaml update_manager section: %s", exc)
-        return {}
-
-
-def _read_dotversion() -> str:
-    """Read /opt/selena-core/.version (written by install.sh + apply-update.sh)."""
-    try:
-        return Path(
-            os.getenv("UPDATE_DOTVERSION_PATH", "/opt/selena-core/.version")
-        ).read_text().strip() or "0.1.0"
-    except Exception:
-        return os.getenv("CURRENT_VERSION", "0.1.0")
 
 
 class UpdateManagerModule(SystemModule):
@@ -53,6 +22,7 @@ class UpdateManagerModule(SystemModule):
     def __init__(self) -> None:
         super().__init__()
         self._manager: UpdateManager | None = None
+        self._downloaded_path: Path | None = None
 
     async def _on_apply_core(self, event) -> None:
         """Handle ``update.apply_core`` published by core/cloud_sync/commands.py."""
@@ -69,22 +39,13 @@ class UpdateManagerModule(SystemModule):
             logger.error("update.apply_core failed: %s", exc, exc_info=True)
 
     async def start(self) -> None:
-        cfg = _read_core_yaml_section()
         self._manager = UpdateManager(
             publish_event_cb=self.publish,
-            current_version=os.getenv("CURRENT_VERSION") or _read_dotversion(),
-            repo=os.getenv("UPDATE_REPO", cfg.get("repo", "dotradepro/SelenaCore")),
-            channel=os.getenv("UPDATE_CHANNEL", cfg.get("channel", "rc")),
-            install_dir=os.getenv("UPDATE_INSTALL_DIR", "/opt/selena-core"),
+            current_version=os.getenv("CURRENT_VERSION", "0.1.0"),
+            manifest_url=os.getenv("UPDATE_MANIFEST_URL", ""),
+            install_dir=os.getenv("UPDATE_INSTALL_DIR", "/opt/selena-update"),
             backup_dir=os.getenv("UPDATE_BACKUP_DIR", "/opt/selena-backup"),
-            check_interval_sec=int(
-                os.getenv(
-                    "UPDATE_CHECK_INTERVAL",
-                    str(cfg.get("check_interval_sec", 21600)),
-                )
-            ),
-            auto_check=bool(cfg.get("auto_check", False)),
-            backups_keep=int(cfg.get("backups_keep", 3)),
+            check_interval_sec=int(os.getenv("UPDATE_CHECK_INTERVAL", "3600")),
         )
         await self._manager.start()
         self.subscribe(["update.apply_core"], self._on_apply_core)
@@ -107,179 +68,34 @@ class UpdateManagerModule(SystemModule):
 
         svc._register_health_endpoint(router)
 
-        @router.get("/status")
+        @router.get("/update/status")
         async def get_status() -> JSONResponse:
             return JSONResponse(_req().get_status())
 
-        @router.post("/check")
+        @router.post("/update/check")
         async def check() -> JSONResponse:
-            try:
-                info = await _req().check()
-            except Exception as exc:
-                raise HTTPException(502, f"check failed: {exc}") from exc
+            info = await _req().check()
             return JSONResponse(info)
 
-        @router.get("/versions")
-        async def list_versions() -> JSONResponse:
-            return JSONResponse({"versions": _req().list_versions()})
+        @router.post("/update/download")
+        async def download() -> JSONResponse:
+            pkg_path = await _req().download()
+            svc._downloaded_path = pkg_path
+            return JSONResponse({"ok": True, "path": str(pkg_path)})
 
-        @router.get("/version/{tag}")
-        async def get_version(tag: str) -> JSONResponse:
-            details = _req().get_version_details(tag)
-            if details is None:
-                raise HTTPException(404, f"version not found: {tag}")
-            return JSONResponse(details)
+        @router.post("/update/apply")
+        async def apply() -> JSONResponse:
+            if svc._downloaded_path is None or not svc._downloaded_path.exists():
+                raise HTTPException(400, "No downloaded package. Run /update/download first.")
+            await _req().apply(svc._downloaded_path)
+            applied = str(svc._downloaded_path)
+            svc._downloaded_path = None
+            return JSONResponse({"ok": True, "applied": applied})
 
-        @router.post("/install")
-        async def install(payload: dict = Body(...)) -> JSONResponse:
-            tag = (payload or {}).get("tag")
-            if not tag or not isinstance(tag, str):
-                raise HTTPException(400, "tag is required")
-            try:
-                result = await _req().install_version(tag)
-            except ValueError as exc:
-                raise HTTPException(400, str(exc)) from exc
-            except RuntimeError as exc:
-                raise HTTPException(409, str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(500, str(exc)) from exc
-            return JSONResponse(result)
-
-        @router.post("/rollback")
+        @router.post("/update/rollback")
         async def rollback() -> JSONResponse:
-            try:
-                result = await _req().rollback()
-            except RuntimeError as exc:
-                raise HTTPException(409, str(exc)) from exc
-            except Exception as exc:
-                raise HTTPException(500, str(exc)) from exc
+            result = await _req().rollback()
             return JSONResponse(result)
-
-        @router.post("/config")
-        async def set_config(payload: dict = Body(...)) -> JSONResponse:
-            mgr = _req()
-            payload = payload or {}
-            if "channel" in payload:
-                ch = payload["channel"]
-                if ch not in VALID_CHANNELS:
-                    raise HTTPException(400, f"invalid channel: {ch!r}")
-                mgr.set_channel(ch)
-            if "auto_check" in payload:
-                mgr.set_auto_check(bool(payload["auto_check"]))
-            if "check_interval_sec" in payload:
-                try:
-                    mgr.set_check_interval(int(payload["check_interval_sec"]))
-                except (TypeError, ValueError) as exc:
-                    raise HTTPException(400, str(exc)) from exc
-            return JSONResponse(mgr.get_status())
-
-        @router.get("/log")
-        async def get_log(tag: str | None = None, lines: int = 200) -> JSONResponse:
-            return JSONResponse({"log": _req().get_apply_log(tag=tag, max_lines=lines)})
-
-        # ── Dashboard V2 status template ────────────────────────────────────
-        @router.get("/widget/data/state")
-        async def widget_state() -> dict:
-            if svc._manager is None:
-                return {
-                    "label": "Updates",
-                    "label_key": "widgets.updateManager.label",
-                    "pill": {
-                        "tone": "neutral", "text": "Not ready",
-                        "text_key": "widgets.updateManager.pillNotReady",
-                        "icon": "alert-triangle",
-                    },
-                    "rows": [],
-                }
-            s = svc._manager.get_status()
-            state = s.get("state", "idle")
-            current = s.get("current_version") or "—"
-            latest = s.get("latest_version") or "—"
-            available = bool(s.get("update_available"))
-            error = s.get("error")
-            channel = s.get("channel", "stable")
-
-            if error:
-                pill = {"tone": "alert", "text": str(error)[:30], "icon": "x"}
-            elif state == "checking":
-                pill = {
-                    "tone": "info", "text": "Checking",
-                    "text_key": "widgets.updateManager.pillChecking",
-                    "icon": "refresh-cw",
-                }
-            elif state == "downloading":
-                pill = {
-                    "tone": "info", "text": "Downloading",
-                    "text_key": "widgets.updateManager.pillDownloading",
-                    "icon": "refresh-cw",
-                }
-            elif state == "installing":
-                pill = {
-                    "tone": "warn", "text": "Installing",
-                    "text_key": "widgets.updateManager.pillInstalling",
-                    "icon": "clock",
-                }
-            elif available:
-                pill = {
-                    "tone": "warn", "text": f"v{latest} available",
-                    "text_key": "widgets.updateManager.pillAvailable",
-                    "text_args": {"version": latest},
-                    "icon": "alert-triangle",
-                }
-            else:
-                pill = {
-                    "tone": "ok", "text": "Up to date",
-                    "text_key": "widgets.updateManager.pillUpToDate",
-                    "icon": "check-circle",
-                }
-
-            rows = [
-                {
-                    "label": "Current",
-                    "label_key": "widgets.updateManager.rowCurrent",
-                    "value": str(current), "icon": "server",
-                },
-                {
-                    "label": "Channel",
-                    "label_key": "widgets.updateManager.rowChannel",
-                    "value": str(channel), "icon": "settings",
-                },
-            ]
-            if available and latest != current:
-                rows.append({
-                    "label": "Latest",
-                    "label_key": "widgets.updateManager.rowLatest",
-                    "value": str(latest), "icon": "sparkles",
-                })
-
-            # Inline action — manifest exposes /widget/action/check_now
-            # which the new ActionButton block dispatches via the proxy.
-            actions = []
-            if state not in {"checking", "downloading", "installing"} and not error:
-                actions.append({
-                    "id": "check_now",
-                    "label": "Check",
-                    "icon": "refresh-cw",
-                    "tone": "info",
-                })
-            return {
-                "label": "Updates",
-                "label_key": "widgets.updateManager.label",
-                "pill": pill,
-                "rows": rows[:4],
-                "actions": actions,
-            }
-
-        # Action endpoint that ActionButton dispatches to via proxy.
-        @router.post("/widget/action/check_now")
-        async def widget_check_now() -> dict:
-            if svc._manager is None:
-                raise HTTPException(503, "Service not ready")
-            try:
-                info = await svc._manager.check()
-            except Exception as exc:
-                raise HTTPException(502, f"check failed: {exc}") from exc
-            return {"ok": True, **info}
 
         svc._register_html_routes(router, __file__)
         return router

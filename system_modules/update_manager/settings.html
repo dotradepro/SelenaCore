@@ -6,39 +6,32 @@
     <title>Update Manager Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
+        body { padding: 20px; min-height: 100%; overflow-y: auto; }
+        h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; }
+        .section { background: var(--sf); border-radius: 12px; padding: 18px; margin-bottom: 14px; }
+        .section h2 { font-size: 0.95rem; color: var(--tx2); margin-bottom: 14px; font-weight: 600; }
+        /* Version card */
         .ver-card { background: var(--sf2); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
         .ver-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--b); }
         .ver-row:last-child { border-bottom: none; }
+        .ver-label { font-size: 0.82rem; color: var(--tx2); }
         .ver-value { font-size: 0.9rem; font-weight: 600; color: var(--tx); }
         .ver-value.big { font-size: 1.2rem; color: var(--ac); }
+        /* Available banner */
         .update-banner { border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
         .update-banner.available { background: rgba(46,201,138,.1); border: 1px solid rgba(46,201,138,.3); }
         .update-banner.current   { background: rgba(79,140,247,.07); border: 1px solid var(--b); }
         .update-banner .ico { font-size: 1.4rem; }
         .update-banner .text .head { font-weight: 700; font-size: 0.95rem; }
         .update-banner .text .sub  { font-size: 0.8rem; color: var(--tx2); margin-top: 2px; }
-
-        .release-list { display: flex; flex-direction: column; gap: 10px; }
-        .release-item { background: var(--sf2); border: 1px solid var(--b); border-radius: 10px; padding: 12px 14px; }
-        .release-item.current { border-color: var(--ac); }
-        .release-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-        .release-title { font-weight: 700; font-size: 1rem; }
-        .release-tag { color: var(--tx2); font-size: 0.85rem; margin-left: 6px; }
-        .release-meta { display: flex; gap: 10px; align-items: center; font-size: 0.8rem; color: var(--tx2); }
-        .release-actions { display: flex; gap: 8px; }
-        .release-summary { margin-top: 8px; font-size: 0.9rem; color: var(--tx2); }
-        .release-body { margin-top: 8px; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.45; max-height: 50vh; overflow: auto; padding: 8px; background: var(--b1); border-radius: 6px; }
-        .channel-pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-        .channel-pill.stable { background: rgba(46,201,138,.15); color: var(--gr); }
-        .channel-pill.rc     { background: rgba(245,169,58,.15); color: var(--am); }
-        details summary { cursor: pointer; user-select: none; color: var(--ac); font-size: 0.85rem; }
-        details[open] summary { margin-bottom: 6px; }
-
-        select.input { padding: 6px 10px; }
+        .msg { font-size: 0.85rem; margin-top: 8px; min-height: 18px; }
+        .ok-msg { color: var(--gr); } .err-msg { color: var(--rd); } .info-msg { color: var(--am); }
+        .progress { height: 4px; background: var(--sf3); border-radius: 2px; overflow: hidden; margin-top: 8px; display: none; }
+        .progress .fill { height: 100%; background: var(--ac); width: 0; transition: width 0.3s; border-radius: 2px; }
     </style>
 </head>
 <body>
-    <h2 data-i18n="title"></h2>
+    <h1 data-i18n="title"></h1>
 
     <!-- Current version banner -->
     <div id="upd-banner" class="update-banner current">
@@ -49,184 +42,112 @@
         </div>
     </div>
 
-    <!-- Version snapshot -->
-    <div class="card">
-        <div class="section-title" data-i18n="h_version"></div>
+    <!-- Version details -->
+    <div class="section">
+        <h2 data-i18n="h_version"></h2>
         <div class="ver-card">
             <div class="ver-row">
-                <span class="label-xs" data-i18n="lbl_current"></span>
+                <span class="ver-label" data-i18n="lbl_current"></span>
                 <span class="ver-value big" id="v-current">—</span>
             </div>
             <div class="ver-row">
-                <span class="label-xs" data-i18n="lbl_latest"></span>
+                <span class="ver-label" data-i18n="lbl_latest"></span>
                 <span class="ver-value" id="v-latest">—</span>
             </div>
             <div class="ver-row">
-                <span class="label-xs" data-i18n="lbl_state"></span>
+                <span class="ver-label" data-i18n="lbl_state"></span>
                 <span id="v-state"><span class="badge badge-info" data-i18n="loading"></span></span>
             </div>
             <div class="ver-row">
-                <span class="label-xs" data-i18n="lbl_channel"></span>
-                <span>
-                    <select class="input" id="sel-channel">
-                        <option value="rc"></option>
-                        <option value="stable"></option>
-                    </select>
-                </span>
+                <span class="ver-label" data-i18n="lbl_last_check"></span>
+                <span class="ver-value" id="v-last-check">—</span>
+            </div>
+            <div class="ver-row" id="row-downloaded" style="display:none">
+                <span class="ver-label" data-i18n="lbl_downloaded"></span>
+                <span class="ver-value" id="v-downloaded">—</span>
             </div>
         </div>
     </div>
 
     <!-- Actions -->
-    <div class="card">
-        <div class="section-title" data-i18n="h_actions"></div>
-        <div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-sec" id="btn-check" data-i18n="check_btn"></button>
-            <button class="btn btn-danger" id="btn-rollback" data-i18n="rollback_btn"></button>
-        </div>
-    </div>
-
-    <!-- Version history -->
-    <div class="card">
-        <div class="section-title" data-i18n="h_history"></div>
-        <div class="release-list" id="release-list">
-            <div class="empty" id="empty-msg" data-i18n="no_versions"></div>
-        </div>
+    <div class="section">
+        <h2 data-i18n="h_actions"></h2>
+        <button class="btn btn-sec" id="btn-check" data-i18n="check_btn"></button>
+        <button class="btn btn-primary" id="btn-download" disabled data-i18n="download_btn"></button>
+        <button class="btn btn-danger" id="btn-rollback" data-i18n="rollback_btn"></button>
+        <div class="progress"><div class="fill" id="prog-bar"></div></div>
+        <div class="msg" id="action-msg"></div>
     </div>
 
     <script src="/api/shared/widget-common.js"></script>
     <script>
-        var L = {
-            en: {
-                title: 'Update Manager',
-                checking: 'Checking…',
-                h_version: 'Version',
-                h_actions: 'Actions',
-                h_history: 'Version history',
-                lbl_current: 'Current',
-                lbl_latest: 'Latest available',
-                lbl_state: 'State',
-                lbl_channel: 'Release channel',
-                lbl_published: 'Published',
-                channel_rc: 'rc (preview)',
-                channel_stable: 'stable',
-                state_idle: 'idle',
-                state_checking: 'checking',
-                state_up_to_date: 'up to date',
-                state_update_available: 'update available',
-                state_downloading: 'downloading',
-                state_downloaded: 'downloaded',
-                state_applying: 'applying',
-                state_applied: 'applied',
-                state_rolling_back: 'rolling back',
-                state_rolled_back: 'rolled back',
-                state_error: 'error',
-                check_btn: 'Check now',
-                rollback_btn: 'Roll back',
-                rollback_confirm: 'Restore the previous version from backup?',
-                install_btn: 'Install',
-                installing: 'Installing…',
-                installed: 'This is the current version',
-                show_changelog: 'Show release notes',
-                hide_changelog: 'Hide release notes',
-                no_versions: 'No releases discovered yet — press "Check now".',
-                update_avail: 'Update available',
-                up_to_date: 'Up to date',
-                new_version: 'New version: ',
-                loading: 'loading',
-                never: 'never',
-                rolled_back: 'Rollback dispatched',
-                install_dispatched: 'Install dispatched — core will restart shortly',
-                channel_saved: 'Channel saved',
-                ch_pill_rc: 'rc',
-                ch_pill_stable: 'stable',
-                err_install: 'Install failed: ',
-                err_check: 'Check failed: ',
-                confirm_install: 'Install version '
-            },
-            uk: {
-                title: 'Менеджер оновлень',
-                checking: 'Перевіряю…',
-                h_version: 'Версія',
-                h_actions: 'Дії',
-                h_history: 'Історія версій',
-                lbl_current: 'Поточна',
-                lbl_latest: 'Остання доступна',
-                lbl_state: 'Стан',
-                lbl_channel: 'Канал релізів',
-                lbl_published: 'Опубліковано',
-                channel_rc: 'rc (тестовий)',
-                channel_stable: 'stable',
-                state_idle: 'очікування',
-                state_checking: 'перевірка',
-                state_up_to_date: 'актуально',
-                state_update_available: 'доступне оновлення',
-                state_downloading: 'завантаження',
-                state_downloaded: 'завантажено',
-                state_applying: 'встановлення',
-                state_applied: 'встановлено',
-                state_rolling_back: 'відкат',
-                state_rolled_back: 'відкочено',
-                state_error: 'помилка',
-                check_btn: 'Перевірити',
-                rollback_btn: 'Відкотити',
-                rollback_confirm: 'Відновити попередню версію з резервної копії?',
-                install_btn: 'Встановити',
-                installing: 'Встановлюю…',
-                installed: 'Це поточна версія',
-                show_changelog: 'Показати release notes',
-                hide_changelog: 'Сховати release notes',
-                no_versions: 'Релізи ще не виявлено — натисніть «Перевірити».',
-                update_avail: 'Доступне оновлення',
-                up_to_date: 'Актуально',
-                new_version: 'Нова версія: ',
-                loading: 'завантаження',
-                never: 'ніколи',
-                rolled_back: 'Запит на відкат відправлено',
-                install_dispatched: 'Встановлення розпочато — core перезапуститься',
-                channel_saved: 'Канал збережено',
-                ch_pill_rc: 'rc',
-                ch_pill_stable: 'stable',
-                err_install: 'Помилка встановлення: ',
-                err_check: 'Помилка перевірки: ',
-                confirm_install: 'Встановити версію '
-            }
-        };
+    // Module-specific i18n: strings live in system_modules/update_manager/locales/
+    // {en,uk,<lang>}.json, merged with core/i18n/common/<lang>.json and served
+    // via /api/i18n/bundle/update-manager. widget-common.js provides t(), applyLang().
+    var L = { en: {} };
+    var _i18nLoaded = new Set();
 
-        var _state = { current: '', channel: 'rc', versions: [] };
+    async function loadI18nBundle(lang) {
+        if (_i18nLoaded.has(lang)) return;
+        try {
+            var r = await fetch('/api/i18n/bundle/update-manager?lang=' + encodeURIComponent(lang));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            L[lang] = await r.json();
+            _i18nLoaded.add(lang);
+        } catch (e) {
+            console.warn('[update-manager] i18n bundle load failed for', lang, e);
+            L[lang] = L[lang] || {};
+        }
+    }
 
+    async function loadI18n() {
+        var targets = ['en'];
+        if (LANG !== 'en') targets.push(LANG);
+        await Promise.all(targets.map(loadI18nBundle));
+    }
+
+        function stateLabel(state) {
+            var map = { idle: 'state_idle', update_available: 'state_update_available', downloading: 'state_downloading', applying: 'state_applying', rolling_back: 'state_rolling_back', error: 'state_error' };
+            return t(map[state] || state);
+        }
         function stateBadgeClass(state) {
-            if (state === 'idle' || state === 'up_to_date' || state === 'applied') return 'badge-ok';
-            if (state === 'update_available' || state === 'downloading' || state === 'applying') return 'badge-warn';
+            if (state === 'idle') return 'badge-ok';
+            if (state === 'update_available') return 'badge-warn';
             if (state === 'error') return 'badge-err';
             return 'badge-info';
         }
-
-        function fmtDate(iso) {
-            if (!iso) return t('never');
-            try { return new Date(iso).toLocaleString(); } catch (e) { return String(iso); }
+        function fmtDate(ts) {
+            if (!ts) return t('never');
+            try {
+                var d = new Date(typeof ts === 'number' ? ts * 1000 : ts);
+                return d.toLocaleString();
+            } catch (e) { return String(ts); }
         }
 
-        function applyChannelOptions() {
-            var sel = $('sel-channel');
-            sel.options[0].textContent = t('channel_rc');
-            sel.options[1].textContent = t('channel_stable');
+        function showMsg(text, cls) {
+            var el = $('action-msg');
+            el.textContent = text;
+            el.className = 'msg ' + (cls || '');
         }
 
         async function loadStatus() {
             try {
-                var s = await apiGet('/status');
-                _state.current = s.current_version || '';
-                _state.channel = s.channel || 'rc';
-                $('v-current').textContent = _state.current || '—';
+                var s = await apiGet('/update/status');
+                $('v-current').textContent = s.current_version || '—';
                 $('v-latest').textContent = s.latest_version || '—';
+                $('v-last-check').textContent = fmtDate(s.last_check);
 
-                var stateKey = s.state || 'idle';
-                $('v-state').innerHTML = '<span class="badge ' + stateBadgeClass(stateKey) + '">'
-                    + esc(t('state_' + stateKey) || stateKey) + '</span>';
+                var stateKey = s.update_available ? 'update_available' : (s.state || 'idle');
+                $('v-state').innerHTML = '<span class="badge ' + stateBadgeClass(stateKey) + '">' + esc(stateLabel(stateKey)) + '</span>';
 
-                $('sel-channel').value = _state.channel;
+                if (s.downloaded_version) {
+                    $('v-downloaded').textContent = s.downloaded_version;
+                    show('row-downloaded');
+                } else {
+                    hide('row-downloaded');
+                }
 
+                // Banner
                 var banner = $('upd-banner');
                 var head = $('banner-head');
                 var sub = $('banner-sub');
@@ -238,97 +159,46 @@
                 } else {
                     banner.className = 'update-banner current';
                     banner.querySelector('.ico').textContent = '✅';
-                    head.textContent = t('state_' + stateKey) || stateKey;
-                    sub.textContent = _state.current;
+                    head.textContent = t('state_idle');
+                    sub.textContent = s.current_version || '';
                 }
+
+                // Enable download button only if update is available
+                $('btn-download').disabled = !s.update_available;
             } catch (e) {
-                showToast(e.message || 'Error', 'error');
+                showToast(e.message, 'error');
             }
-        }
-
-        async function loadVersions() {
-            try {
-                var r = await apiGet('/versions');
-                _state.versions = r.versions || [];
-                renderVersions();
-            } catch (e) {
-                showToast(e.message || 'Error', 'error');
-            }
-        }
-
-        function renderVersions() {
-            var list = $('release-list');
-            if (!_state.versions.length) {
-                list.innerHTML = '<div class="empty">' + esc(t('no_versions')) + '</div>';
-                return;
-            }
-            var parts = [];
-            for (var i = 0; i < _state.versions.length; i++) {
-                var r = _state.versions[i];
-                var isCurrent = (r.version === _state.current) || (r.tag === _state.current);
-                var pillClass = r.prerelease ? 'rc' : 'stable';
-                var pillLabel = r.prerelease ? t('ch_pill_rc') : t('ch_pill_stable');
-                var btn = isCurrent
-                    ? '<button class="btn btn-sec" disabled>' + esc(t('installed')) + '</button>'
-                    : '<button class="btn btn-primary" data-install="' + esc(r.tag) + '">' + esc(t('install_btn')) + '</button>';
-                parts.push(
-                    '<div class="release-item' + (isCurrent ? ' current' : '') + '">' +
-                        '<div class="release-head">' +
-                            '<div>' +
-                                '<span class="release-title">' + esc(r.name || r.tag) + '</span>' +
-                                '<span class="release-tag">' + esc(r.tag) + '</span>' +
-                            '</div>' +
-                            '<div class="release-meta">' +
-                                '<span class="channel-pill ' + pillClass + '">' + esc(pillLabel) + '</span>' +
-                                '<span>' + esc(t('lbl_published') + ': ' + fmtDate(r.published_at)) + '</span>' +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="release-summary">' + esc((r.body || '').split('\n').slice(0, 2).join(' ').slice(0, 200)) + '</div>' +
-                        '<details>' +
-                            '<summary>' + esc(t('show_changelog')) + '</summary>' +
-                            '<div class="release-body">' + esc(r.body || '') + '</div>' +
-                        '</details>' +
-                        '<div class="release-actions" style="margin-top:10px">' + btn + '</div>' +
-                    '</div>'
-                );
-            }
-            list.innerHTML = parts.join('');
-            // Bind install buttons
-            var btns = list.querySelectorAll('button[data-install]');
-            for (var j = 0; j < btns.length; j++) {
-                btns[j].addEventListener('click', onInstall);
-            }
-        }
-
-        function onInstall(ev) {
-            var tag = ev.currentTarget.getAttribute('data-install');
-            if (!tag) return;
-            if (!confirm(t('confirm_install') + tag + '?')) return;
-            var btn = ev.currentTarget;
-            withLoading(btn, async function () {
-                try {
-                    await apiPost('/install', { tag: tag });
-                    showToast(t('install_dispatched'), 'info');
-                } catch (e) {
-                    showToast(t('err_install') + (e.message || ''), 'error');
-                }
-            });
         }
 
         $('btn-check').addEventListener('click', function () {
             var btn = this;
             withLoading(btn, async function () {
-                try {
-                    var r = await apiPost('/check');
-                    showToast(
-                        r.update_available ? t('update_avail') + ' — ' + (r.version || r.tag || '') : t('up_to_date'),
-                        r.update_available ? 'info' : 'success'
-                    );
-                    await loadStatus();
-                    await loadVersions();
-                } catch (e) {
-                    showToast(t('err_check') + (e.message || ''), 'error');
-                }
+                showMsg(t('checking_msg'), 'info-msg');
+                var r = await apiPost('/update/check');
+                showMsg(r.update_available ? t('update_avail') + ' — ' + r.version : t('up_to_date'), r.update_available ? 'info-msg' : 'ok-msg');
+                await loadStatus();
+            });
+        });
+
+        $('btn-download').addEventListener('click', function () {
+            var btn = this;
+            showMsg(t('downloading'), 'info-msg');
+            var progWrap = document.querySelector('.progress');
+            var bar = $('prog-bar');
+            progWrap.style.display = 'block';
+            var pct = 0;
+            var prog = setInterval(function () { pct = Math.min(pct + 5, 90); bar.style.width = pct + '%'; }, 300);
+            withLoading(btn, async function () {
+                var r = await apiPost('/update/download');
+                clearInterval(prog);
+                bar.style.width = '100%';
+                showMsg(r.ok !== false ? t('downloaded') : t('failed'), r.ok !== false ? 'ok-msg' : 'err-msg');
+                await loadStatus();
+                setTimeout(function () { progWrap.style.display = 'none'; bar.style.width = '0'; }, 1500);
+            }).catch(function (e) {
+                clearInterval(prog);
+                progWrap.style.display = 'none';
+                bar.style.width = '0';
             });
         });
 
@@ -336,27 +206,18 @@
             if (!confirm(t('rollback_confirm'))) return;
             var btn = this;
             withLoading(btn, async function () {
-                await apiPost('/rollback');
-                showToast(t('rolled_back'), 'success');
+                showMsg(t('rolling_back'), 'info-msg');
+                await apiPost('/update/rollback');
+                showMsg(t('rolled_back'), 'ok-msg');
                 await loadStatus();
             });
         });
 
-        $('sel-channel').addEventListener('change', async function () {
-            try {
-                await apiPost('/config', { channel: this.value });
-                showToast(t('channel_saved'), 'success');
-                await loadStatus();
-                await loadVersions();
-            } catch (e) {
-                showToast(e.message || 'Error', 'error');
-            }
+        loadI18n().then(function () {
+            applyLang();
+            loadStatus();
+            setInterval(loadStatus, 30000);
         });
-
-        applyChannelOptions();
-        applyLang();
-        loadStatus().then(loadVersions);
-        setInterval(loadStatus, 30000);
     </script>
 </body>
 </html>

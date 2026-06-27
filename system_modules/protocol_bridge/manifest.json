@@ -1,7 +1,6 @@
 {
     "name": "protocol-bridge",
     "version": "0.1.0",
-    "room": "system",
     "description": "Protocol gateway: MQTT/Zigbee/Z-Wave/HTTP ↔ Device Registry",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -19,16 +18,9 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "kind": "template",
-            "template": "status",
-            "size": "2x2",
-            "max_size": "4x2",
-            "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 30}
-            },
-            "refresh": {
-                "poll_interval_s": 60
-            }
+            "file": "widget.html",
+            "size": "2x1",
+            "max_size": "2x2"
         },
         "settings": "settings.html"
     },

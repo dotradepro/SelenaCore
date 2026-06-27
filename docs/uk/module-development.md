@@ -50,7 +50,6 @@ my-module/
     "ui_profile": "FULL",
     "api_version": "1.0",
     "runtime_mode": "always_on",
-    "room": "home",
     "permissions": ["devices.read", "events.publish"],
     "intents": [
         {
@@ -65,27 +64,12 @@ my-module/
     "publishes": ["weather.module_started"],
     "ui": {
         "icon": "icon.svg",
-        "widget": {
-            "kind": "template",
-            "template": "weather",
-            "size": "4x2",
-            "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
-            }
-        },
+        "widget": {"file": "widget.html", "size": "2x2"},
         "settings": "settings.html"
     },
     "resources": {"memory_mb": 128, "cpu": 0.25}
 }
 ```
-
-> **`kind: "template"` — це переважний шлях.** Оберіть один з 8 вбудованих
-> шаблонів (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`,
-> `weather`, `media`, `presence`) і віддавайте JSON-payload з
-> `data_endpoints[k].path`. Використовуйте `kind: "custom"` з
-> `widget.file: "widget.html"` лише коли жоден шаблон не підходить. Повні схеми
-> див. у [widget-development.md](widget-development.md) та
-> [dashboard-recraft.md](dashboard-recraft.md#33-шаблони).
 
 ### Опис полів
 
@@ -97,13 +81,10 @@ my-module/
 | `ui_profile` | string | `HEADLESS` (без UI), `SETTINGS_ONLY`, `ICON_SETTINGS` або `FULL` (віджет + налаштування). |
 | `api_version` | string | Наразі `"1.0"`. |
 | `runtime_mode` | string | `always_on` (працює постійно), `on_demand` (запускається за потребою), `scheduled` (працює за таймером). |
-| `room` | string | **Обов'язково.** Тег кімнати — керує фільтром room-табів на дашборді. Використовуйте `"system"` для діагностичних модулів, `"home"` для cross-room користувацьких агрегаторів, або будь-яке власне ім'я кімнати. |
 | `permissions` | array | Можливості, які потребує модуль. Див. [Дозволи](#дозволи) нижче. |
 | `intents` | array | Визначення голосових намірів. Див. [Наміри](#наміри) нижче. |
 | `publishes` | array | Типи подій, які модуль може генерувати. Події, не перелічені тут, відхиляються шиною. |
-| `ui.icon` | string | Шлях до SVG-іконки. |
-| `ui.widget` | object | Визначення віджета. `kind: "template"` (використовує вбудований рендерер) або `kind: "custom"` (iframe з `widget.file`). Див. [widget-development.md](widget-development.md). |
-| `ui.settings` | string | Опціональний HTML-файл сторінки налаштувань. |
+| `ui` | object | Посилання на UI-ресурси: `icon` (шлях до SVG), `widget` (HTML-файл + розмір сітки), `settings` (HTML-файл). |
 | `resources` | object | Обмеження Docker-контейнера: `memory_mb` (ціле число) та `cpu` (дробове, де 1.0 = одне повне ядро). |
 
 ### Дозволи

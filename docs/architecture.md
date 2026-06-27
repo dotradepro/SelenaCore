@@ -173,7 +173,7 @@ climate              lights_switches      clock
 | `notify_push`         | Web Push (VAPID)                                                     |
 | `network_scanner`     | ARP / mDNS / SSDP / Zigbee discovery                                 |
 | `clock`               | Alarms, timers, reminders, world clock, stopwatch                    |
-| `backup_manager`      | Local manual + scheduled tar.gz backups (cloud + QR planned)         |
+| `backup_manager`      | Local USB / SD and E2E cloud backup                                  |
 | `remote_access`       | Tailscale-based remote access                                        |
 
 ### User Modules (Docker containers)
@@ -319,23 +319,6 @@ If a module fails to respond within 30 seconds, the bus activates a circuit brea
 ### ACL Permissions
 
 Each module type has a predefined set of allowed message types and event subscriptions. The bus enforces these permissions on every message.
-
----
-
-## Dashboard V2
-
-**Source:** `src/components/dashboard/`, `core/api/routes/module_data.py`, `core/api/routes/scenes.py`
-
-Phase 5/6 dashboard recraft — composition root is `DashboardV2.tsx`. Replaces the Phase 4 iframe-only V1 grid:
-
-- **Hero panel** — greeting, clock, status pill, scene shortcuts.
-- **Room tabs** — filter widgets by `manifest.room` (`system`, `home`, custom).
-- **Fixed 5×4 widget grid** — `BentoGrid.tsx` with explicit `widgetLayout.positions`. Drag-drop in edit mode, empty slots act as drop targets.
-- **Template engine** — 8 built-in renderers (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`, `weather`, `media`, `presence`). Modules declare `ui.widget.kind: "template"` and emit JSON payloads from `data_endpoints[k]`. Iframe widgets (`kind: "custom"`) remain supported as a fallback.
-- **Proxy layer** — dashboard fetches widget data through `/api/v1/modules/{module}/data/{key}` and triggers actions via `/api/v1/modules/{module}/action/{key}`. The Core caches with `cache_ttl_s` and invalidates on EventBus events listed in `ui.widget.refresh.events`.
-- **Scene activation** — `POST /api/v1/scenes/{id}/activate` emits `scene.activate` / `scene.activated` / `scene.failed` events.
-
-> Full Phase 5/6 spec, payload schemas per template, and edit-mode UX in [dashboard-recraft.md](dashboard-recraft.md).
 
 ---
 

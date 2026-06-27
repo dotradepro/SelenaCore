@@ -11,6 +11,7 @@ coverage/
 __pycache__/
 *.pyc
 .pytest_cache/
+token git
 .version
 
 # Local docs snapshot
@@ -19,17 +20,10 @@ config/core.yaml
 
 # Benchmark reports (generated)
 benchmarks/report.json
-tests/experiments/results/
 
 # Private planning — never commit to GitHub
 _private/
 
 # Claude Code instructions — local only
 CLAUDE.md
-
-# Stray pip install output captured to files like "=1.10.2"
-=[0-9]*
-
-# Playwright artifacts (local-only — captured on test failure for debugging)
-test-results/
-playwright-report/
+=1.3.0

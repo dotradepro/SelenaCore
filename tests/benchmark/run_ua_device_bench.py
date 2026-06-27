@@ -7,7 +7,7 @@ Tests ALL registered devices through the full production pipeline:
 
 Reports intent accuracy, param accuracy, device resolution rate, confidence
 scores and per-stage latency.  Outputs a human-readable report + JSON dump
-to ``tests/experiments/results/``.
+to ``_private/``.
 
 Usage (inside the selena-core container):
 
@@ -621,7 +621,7 @@ def _render_report(
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default="tests/benchmark/ua_device_corpus.jsonl")
-    ap.add_argument("--out-dir", default="tests/experiments/results")
+    ap.add_argument("--out-dir", default="_private")
     args = ap.parse_args()
 
     corpus_path = Path(args.corpus)

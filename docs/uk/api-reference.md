@@ -280,50 +280,6 @@ Authorization: Bearer <module_token>
 
 **Відповідь 204:** Без тіла.
 
-### POST /scenes/{scene_id}/activate
-
-Активувати сцену — атомарно застосовує всі її дії і генерує події сцени на шині.
-
-**Відповідь 200:**
-
-```json
-{"scene_id": 1, "actions_applied": 3, "status": "ok"}
-```
-
-**Згенеровані події:**
-
-- `scene.activate` — перед застосуванням дій (payload: `{scene_id, name_en}`).
-- `scene.activated` — після успішного виконання всіх дій.
-- `scene.failed` — якщо будь-яка дія викинула виключення (payload містить `error`).
-
-**Відповідь 404:** Сцену не знайдено.
-
----
-
-## Widget Data & Action Endpoints
-
-Ці proxy-ендпоінти стоять за template-engine дашборду Phase 5/6. Дашборд ніколи не звертається до контейнерів модулів напряму — завжди через `/api/v1/modules/{module}/...`, щоб кешування, авторизація та rate-limiting застосовувалися уніфіковано.
-
-### GET /modules/{module}/data/{key}
-
-Отримати payload віджета. Core форвардить запит на шлях, оголошений у `manifest.json` модуля під `ui.widget.data_endpoints[key].path`, і застосовує опціональний `cache_ttl_s` (in-memory TTL-кеш з stale-while-revalidate).
-
-**Відповідь 200:** JSON, визначений модулем. Форма залежить від обраного шаблону — див. [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-шаблони) і per-template payload-контракти.
-
-**Відповідь 502:** Upstream-модуль недоступний або timeout (800 мс).
-
-**Відповідь 504:** Використано закешовану відповідь, поки модуль відновлюється (stale-while-revalidate).
-
-### POST /modules/{module}/action/{key}
-
-Викликати дію віджета. Core форвардить JSON-body на шлях, оголошений під `ui.widget.actions[key].path`.
-
-**Запит:** JSON, визначений модулем (наприклад, `{"id": "kitchen-light"}` для `toggle`, `{"id": "fan", "value": 2}` для `step`).
-
-**Відповідь 200/204:** Визначається модулем.
-
-**Відповідь 502:** Upstream-модуль недоступний.
-
 ---
 
 ## Точки доступу подій
@@ -411,18 +367,10 @@ Authorization: Bearer <module_token>
             "status": "RUNNING",
             "runtime_mode": "always_on",
             "port": 0,
-            "room": "home",
             "installed_at": 1711900000.0,
             "ui": {
                 "icon": "icon.svg",
-                "widget": {
-                    "kind": "template",
-                    "template": "weather",
-                    "size": "4x2",
-                    "data_endpoints": {
-                        "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
-                    }
-                }
+                "widget": {"file": "widget.html", "size": "2x2"}
             }
         }
     ]
@@ -435,8 +383,7 @@ Authorization: Bearer <module_token>
 | `status` | string | `VALIDATING`, `READY`, `RUNNING`, `STOPPED`, `ERROR` |
 | `runtime_mode` | string | `always_on` або `on_demand` |
 | `port` | int | Призначений порт (0, якщо не застосовується) |
-| `room` | string | Тег кімнати — керує room-табами дашборду (`"system"`, `"home"`, або власна назва). |
-| `ui` | object або null | Конфігурація UI-віджета. `widget` — це або `{kind: "template", template, size, data_endpoints, actions?, refresh?}`, або `{kind: "custom", file, size}`. |
+| `ui` | object або null | Конфігурація UI-віджета, якщо модуль його надає |
 
 ---
 

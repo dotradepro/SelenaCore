@@ -1,7 +1,6 @@
 {
     "name": "voice-core",
     "version": "1.0.0",
-    "room": "system",
     "description": "Voice subsystem: STT (Vosk), TTS (Piper), wake word detection, speaker ID, privacy mode",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -18,17 +17,10 @@
     "ui": {
         "icon": "icon.svg",
         "widget": {
-            "kind": "template",
-            "template": "status",
-            "size": "2x2",
-            "max_size": "4x2",
-            "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
-            },
-            "refresh": {
-                "events": ["voice.state", "voice.privacy_on", "voice.privacy_off"],
-                "poll_interval_s": 30
-            }
+            "file": "widget.html",
+            "size": "1x1",
+            "min_size": "1x1",
+            "max_size": "1x1"
         },
         "settings": "settings.html"
     },

@@ -6,36 +6,32 @@ This document is a quick reference. For deep dives, see the linked specialized d
 
 ## Index
 
-The `Template` column shows the dashboard render path for each widget-bearing module: one of the 8 built-in templates (`metric`, `sparkline`, `toggle-list`, `control-panel`, `status`, `weather`, `media`, `presence`) or `custom` (legacy iframe). See [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-templates).
-
-| Module                 | Widget | Template | Room | Voice intents | Doc |
-|------------------------|--------|----------|------|---------------|-----|
-| [voice_core](#voice_core) | 1×1 | status | system | privacy mode | [voice-settings.md](voice-settings.md) |
-| [llm_engine](#llm_engine) | — | — | system | — | [architecture.md](architecture.md#intent-system) |
-| [ui_core](#ui_core) | — | — | system | — | [ui-sync-architecture.md](ui-sync-architecture.md) |
-| [device_control](#device_control) | — | — | system | `device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed` | [provider-system-and-modules.md](provider-system-and-modules.md) |
-| [climate](#climate) | 2×2 | control-panel | home | — (delegates to device-control) | [climate-and-gree.md](climate-and-gree.md) |
-| [lights_switches](#lights_switches) | 2×2 | toggle-list | home | — (delegates to device-control) | [provider-system-and-modules.md](provider-system-and-modules.md) |
-| [energy_monitor](#energy_monitor) | 1×1 | metric | home | 2 intents | — |
-| [automation_engine](#automation_engine) | 2×1 | status | system | 4 intents | — |
-| [update_manager](#update_manager) | 2×1 | status | system | — | — |
-| [scheduler](#scheduler) | — | — | system | — | — |
-| [user_manager](#user_manager) | — | — | system | — | [user-manager-auth.md](user-manager-auth.md) |
-| [secrets_vault](#secrets_vault) | — | — | system | — | — |
-| [hw_monitor](#hw_monitor) | — | — | system | — | — |
-| [media_player](#media_player) | 2×1 | media | home | 14 intents | — |
-| [protocol_bridge](#protocol_bridge) | 2×1 | status | system | — | — |
-| [weather_service](#weather_service) | 4×2 | weather | home | 3 intents | — |
-| [presence_detection](#presence_detection) | 2×1 | presence | home | 3 intents | — |
-| [device_watchdog](#device_watchdog) | 1×1 | metric | system | 2 intents | — |
-| [notification_router](#notification_router) | 2×1 | status | system | — | — |
-| [notify_push](#notify_push) | — | — | system | — | — |
-| [network_scanner](#network_scanner) | — | — | system | — | — |
-| [clock](#clock) | 1×1 | metric | home | — | — |
-| [backup_manager](#backup_manager) | — | — | system | — | — |
-| [remote_access](#remote_access) | — | — | system | — | — |
-
-> **Room rules.** All system-modules use `room: "system"`. User-facing aggregators (climate, lights, media, weather, energy, presence, clock) use `"home"` so they show up under the Home tab. Custom user modules may use any room name; the dashboard creates a tab per distinct room.
+| Module                 | Widget | Voice intents | Doc |
+|------------------------|--------|---------------|-----|
+| [voice_core](#voice_core) | 1×1 | privacy mode | [voice-settings.md](voice-settings.md) |
+| [llm_engine](#llm_engine) | — | — | [architecture.md](architecture.md#intent-system) |
+| [ui_core](#ui_core) | — | — | [ui-sync-architecture.md](ui-sync-architecture.md) |
+| [device_control](#device_control) | — | `device.on`, `device.off`, `device.set_temperature`, `device.set_mode`, `device.set_fan_speed` | [provider-system-and-modules.md](provider-system-and-modules.md) |
+| [climate](#climate) | 2×2 | — (delegates to device-control) | [climate-and-gree.md](climate-and-gree.md) |
+| [lights_switches](#lights_switches) | 2×2 | — (delegates to device-control) | [provider-system-and-modules.md](provider-system-and-modules.md) |
+| [energy_monitor](#energy_monitor) | 1×1 | 2 intents | — |
+| [automation_engine](#automation_engine) | 2×1 | 4 intents | — |
+| [update_manager](#update_manager) | 2×1 | — | — |
+| [scheduler](#scheduler) | — | — | — |
+| [user_manager](#user_manager) | — | — | [user-manager-auth.md](user-manager-auth.md) |
+| [secrets_vault](#secrets_vault) | — | — | — |
+| [hw_monitor](#hw_monitor) | — | — | — |
+| [media_player](#media_player) | 2×1 | 14 intents | — |
+| [protocol_bridge](#protocol_bridge) | 2×1 | — | — |
+| [weather_service](#weather_service) | 2×2 | 3 intents | — |
+| [presence_detection](#presence_detection) | 2×1 | 3 intents | — |
+| [device_watchdog](#device_watchdog) | 1×1 | 2 intents | — |
+| [notification_router](#notification_router) | 2×1 | — | — |
+| [notify_push](#notify_push) | — | — | — |
+| [network_scanner](#network_scanner) | — | — | — |
+| [clock](#clock) | 1×1 | — | — |
+| [backup_manager](#backup_manager) | — | — | — |
+| [remote_access](#remote_access) | — | — | — |
 
 ---
 
@@ -243,15 +239,7 @@ Clock app: alarms, timers, reminders, world clock, stopwatch with voice control.
 
 **Type:** SYSTEM
 
-Local backup manager: manual + scheduled tar.gz archives of SelenaCore data
-with pre-restore snapshot safety net. Categories (core / secrets) are
-opt-in per archive; SQLite is captured via the Online Backup API to avoid
-torn writes. Restore flow includes double-confirmation in the UI and an
-automatic `systemctl restart selena-core` once extraction completes. Cloud
-E2E backup and QR-code device transfer (`cloud_backup.py`, `qr_transfer.py`)
-ship in the source tree but are not yet wired up — phase 2.
-
-See [backup.md](backup.md) for the full guide.
+Local USB / SD backup, E2E cloud backup (PBKDF2 + AES-256-GCM), QR-code secret transfer between devices.
 
 ---
 

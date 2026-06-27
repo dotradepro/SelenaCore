@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Energy Monitor</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        /* Widget-specific overrides on top of shared theme.css */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--tx);
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body.modal-mode {
+            cursor: default;
+            padding: 16px 20px;
+            justify-content: flex-start;
+            gap: 12px;
+            overflow-y: auto;
+            height: 100%;
+        }
+        body > * { pointer-events: none; }
+        body.modal-mode > * { pointer-events: auto; }
+
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .kpi-card {
+            background: var(--sf);
+            border: 1px solid var(--b);
+            border-radius: 8px;
+            padding: 8px 10px;
+            text-align: center;
+        }
+        .kpi-val { font-size: 1.05rem; font-weight: 700; color: var(--tx); }
+        .kpi-lbl { font-size: 0.65rem; color: var(--tx3); text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+
+        .modal-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.78rem;
+        }
+        .modal-table th, .modal-table td {
+            padding: 6px 8px;
+            border-bottom: 1px solid var(--b);
+            text-align: left;
+        }
+        .modal-table th {
+            color: var(--tx3);
+            font-weight: 500;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .filter-row input, .filter-row select {
+            flex: 1;
+            min-width: 110px;
+            padding: 5px 8px;
+            background: var(--sf3);
+            border: 1px solid var(--b);
+            border-radius: 5px;
+            color: var(--tx);
+            font-size: 0.75rem;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 0.65rem;
+            font-weight: 600;
+        }
+        .pill.on { background: rgba(34,197,94,.18); color: var(--gn,#22c55e); }
+        .pill.off { background: rgba(239,68,68,.18); color: var(--rd); }
+
+        .fs-close {
+            position: fixed; top: 12px; right: 16px;
+            background: var(--sf); border: 1px solid var(--b); border-radius: 50%;
+            width: 32px; height: 32px; cursor: pointer; color: var(--tx); font-size: 16px;
+            display: none; align-items: center; justify-content: center; z-index: 1001;
+            pointer-events: auto;
+        }
+        body.modal-mode .fs-close { display: flex; }
+
+        .top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--tx2);
+            line-height: 1;
+        }
+        .top .icon {
+            font-size: 0.95rem;
+            color: var(--am);
+        }
+        .top .active {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .top .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--gn, #22c55e);
+            display: inline-block;
+        }
+        .top .dot.idle {
+            background: var(--tx3, #6b7280);
+        }
+
+        .center {
+            text-align: center;
+            line-height: 1;
+        }
+        .watts {
+            font-size: 1.65rem;
+            font-weight: 700;
+            color: var(--am);
+            white-space: nowrap;
+        }
+        .watts .unit {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--tx2);
+            margin-left: 2px;
+        }
+        .label {
+            margin-top: 3px;
+            font-size: 0.65rem;
+            color: var(--tx3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .bottom {
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--tx2);
+            line-height: 1;
+        }
+        .bottom .kwh {
+            font-weight: 600;
+            color: var(--tx);
+        }
+
+        .err {
+            text-align: center;
+            color: var(--rd, #ef4444);
+            font-size: 0.75rem;
+            padding: 8px;
+        }
+    </style>
+</head>
+
+<body id="body">
+    <button class="fs-close" id="fsClose">×</button>
+    <div id="compact-view">
+        <div class="top">
+            <span class="icon">⚡</span>
+            <span class="active">
+                <span class="dot" id="dot"></span>
+                <span id="active">—</span>
+            </span>
+        </div>
+        <div class="center">
+            <div class="watts"><span id="watts">—</span><span class="unit">W</span></div>
+            <div class="label" data-i18n="now"></div>
+        </div>
+        <div class="bottom">
+            <span data-i18n="today"></span> <span class="kwh" id="kwh">—</span> kWh
+        </div>
+    </div>
+    <div id="modal-view" style="display:none">
+        <div class="kpi-row">
+            <div class="kpi-card"><div class="kpi-val" id="m-power">—</div><div class="kpi-lbl" data-i18n="m_power"></div></div>
+            <div class="kpi-card"><div class="kpi-val" id="m-kwh">—</div><div class="kpi-lbl" data-i18n="m_kwh"></div></div>
+            <div class="kpi-card"><div class="kpi-val" id="m-active">—</div><div class="kpi-lbl" data-i18n="m_active"></div></div>
+            <div class="kpi-card"><div class="kpi-val" id="m-total">—</div><div class="kpi-lbl" data-i18n="m_total"></div></div>
+        </div>
+        <div class="filter-row">
+            <input type="text" id="f-search" data-placeholder-i18n="ph_search">
+            <select id="f-type">
+                <option value="" data-i18n="f_type_all"></option>
+                <option value="light" data-i18n="f_type_light"></option>
+                <option value="switch" data-i18n="f_type_switch"></option>
+                <option value="outlet" data-i18n="f_type_outlet"></option>
+                <option value="air_conditioner" data-i18n="f_type_ac"></option>
+                <option value="thermostat" data-i18n="f_type_thermostat"></option>
+                <option value="sensor" data-i18n="f_type_sensor"></option>
+            </select>
+            <select id="f-room">
+                <option value="" data-i18n="f_room_all"></option>
+            </select>
+            <select id="f-status">
+                <option value="" data-i18n="f_status_all"></option>
+                <option value="on" data-i18n="f_status_on"></option>
+                <option value="off" data-i18n="f_status_off"></option>
+            </select>
+        </div>
+        <table class="modal-table">
+            <thead>
+                <tr>
+                    <th data-sort="name" data-i18n="col_name"></th>
+                    <th data-sort="location" data-i18n="col_room"></th>
+                    <th data-sort="entity_type" data-i18n="col_type"></th>
+                    <th data-sort="state" data-i18n="col_state"></th>
+                    <th data-sort="watts" data-i18n="col_power"></th>
+                    <th data-sort="kwh_today" data-i18n="col_kwh"></th>
+                </tr>
+            </thead>
+            <tbody id="m-rows">
+                <tr><td colspan="6" style="text-align:center;color:var(--tx3)" data-i18n="loading"></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
+            en: {
+                now: 'now', today: 'today', err: 'error',
+                m_power: 'Total power', m_kwh: 'Today (kWh)', m_active: 'Active', m_total: 'Tracked',
+                ph_search: 'Search by name…',
+                f_type_all: 'All types', f_type_light: '\uD83D\uDCA1 Lights', f_type_switch: '\u23FB Switches', f_type_outlet: '\uD83D\uDD0C Outlets', f_type_ac: '\u2744 A/C', f_type_thermostat: '\uD83C\uDF21 Thermostats', f_type_sensor: '\uD83D\uDCD0 Sensors',
+                f_room_all: 'All rooms',
+                f_status_all: 'All status', f_status_on: 'On', f_status_off: 'Off',
+                col_name: 'Name', col_room: 'Room', col_type: 'Type', col_state: 'State', col_power: 'W', col_kwh: 'kWh',
+                loading: 'Loading…',
+            },
+            uk: {
+                now: 'зараз', today: 'сьогодні', err: 'помилка',
+                m_power: 'Загальна потужність', m_kwh: 'Сьогодні (кВт·год)', m_active: 'Активні', m_total: 'Відстежується',
+                ph_search: 'Пошук за назвою…',
+                f_type_all: 'Усі типи', f_type_light: '\uD83D\uDCA1 Лампи', f_type_switch: '\u23FB Вимикачі', f_type_outlet: '\uD83D\uDD0C Розетки', f_type_ac: '\u2744 Кондиціонери', f_type_thermostat: '\uD83C\uDF21 Термостати', f_type_sensor: '\uD83D\uDCD0 Сенсори',
+                f_room_all: 'Усі кімнати',
+                f_status_all: 'Будь-який стан', f_status_on: 'Увімкнено', f_status_off: 'Вимкнено',
+                col_name: 'Назва', col_room: 'Кімната', col_type: 'Тип', col_state: 'Стан', col_power: 'W', col_kwh: 'кВт·год',
+                loading: 'Завантаження…',
+            }
+        };
+
+        var IS_MODAL = (new URLSearchParams(window.location.search).get('modal') || '') === '1';
+        var inFrame = window.self !== window.top;
+
+        // Listen for 'refresh' postMessage on top of widget-common's built-in handlers
+        window.addEventListener('message', function (e) {
+            if (!e.data) return;
+            if (e.data.type === 'refresh') { refresh(); if (IS_MODAL) loadFull(); }
+            // lang_changed is handled by widget-common.js (calls refresh() automatically),
+            // but we also need to reload modal data + re-populate room filter dropdown.
+            if (e.data.type === 'lang_changed' && IS_MODAL) loadFull();
+        });
+
+        function fmtWatts(w) {
+            if (w == null || isNaN(w)) return '—';
+            if (w >= 1000) return (w / 1000).toFixed(1) + 'k';
+            if (w >= 100) return Math.round(w).toString();
+            return w.toFixed(1);
+        }
+
+        function fmtKwh(k) {
+            if (k == null || isNaN(k)) return '—';
+            if (k >= 10) return k.toFixed(1);
+            if (k >= 1) return k.toFixed(2);
+            return k.toFixed(3);
+        }
+
+        async function refresh() {
+            try {
+                var d = await apiGet('/energy/status');
+                var total = d.devices || 0;
+                var active = d.active_devices || 0;
+                $('watts').textContent = fmtWatts(d.total_power_w);
+                $('kwh').textContent = fmtKwh(d.total_today_kwh);
+                $('active').textContent = active + '/' + total;
+                $('dot').className = 'dot' + (active > 0 ? '' : ' idle');
+                if (IS_MODAL) {
+                    $('m-power').textContent = fmtWatts(d.total_power_w) + ' W';
+                    $('m-kwh').textContent = fmtKwh(d.total_today_kwh);
+                    $('m-active').textContent = active;
+                    $('m-total').textContent = total;
+                }
+            } catch (e) {
+                $('watts').textContent = '—';
+                $('kwh').textContent = '—';
+                $('active').textContent = '—';
+                showToast(String(e && e.message || e), 'error');
+            }
+        }
+
+        // ── Modal-mode device list ───────────────────────────────────────
+        var FULL = [];
+        var SORT_KEY = 'location';
+        var SORT_DIR = 1;
+
+        async function loadFull() {
+            try {
+                var d = await apiGet('/energy/devices/full');
+                FULL = (d && d.devices) || [];
+                _populateRoomFilter();
+                _renderFull();
+            } catch (e) {
+                showToast(String(e && e.message || e), 'error');
+            }
+        }
+        function _populateRoomFilter() {
+            var sel = $('f-room'); if (!sel) return;
+            var current = sel.value;
+            var rooms = {};
+            FULL.forEach(function (r) { if (r.location) rooms[r.location] = true; });
+            sel.innerHTML = '<option value="">' + t('f_room_all') + '</option>' +
+                Object.keys(rooms).sort().map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('');
+            sel.value = current;
+        }
+        function _renderFull() {
+            var search = ($('f-search').value || '').toLowerCase();
+            var typeF = $('f-type').value;
+            var roomF = $('f-room').value;
+            var statusF = $('f-status').value;
+
+            var filtered = FULL.filter(function (r) {
+                if (search && r.name.toLowerCase().indexOf(search) === -1) return false;
+                if (typeF && r.entity_type !== typeF) return false;
+                if (roomF && r.location !== roomF) return false;
+                if (statusF) {
+                    var on = (r.state || {}).on === true;
+                    if (statusF === 'on' && !on) return false;
+                    if (statusF === 'off' && on) return false;
+                }
+                return true;
+            });
+            filtered.sort(function (a, b) {
+                var av = a[SORT_KEY], bv = b[SORT_KEY];
+                if (SORT_KEY === 'state') { av = (a.state || {}).on ? 1 : 0; bv = (b.state || {}).on ? 1 : 0; }
+                if (av == null) av = ''; if (bv == null) bv = '';
+                if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * SORT_DIR;
+                return String(av).localeCompare(String(bv)) * SORT_DIR;
+            });
+            var tb = $('m-rows');
+            if (filtered.length === 0) {
+                tb.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--tx3)">—</td></tr>';
+                return;
+            }
+            tb.innerHTML = filtered.map(function (r) {
+                var s = r.state || {};
+                var pill = s.on === true
+                    ? '<span class="pill on">' + t('f_status_on') + '</span>'
+                    : (s.on === false ? '<span class="pill off">' + t('f_status_off') + '</span>' : '—');
+                var watts = (r.watts != null) ? Math.round(r.watts) : '—';
+                var kwh = (r.kwh_today != null) ? r.kwh_today.toFixed(3) : '—';
+                return '<tr>' +
+                    '<td>' + esc(r.name) + '</td>' +
+                    '<td>' + esc(r.location || '—') + '</td>' +
+                    '<td>' + esc(r.entity_type || '—') + '</td>' +
+                    '<td>' + pill + '</td>' +
+                    '<td>' + watts + '</td>' +
+                    '<td>' + kwh + '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+
+        // ── Modal entry / exit + click-to-open ───────────────────────────
+        function openModal() {
+            if (!inFrame) return;
+            try {
+                window.parent.postMessage({
+                    type: 'openWidgetModal', module: 'energy-monitor',
+                    width: 760, height: 580
+                }, '*');
+            } catch (_) { }
+        }
+        function closeModal() {
+            if (!inFrame) return;
+            try { window.parent.postMessage({ type: 'closeWidgetModal', module: 'energy-monitor' }, '*'); } catch (_) { }
+        }
+
+        if (IS_MODAL) {
+            document.body.classList.add('modal-mode');
+            $('compact-view').style.display = 'none';
+            $('modal-view').style.display = 'block';
+            $('fsClose').onclick = closeModal;
+            window.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+            ['f-search', 'f-type', 'f-room', 'f-status'].forEach(function (id) {
+                var el = $(id);
+                if (el) el.addEventListener('input', _renderFull);
+            });
+            document.querySelectorAll('table.modal-table th[data-sort]').forEach(function (th) {
+                th.addEventListener('click', function () {
+                    var key = th.getAttribute('data-sort');
+                    if (SORT_KEY === key) SORT_DIR = -SORT_DIR; else { SORT_KEY = key; SORT_DIR = 1; }
+                    _renderFull();
+                });
+            });
+            loadFull();
+            setInterval(loadFull, 10000);
+        } else {
+            // Compact mode — entire body is the click target.
+            var fired = false;
+            var trigger = function (e) {
+                if (fired) return;
+                fired = true;
+                setTimeout(function () { fired = false; }, 350);
+                if (e && e.preventDefault) e.preventDefault();
+                openModal();
+            };
+            document.body.addEventListener('pointerdown', trigger);
+            document.body.addEventListener('click', trigger);
+        }
+
+        applyLang();
+        refresh();
+        setInterval(refresh, 5000);
+    </script>
+</body>
+
+</html>

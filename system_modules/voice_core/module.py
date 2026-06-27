@@ -262,13 +262,11 @@ class VoiceCoreModule(SystemModule):
         self._privacy_mode = False
         self._system_speak_done = asyncio.Event()
         self._pattern_response_spoken = False  # set when pipeline already spoke a template response → suppresses redundant LLM ack
-        # Conversation history is kept PER audio source so that a kitchen
-        # satellite's follow-up ("and the weather?") can't pick up context
-        # from a simultaneous bedroom command. Keys mirror the speech-queue
-        # scheme: "local" for the hub's own mic, "satellite:<sid>" for each
-        # active satellite session.
-        self._sessions_by_key: dict[str, dict[str, Any]] = {}
-        self._last_spoken: str = ""                # last TTS text (global, for debug)
+        self._session: list[dict[str, str]] = []  # conversation history [{role, content}]
+        self._session_ts: float = 0.0              # last interaction timestamp
+        self._last_intent: str = ""                # last classified intent (for rephrase context)
+        self._last_query: str = ""                 # last user query text
+        self._last_spoken: str = ""                # last TTS text (after rephrase, for debug)
 
         # Pending clarification — set when the last IntentResult asked a
         # follow-up question (ambiguous device / missing param / low
@@ -278,21 +276,11 @@ class VoiceCoreModule(SystemModule):
         self._pending_clarification: dict | None = None
         self._clarification_deadline: float = 0.0  # monotonic time
 
-        # Per-target speech queues. Each target (local speaker or an
-        # individual satellite) gets its own PriorityQueue + worker task so
-        # a long local reply doesn't starve a satellite that just asked a
-        # question (and vice versa). Tuple layout on each queue:
-        #   (priority, timestamp, text, done_event, voice_override, target)
-        # Keys: "local" for the hub's own speaker, or f"sat:{session_id}"
-        # for a specific ESP32 satellite.
-        self._speech_queues: dict[str, asyncio.PriorityQueue] = {}
-        self._speech_worker_tasks: dict[str, asyncio.Task] = {}
-
-        # Satellite audio sessions (keyed by session_id from satellite.wake).
-        # Each holds its own Vosk KaldiRecognizer — the local mic path keeps
-        # its current single-provider setup untouched.
-        self._sat_sessions: dict[str, "SatelliteAudioSession"] = {}
-        self._sat_sweeper_task: asyncio.Task | None = None
+        # Speech queue: serializes all TTS playback (priority, timestamp, text, done_event, voice_override)
+        self._speech_queue: asyncio.PriorityQueue[tuple[int, float, str, asyncio.Event | None, str | None]] = (
+            asyncio.PriorityQueue(maxsize=200)
+        )
+        self._speech_worker_task: asyncio.Task | None = None
 
         # Mic test lock: when set, voice loop pauses to release the device
         self._mic_test_active = False
@@ -1088,12 +1076,7 @@ class VoiceCoreModule(SystemModule):
 
     # ── Command processing pipeline ──────────────────────────────────────
 
-    async def _process_command(
-        self,
-        text: str,
-        target: tuple[str, str] | None = None,
-        default_location: str | None = None,
-    ) -> None:
+    async def _process_command(self, text: str) -> None:
         """IntentRouter → TTS → playback, then back to IDLE.
 
         Resolution order (handled by IntentRouter):
@@ -1102,23 +1085,8 @@ class VoiceCoreModule(SystemModule):
           Tier 2:   User module intents (HTTP) — milliseconds
           Tier 3:   LLM fallback — dynamic understanding
 
-        target: None → TTS plays on local speaker, local UI state is driven
-            as before. ("satellite", session_id) → TTS PCM is published back
-            to the specific satellite; local UI state is NOT touched (so the
-            local mic indicator stays correct even while a satellite is busy).
-        default_location: location hint from the audio source (e.g. the room
-            the satellite is placed in). Passed to the intent router as a
-            fallback when the utterance itself didn't name a room — explicit
-            user locations always win over this default.
-
         Each step is logged to live monitor for full pipeline visibility.
         """
-        is_satellite = target is not None and target[0] == "satellite"
-        if is_satellite and default_location:
-            logger.info(
-                "Satellite command from location=%s (session=%s)",
-                default_location, target[1],
-            )
         start_ts = time.monotonic()
         try:
             logger.info("Voice pipeline: recognized '%s'", text)
@@ -1160,8 +1128,6 @@ class VoiceCoreModule(SystemModule):
             result = await get_intent_router().route(
                 text, user_id=None, lang=stt_lang, tts_lang=tts_lang,
                 native_text=native_text,
-                default_location=default_location,
-                origin_target=target,
             )
 
             self._log_live("intent", {
@@ -1173,13 +1139,12 @@ class VoiceCoreModule(SystemModule):
                 result.intent, result.source, result.latency_ms,
             )
 
-            session_state = self._session_state(target)
-            session_state["last_query"] = text
-            session_state["last_intent"] = result.intent
-            if time.monotonic() - session_state["ts"] > 300:
-                session_state["session"].clear()
-            session_state["ts"] = time.monotonic()
-            session_state["session"].append({"role": "user", "content": text})
+            self._last_query = text
+            self._last_intent = result.intent
+            if time.monotonic() - self._session_ts > 300:
+                self._session.clear()
+            self._session_ts = time.monotonic()
+            self._session.append({"role": "user", "content": text})
 
             # ── Clarification branch ──
             # Router-emitted clarification (ambiguous_device / low_margin):
@@ -1190,23 +1155,9 @@ class VoiceCoreModule(SystemModule):
             clarification = getattr(result, "clarification", None)
             if clarification:
                 await self._speak_clarification_question(
-                    clarification, tts_lang, target=target,
+                    clarification, tts_lang,
                 )
-                if is_satellite:
-                    # Attach pending to the satellite session so the next
-                    # AUDIO_END for that sid routes through
-                    # route_clarification. The session stays alive — its
-                    # recognizer is reset so the reply gets a clean slate.
-                    sid = target[1]
-                    session = self._sat_sessions.get(sid)
-                    if session is not None:
-                        session.pending_clarification = clarification
-                        session.clarification_deadline = time.monotonic() + float(
-                            clarification.get("timeout_sec", 10.0),
-                        )
-                        session.reset_for_clarification()
-                else:
-                    self._pending_clarification = clarification
+                self._pending_clarification = clarification
                 return
 
             # Privacy mode is owned by voice-core itself — handle inline.
@@ -1221,9 +1172,7 @@ class VoiceCoreModule(SystemModule):
                 tts_text = _pp(sanitize_for_tts(tts_text).lower(), tts_lang)
                 if tts_text:
                     done_ev = asyncio.Event()
-                    await self._enqueue_speech(
-                        tts_text, priority=0, done_event=done_ev, target=target,
-                    )
+                    await self._enqueue_speech(tts_text, priority=0, done_event=done_ev)
                     try:
                         await asyncio.wait_for(done_ev.wait(), timeout=8.0)
                     except asyncio.TimeoutError:
@@ -1238,7 +1187,7 @@ class VoiceCoreModule(SystemModule):
 
             # ── Dispatch system-module intents ──
             _is_system_handled = self._is_system_module_intent(result.intent)
-            if _is_system_handled and not is_satellite:
+            if _is_system_handled:
                 # No intermediate ack — the module will publish voice.speak
                 # with an action_context after the driver call, and
                 # _on_voice_event → format_action_context will render the
@@ -1261,26 +1210,6 @@ class VoiceCoreModule(SystemModule):
                         "intent": result.intent,
                         "msg": "Timeout waiting for module response (15s)",
                     })
-            elif _is_system_handled and is_satellite:
-                # Satellite path: the system module was already invoked by
-                # the router (Tier 1.5 dispatch). It publishes `voice.speak`
-                # with `origin_target` auto-populated from the ContextVar
-                # (see SystemModule.subscribe) — `_on_voice_event` reads that
-                # field and enqueues the TTS on the satellite. We just wait
-                # for the ack to complete so the satellite session holds
-                # through playback.
-                self._system_speak_done.clear()
-                try:
-                    await asyncio.wait_for(self._system_speak_done.wait(), timeout=15.0)
-                    self._log_live("done", {
-                        "intent": result.intent,
-                        "msg": "Satellite module finished and spoke response",
-                        "duration_ms": int((time.monotonic() - start_ts) * 1000),
-                    })
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "Satellite pipeline: system module TTS timeout (15s)",
-                    )
             else:
                 # Classifier-only lanes: unknown / chat / any intent not
                 # owned by a system module.
@@ -1302,9 +1231,7 @@ class VoiceCoreModule(SystemModule):
                 await self.publish("voice.response", {"text": tts_text, "query": text})
                 logger.info("Voice pipeline: speaking (tts_lang=%s)...", tts_lang)
                 done = asyncio.Event()
-                await self._enqueue_speech(
-                    tts_text, priority=0, done_event=done, voice=use_voice, target=target,
-                )
+                await self._enqueue_speech(tts_text, priority=0, done_event=done, voice=use_voice)
                 await done.wait()
                 await self.publish("voice.speak_done", {"text": tts_text_en})
                 self._log_live("done", {
@@ -1314,9 +1241,9 @@ class VoiceCoreModule(SystemModule):
 
             # Session history records the intent — there is no canonical
             # "response" string anymore, we can rebuild speech any time.
-            session_state["session"].append({"role": "assistant", "content": result.intent})
-            if len(session_state["session"]) > 20:
-                session_state["session"] = session_state["session"][-20:]
+            self._session.append({"role": "assistant", "content": result.intent})
+            if len(self._session) > 20:
+                self._session = self._session[-20:]
 
             # History
             duration_ms = int((time.monotonic() - start_ts) * 1000)
@@ -1338,11 +1265,6 @@ class VoiceCoreModule(SystemModule):
         except Exception as exc:
             logger.error("Voice pipeline error: %s", exc)
         finally:
-            # Satellite-sourced commands don't touch the local mic state
-            # machine — otherwise a satellite command could knock the local
-            # mic out of PROCESSING or LISTENING.
-            if is_satellite:
-                return
             self._pattern_response_spoken = False
             # If the router requested a clarification, stay in
             # AWAITING_CLARIFICATION instead of returning to idle. The
@@ -1369,7 +1291,6 @@ class VoiceCoreModule(SystemModule):
 
     async def _speak_clarification_question(
         self, clarification: dict, tts_lang: str,
-        target: tuple[str, str] | None = None,
     ) -> None:
         """TTS the clarification prompt using action_phrasing canned catalog."""
         from system_modules.voice_core.action_phrasing import format_action_context
@@ -1387,16 +1308,8 @@ class VoiceCoreModule(SystemModule):
         tts_text = await self._to_tts_lang(tts_text_en)
         tts_text = _pp(tts_text, tts_lang)
 
-        # Satellite clarifications need the mic to stay open after the
-        # question is spoken so the user's reply keeps streaming to the
-        # same session — otherwise the satellite goes idle after tts_end
-        # and only a fresh wake would reopen it.
-        is_satellite = target is not None and target[0] == "satellite"
         done = asyncio.Event()
-        await self._enqueue_speech(
-            tts_text, priority=0, done_event=done, target=target,
-            keep_session_open=is_satellite,
-        )
+        await self._enqueue_speech(tts_text, priority=0, done_event=done)
         try:
             await asyncio.wait_for(done.wait(), timeout=8.0)
         except asyncio.TimeoutError:
@@ -1515,7 +1428,7 @@ class VoiceCoreModule(SystemModule):
                     "source": "clarification",
                     "user_id": None,
                     "latency_ms": 0,
-                    "raw_text": self._session_state(None)["last_query"],
+                    "raw_text": self._last_query,
                 },
             )
             try:
@@ -1593,82 +1506,27 @@ class VoiceCoreModule(SystemModule):
 
     # ── Speech Queue ────────────────────────────────────────────────────
 
-    def _target_key(self, target: tuple[str, str] | None) -> str:
-        if target is None:
-            return "local"
-        return f"{target[0]}:{target[1]}"
-
-    def _session_state(self, target: tuple[str, str] | None) -> dict[str, Any]:
-        """Return the conversation-state record for this audio source.
-
-        Each source ("local", "satellite:<sid>") gets its own session list,
-        last_query, last_intent, and idle timestamp. Created lazily.
-        """
-        key = self._target_key(target)
-        state = self._sessions_by_key.get(key)
-        if state is None:
-            state = {"session": [], "ts": 0.0, "last_intent": "", "last_query": ""}
-            self._sessions_by_key[key] = state
-        return state
-
-    def _drop_session_state(self, key: str) -> None:
-        """Drop per-source conversation state — called when a satellite
-        session ends so stale context doesn't pile up across reconnects."""
-        self._sessions_by_key.pop(key, None)
-
     async def _enqueue_speech(self, text: str, priority: int = 1,
                               done_event: asyncio.Event | None = None,
-                              voice: str | None = None,
-                              target: tuple[str, str] | None = None,
-                              keep_session_open: bool = False) -> None:
-        """Add text to the per-target speech queue. priority=0 high, 1 normal.
-
+                              voice: str | None = None) -> None:
+        """Add text to the speech queue. priority=0 high, 1 normal.
         voice: override TTS voice (e.g. fallback EN voice for non-primary language).
-        target: None plays through the local speaker; ("satellite", session_id)
-            chunks the synthesized PCM and publishes it as satellite.tts_chunk
-            events routed to the specific ESP32.
-        keep_session_open: satellite-only flag. When True, after tts_end we
-            tell the satellite to keep its mic active instead of returning
-            to idle — used for multi-turn clarifications.
         """
-        key = self._target_key(target)
-        q = self._speech_queues.get(key)
-        if q is None:
-            q = asyncio.PriorityQueue(maxsize=200)
-            self._speech_queues[key] = q
-            self._speech_worker_tasks[key] = asyncio.create_task(
-                self._speech_worker(key, q), name=f"tts-speech-worker-{key}",
-            )
         try:
-            q.put_nowait(
-                (priority, time.monotonic(), text, done_event, voice, target,
-                 keep_session_open),
-            )
+            self._speech_queue.put_nowait((priority, time.monotonic(), text, done_event, voice))
         except asyncio.QueueFull:
-            logger.warning("Speech queue full for %s, dropping: %s", key, text[:60])
+            logger.warning("Speech queue full, dropping: %s", text[:60])
             if done_event:
                 done_event.set()
 
-    async def _speech_worker(self, key: str, queue: asyncio.PriorityQueue) -> None:
-        """Long-running worker for one target's TTS queue.
-
-        One instance per (local speaker | satellite session). Independent
-        queues mean a slow local reply can't starve a satellite and vice
-        versa. All workers share the speech_queue put_nowait path in
-        _enqueue_speech but each pulls only from its own queue.
-        """
+    async def _speech_worker(self) -> None:
+        """Long-running worker: pulls items from speech queue one at a time."""
         while True:
             try:
-                (priority, _ts, text, done_event, voice_override, target,
-                 keep_session_open) = await queue.get()
-
-                is_satellite = target is not None and target[0] == "satellite"
+                priority, _ts, text, done_event, voice_override = await self._speech_queue.get()
 
                 await self.publish("voice.tts_start", {"text": text})
-                # Local UI "speaking" indicator is for the local mic only —
-                # satellite TTS has its own state feedback over the WS hub
-                # (see ws_hub.send_tts_chunk → send_state).
-                if text != "__CHIME__" and not is_satellite:
+                if text != "__CHIME__":
                     await self._broadcast_state("speaking")
                 await asyncio.sleep(0.15)  # let ducking take effect
 
@@ -1676,42 +1534,30 @@ class VoiceCoreModule(SystemModule):
                     if text == "__CHIME__":
                         await self._play_chime_internal()
                     else:
-                        await self._stream_speak(
-                            text, voice_override=voice_override, target=target,
-                            keep_session_open=keep_session_open,
-                        )
+                        await self._stream_speak(text, voice_override=voice_override)
                 except Exception as exc:
-                    logger.error("Speech worker [%s] playback error: %s", key, exc)
+                    logger.error("Speech worker playback error: %s", exc)
                 finally:
                     await self.publish("voice.tts_done", {"text": text})
-                    if text != "__CHIME__" and not self._privacy_mode and not is_satellite:
+                    if text != "__CHIME__" and not self._privacy_mode:
                         await self._broadcast_state(self._idle_state())
                     if done_event:
                         done_event.set()
-                    queue.task_done()
+                    self._speech_queue.task_done()
 
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.error("Speech worker [%s] unexpected error: %s", key, exc)
+                logger.error("Speech worker unexpected error: %s", exc)
 
     # ── TTS + Playback ───────────────────────────────────────────────────
 
-    async def _stream_speak(
-        self,
-        text: str,
-        voice_override: str | None = None,
-        target: tuple[str, str] | None = None,
-        keep_session_open: bool = False,
-    ) -> None:
-        """TTS playback: fetch raw PCM from native Piper server → aplay or satellite.
+    async def _stream_speak(self, text: str, voice_override: str | None = None) -> None:
+        """TTS playback: fetch raw PCM from native Piper server → aplay.
 
         Piper TTS runs natively on the host as piper-tts.service.
         Single-voice setup — always the primary voice from config, unless
         the caller passes an explicit voice_override.
-
-        target: None → local speaker (aplay). ("satellite", session_id) →
-        chunk and publish as satellite.tts_chunk / satellite.tts_end events.
         """
         from system_modules.voice_core.tts import sanitize_for_tts, TTSSettings, _load_tts_settings
 
@@ -1743,106 +1589,17 @@ class VoiceCoreModule(SystemModule):
             settings = TTSSettings(**voice_settings) if voice_settings else _load_tts_settings()
         except Exception:
             settings = _load_tts_settings()
+        output_device = self._get_output_device()
+        loop = asyncio.get_running_loop()
 
         tts_result = await self._fetch_tts_raw(clean, voice, settings)
         if not tts_result:
             logger.error("TTS HTTP request failed for voice=%s — playback skipped", voice)
             return
         pcm_data, sample_rate = tts_result
-
-        if target is not None and target[0] == "satellite":
-            await self._publish_satellite_tts(
-                target[1], pcm_data, sample_rate,
-                keep_session_open=keep_session_open,
-            )
-            return
-
-        output_device = self._get_output_device()
-        loop = asyncio.get_running_loop()
         await loop.run_in_executor(
             None, self._play_raw_pcm, pcm_data, output_device, sample_rate,
         )
-
-    async def _publish_satellite_tts(
-        self, session_id: str, pcm_data: bytes, sample_rate: int,
-        keep_session_open: bool = False,
-    ) -> None:
-        """Chunk PCM into ~100 ms frames and publish as satellite.tts_chunk.
-
-        Chunk size = 100 ms * sample_rate * 2 bytes/sample (16-bit mono).
-        The terminating satellite.tts_end event releases the satellite's
-        session and switches its state back to idle. The per-target speech
-        worker is dropped *after* _process_command returns (see
-        _run_satellite_command) — doing it here would race the worker's
-        own finally block (voice.tts_done publish + done_event.set).
-
-        Mute gate: if the originating satellite is muted (either via the
-        hardware mute button or a UI toggle that flipped Device.state.muted),
-        skip the chunks entirely and still fire tts_end so the session is
-        released cleanly. This is v1 do-not-disturb per room — noisy
-        satellites can be silenced without affecting the rest.
-        """
-        if await self._is_satellite_muted(session_id):
-            logger.info(
-                "Satellite session %s muted — skipping %d bytes of TTS",
-                session_id, len(pcm_data),
-            )
-            await self.publish("satellite.tts_end", {
-                "session_id": session_id,
-                "keep_session_open": keep_session_open,
-            })
-            return
-
-        chunk_size = max(2, int(sample_rate * 0.1) * 2)
-        try:
-            for i in range(0, len(pcm_data), chunk_size):
-                await self.publish("satellite.tts_chunk", {
-                    "session_id": session_id,
-                    "pcm_data": pcm_data[i:i + chunk_size],
-                    "sample_rate": sample_rate,
-                })
-        finally:
-            await self.publish("satellite.tts_end", {
-                "session_id": session_id,
-                "keep_session_open": keep_session_open,
-            })
-
-    async def _is_satellite_muted(self, session_id: str) -> bool:
-        """Check Device.state.muted for the satellite that owns this session.
-
-        Fails open (returns False) if the session row or the device row
-        can't be resolved — we'd rather play audio than swallow it on a
-        transient lookup error.
-        """
-        session = self._sat_sessions.get(session_id)
-        if session is None or not session.device_id:
-            return False
-        if self._session_factory is None:
-            return False
-        try:
-            import json
-            from core.registry.models import Device
-            async with self._session_factory() as db:
-                device = await db.get(Device, session.device_id)
-                if device is None:
-                    return False
-                state = json.loads(device.state or "{}")
-                return bool(state.get("muted", False))
-        except Exception as exc:
-            logger.debug("Mute lookup failed for %s: %s", session_id, exc)
-            return False
-
-    def _drop_speech_worker(self, key: str) -> None:
-        """Cancel and drop a per-target speech worker once its session is done.
-
-        Safe to call only when the worker is back at `await queue.get()`
-        (i.e. not mid-item). For satellite TTS that means "after
-        _process_command has returned".
-        """
-        task = self._speech_worker_tasks.pop(key, None)
-        self._speech_queues.pop(key, None)
-        if task is not None and not task.done():
-            task.cancel()
 
     async def _fetch_tts_raw(self, text: str, voice: str, settings) -> tuple[bytes, int] | None:
         """Fetch raw PCM from native Piper server. Returns (pcm_bytes, sample_rate) or None."""
@@ -2045,25 +1802,8 @@ class VoiceCoreModule(SystemModule):
                 text = preprocess_for_tts(text, self._tts_primary_lang).lower()
                 self._last_spoken = text  # capture for debug
 
-                # Satellite-sourced commands: the module publishing this
-                # voice.speak echoes origin_target (set via the ContextVar
-                # wired into SystemModule.subscribe). Route the TTS back
-                # to the originating satellite instead of the hub's local
-                # speaker so the user hears the ack at the device they
-                # asked at.
-                origin_list = event.payload.get("origin_target") if event.payload else None
-                sat_target: tuple[str, str] | None = None
-                if (
-                    isinstance(origin_list, (list, tuple))
-                    and len(origin_list) == 2
-                    and origin_list[0] == "satellite"
-                ):
-                    sat_target = (str(origin_list[0]), str(origin_list[1]))
-
                 done = asyncio.Event()
-                await self._enqueue_speech(
-                    text, priority=1, done_event=done, target=sat_target,
-                )
+                await self._enqueue_speech(text, priority=1, done_event=done)
                 await done.wait()
 
                 done_payload: dict[str, Any] = {"text": text}
@@ -2071,295 +1811,6 @@ class VoiceCoreModule(SystemModule):
                     done_payload["speech_id"] = speech_id
                 await self.publish("voice.speak_done", done_payload)
                 self._system_speak_done.set()
-
-    # ── Satellite audio path ───────────────────────────────────────────
-    #
-    # Satellites are a parallel input source to the local microphone. They
-    # already detected the wake word on-device, so the hub skips the IDLE
-    # grammar pass and goes straight to LISTENING using a per-session Vosk
-    # KaldiRecognizer cloned off the already-loaded model. The local mic's
-    # state machine (_audio_loop, self._state) is untouched by this path.
-
-    # Cap on concurrent satellite sessions. Each holds a KaldiRecognizer
-    # (~50 MB for the UK model) — on a Pi 4 with 4 GB we can safely hold a
-    # handful, not unbounded.
-    MAX_CONCURRENT_SAT_SESSIONS = 4
-    # Sweeper config: if a session has received no AUDIO_END within this many
-    # seconds of its last chunk, we finalize it ourselves. Prevents leaks from
-    # crashed or WiFi-dropped satellites.
-    SAT_SESSION_IDLE_TIMEOUT_S = 30.0
-    SAT_SESSION_SWEEP_TICK_S = 10.0
-
-    async def _on_satellite_event(self, event: Any) -> None:
-        from system_modules.voice_core.audio_session import (
-            SatelliteAudioSession, create_session_recognizer,
-        )
-
-        sid = event.payload.get("session_id")
-        if not sid:
-            return
-
-        if event.type == "satellite.wake":
-            if len(self._sat_sessions) >= self.MAX_CONCURRENT_SAT_SESSIONS:
-                logger.warning(
-                    "Satellite %s wake dropped: %d concurrent sessions already active (cap=%d)",
-                    sid, len(self._sat_sessions), self.MAX_CONCURRENT_SAT_SESSIONS,
-                )
-                # Tell the satellite to go back to idle — otherwise it waits
-                # forever for a tts_end that never comes.
-                await self.publish("satellite.tts_end", {"session_id": sid})
-                return
-            rec = create_session_recognizer(self._stt_provider, sample_rate=SAMPLE_RATE)
-            if rec is None:
-                logger.warning(
-                    "Satellite %s wake received but Vosk model not ready — dropping",
-                    sid,
-                )
-                await self.publish("satellite.tts_end", {"session_id": sid})
-                return
-            session = SatelliteAudioSession(
-                session_id=sid,
-                device_id=event.payload.get("device_id", ""),
-                location=event.payload.get("location"),
-                recognizer=rec,
-            )
-            self._sat_sessions[sid] = session
-            logger.info(
-                "Satellite %s listening (device=%s location=%s)",
-                sid, session.device_id, session.location,
-            )
-            # Publish for UI/history parity with the local mic path
-            await self.publish("voice.wake_word", {
-                "wake_word": self._config.get("wake_word_model", ""),
-                "source": "satellite",
-                "device_id": session.device_id,
-                "location": session.location,
-            })
-
-        elif event.type == "satellite.audio_chunk":
-            session = self._sat_sessions.get(sid)
-            if not session:
-                return
-            pcm = event.payload.get("pcm_data")
-            if not pcm:
-                return
-            partial, final = session.feed(pcm)
-            # For satellites we trust the firmware's VAD and wait for
-            # AUDIO_END before dispatching. Vosk-emitted finals are
-            # ignored so a hub-side endpointer can't race the firmware.
-            if partial:
-                self._log_live("partial", {
-                    "text": partial, "state": "listening", "source": "satellite",
-                })
-
-        elif event.type == "satellite.audio_end":
-            # Don't pop the session yet — a clarification round needs the
-            # same recognizer + session row to live through the next turn.
-            session = self._sat_sessions.get(sid)
-            if not session:
-                return
-            text = session.finalize()
-            if not text:
-                logger.info("Satellite %s: empty utterance, dropped", sid)
-                # Release the satellite so it can go back to idle.
-                self._sat_sessions.pop(sid, None)
-                self._drop_speech_worker(f"satellite:{sid}")
-                await self.publish("satellite.tts_end", {"session_id": sid})
-                return
-
-            self._log_live("command", {
-                "text": text, "lang": self._lang, "source": "satellite",
-                "clarifying": bool(session.pending_clarification),
-            })
-            logger.info(
-                "Satellite %s: '%s' (location=%s, clarifying=%s)",
-                sid, text, session.location, bool(session.pending_clarification),
-            )
-
-            if session.pending_clarification:
-                asyncio.create_task(self._run_satellite_clarification(
-                    text, sid, session,
-                ))
-            else:
-                asyncio.create_task(self._run_satellite_command(
-                    text, sid, session,
-                ))
-
-    async def _run_satellite_command(
-        self, text: str, session_id: str, session: "SatelliteAudioSession",
-    ) -> None:
-        """Dispatch a first-turn satellite command.
-
-        After _process_command returns, if it set a pending clarification on
-        the session, KEEP the session + worker alive — the next AUDIO_END
-        will be routed through route_clarification. Otherwise clean up.
-        """
-        try:
-            await self._process_command(
-                text, target=("satellite", session_id),
-                default_location=session.location,
-            )
-        finally:
-            if session.pending_clarification is None:
-                self._sat_sessions.pop(session_id, None)
-                self._drop_speech_worker(f"satellite:{session_id}")
-                self._drop_session_state(f"satellite:{session_id}")
-
-    async def _run_satellite_clarification(
-        self, reply_text: str, session_id: str,
-        session: "SatelliteAudioSession",
-    ) -> None:
-        """Route a clarification reply for a satellite session.
-
-        Mirrors `_process_clarification_reply` for the local mic but pins
-        TTS to the satellite target so the user hears the outcome at the
-        device they answered on. Always ends the session (drops from
-        `_sat_sessions`, closes the WS-side session via tts_end) when done.
-        """
-        target = ("satellite", session_id)
-        pending = session.pending_clarification or {}
-        session.pending_clarification = None
-        session.clarification_deadline = 0.0
-        tts_lang = self._config.get("tts_lang") or self._lang
-        stt_lang = self._lang
-
-        # Translate the reply for the EN matchers (same as local path).
-        native_text = reply_text
-        text = reply_text
-        try:
-            from core.config_writer import get_value as _cfg_get
-            if _cfg_get("translation", "enabled", False) and stt_lang != "en":
-                from core.translation.local_translator import get_input_translator
-                _inp = get_input_translator()
-                if _inp.is_available():
-                    text = _inp.to_english(reply_text, stt_lang)
-        except Exception:
-            pass
-
-        from system_modules.llm_engine.intent_router import get_intent_router
-        result = None
-        try:
-            result = await get_intent_router().route_clarification(
-                text, pending, lang=stt_lang, tts_lang=tts_lang,
-                native_text=native_text,
-            )
-        except Exception as exc:
-            logger.error("Satellite %s route_clarification failed: %s", session_id, exc)
-
-        try:
-            if result is None or result.source == "fallback":
-                # Match failed — speak canned cancel to the satellite.
-                await self._speak_canned_to(
-                    "clarify.cancelled", tts_lang, target=target,
-                )
-                return
-
-            # Success: re-fire the intent with merged params. origin_target
-            # is attached so the module's voice.speak auto-routes to the
-            # satellite — no synthesizer-and-suppress workaround needed.
-            if self._is_system_module_intent(result.intent):
-                from core.eventbus.bus import get_event_bus
-                from core.eventbus.types import VOICE_INTENT
-                self._system_speak_done.clear()
-                await get_event_bus().publish(
-                    type=VOICE_INTENT,
-                    source="voice-core",
-                    payload={
-                        "intent": result.intent,
-                        "response": "",
-                        "action": None,
-                        "params": result.params or {},
-                        "source": "clarification",
-                        "user_id": None,
-                        "latency_ms": 0,
-                        "raw_text": reply_text,
-                        "origin_target": list(target),
-                    },
-                )
-                try:
-                    await asyncio.wait_for(
-                        self._system_speak_done.wait(), timeout=15.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "Satellite %s: clarified intent module ack timeout",
-                        session_id,
-                    )
-            else:
-                # Non-system intent after clarification — canned cancel on the satellite
-                await self._speak_canned_to(
-                    "clarify.cancelled", tts_lang, target=target,
-                )
-        finally:
-            # Clarification round is over regardless of outcome — release
-            # the satellite and tear down its resources.
-            self._sat_sessions.pop(session_id, None)
-            self._drop_speech_worker(f"satellite:{session_id}")
-            self._drop_session_state(f"satellite:{session_id}")
-
-    async def _speak_canned_to(
-        self, key: str, tts_lang: str, target: tuple[str, str] | None = None,
-    ) -> None:
-        """Target-aware variant of _speak_canned so satellite sessions can
-        get their canned responses without touching the local speaker."""
-        from system_modules.voice_core.action_phrasing import format_action_context
-        from system_modules.voice_core.tts_preprocessor import preprocess_for_tts as _pp
-        tts_text_en = format_action_context(key, {})
-        tts_text = await self._to_tts_lang(tts_text_en)
-        tts_text = _pp(tts_text, tts_lang)
-        if not tts_text:
-            return
-        done = asyncio.Event()
-        await self._enqueue_speech(
-            tts_text, priority=0, done_event=done, target=target,
-        )
-        try:
-            await asyncio.wait_for(done.wait(), timeout=8.0)
-        except asyncio.TimeoutError:
-            pass
-
-    async def _sat_session_sweeper(self) -> None:
-        """Drop satellite sessions whose last chunk is too old OR whose
-        clarification deadline has expired.
-
-        Two leak modes covered:
-          a) Satellite sends WAKE and dies before AUDIO_END — the session
-             + its ~50 MB KaldiRecognizer sit in _sat_sessions forever.
-          b) Satellite is parked awaiting a clarification reply; user
-             walks away without answering. We must release the mic,
-             speak a canned cancel, and drop the session.
-        """
-        try:
-            while True:
-                await asyncio.sleep(self.SAT_SESSION_SWEEP_TICK_S)
-                now = time.monotonic()
-                stale: list[tuple[str, "SatelliteAudioSession", str]] = []
-                for sid, sess in list(self._sat_sessions.items()):
-                    if sess.pending_clarification is not None \
-                            and sess.clarification_deadline \
-                            and now > sess.clarification_deadline:
-                        stale.append((sid, sess, "clarification_timeout"))
-                    elif now - sess.last_chunk_at > self.SAT_SESSION_IDLE_TIMEOUT_S:
-                        stale.append((sid, sess, "idle"))
-
-                for sid, sess, reason in stale:
-                    logger.warning(
-                        "Satellite session %s timed out (%s) — dropping", sid, reason,
-                    )
-                    self._sat_sessions.pop(sid, None)
-                    self._drop_speech_worker(f"satellite:{sid}")
-                    self._drop_session_state(f"satellite:{sid}")
-                    try:
-                        sess.finalize()
-                    except Exception:
-                        pass
-                    # Release the satellite side — it'll close its UI.
-                    try:
-                        await self.publish("satellite.tts_end", {"session_id": sid})
-                    except Exception:
-                        pass
-        except asyncio.CancelledError:
-            raise
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -2449,24 +1900,10 @@ class VoiceCoreModule(SystemModule):
             ["voice.clarification_request"],
             self._on_clarification_request,
         )
-        # Satellite speaker path — parallel to the local mic. Each ESP32 sends
-        # wake → audio chunks → audio_end; TTS is routed back via target=.
-        self.subscribe(
-            ["satellite.wake", "satellite.audio_chunk", "satellite.audio_end"],
-            self._on_satellite_event,
-        )
 
-        # Speech workers are created lazily per target on first enqueue.
-        # Pre-create the "local" worker so the first local reply doesn't
-        # have to pay the queue/task setup cost in its critical path.
-        local_q: asyncio.PriorityQueue = asyncio.PriorityQueue(maxsize=200)
-        self._speech_queues["local"] = local_q
-        self._speech_worker_tasks["local"] = asyncio.create_task(
-            self._speech_worker("local", local_q), name="tts-speech-worker-local",
-        )
-        # Sweep stale satellite sessions so a dead ESP32 doesn't leak RAM.
-        self._sat_sweeper_task = asyncio.create_task(
-            self._sat_session_sweeper(), name="sat-session-sweeper",
+        # Start speech queue worker (serializes all TTS playback)
+        self._speech_worker_task = asyncio.create_task(
+            self._speech_worker(), name="tts-speech-worker",
         )
 
         # Connect live logging to this module's live monitor
@@ -2516,15 +1953,10 @@ class VoiceCoreModule(SystemModule):
         logger.info("VoiceCoreModule started")
 
     async def stop(self) -> None:
-        # Cancel every per-target speech worker
-        for task in self._speech_worker_tasks.values():
-            task.cancel()
-        if self._speech_worker_tasks:
-            await asyncio.gather(
-                *self._speech_worker_tasks.values(), return_exceptions=True,
-            )
-        self._speech_worker_tasks.clear()
-        self._speech_queues.clear()
+        if self._speech_worker_task:
+            self._speech_worker_task.cancel()
+            await asyncio.gather(self._speech_worker_task, return_exceptions=True)
+            self._speech_worker_task = None
         if self._listen_task:
             self._listen_task.cancel()
             await asyncio.gather(self._listen_task, return_exceptions=True)
@@ -2533,14 +1965,9 @@ class VoiceCoreModule(SystemModule):
             self._privacy_task.cancel()
             await asyncio.gather(self._privacy_task, return_exceptions=True)
             self._privacy_task = None
-        if self._sat_sweeper_task:
-            self._sat_sweeper_task.cancel()
-            await asyncio.gather(self._sat_sweeper_task, return_exceptions=True)
-            self._sat_sweeper_task = None
         if self._stt_provider:
             await self._stt_provider.close()
             self._stt_provider = None
-        self._sat_sessions.clear()
         self._cleanup_subscriptions()
         await self.publish("module.stopped", {"name": self.name})
         logger.info("VoiceCoreModule stopped")
@@ -2954,91 +2381,6 @@ class VoiceCoreModule(SystemModule):
                 "raw_llm": result.raw_llm,
                 "spoken_text": svc._last_spoken if tts_done else None,
             })
-
-        # ── Dashboard V2 status template ────────────────────────────────────
-        @router.get("/widget/data/state")
-        async def widget_state() -> dict:
-            from system_modules.voice_core.privacy import is_privacy_mode
-            privacy = is_privacy_mode()
-            state = svc._state or "idle"
-            wake_enabled = bool(svc._config.get("wake_word_enabled", True))
-            wake_word = svc._config.get("wake_word_model") or svc._config.get("wake_word_en") or "—"
-            stt_lang = svc._config.get("stt_lang") or "—"
-
-            if privacy:
-                pill = {
-                    "tone": "neutral", "text": "Privacy on",
-                    "text_key": "widgets.voiceCore.pillPrivacyOn",
-                    "icon": "shield",
-                }
-            elif state == "listening":
-                pill = {
-                    "tone": "info", "text": "Listening",
-                    "text_key": "widgets.voiceCore.pillListening",
-                    "icon": "mic",
-                }
-            elif state == "speaking":
-                pill = {
-                    "tone": "info", "text": "Speaking",
-                    "text_key": "widgets.voiceCore.pillSpeaking",
-                    "icon": "volume-2",
-                }
-            elif state == "error":
-                pill = {
-                    "tone": "alert", "text": "Error",
-                    "text_key": "widgets.voiceCore.pillError",
-                    "icon": "alert-triangle",
-                }
-            else:
-                pill = {
-                    "tone": "ok", "text": "Ready",
-                    "text_key": "widgets.voiceCore.pillReady",
-                    "icon": "check-circle",
-                }
-
-            # Wake word value: literal "always-on" needs i18n; the actual word
-            # (e.g. "selena") is data and stays raw.
-            if wake_enabled:
-                wake_value = str(wake_word)
-                wake_value_key: str | None = None
-            else:
-                wake_value = "always-on"
-                wake_value_key = "widgets.voiceCore.alwaysOn"
-            wake_row: dict[str, Any] = {
-                "label": "Wake word",
-                "label_key": "widgets.voiceCore.rowWakeWord",
-                "value": wake_value,
-                "icon": "sparkles",
-            }
-            if wake_value_key:
-                wake_row["value_key"] = wake_value_key
-
-            privacy_value = "on" if privacy else "off"
-            privacy_value_key = (
-                "widgets.voiceCore.privacyOn" if privacy else "widgets.voiceCore.privacyOff"
-            )
-            rows = [
-                wake_row,
-                {
-                    "label": "STT lang",
-                    "label_key": "widgets.voiceCore.rowSttLang",
-                    "value": str(stt_lang),
-                    "icon": "globe",
-                },
-                {
-                    "label": "Privacy",
-                    "label_key": "widgets.voiceCore.rowPrivacy",
-                    "value": privacy_value,
-                    "value_key": privacy_value_key,
-                    "icon": "shield",
-                },
-            ]
-            return {
-                "label": "Voice",
-                "label_key": "widgets.voiceCore.label",
-                "pill": pill,
-                "rows": rows[:4],
-            }
 
         svc._register_html_routes(router, __file__)
 

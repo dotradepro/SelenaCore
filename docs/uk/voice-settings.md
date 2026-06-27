@@ -135,7 +135,7 @@ voice:
 
 **Hot-reload** при device CRUD: PatternGenerator → IntentCompiler.full_reload() → IntentRouter.refresh_system_prompt(). Без перезапуску.
 
-Окремого seed-скрипта немає — кожен модуль декларує `OWNED_INTENTS` + `_OWNED_INTENT_META` і сам claims їх на `start()` через `_claim_intent_ownership()`.
+`scripts/seed_intents_to_db.py` — **legacy**: сидить лише weather/privacy правила, для системних модулів не потрібен.
 
 ## Конфігурація LLM
 

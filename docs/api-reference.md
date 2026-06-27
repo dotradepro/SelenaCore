@@ -350,50 +350,6 @@ Remove a scene.
 
 **Response 204:** No body.
 
-### POST /scenes/{scene_id}/activate
-
-Activate a scene — applies all of its actions atomically and emits scene events on the bus.
-
-**Response 200:**
-
-```json
-{"scene_id": 1, "actions_applied": 3, "status": "ok"}
-```
-
-**Events emitted:**
-
-- `scene.activate` — fired before applying actions (payload: `{scene_id, name_en}`).
-- `scene.activated` — fired after all actions succeed.
-- `scene.failed` — fired if any action raises (payload includes `error`).
-
-**Response 404:** Scene not found.
-
----
-
-## Widget Data & Action Endpoints
-
-These proxy endpoints back the Phase 5/6 dashboard's template engine. The dashboard never talks to module containers directly — it always goes through `/api/v1/modules/{module}/...` so caching, auth, and rate limiting apply uniformly.
-
-### GET /modules/{module}/data/{key}
-
-Fetch a widget payload. The Core forwards the request to the path declared in the module's `manifest.json` under `ui.widget.data_endpoints[key].path` and applies the optional `cache_ttl_s` (in-memory TTL cache with stale-while-revalidate).
-
-**Response 200:** Module-defined JSON. Shape depends on the chosen template — see [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-templates) and the per-template payload contracts.
-
-**Response 502:** Upstream module unreachable or timed out (800 ms timeout).
-
-**Response 504:** Cached response used while module recovers (stale-while-revalidate).
-
-### POST /modules/{module}/action/{key}
-
-Trigger a widget action. The Core forwards the JSON body to the path declared in the module's manifest under `ui.widget.actions[key].path`.
-
-**Request:** Module-defined JSON (e.g. `{"id": "kitchen-light"}` for `toggle`, `{"id": "fan", "value": 2}` for `step`).
-
-**Response 200/204:** Module-defined.
-
-**Response 502:** Upstream module unreachable.
-
 ---
 
 ## Event Endpoints
@@ -481,18 +437,10 @@ List all installed modules.
             "status": "RUNNING",
             "runtime_mode": "always_on",
             "port": 0,
-            "room": "home",
             "installed_at": 1711900000.0,
             "ui": {
                 "icon": "icon.svg",
-                "widget": {
-                    "kind": "template",
-                    "template": "weather",
-                    "size": "4x2",
-                    "data_endpoints": {
-                        "state": {"path": "/widget/data/state", "cache_ttl_s": 60}
-                    }
-                }
+                "widget": {"file": "widget.html", "size": "2x2"}
             }
         }
     ]
@@ -505,8 +453,7 @@ List all installed modules.
 | `status` | string | `VALIDATING`, `READY`, `RUNNING`, `STOPPED`, `ERROR` |
 | `runtime_mode` | string | `always_on` or `on_demand` |
 | `port` | int | Assigned port (0 if not applicable) |
-| `room` | string | Room tag — drives the dashboard's room-tab filter (`"system"`, `"home"`, or any custom name). |
-| `ui` | object or null | UI widget configuration. `widget` is either `{kind: "template", template, size, data_endpoints, actions?, refresh?}` or `{kind: "custom", file, size}`. |
+| `ui` | object or null | UI widget configuration, if the module provides one |
 
 ---
 

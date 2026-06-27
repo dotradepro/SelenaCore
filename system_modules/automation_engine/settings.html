@@ -7,160 +7,298 @@
     <title>Automation Engine Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* Module-specific: dynamic trigger/action field groups (show/hide by
-           selection), rule list rows, details>summary accordion for the
-           advanced YAML editor. Layout, cards, buttons, forms, badges, stats,
-           toasts come from /api/shared/theme.css. */
 
-        .dyn-fields { background: var(--bg); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; display: none; }
-        .dyn-fields.visible { display: block; }
+        * {
+            box-sizing: border-box;
+        }
 
-        details > summary { cursor: pointer; color: var(--tx3); font-size: 12px; padding: 6px 0; }
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--tx);
+            font-size: 14px;
+            min-height: 100%;
+            overflow-y: auto;
+        }
 
-        .rule-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--sf); }
-        .rule-name { flex: 1; font-size: 13px; }
-        .rule-trigger { font-size: 11px; color: var(--tx3); }
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 16px;
+        }
+
+        h1 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--tx);
+            margin: 0;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 10px;
+        }
+
+        .form-row label {
+            font-size: 12px;
+            color: var(--tx2);
+        }
+
+        .form-row input:focus,
+        .form-row select:focus {
+            border-color: var(--ac);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 12px;
+        }
+
+        .dyn-fields {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .dyn-fields.visible {
+            display: block;
+        }
+
+        details>summary {
+            cursor: pointer;
+            color: var(--tx3);
+            font-size: 12px;
+            padding: 6px 0;
+        }
+
+        details textarea:focus {
+            outline: none;
+            border-color: var(--ac);
+        }
+
+        .rule-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--sf);
+        }
+
+        .rule-name {
+            flex: 1;
+            font-size: 13px;
+        }
+
+        .rule-trigger {
+            font-size: 11px;
+            color: var(--tx3);
+        }
+
+        .badge.on {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--gr);
+        }
+
+        .badge.off {
+            background: rgba(148, 163, 184, 0.15);
+            color: var(--tx2);
+        }
+
+        .stat-bar {
+            display: flex;
+            gap: 24px;
+            background: var(--sf);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat .num {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--am);
+        }
+
+        .stat .desc {
+            font-size: 11px;
+            color: var(--tx3);
+        }
+
+        .msg {
+            font-size: 12px;
+            color: var(--gr);
+            margin-left: 10px;
+            display: none;
+        }
+
+        .err-msg {
+            color: var(--rd);
+        }
     </style>
 </head>
 
 <body>
-    <h2 data-i18n="title"></h2>
-    <p class="subtitle" data-i18n="subtitle"></p>
+    <div class="container">
+        <h1 data-i18n="title"></h1>
+        <p class="subtitle" data-i18n="subtitle"></p>
 
-    <div class="grid-4 mb16">
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-warn" id="s-total">0</div>
-            <div class="kpi-lbl" data-i18n="total_rules"></div>
-        </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-warn" id="s-enabled">0</div>
-            <div class="kpi-lbl" data-i18n="enabled"></div>
-        </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-warn" id="s-runs">0</div>
-            <div class="kpi-lbl" data-i18n="runs"></div>
-        </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-danger" id="s-errors">0</div>
-            <div class="kpi-lbl" data-i18n="errors"></div>
-        </div>
-    </div>
-
-    <!-- Rule list -->
-    <div class="card">
-        <div class="row">
-            <div class="section-title" style="margin:0" data-i18n="active_rules"></div>
-            <button class="btn btn-primary btn-sm" onclick="loadRules()" data-i18n="refresh"></button>
-        </div>
-        <div id="rules-container" class="mt12" data-i18n="loading"></div>
-    </div>
-
-    <!-- Add Rule form -->
-    <div class="card">
-        <div class="section-title" data-i18n="add_rule_title"></div>
-
-        <div class="field">
-            <label data-i18n="f_name"></label>
-            <input type="text" id="f-name" data-placeholder-i18n="f_name_ph">
-        </div>
-
-        <div class="grid-2">
-            <div class="field">
-                <label data-i18n="f_trigger_type"></label>
-                <select id="f-trigger" onchange="onTriggerChange()">
-                    <option value="time" data-i18n="trig_time"></option>
-                    <option value="event" data-i18n="trig_event"></option>
-                    <option value="device" data-i18n="trig_device"></option>
-                    <option value="presence" data-i18n="trig_presence"></option>
-                </select>
+        <div class="stat-bar">
+            <div class="stat">
+                <div class="num" id="s-total">0</div>
+                <div class="desc" data-i18n="total_rules"></div>
             </div>
-            <div class="field">
-                <label data-i18n="f_action_type"></label>
-                <select id="f-action" onchange="onActionChange()">
-                    <option value="device_command" data-i18n="act_device"></option>
-                    <option value="publish_event" data-i18n="act_event"></option>
-                    <option value="notify" data-i18n="act_notify"></option>
-                </select>
+            <div class="stat">
+                <div class="num" id="s-enabled">0</div>
+                <div class="desc" data-i18n="enabled"></div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-runs">0</div>
+                <div class="desc" data-i18n="runs"></div>
+            </div>
+            <div class="stat">
+                <div class="num" id="s-errors" style="color:var(--rd)">0</div>
+                <div class="desc" data-i18n="errors"></div>
             </div>
         </div>
 
-        <!-- Trigger dynamic fields -->
-        <div class="dyn-fields visible" id="trig-time">
-            <div class="field"><label data-i18n="f_at_time"></label><input type="time" id="f-at" value="07:00"></div>
+        <!-- Rule list -->
+        <div class="card">
+            <div class="card-header">
+                <h2 data-i18n="active_rules"></h2>
+                <button class="btn btn-primary btn-sm" onclick="loadRules()" data-i18n="refresh"></button>
+            </div>
+            <div id="rules-container" data-i18n="loading"></div>
         </div>
-        <div class="dyn-fields" id="trig-event">
-            <div class="field"><label data-i18n="f_event_type"></label><input type="text" id="f-trig-event" placeholder="device.state_changed"></div>
-        </div>
-        <div class="dyn-fields" id="trig-device">
-            <div class="field">
-                <label data-i18n="f_device_id"></label>
-                <input type="text" id="f-trig-dev-search" data-placeholder-i18n="f_search_device" oninput="filterDevices('trig')" autocomplete="off">
-                <select id="f-trig-dev-id" size="6" onchange="onDeviceSelected('trig')" style="width:100%;margin-top:6px"></select>
-                <div class="tiny mt8" id="f-trig-empty" style="display:none;color:var(--tx3)">
-                    <span data-i18n="f_no_devices"></span> · <a href="/modules/device_control" data-i18n="f_open_device_mgr"></a>
+
+        <!-- Add Rule form -->
+        <div class="card">
+            <div class="card-header">
+                <h2 data-i18n="add_rule_title"></h2>
+            </div>
+
+            <div class="form-row">
+                <label data-i18n="f_name"></label>
+                <input type="text" id="f-name" data-placeholder-i18n="f_name_ph">
+            </div>
+
+            <div class="form-grid">
+                <div class="form-row">
+                    <label data-i18n="f_trigger_type"></label>
+                    <select id="f-trigger" onchange="onTriggerChange()">
+                        <option value="time" data-i18n="trig_time"></option>
+                        <option value="event" data-i18n="trig_event"></option>
+                        <option value="device" data-i18n="trig_device"></option>
+                        <option value="presence" data-i18n="trig_presence"></option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label data-i18n="f_action_type"></label>
+                    <select id="f-action" onchange="onActionChange()">
+                        <option value="device_command" data-i18n="act_device"></option>
+                        <option value="publish_event" data-i18n="act_event"></option>
+                        <option value="notify" data-i18n="act_notify"></option>
+                    </select>
                 </div>
             </div>
-            <div class="grid-2">
-                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-trig-key" placeholder="state" list="caps-trig" autocomplete="off"></div>
-                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-trig-val" placeholder="ON" list="caps-trig-vals" autocomplete="off"></div>
-            </div>
-            <datalist id="caps-trig"></datalist>
-            <datalist id="caps-trig-vals"></datalist>
-        </div>
-        <div class="dyn-fields" id="trig-presence">
-            <div class="field"><label data-i18n="f_user_id"></label><input type="text" id="f-trig-user" placeholder="user-uuid-001"></div>
-            <div class="field">
-                <label data-i18n="f_presence_status"></label>
-                <select id="f-trig-presence-st">
-                    <option value="home" data-i18n="pres_home"></option>
-                    <option value="away" data-i18n="pres_away"></option>
-                </select>
-            </div>
-        </div>
 
-        <!-- Action dynamic fields -->
-        <div class="dyn-fields visible" id="act-device_command">
-            <div class="field">
-                <label data-i18n="f_act_device_id"></label>
-                <input type="text" id="f-act-dev-search" data-placeholder-i18n="f_search_device" oninput="filterDevices('act')" autocomplete="off">
-                <select id="f-act-dev-id" size="6" onchange="onDeviceSelected('act')" style="width:100%;margin-top:6px"></select>
-                <div class="tiny mt8" id="f-act-empty" style="display:none;color:var(--tx3)">
-                    <span data-i18n="f_no_devices"></span> · <a href="/modules/device_control" data-i18n="f_open_device_mgr"></a>
+            <!-- Trigger dynamic fields -->
+            <div class="dyn-fields visible" id="trig-time">
+                <div class="form-row"><label data-i18n="f_at_time"></label><input type="time" id="f-at" value="07:00">
                 </div>
             </div>
-            <div class="grid-2">
-                <div class="field"><label data-i18n="f_state_key"></label><input type="text" id="f-act-key" placeholder="state" list="caps-act" autocomplete="off"></div>
-                <div class="field"><label data-i18n="f_state_val"></label><input type="text" id="f-act-val" placeholder="ON" list="caps-act-vals" autocomplete="off"></div>
+            <div class="dyn-fields" id="trig-event">
+                <div class="form-row"><label data-i18n="f_event_type"></label><input type="text" id="f-trig-event"
+                        placeholder="device.state_changed"></div>
             </div>
-            <datalist id="caps-act"></datalist>
-            <datalist id="caps-act-vals"></datalist>
-        </div>
-        <div class="dyn-fields" id="act-publish_event">
-            <div class="field"><label data-i18n="f_pub_event_type"></label><input type="text" id="f-pub-event" placeholder="custom.my_event"></div>
-        </div>
-        <div class="dyn-fields" id="act-notify">
-            <div class="field"><label data-i18n="f_notify_msg"></label><input type="text" id="f-notify-msg" placeholder="Lights turned on"></div>
-            <div class="field">
-                <label data-i18n="f_notify_channel"></label>
-                <select id="f-notify-ch">
-                    <option value="voice">TTS (Voice)</option>
-                    <option value="push">Web Push</option>
-                    <option value="telegram">Telegram</option>
-                </select>
+            <div class="dyn-fields" id="trig-device">
+                <div class="form-row"><label data-i18n="f_device_id"></label><input type="text" id="f-trig-dev-id"
+                        placeholder="uuid-..."></div>
+                <div class="form-grid">
+                    <div class="form-row"><label data-i18n="f_state_key"></label><input type="text" id="f-trig-key"
+                            placeholder="state"></div>
+                    <div class="form-row"><label data-i18n="f_state_val"></label><input type="text" id="f-trig-val"
+                            placeholder="ON"></div>
+                </div>
             </div>
-        </div>
+            <div class="dyn-fields" id="trig-presence">
+                <div class="form-row"><label data-i18n="f_user_id"></label><input type="text" id="f-trig-user"
+                        placeholder="user-uuid-001"></div>
+                <div class="form-row">
+                    <label data-i18n="f_presence_status"></label>
+                    <select id="f-trig-presence-st">
+                        <option value="home" data-i18n="pres_home"></option>
+                        <option value="away" data-i18n="pres_away"></option>
+                    </select>
+                </div>
+            </div>
 
-        <button class="btn btn-primary mt12" id="btn-add-rule" data-i18n="add_rule_btn"></button>
-
-        <!-- Advanced YAML (collapsed) -->
-        <details style="margin-top:14px">
-            <summary data-i18n="adv_yaml"></summary>
-            <p class="tiny mt8 mb4" style="color:var(--tx3)" data-i18n="adv_yaml_hint"></p>
-            <textarea id="yaml-input" placeholder="automations:"></textarea>
-            <div class="mt8">
-                <button class="btn btn-primary btn-sm" id="btn-import-yaml" data-i18n="import_btn"></button>
+            <!-- Action dynamic fields -->
+            <div class="dyn-fields visible" id="act-device_command">
+                <div class="form-row"><label data-i18n="f_act_device_id"></label><input type="text" id="f-act-dev-id"
+                        placeholder="uuid-..."></div>
+                <div class="form-grid">
+                    <div class="form-row"><label data-i18n="f_state_key"></label><input type="text" id="f-act-key"
+                            placeholder="state"></div>
+                    <div class="form-row"><label data-i18n="f_state_val"></label><input type="text" id="f-act-val"
+                            placeholder="ON"></div>
+                </div>
             </div>
-        </details>
+            <div class="dyn-fields" id="act-publish_event">
+                <div class="form-row"><label data-i18n="f_pub_event_type"></label><input type="text" id="f-pub-event"
+                        placeholder="custom.my_event"></div>
+            </div>
+            <div class="dyn-fields" id="act-notify">
+                <div class="form-row"><label data-i18n="f_notify_msg"></label><input type="text" id="f-notify-msg"
+                        placeholder="Lights turned on"></div>
+                <div class="form-row">
+                    <label data-i18n="f_notify_channel"></label>
+                    <select id="f-notify-ch">
+                        <option value="voice">TTS (Voice)</option>
+                        <option value="push">Web Push</option>
+                        <option value="telegram">Telegram</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+                <button class="btn btn-primary" id="btn-add-rule" data-i18n="add_rule_btn"></button>
+                <span class="msg" id="add-msg"></span>
+                <span class="msg err-msg" id="add-err"></span>
+            </div>
+
+            <!-- Advanced YAML (collapsed) -->
+            <details style="margin-top:14px">
+                <summary data-i18n="adv_yaml"></summary>
+                <p style="color:var(--tx3);font-size:12px;margin:8px 0 4px" data-i18n="adv_yaml_hint"></p>
+                <textarea id="yaml-input" placeholder="automations:"></textarea>
+                <div style="margin-top:6px">
+                    <button class="btn btn-primary btn-sm" id="btn-import-yaml" data-i18n="import_btn"></button>
+                </div>
+            </details>
+        </div>
     </div>
 
     <script src="/api/shared/widget-common.js"></script>
@@ -190,83 +328,6 @@
         await Promise.all(targets.map(loadI18nBundle));
     }
 
-        var _devices = [];
-
-        async function loadDevices() {
-            try {
-                var r = await fetch('/api/ui/devices');
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                var d = await r.json();
-                _devices = Array.isArray(d.devices) ? d.devices : [];
-            } catch (e) {
-                console.warn('[automation-engine] devices load failed:', e);
-                _devices = [];
-            }
-            renderDeviceOptions('trig', '');
-            renderDeviceOptions('act', '');
-        }
-
-        function _devLabel(d) {
-            var label = d.name || d.device_id;
-            if (d.location) label += ' — ' + d.location;
-            var kind = d.entity_type || d.type;
-            if (kind) label += ' · ' + kind;
-            return label;
-        }
-
-        function renderDeviceOptions(scope, filter) {
-            var sel = $('f-' + scope + '-dev-id');
-            var emptyHint = $('f-' + scope + '-empty');
-            if (!sel) return;
-            if (_devices.length === 0) {
-                sel.innerHTML = '';
-                if (emptyHint) emptyHint.style.display = '';
-                return;
-            }
-            if (emptyHint) emptyHint.style.display = 'none';
-            var q = (filter || '').toLowerCase().trim();
-            var list = _devices.filter(function (d) {
-                if (!q) return true;
-                var hay = [d.name, d.location, d.entity_type, d.type, d.protocol]
-                    .concat(d.keywords_user || [])
-                    .concat(d.keywords_en || [])
-                    .filter(Boolean).join(' ').toLowerCase();
-                return hay.indexOf(q) !== -1;
-            });
-            sel.innerHTML = list.map(function (d) {
-                return '<option value="' + esc(d.device_id) + '">' + esc(_devLabel(d)) + '</option>';
-            }).join('');
-        }
-
-        function filterDevices(scope) {
-            var input = $('f-' + scope + '-dev-search');
-            renderDeviceOptions(scope, input ? input.value : '');
-        }
-
-        function onDeviceSelected(scope) {
-            var sel = $('f-' + scope + '-dev-id');
-            if (!sel || !sel.value) return;
-            var dev = _devices.find(function (d) { return d.device_id === sel.value; });
-            if (!dev) return;
-            var caps = Array.isArray(dev.capabilities) ? dev.capabilities : [];
-            var stateKeys = dev.state && typeof dev.state === 'object' ? Object.keys(dev.state) : [];
-            var keys = [];
-            caps.concat(stateKeys).forEach(function (k) { if (k && keys.indexOf(k) === -1) keys.push(k); });
-            var dl = $('caps-' + scope);
-            if (dl) dl.innerHTML = keys.map(function (k) { return '<option value="' + esc(k) + '">'; }).join('');
-            var dlVals = $('caps-' + scope + '-vals');
-            if (dlVals) {
-                var vals = ['ON', 'OFF'];
-                if (dev.state && typeof dev.state === 'object') {
-                    Object.keys(dev.state).forEach(function (k) {
-                        var v = dev.state[k];
-                        if (v != null && vals.indexOf(String(v)) === -1) vals.push(String(v));
-                    });
-                }
-                dlVals.innerHTML = vals.map(function (v) { return '<option value="' + esc(v) + '">'; }).join('');
-            }
-        }
-
         async function loadStatus() {
             try {
                 var d = await apiGet('/status');
@@ -285,7 +346,7 @@
                 var container = $('rules-container');
                 var rules = d.rules ?? [];
                 if (rules.length === 0) {
-                    container.innerHTML = '<p class="tiny">' + esc(t('no_rules')) + '</p>';
+                    container.innerHTML = '<p style="color:var(--tx3);font-size:13px">' + esc(t('no_rules')) + '</p>';
                     return;
                 }
                 container.innerHTML = rules.map(function (rule) { return '\
@@ -294,7 +355,7 @@
           <div class="rule-name">' + esc(rule.name) + '</div>\
           <div class="rule-trigger">' + esc(t('trigger_lbl')) + esc(rule.trigger && rule.trigger.type ? rule.trigger.type : '?') + ' ' + esc(rule.trigger && (rule.trigger.at || rule.trigger.event_type) || '') + '</div>\
         </div>\
-        <span class="badge ' + (rule.enabled ? 'badge-on' : 'badge-off') + '">' + (rule.enabled ? t('on') : t('off')) + '</span>\
+        <span class="badge ' + (rule.enabled ? 'on' : 'off') + '">' + (rule.enabled ? t('on') : t('off')) + '</span>\
         <button class="btn btn-sm ' + (rule.enabled ? 'btn-danger' : 'btn-primary') + '"\
           onclick="toggleRule(\'' + esc(rule.id) + '\', ' + (!rule.enabled) + ')">\
           ' + (rule.enabled ? t('disable') : t('enable')) + '\
@@ -340,9 +401,19 @@
             });
         }
 
+        function showAddOk(msg) {
+            $('add-msg').textContent = msg;
+            $('add-err').textContent = '';
+            setTimeout(function () { $('add-msg').textContent = ''; }, 3000);
+        }
+        function showAddErr(msg) {
+            $('add-err').textContent = msg;
+            $('add-msg').textContent = '';
+        }
+
         $('btn-add-rule').addEventListener('click', function () {
             var name = $('f-name').value.trim();
-            if (!name) { showToast(t('err_name'), 'error'); return; }
+            if (!name) { showAddErr(t('err_name')); return; }
 
             var trigType = $('f-trigger').value;
             var actType = $('f-action').value;
@@ -354,8 +425,7 @@
             } else if (trigType === 'event') {
                 trigger.event_type = $('f-trig-event').value.trim();
             } else if (trigType === 'device') {
-                trigger.device_id = $('f-trig-dev-id').value;
-                if (!trigger.device_id) { showToast(t('err_pick_device'), 'error'); return; }
+                trigger.device_id = $('f-trig-dev-id').value.trim();
                 var key = $('f-trig-key').value.trim();
                 var val = $('f-trig-val').value.trim();
                 if (key) { trigger.state = {}; trigger.state[key] = val; }
@@ -365,8 +435,7 @@
             }
 
             if (actType === 'device_command') {
-                action.device_id = $('f-act-dev-id').value;
-                if (!action.device_id) { showToast(t('err_pick_device'), 'error'); return; }
+                action.device_id = $('f-act-dev-id').value.trim();
                 var akey = $('f-act-key').value.trim();
                 var aval = $('f-act-val').value.trim();
                 action.state = {};
@@ -393,21 +462,34 @@
             if (action.message) yaml_text += '\n        message: "' + action.message.replace(/"/g, "'") + '"';
             if (action.channel) yaml_text += '\n        channel: ' + action.channel;
 
-            withLoading(this, async function () {
-                await apiPost('/rules/import', { yaml_text: yaml_text });
-                showToast(t('added_ok'));
-                $('f-name').value = '';
-                loadRules(); loadStatus();
+            var self = this;
+            withLoading(self, async function () {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: yaml_text }) });
+                if (r.ok) {
+                    showAddOk(t('added_ok'));
+                    $('f-name').value = '';
+                    loadRules(); loadStatus();
+                } else {
+                    var e = await r.json();
+                    throw new Error(e.detail || 'Error');
+                }
             });
         });
 
         $('btn-import-yaml').addEventListener('click', function () {
             var yaml_text = $('yaml-input').value.trim();
             if (!yaml_text) return;
-            withLoading(this, async function () {
-                var d = await apiPost('/rules/import', { yaml_text: yaml_text });
-                showToast(t('imported_ok') + ' ' + d.imported + ' rule(s)');
-                loadRules(); loadStatus();
+            var self = this;
+            withLoading(self, async function () {
+                var r = await fetch(BASE + '/rules/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ yaml_text: yaml_text }) });
+                if (r.ok) {
+                    var d = await r.json();
+                    showAddOk(t('imported_ok') + ' ' + d.imported + ' rule(s)');
+                    loadRules(); loadStatus();
+                } else {
+                    var e = await r.json();
+                    throw new Error(e.detail || 'Import failed');
+                }
             });
         });
 
@@ -415,14 +497,12 @@
         function refresh() {
             loadRules();
             loadStatus();
-            loadDevices();
         }
 
         loadI18n().then(function () {
             applyLang();
             loadStatus();
             loadRules();
-            loadDevices();
             setInterval(loadStatus, 10000);
         });
     </script>

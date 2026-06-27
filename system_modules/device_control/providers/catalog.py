@@ -35,10 +35,6 @@ class ProviderSpec(TypedDict, total=False):
     icon: str               # short emoji or filename for the provider card
     homepage: str           # vendor / project URL
     needs_external_service: bool  # for adapters that bridge to other services
-    integration_mode: str   # "direct" | "bridge" | "cloud_fallback" — UI grouping
-
-
-INTEGRATION_MODES = ("direct", "bridge", "cloud_fallback")
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
@@ -57,7 +53,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": True,
         "icon": "🟧",
         "homepage": "https://github.com/jasonacox/tinytuya",
-        "integration_mode": "direct",
     },
     "tuya_cloud": {
         "id": "tuya_cloud",
@@ -73,7 +68,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": True,
         "icon": "☁️",
         "homepage": "https://github.com/tuya/tuya-device-sharing-sdk",
-        "integration_mode": "cloud_fallback",
     },
     "gree": {
         "id": "gree",
@@ -89,7 +83,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": True,
         "icon": "❄️",
         "homepage": "https://github.com/cmroche/greeclimate",
-        "integration_mode": "direct",
     },
     "mqtt": {
         "id": "mqtt",
@@ -105,7 +98,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": True,
         "icon": "📡",
         "homepage": "",
-        "integration_mode": "bridge",
     },
 
     # ── Opt-in providers (NOT pre-installed) ───────────────────────────
@@ -124,7 +116,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": False,
         "icon": "💡",
         "homepage": "https://developers.meethue.com/",
-        "integration_mode": "bridge",
     },
     "esphome": {
         "id": "esphome",
@@ -140,7 +131,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "builtin": False,
         "icon": "🔌",
         "homepage": "https://github.com/esphome/aioesphomeapi",
-        "integration_mode": "direct",
     },
     "zigbee2mqtt": {
         "id": "zigbee2mqtt",
@@ -157,7 +147,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "needs_external_service": True,
         "icon": "🐝",
         "homepage": "https://www.zigbee2mqtt.io/",
-        "integration_mode": "bridge",
     },
     "matter": {
         "id": "matter",
@@ -177,25 +166,6 @@ PROVIDERS: dict[str, ProviderSpec] = {
         "needs_external_service": True,
         "icon": "◈",
         "homepage": "https://github.com/home-assistant-libs/python-matter-server",
-        "integration_mode": "direct",
-    },
-    "plejd_native": {
-        "id": "plejd_native",
-        "name": "Plejd (native BLE)",
-        "description": "Direct BLE-mesh control of Plejd dimmers and relays. "
-                       "No hub required — the SelenaCore host's Bluetooth "
-                       "adapter becomes the gateway. Site discovery uses "
-                       "hems.plejd.com once; runtime is LAN-only.",
-        "package": "bleak",
-        "version": ">=0.21,<0.23",
-        "driver_module": "system_modules.device_control.drivers.plejd",
-        "driver_class": "PlejdDriver",
-        "entity_types": ["light"],
-        "needs_cloud": True,
-        "builtin": False,
-        "icon": "🇸🇪",
-        "homepage": "https://www.plejd.com/",
-        "integration_mode": "bridge",
     },
 }
 

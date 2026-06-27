@@ -2,7 +2,7 @@
 
 Дякуємо за інтерес до проєкту!
 
-[English version](../../.github/CONTRIBUTING.md)
+[English version](../../CONTRIBUTING.md)
 
 ## Робочий процес
 

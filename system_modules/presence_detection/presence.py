@@ -1044,25 +1044,12 @@ class PresenceDetector:
         return False
 
     async def _check_bluetooth(self, bt_address: str) -> bool:
-        """Check if a Bluetooth device is discoverable (requires bleak).
-
-        Goes through ``core.ble.arbiter`` so long-lived BLE holders
-        (e.g. the Plejd gateway) don't have their GATT connection torn
-        down by the scan. If the arbiter can't grant a slot within the
-        short timeout we return ``False`` and retry on the next cycle —
-        a single missed scan never pages someone away.
-        """
+        """Check if a Bluetooth device is discoverable (requires bleak)."""
         if not BLEAK_AVAILABLE:
             return False
         try:
             import bleak
-            from core.ble.arbiter import BLEBusy, get_arbiter
-            try:
-                async with get_arbiter().slot("presence_bt_scan", timeout=8.0):
-                    devices = await bleak.BleakScanner.discover(timeout=3.0)
-            except BLEBusy:
-                logger.debug("BT scan skipped — arbiter busy (long-lived holder active)")
-                return False
+            devices = await bleak.BleakScanner.discover(timeout=3.0)
             return any(d.address.lower() == bt_address.lower() for d in devices)
         except Exception as exc:
             logger.debug(f"BT scan failed: {exc}")

@@ -7,13 +7,98 @@
     <title>Presence Detection Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* Module-specific: user/device/discovery cards with presence dots
-           and checkmarks, QR scan modal, history rows. Shared theme.css
-           handles layout, cards, forms, buttons, badges, toasts, grids.
-           For 4-wide stats use .grid-4 + .card-inner.kpi + .kpi-val + .kpi-lbl. */
+        body {
+            padding: 20px;
+            min-height: 100%;
+            overflow-y: auto;
+        }
 
-        /* Buttons row wrapper kept for the refresh/scan cluster pattern. */
-        .btn-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .section {
+            background: var(--sf);
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 14px;
+        }
+
+        .section h2 {
+            font-size: 0.95rem;
+            color: var(--tx2);
+            margin-bottom: 14px;
+            font-weight: 600;
+        }
+
+        /* Stat card overrides (4-col grid + module-specific val colors) */
+        .stat-grid {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .stat-card .val {
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.1;
+        }
+
+        .stat-card .val.green { color: var(--gr); }
+        .stat-card .val.red   { color: var(--rd); }
+        .stat-card .val.blue  { color: var(--ac); }
+        .stat-card .val.amber { color: var(--am); }
+
+        .stat-card .lbl {
+            font-size: 0.72rem;
+            color: var(--tx3);
+            margin-top: 4px;
+        }
+
+        /* Buttons row */
+        .btn-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        /* Forms */
+        .form-row {
+            margin-bottom: 12px;
+        }
+
+        .form-row label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--tx2);
+            margin-bottom: 4px;
+        }
+
+        .form-row input,
+        .form-row select {
+            width: 100%;
+            background: var(--sf2);
+            border: 1px solid var(--b2);
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: var(--tx);
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .form-row input:focus {
+            border-color: var(--ac);
+        }
+
+        .msg {
+            font-size: 0.82rem;
+            margin-top: 8px;
+            min-height: 18px;
+        }
+
+        .ok-msg { color: var(--gr); }
+        .err-msg { color: var(--rd); }
 
         /* User cards */
         .user-card {
@@ -150,6 +235,13 @@
             vertical-align: middle;
         }
 
+        .empty-msg {
+            color: var(--tx3);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 16px;
+        }
+
         /* QR Modal overrides */
         .modal h3 {
             font-size: 1.1rem;
@@ -213,46 +305,46 @@
 </head>
 
 <body>
-    <h2 data-i18n="title"></h2>
+    <h1 data-i18n="title"></h1>
     <p class="subtitle" data-i18n="subtitle"></p>
 
     <!-- Stats -->
-    <div class="grid-4 mb16">
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-success" id="s-home">0</div>
-            <div class="kpi-lbl" data-i18n="stat_home"></div>
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="val green" id="s-home">0</div>
+            <div class="lbl" data-i18n="stat_home"></div>
         </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-danger" id="s-away">0</div>
-            <div class="kpi-lbl" data-i18n="stat_away"></div>
+        <div class="stat-card">
+            <div class="val red" id="s-away">0</div>
+            <div class="lbl" data-i18n="stat_away"></div>
         </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-accent" id="s-total">0</div>
-            <div class="kpi-lbl" data-i18n="stat_tracked"></div>
+        <div class="stat-card">
+            <div class="val blue" id="s-total">0</div>
+            <div class="lbl" data-i18n="stat_tracked"></div>
         </div>
-        <div class="card-inner kpi">
-            <div class="kpi-val kpi-val-warn" id="s-interval">&mdash;</div>
-            <div class="kpi-lbl" data-i18n="stat_interval"></div>
+        <div class="stat-card">
+            <div class="val amber" id="s-interval">&mdash;</div>
+            <div class="lbl" data-i18n="stat_interval"></div>
         </div>
     </div>
 
     <!-- Tracked users -->
-    <div class="card">
+    <div class="section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-            <div class="section-title" style="margin:0" data-i18n="tracked_users"></div>
+            <h2 style="margin:0" data-i18n="tracked_users"></h2>
             <div class="btn-row">
                 <button class="btn btn-primary btn-sm" id="btn-scan-now" onclick="triggerScan()" data-i18n="scan_now"></button>
                 <button class="btn btn-sec btn-sm" onclick="loadUsers()">&#8635;</button>
             </div>
         </div>
         <div id="users-container">
-            <p class="empty-state" data-i18n="loading"></p>
+            <p class="empty-msg" data-i18n="loading"></p>
         </div>
     </div>
 
     <!-- Add user — step 1: scan network -->
-    <div class="card">
-        <div class="section-title" data-i18n="h_add_user"></div>
+    <div class="section">
+        <h2 data-i18n="h_add_user"></h2>
         <p style="font-size:0.85rem;color:var(--tx2);margin-bottom:14px" data-i18n="add_hint"></p>
 
         <div class="btn-row" style="margin-bottom:14px">
@@ -269,7 +361,7 @@
 
         <!-- After selecting device(s), fill in user name -->
         <div id="add-form" style="display:none;margin-top:16px;border-top:1px solid var(--b2);padding-top:16px">
-            <div class="field">
+            <div class="form-row">
                 <label data-i18n="lbl_name"></label>
                 <input id="f-name" data-placeholder-i18n="ph_name">
             </div>
@@ -284,23 +376,23 @@
         <details style="margin-top:16px">
             <summary style="color:var(--tx3);font-size:0.82rem;cursor:pointer" data-i18n="manual_toggle"></summary>
             <div style="padding-top:12px">
-                <div class="field">
+                <div class="form-row">
                     <label data-i18n="lbl_uid"></label>
                     <input id="m-uid" placeholder="user-001">
                 </div>
-                <div class="field">
+                <div class="form-row">
                     <label data-i18n="lbl_name_manual"></label>
                     <input id="m-name" placeholder="Alice">
                 </div>
-                <div class="field">
+                <div class="form-row">
                     <label data-i18n="lbl_ip"></label>
                     <input id="m-ip" placeholder="192.168.1.101">
                 </div>
-                <div class="field">
+                <div class="form-row">
                     <label data-i18n="lbl_mac"></label>
                     <input id="m-mac" placeholder="aa:bb:cc:dd:ee:ff">
                 </div>
-                <div class="field">
+                <div class="form-row">
                     <label data-i18n="lbl_bt"></label>
                     <input id="m-bt" placeholder="AA:BB:CC:DD:EE:FF">
                 </div>
@@ -311,7 +403,7 @@
     </div>
 
     <!-- Push Notifications Section -->
-    <div class="card">
+    <div class="section">
         <h2><span data-i18n="push_title"></span> · <span id="push-count">0</span> <span data-i18n="push_devices"></span>
         </h2>
         <div id="push-list"></div>
@@ -322,7 +414,7 @@
                 <button class="btn btn-sec btn-sm" id="push-copy-btn" onclick="copyVapid()"
                     data-i18n="push_copy"></button>
             </div>
-            <div style="margin-top:10px;border-top:1px solid var(--b);padding-top:10px">
+            <div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:10px">
                 <button class="btn btn-sec btn-sm" id="btn-reset-push" onclick="resetPush()" data-i18n="push_reset"></button>
                 <span style="font-size:0.75rem;color:var(--tx3);margin-left:8px" data-i18n="push_reset_hint"></span>
             </div>
@@ -333,7 +425,7 @@
     <div id="qr-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeQrModal()">
         <div class="modal">
             <h3 data-i18n="qr_title"></h3>
-            <div class="field" id="qr-name-row">
+            <div class="form-row" id="qr-name-row">
                 <label data-i18n="qr_lbl_name"></label>
                 <input id="qr-name" data-placeholder-i18n="ph_name">
             </div>
@@ -393,7 +485,7 @@
                 var users = d.users || [];
                 var container = $('users-container');
                 if (users.length === 0) {
-                    container.innerHTML = '<p class="empty-state">' + esc(t('no_users')) + '</p>';
+                    container.innerHTML = '<p class="empty-msg">' + esc(t('no_users')) + '</p>';
                     return;
                 }
                 container.innerHTML = users.map(function (u) {
@@ -439,7 +531,7 @@
             var btn = $('btn-scan-net');
             $('scan-spinner').style.display = 'inline';
             $('discover-list').style.display = 'block';
-            $('discover-container').innerHTML = '<p class="empty-state">' + esc(t('scanning')) + '</p>';
+            $('discover-container').innerHTML = '<p class="empty-msg">' + esc(t('scanning')) + '</p>';
             selectedDevices = [];
             $('add-form').style.display = 'none';
 
@@ -449,7 +541,7 @@
                     renderDiscovered();
                 });
             }).catch(function (e) {
-                $('discover-container').innerHTML = '<p class="empty-state">' + esc(t('no_devices_found')) + '</p>';
+                $('discover-container').innerHTML = '<p class="empty-msg">' + esc(t('no_devices_found')) + '</p>';
                 showToast(e.message || 'Error', 'error');
             }).finally(function () {
                 $('scan-spinner').style.display = 'none';
@@ -459,7 +551,7 @@
         function renderDiscovered() {
             var container = $('discover-container');
             if (discoveredDevices.length === 0) {
-                container.innerHTML = '<p class="empty-state">' + esc(t('no_devices_found')) + '</p>';
+                container.innerHTML = '<p class="empty-msg">' + esc(t('no_devices_found')) + '</p>';
                 return;
             }
             container.innerHTML = '<p style="font-size:0.82rem;color:var(--tx2);margin-bottom:10px">' + esc(t('select_device')) + '</p>' +
@@ -585,11 +677,11 @@
             });
         }
 
-        // Legacy inline-message shim: route to shared showToast.
-        // (The old .msg/.err-msg CSS was removed in the UI standardization pass.)
-        // The id argument is ignored — toasts appear in a fixed position.
-        function showMsg(_id, msg, isErr) {
-            showToast(msg, isErr ? 'error' : 'success');
+        function showMsg(id, msg, isErr) {
+            var el = $(id);
+            el.textContent = msg;
+            el.className = 'msg ' + (isErr ? 'err-msg' : 'ok-msg');
+            setTimeout(function () { el.textContent = ''; }, 3000);
         }
 
         /* ── QR Invite ───────────────────────────────────────── */

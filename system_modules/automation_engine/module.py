@@ -186,41 +186,5 @@ class AutomationEngineModule(SystemModule):
                 raise HTTPException(404, "Rule not found")
             return svc._engine.get_rule(rule_id).to_dict()
 
-        # ── Dashboard V2 metric template ───────────────────────────────────
-        @router.get("/widget/data/state")
-        async def widget_state() -> dict:
-            if svc._engine is None:
-                raise HTTPException(503, "Engine not running")
-            status = svc._engine.get_status()
-            total = int(status.get("rules_total", 0))
-            enabled = int(status.get("rules_enabled", 0))
-            runs = int(status.get("run_count", 0))
-            errors = int(status.get("error_count", 0))
-            tone = "alert" if errors > 0 else ("ok" if enabled > 0 else "neutral")
-            trend: dict | None = None
-            if errors > 0:
-                trend = {
-                    "direction": "down",
-                    "magnitude": f"-{errors}",
-                    "period": "errors",
-                    "period_key": "widgets.automationEngine.periodErrors",
-                }
-            elif runs > 0:
-                trend = {
-                    "direction": "up",
-                    "magnitude": f"{runs}",
-                    "period": "runs",
-                    "period_key": "widgets.automationEngine.periodRuns",
-                }
-            return {
-                "label": "Automations",
-                "label_key": "widgets.automationEngine.label",
-                "value": str(enabled),
-                "unit": f"of {total}" if total else None,
-                "trend": trend,
-                "tone": tone,
-                "icon": "workflow",
-            }
-
         svc._register_html_routes(router, __file__)
         return router

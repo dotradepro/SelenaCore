@@ -8,20 +8,6 @@ export default defineConfig({
   build: {
     outDir: 'system_modules/ui_core/static',
     emptyOutDir: true,
-    // Manual chunk split: pull the largest stable vendor libraries out of
-    // the main bundle so a small app-code change doesn't invalidate
-    // ~200 KB of vendored framework code on each deploy. The kiosk
-    // browser cache then keeps the long-lived vendor chunks across
-    // dashboard recraft iterations.
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-motion': ['motion/react'],
-          'vendor-i18n': ['i18next', 'react-i18next'],
-        },
-      },
-    },
   },
   resolve: {
     alias: {

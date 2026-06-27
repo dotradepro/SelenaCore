@@ -1,7 +1,6 @@
 {
     "name": "scheduler",
     "version": "0.1.0",
-    "room": "system",
     "description": "Central task scheduler: cron, interval, sunrise/sunset triggers",
     "type": "SYSTEM",
     "ui_profile": "SETTINGS_ONLY",

@@ -20,36 +20,6 @@
 
 <body>
   <div id="root"></div>
-  <!-- Aggressive cache eviction. The SelenaCore dashboard does not need a
-       service worker; some legacy invite flows (presence-detection /join,
-       user-manager qr-join) register one with scope "/" which then
-       intercepts every page on the origin. We unregister on every load
-       and purge Cache Storage so the kiosk always serves the freshest
-       bundle without manual DevTools work. -->
-  <script>
-    (function () {
-      try {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function (regs) {
-            var hadAny = regs.length > 0;
-            regs.forEach(function (r) { try { r.unregister(); } catch (e) { } });
-            // After unregistering, force one reload so the page is no
-            // longer controlled by the SW that intercepted the previous
-            // request. Sentinel localStorage flag prevents reload loops.
-            if (hadAny && !sessionStorage.getItem('selena_sw_purged')) {
-              sessionStorage.setItem('selena_sw_purged', '1');
-              window.location.reload();
-            }
-          }).catch(function () { });
-        }
-        if ('caches' in window) {
-          caches.keys().then(function (keys) {
-            keys.forEach(function (k) { try { caches.delete(k); } catch (e) { } });
-          }).catch(function () { });
-        }
-      } catch (e) { }
-    })();
-  </script>
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

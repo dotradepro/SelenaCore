@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <meta charset="UTF-8" />
+    <style>
+        body {
+            background: transparent;
+        }
+
+        .widget {
+            display: flex;
+            gap: 12px;
+            padding: 10px;
+            height: 100%;
+        }
+
+        .panel {
+            flex: 1;
+            background: var(--b);
+            border-radius: 8px;
+            padding: 10px;
+        }
+
+        .panel h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--tx2);
+            margin-bottom: 8px;
+        }
+
+        .big {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--gr);
+        }
+
+        .label {
+            font-size: 11px;
+            color: var(--tx3);
+            margin-bottom: 10px;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+
+        .user-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--b);
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot.home {
+            background: var(--gr);
+        }
+
+        .dot.away {
+            background: var(--rd);
+        }
+
+        .dot.unknown {
+            background: var(--tx2);
+        }
+
+        /* home but not detected in last arp-scan (Deep Sleep / leaving) */
+        .dot.pending {
+            background: var(--am);
+            animation: blink 1.2s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        .user-name {
+            font-size: 12px;
+            color: var(--tx);
+            flex: 1;
+        }
+
+        .user-state {
+            font-size: 11px;
+            color: var(--tx3);
+        }
+
+        .sub-warn {
+            font-size: 10px;
+            color: var(--am);
+            margin-right: 4px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="widget">
+        <div class="panel">
+            <h3 data-i18n="presence"></h3>
+            <div class="big" id="home-count">—</div>
+            <div class="label" data-i18n="users_home"></div>
+            <div class="stat"><span data-i18n="away"></span><span id="away-count">—</span></div>
+            <div class="stat"><span data-i18n="total_tracked"></span><span id="total-count">—</span></div>
+        </div>
+        <div class="panel">
+            <h3 data-i18n="users_title"></h3>
+            <div id="users-list">
+                <div style="color:var(--tx3);font-size:11px" data-i18n="loading"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
+            en: {
+                presence: 'Presence', users_home: 'users home', away: 'Away', total_tracked: 'Total tracked', users_title: 'Users', loading: 'Loading…', no_users: 'No users tracked.',
+                state_home: 'home', state_away: 'away', state_unknown: 'unknown', not_seen: 'not seen', away_in: 'away in'
+            },
+            uk: {
+                presence: 'Присутність', users_home: 'вдома', away: 'Відсутні', total_tracked: 'Всього відстежується', users_title: 'Користувачі', loading: 'Завантаження…', no_users: 'Немає відстежуваних користувачів.',
+                state_home: 'вдома', state_away: 'відсутній', state_unknown: 'невідомо', not_seen: 'не видно', away_in: 'відїде ч/з'
+            }
+        };
+
+        async function refresh() {
+            try {
+                const [s, d] = await Promise.all([
+                    apiGet("/status"),
+                    apiGet("/users"),
+                ]);
+                $("home-count").textContent = s.users_home ?? 0;
+                $("away-count").textContent = s.users_away ?? 0;
+                $("total-count").textContent = s.users_total ?? 0;
+
+                const list = $("users-list");
+                const users = d.users ?? [];
+                if (users.length === 0) {
+                    list.innerHTML = '<div style="color:var(--tx3);font-size:11px">' + esc(t('no_users')) + '</div>';
+                } else {
+                    list.innerHTML = users.slice(0, 6).map(u => {
+                        // Dot class: if detected=false but state=home → amber (Deep Sleep)
+                        var dotClass = u.state;
+                        if (u.state === 'home' && u.detected === false) dotClass = 'pending';
+                        // Sub-label: show countdown or "not seen"
+                        var subLabel = '';
+                        if (u.state === 'home' && u.detected === false) {
+                            subLabel = u.away_in_sec != null
+                                ? '<span class="sub-warn">' + esc(t('away_in')) + ' ' + esc(u.away_in_sec) + 's</span>'
+                                : '<span class="sub-warn">' + esc(t('not_seen')) + '</span>';
+                        }
+                        var stateLabel = t('state_' + u.state) || u.state;
+                        return '<div class="user-item"><div class="dot ' + esc(dotClass) + '"></div><span class="user-name">' + esc(u.name) + '</span>' + subLabel + '<span class="user-state">' + esc(stateLabel) + '</span></div>';
+                    }).join("");
+                }
+            } catch (err) {
+                showToast(err.message || 'Error', 'error');
+                $("users-list").innerHTML = '<div style="color:var(--rd);font-size:10px">ERR: ' + esc(err.message || 'fetch error') + '</div>';
+            }
+        }
+
+        applyLang();
+        refresh();
+        setInterval(refresh, 15000);
+    </script>
+</body>
+
+</html>

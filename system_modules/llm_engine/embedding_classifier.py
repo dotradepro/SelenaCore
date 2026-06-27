@@ -38,7 +38,6 @@ than the LLM-only path).
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,16 +49,7 @@ _DEFAULT_MODEL_DIR = "/var/lib/selena/models/embedding/all-MiniLM-L6-v2"
 
 
 def _get_embedding_model_dir() -> str:
-    """Read the ONNX embedding model directory.
-
-    Priority: SELENA_INTENT_EMBEDDING_MODEL_DIR env > config value > default.
-    The env override exists so sweep scripts
-    (tests/experiments/sweep_embedding_models.sh) can point the
-    classifier at a candidate model without rewriting core.yaml.
-    """
-    override = os.environ.get("SELENA_INTENT_EMBEDDING_MODEL_DIR")
-    if override:
-        return override
+    """Read the ONNX embedding model directory from config."""
     try:
         from core.config_writer import get_nested
         return str(get_nested("intent.embedding_model_dir", _DEFAULT_MODEL_DIR))

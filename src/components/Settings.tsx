@@ -11,7 +11,6 @@ import SystemPage from './SystemPage';
 import LanguagePicker from './settings/LanguagePicker';
 import TTSLangSuggest, { TTSLangSuggestOptOut } from './settings/TTSLangSuggest';
 import ProvisionProgress from './ProvisionProgress';
-import { Button, Input, Field, Modal } from './ui';
 // Wrapper for tabs whose root content is just a form / list with no
 // built-in scroll container.  Defined OUTSIDE the component so React
 // preserves the component identity across re-renders (prevents
@@ -154,11 +153,12 @@ function isHex(v: string) { return /^#[0-9a-fA-F]{3,8}$/.test(v); }
 /* ── Theme Editor Modal ── */
 function ThemeEditorModal({ theme, onSave, onClose }: {
   theme: CustomTheme | null; // null = create new
-  onSave: (name: string, dark: Record<string, string>, light: Record<string, string>) => void;
+  onSave: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(theme?.name || '');
+  const [nameEn, setNameEn] = useState(theme?.name?.en || '');
+  const [nameUk, setNameUk] = useState(theme?.name?.uk || '');
   const [dark, setDark] = useState<Record<string, string>>({ ...DEFAULT_DARK, ...(theme?.dark || {}) });
   const [light, setLight] = useState<Record<string, string>>({ ...DEFAULT_LIGHT, ...(theme?.light || {}) });
 
@@ -167,90 +167,97 @@ function ThemeEditorModal({ theme, onSave, onClose }: {
     else setLight(prev => ({ ...prev, [key]: val }));
   };
 
-  const handleSave = () => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    onSave(trimmed, dark, light);
-  };
-
   return (
-    <Modal
-      open
-      onClose={onClose}
-      width={680}
-      title={theme ? t('settings.editTheme') : t('settings.createTheme')}
-      actions={
-        <>
-          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button variant="primary" onClick={handleSave}>
-            {theme ? t('settings.themeUpdated').replace(/\.$/, '') : t('settings.themeCreated').replace(/\.$/, '')}
-          </Button>
-        </>
-      }
-    >
-      <Field label={t('settings.themeName')}>
-        <Input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder={t('settings.themeNamePlaceholder')}
-        />
-      </Field>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    }} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{
+        background: 'var(--sf)', border: '1px solid var(--b)', borderRadius: 16, padding: 24,
+        maxWidth: 680, width: '100%', maxHeight: '85vh', overflowY: 'auto', color: 'var(--tx)',
+      }}>
+        <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+          {theme ? t('settings.editTheme') : t('settings.createTheme')}
+        </h3>
 
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => { setDark({ ...DEFAULT_DARK }); setLight({ ...DEFAULT_LIGHT }); }}
-        style={{ marginBottom: 16 }}
-      >
-        {t('settings.copyFromDefault')}
-      </Button>
-
-      {/* Color editor — two columns */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {(['dark', 'light'] as const).map(variant => (
-          <div key={variant}>
-            <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--tx)' }}>
-              {variant === 'dark' ? t('settings.darkVariant') : t('settings.lightVariant')}
-            </h4>
-            <ThemeSwatches colors={variant === 'dark' ? dark : light} />
-            <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {VAR_GROUPS.map(group => (
-                <div key={group.label}>
-                  <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 8, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>{group.label}</div>
-                  {group.vars.map(v => {
-                    const val = (variant === 'dark' ? dark : light)[v] || '';
-                    const hex = isHex(val);
-                    return (
-                      <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, color: 'var(--tx2)', width: 70, flexShrink: 0 }}>{t(`settings.${VAR_LABELS[v]}`)}</span>
-                        {hex && (
-                          <input
-                            type="color"
-                            value={val.length === 4 ? `#${val[1]}${val[1]}${val[2]}${val[2]}${val[3]}${val[3]}` : val}
-                            onChange={e => setVar(variant, v, e.target.value)}
-                            style={{ width: 24, height: 24, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                          />
-                        )}
-                        <Input
-                          value={val}
-                          onChange={e => setVar(variant, v, e.target.value)}
-                          style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+        {/* Name inputs */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameEn')}</label>
+            <input value={nameEn} onChange={e => setNameEn(e.target.value)} placeholder="My Theme"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
           </div>
-        ))}
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--tx2)', marginBottom: 4, display: 'block' }}>{t('settings.themeNameUk')}</label>
+            <input value={nameUk} onChange={e => setNameUk(e.target.value)} placeholder="Моя тема"
+              style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 13 }} />
+          </div>
+        </div>
+
+        {/* Copy from default */}
+        <button onClick={() => { setDark({ ...DEFAULT_DARK }); setLight({ ...DEFAULT_LIGHT }); }}
+          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx2)', cursor: 'pointer', fontSize: 12, marginBottom: 16 }}>
+          {t('settings.copyFromDefault')}
+        </button>
+
+        {/* Color editor — two columns */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          {(['dark', 'light'] as const).map(variant => (
+            <div key={variant}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12, color: 'var(--tx)' }}>
+                {variant === 'dark' ? t('settings.darkVariant') : t('settings.lightVariant')}
+              </h4>
+              <ThemeSwatches colors={variant === 'dark' ? dark : light} />
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {VAR_GROUPS.map(group => (
+                  <div key={group.label}>
+                    <div style={{ fontSize: 11, color: 'var(--tx3)', marginTop: 8, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>{group.label}</div>
+                    {group.vars.map(v => {
+                      const val = (variant === 'dark' ? dark : light)[v] || '';
+                      const hex = isHex(val);
+                      return (
+                        <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, color: 'var(--tx2)', width: 70, flexShrink: 0 }}>{t(`settings.${VAR_LABELS[v]}`)}</span>
+                          {hex && (
+                            <input type="color" value={val.length === 4 ? `#${val[1]}${val[1]}${val[2]}${val[2]}${val[3]}${val[3]}` : val}
+                              onChange={e => setVar(variant, v, e.target.value)}
+                              style={{ width: 24, height: 24, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} />
+                          )}
+                          <input value={val} onChange={e => setVar(variant, v, e.target.value)}
+                            style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', fontSize: 11, fontFamily: 'var(--font-mono, monospace)' }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+          <button onClick={onClose}
+            style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--b)', background: 'var(--sf2)', color: 'var(--tx)', cursor: 'pointer', fontSize: 13 }}>
+            Cancel
+          </button>
+          <button onClick={() => {
+            if (!nameEn.trim()) return;
+            onSave({ en: nameEn.trim(), uk: nameUk.trim() || nameEn.trim() }, dark, light);
+          }}
+            style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--ac)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+            {theme ? t('settings.themeUpdated').replace(/\.$/, '') : t('settings.themeCreated').replace(/\.$/, '')}
+          </button>
+        </div>
       </div>
-    </Modal>
+    </div>
   );
 }
 
 function AppearanceSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language as 'en' | 'uk';
   const theme = useStore(s => s.theme);
   const setTheme = useStore(s => s.setTheme);
   const selectedLanguage = useStore(s => s.selectedLanguage);
@@ -282,17 +289,7 @@ function AppearanceSettings() {
     { value: 'light', label: t('settings.themeLight'), desc: t('settings.themeLightDesc'), icon: '☀️' },
   ];
 
-  // Built-in themes carry a localised display name under settings.builtInTheme.<id>.
-  // Custom themes just use whatever the user typed (tied to the UI language that
-  // was active at creation time — they can re-edit if they switch languages).
-  const themeName = (th: CustomTheme) => {
-    if (th.builtIn) {
-      const key = `settings.builtInTheme.${th.id}`;
-      const localised = t(key);
-      return localised !== key ? localised : (th.name || th.id);
-    }
-    return th.name || th.id;
-  };
+  const themeName = (th: CustomTheme) => th.name?.[lang] || th.name?.en || th.id;
 
   return (
     <div className="space-y-8">

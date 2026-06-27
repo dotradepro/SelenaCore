@@ -149,10 +149,6 @@ def _device_to_dict(device: Device) -> dict[str, Any]:
         "last_seen": device.last_seen.timestamp() if device.last_seen else None,
         "module_id": device.module_id,
         "meta": device.get_meta(),
-        "entity_type": device.entity_type,
-        "location": device.location,
-        "keywords_user": device.get_keywords_user(),
-        "keywords_en": device.get_keywords_en(),
     }
 
 
@@ -1569,33 +1565,15 @@ _DEFAULT_THEMES_DATA: dict[str, Any] = {
     "wallpaper": None,
     "wallpaper_blur": 0,
     "wallpaper_opacity": 0.15,
-    # Built-in theme names are translation keys (settings.builtInTheme.<id>).
-    # The raw `name` is the English display string used as a safe fallback
-    # when the client doesn't have the key yet.
     "themes": [
-        {"id": "default", "name": "System Default", "builtIn": True, "dark": {}, "light": {}},
-        {"id": "ocean", "name": "Ocean", "builtIn": True, "dark": _OCEAN_DARK, "light": _OCEAN_LIGHT},
+        {"id": "default", "name": {"en": "System Default", "uk": "Системна"}, "builtIn": True, "dark": {}, "light": {}},
+        {"id": "ocean", "name": {"en": "Ocean", "uk": "Океан"}, "builtIn": True, "dark": _OCEAN_DARK, "light": _OCEAN_LIGHT},
     ],
 }
 
 # ── In-memory cache ──────────────────────────────────────────────────────────
 
 _themes_cache: dict[str, Any] | None = None
-
-
-def _migrate_theme_names(data: dict[str, Any]) -> bool:
-    """Flatten legacy {'en': '…', 'uk': '…'} theme names into a single string.
-
-    Old behaviour stored a dict per theme; UI editor now ties the name to
-    whatever UI language was active when the user created it. Pick English
-    first, then Ukrainian, then the theme id."""
-    changed = False
-    for theme in data.get("themes", []):
-        name = theme.get("name")
-        if isinstance(name, dict):
-            theme["name"] = name.get("en") or name.get("uk") or theme.get("id", "")
-            changed = True
-    return changed
 
 
 def _load_themes() -> dict[str, Any]:
@@ -1605,10 +1583,7 @@ def _load_themes() -> dict[str, Any]:
     try:
         if _THEMES_PATH.exists():
             data = json.loads(_THEMES_PATH.read_text())
-            if _migrate_theme_names(data):
-                _save_themes(data)
-            else:
-                _themes_cache = data
+            _themes_cache = data
             return data
     except Exception as exc:
         logger.warning("Failed to read custom_themes.json: %s", exc)
@@ -1637,13 +1612,13 @@ def _slug(name: str) -> str:
 # ── Theme CRUD ───────────────────────────────────────────────────────────────
 
 class ThemeCreateRequest(BaseModel):
-    name: str
+    name: dict[str, str]  # {"en": "...", "uk": "..."}
     dark: dict[str, str] = {}
     light: dict[str, str] = {}
 
 
 class ThemeUpdateRequest(BaseModel):
-    name: str | None = None
+    name: dict[str, str] | None = None
     dark: dict[str, str] | None = None
     light: dict[str, str] | None = None
 
@@ -1677,7 +1652,7 @@ async def create_theme(body: ThemeCreateRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=errors)
 
     data = _load_themes()
-    theme_id = _slug(body.name)
+    theme_id = _slug(body.name.get("en", "") or body.name.get("uk", ""))
 
     # Ensure unique id
     existing_ids = {t["id"] for t in data["themes"]}

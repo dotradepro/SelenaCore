@@ -1,29 +1,21 @@
 {
     "name": "backup-manager",
-    "version": "1.1.0",
-    "room": "system",
-    "description": "Local backup manager: manual + scheduled tar.gz archives of SelenaCore data, with pre-restore snapshot safety net",
+    "version": "1.0.0",
+    "description": "Local USB/SD and cloud E2E backup management",
     "type": "SYSTEM",
     "ui_profile": "SETTINGS_ONLY",
     "api_version": "1.0",
     "runtime_mode": "always_on",
     "group": "backup",
-    "intents": [
-        "backup.create",
-        "backup.restore",
-        "backup.list",
-        "backup.delete",
-        "backup.schedule"
-    ],
+    "intents": ["backup.create", "backup.restore"],
     "entities": ["backup"],
     "permissions": [
-        "events.publish",
-        "events.subscribe"
+        "events.publish"
     ],
     "ui": {
         "icon": "icon.svg",
         "widget": null,
-        "settings": "settings.html"
+        "settings": null
     },
     "oauth": null,
     "resources": {

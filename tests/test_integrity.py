@@ -133,7 +133,6 @@ class TestIntegrityAgent:
         monkeypatch.setattr(manifest, "MANIFEST_PATH", str(tmp_path / "manifest.json"))
         monkeypatch.setattr(manifest, "MASTER_HASH_PATH", str(tmp_path / "master.hash"))
         monkeypatch.setattr(integrity_agent, "STATE_FILE", tmp_path / "state.json")
-        monkeypatch.setattr(integrity_agent, "UPDATE_FLAG_PATH", tmp_path / "no_flag")
 
         manifest.create_manifest()
         await integrity_agent.run_check()
@@ -157,8 +156,6 @@ class TestIntegrityAgent:
         monkeypatch.setattr(manifest, "MASTER_HASH_PATH", str(tmp_path / "master.hash"))
         monkeypatch.setattr(integrity_agent, "STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr(integrity_agent, "LOG_PATH", str(tmp_path / "integrity.log"))
-        monkeypatch.setattr(integrity_agent, "UPDATE_FLAG_PATH", tmp_path / "no_flag")
-        monkeypatch.setattr(integrity_agent, "AGENT_MODE", "enforce")
 
         manifest.create_manifest()
 
@@ -172,42 +169,6 @@ class TestIntegrityAgent:
         await integrity_agent.run_check()
         mock_trigger.assert_called_once()
         assert mock_trigger.call_args[0][0] == "files_changed"
-
-    @pytest.mark.asyncio
-    async def test_run_check_skipped_when_update_in_progress(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Update flag overrides the response chain — protects against
-        SAFE MODE during apply-update.sh's rsync window."""
-        from agent import integrity_agent, manifest
-
-        core_dir = tmp_path / "core"
-        core_dir.mkdir()
-        f = core_dir / "main.py"
-        f.write_text("# original")
-
-        monkeypatch.setattr(manifest, "CORE_FILES_GLOB", str(core_dir / "*.py"))
-        monkeypatch.setattr(manifest, "MANIFEST_PATH", str(tmp_path / "manifest.json"))
-        monkeypatch.setattr(manifest, "MASTER_HASH_PATH", str(tmp_path / "master.hash"))
-        monkeypatch.setattr(integrity_agent, "STATE_FILE", tmp_path / "state.json")
-        monkeypatch.setattr(integrity_agent, "LOG_PATH", str(tmp_path / "integrity.log"))
-        flag = tmp_path / "update_in_progress"
-        flag.write_text("v1.2.3")
-        monkeypatch.setattr(integrity_agent, "UPDATE_FLAG_PATH", flag)
-
-        manifest.create_manifest()
-        # Tamper with the file — without the flag, this would trip the
-        # response chain. With the flag, run_check must early-return.
-        f.write_text("# HACKED")
-
-        mock_trigger = AsyncMock()
-        monkeypatch.setattr(integrity_agent, "trigger_response", mock_trigger)
-
-        await integrity_agent.run_check()
-        mock_trigger.assert_not_called()
-
-        state = json.loads((tmp_path / "state.json").read_text())
-        assert state["status"] == "ok"
 
 
 # ── Integrity API endpoint tests ─────────────────────────────────────────────

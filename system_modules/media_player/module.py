@@ -83,12 +83,6 @@ class ImportM3UBody(BaseModel):
     content: str
 
 
-class WidgetActionBody(BaseModel):
-    """Body for ``POST /widget/action/{set_mode|step}`` (Dashboard V2)."""
-    id: str
-    value: float | None = None
-
-
 class ImportRBBody(BaseModel):
     tag: str = ""
     name: str = ""
@@ -101,8 +95,9 @@ class ImportRBBody(BaseModel):
 class MediaPlayerModule(SystemModule):
     name = "media-player"
 
-    # Disambiguating descriptions for the radio media intents. This
-    # module owns the wording and resyncs on every boot via
+    # Disambiguating descriptions for the radio media intents. The seed
+    # script (scripts/seed_intents_to_db.py) creates initial rows; this
+    # module owns the wording from now on and resyncs on every boot via
     # _resync_intent_descriptions(). Without the resync, prompt-tuning
     # changes here would never propagate to live IntentRouter prompts.
     #
@@ -380,81 +375,6 @@ class MediaPlayerModule(SystemModule):
             enabled = bool(body.get("enabled", not svc._player._shuffle))
             svc._player.set_shuffle(enabled)
             return {"shuffle": svc._player._shuffle}
-
-        # ── Dashboard V2 media template (Phase 6) ───────────────────────────
-        # Returns the rich media-shape payload — cover URL + transport state
-        # + volume — so the V2 dashboard can render album art and a real
-        # volume slider instead of the V1-style 4-button stepper grid.
-        @router.get("/widget/data/state")
-        async def widget_state() -> dict:
-            status = svc._player.get_status()
-            raw_state = status.get("state", "stopped")
-            # Normalize to template's enum.
-            state = raw_state if raw_state in {"play", "pause", "stop", "idle"} else "stop"
-            volume = int(status.get("volume", 0))
-            track_obj = status.get("track")
-
-            track_payload: dict | None = None
-            if track_obj:
-                # Player returns absolute paths for local files; cover_url
-                # is already relative when fetched via cover_fetcher.
-                cover = track_obj.get("cover_url")
-                source_type = track_obj.get("source_type") or None
-                track_payload = {
-                    "title": track_obj.get("title") or "—",
-                    "artist": track_obj.get("artist") or None,
-                    "album": track_obj.get("album") or None,
-                    "cover_url": cover,
-                    "source_type": source_type,
-                    "duration_sec": track_obj.get("duration_sec"),
-                }
-                # Source-type label is one of a small set ("radio", "spotify",
-                # "local", "youtube", ...). We emit a key for each known type
-                # so the badge localizes; unknown types fall through.
-                if source_type:
-                    track_payload["source_type_key"] = (
-                        f"widgets.mediaPlayer.source_{source_type}"
-                    )
-
-            return {
-                "state": state,
-                "track": track_payload,
-                "volume": volume,
-                "position_sec": status.get("position"),
-                "shuffle": bool(status.get("shuffle", False)),
-                "empty_text": "Nothing playing",
-                "empty_text_key": "widgets.mediaPlayer.nothingPlaying",
-            }
-
-        @router.post("/widget/action/set_mode")
-        async def widget_set_mode(body: WidgetActionBody) -> dict:
-            if body.id == "play":
-                state = svc._player.get_state()
-                if state == "pause":
-                    await svc._player.pause()  # toggle resume
-                # If nothing's loaded, no-op gracefully.
-                return {"ok": True, "state": svc._player.get_state()}
-            if body.id == "pause":
-                await svc._player.pause()
-                return {"ok": True, "state": svc._player.get_state()}
-            if body.id == "stop":
-                await svc._player.stop()
-                return {"ok": True, "state": svc._player.get_state()}
-            if body.id == "next":
-                await svc._player.next()
-                return {"ok": True, "state": svc._player.get_state()}
-            if body.id == "previous":
-                await svc._player.previous()
-                return {"ok": True, "state": svc._player.get_state()}
-            raise HTTPException(422, f"Unknown transport id {body.id!r}")
-
-        @router.post("/widget/action/step")
-        async def widget_step(body: WidgetActionBody) -> dict:
-            if body.id != "volume" or body.value is None:
-                raise HTTPException(422, "Stepper id must be 'volume' with a numeric value")
-            vol = max(0, min(100, int(body.value)))
-            await svc._player.set_volume(vol)
-            return {"ok": True, "volume": svc._player._volume}
 
         # ── Sources ───────────────────────────────────────────────────────────
 

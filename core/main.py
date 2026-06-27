@@ -16,8 +16,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response as FastAPIResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from core.api.middleware import NoCacheForPaths, RateLimitMiddleware, RequestIdMiddleware, setup_cors
-from core.api.routes import devices, events, i18n as i18n_routes, integrity, intents, module_data, modules, radio, scenes, secrets, setup, system, ui
+from core.api.middleware import RateLimitMiddleware, RequestIdMiddleware, setup_cors
+from core.api.routes import devices, events, i18n as i18n_routes, integrity, intents, modules, radio, scenes, secrets, setup, system, ui
 from core.config import get_settings
 from core.cloud_sync.sync import get_cloud_sync
 from core.eventbus.bus import get_event_bus
@@ -385,14 +385,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Middlewares (order matters — applied in reverse: last add = outermost)
+    # Middlewares (order matters — applied in reverse)
     app.add_middleware(RateLimitMiddleware, limit=120, window_sec=60)
     app.add_middleware(RequestIdMiddleware)
     setup_cors(app)
-    # NoCacheForPaths runs OUTERMOST so it stamps the response after every
-    # BaseHTTPMiddleware has had a chance to drop headers. Operates on the
-    # raw ASGI ``send`` message to survive Starlette's stream wrapper.
-    app.add_middleware(NoCacheForPaths)
 
     # API routes
     api_prefix = "/api/v1"
@@ -405,7 +401,6 @@ def create_app() -> FastAPI:
     app.include_router(intents.router, prefix=api_prefix)
     app.include_router(radio.router, prefix=api_prefix)
     app.include_router(scenes.router, prefix=api_prefix)
-    app.include_router(module_data.router, prefix=api_prefix)
 
     # Module Bus — WebSocket endpoint for user modules
     from core.api.routes import bus as bus_routes

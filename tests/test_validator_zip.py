@@ -26,7 +26,6 @@ class TestValidateZip:
             "type": "UI",
             "api_version": "1",
             "permissions": ["device.read"],
-            "room": "system",
         }
         result = validate_zip(self._make_zip(tmp_path, manifest))
         assert result.valid is True
@@ -65,7 +64,6 @@ class TestValidateZip:
             "type": "UNKNOWN",
             "api_version": "1",
             "permissions": [],
-            "room": "system",
         }
         result = validate_zip(self._make_zip(tmp_path, manifest))
         assert result.valid is False

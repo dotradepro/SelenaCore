@@ -1,7 +1,6 @@
 {
     "name": "device-control",
     "version": "1.0.0",
-    "room": "system",
     "description": "Universal smart device manager. Owns device.on / device.off intents and dispatches commands through pluggable drivers (Tuya local, Tuya cloud, MQTT/Zigbee via protocol-bridge).",
     "type": "SYSTEM",
     "ui_profile": "FULL",
@@ -15,22 +14,6 @@
     ],
     "ui": {
         "icon": "icon.svg",
-        "widget": {
-            "kind": "template",
-            "template": "toggle-list",
-            "size": "4x2",
-            "max_size": "4x4",
-            "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
-            },
-            "actions": {
-                "toggle": {"path": "/widget/action/toggle"}
-            },
-            "refresh": {
-                "events": ["device.state_changed", "device.registered", "device.removed"],
-                "poll_interval_s": 30
-            }
-        },
         "settings": "settings.html"
     },
     "author": "SmartHome LK",

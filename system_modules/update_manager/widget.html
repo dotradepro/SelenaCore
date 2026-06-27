@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Update Manager</title>
+    <link rel="stylesheet" href="/api/shared/theme.css">
+    <style>
+        body { padding: 20px; }
+
+        .version {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gr);
+        }
+
+        .label-top {
+            font-size: 0.85rem;
+            color: var(--tx2);
+            margin-bottom: 4px;
+        }
+
+        .state {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 10px 0;
+            background: var(--b2);
+        }
+
+        .state.update_available {
+            background: rgba(255, 200, 0, 0.2);
+            color: var(--am);
+        }
+
+        .state.applied {
+            background: rgba(80, 200, 120, 0.2);
+            color: var(--gr);
+        }
+
+        .state.error {
+            background: rgba(220, 50, 50, 0.2);
+            color: var(--rd);
+        }
+
+        #msg {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: var(--tx2);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="label-top" data-i18n="lbl_current"></div>
+        <div class="version" id="cur-ver">—</div>
+        <div class="label-top" style="margin-top:12px;" data-i18n="lbl_latest"></div>
+        <div id="latest-ver" style="font-size:1.2rem;color:var(--tx2);">—</div>
+        <div><span class="state" id="state-badge" data-i18n="state_idle"></span></div>
+        <button class="btn btn-primary" onclick="checkNow()" data-i18n="check_btn"></button>
+        <div id="msg"></div>
+    </div>
+    <script src="/api/shared/widget-common.js"></script>
+    <script>
+        var L = {
+            en: { lbl_current: 'Current version', lbl_latest: 'Latest available', state_idle: 'idle', check_btn: 'Check for Updates', checking: 'Checking…', update_available: 'Update available: ', up_to_date: 'Up to date' },
+            uk: { lbl_current: 'Поточна версія', lbl_latest: 'Остання доступна', state_idle: 'очікування', check_btn: 'Перевірити оновлення', checking: 'Перевірка…', update_available: 'Доступне оновлення: ', up_to_date: 'Актуально' }
+        };
+
+        function load() {
+            apiGet('/update/status')
+                .then(function (s) {
+                    $('cur-ver').textContent = s.current_version || '—';
+                    $('latest-ver').textContent = s.latest_version || '—';
+                    var badge = $('state-badge');
+                    badge.textContent = s.state;
+                    badge.className = 'state ' + s.state;
+                    if (s.error) $('msg').textContent = s.error;
+                })
+                .catch(function (e) { showToast(e.message || 'Error', 'error'); });
+        }
+
+        function checkNow() {
+            $('msg').textContent = t('checking');
+            apiPost('/update/check')
+                .then(function (r) {
+                    $('msg').textContent = r.update_available ? t('update_available') + r.version : t('up_to_date');
+                    load();
+                })
+                .catch(function (e) { showToast(e.message || 'Error', 'error'); });
+        }
+
+        applyLang();
+        load();
+        setInterval(load, 30000);
+    </script>
+</body>
+
+</html>

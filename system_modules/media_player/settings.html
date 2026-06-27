@@ -7,10 +7,6 @@
     <title>Media Player Settings</title>
     <link rel="stylesheet" href="/api/shared/theme.css">
     <style>
-        /* This page has a full-viewport grid-pattern background and sticky
-           tab bar — the standard .sc-settings layout (800px centered,
-           padded) doesn't fit. body class="sc-custom" below opts out of
-           auto-apply; everything else comes from shared theme.css. */
 
         body {
             width: 100%;
@@ -99,9 +95,58 @@
             background: var(--ac);
         }
 
-        /* Toggle uses shared .toggle / .toggle-sm from /api/shared/theme.css. */
-        .toggle-wrap{display:flex;align-items:center;gap:8px}
-        .toggle-label{font-size:13px;color:var(--tx)}
+        /* Toggle */
+        .toggle-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            background: var(--sf3);
+            transition: background .2s;
+        }
+
+        .toggle input:checked+.toggle-track {
+            background: var(--ac);
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--tx);
+            transition: left .2s, background .2s;
+        }
+
+        .toggle input:checked~.toggle-thumb {
+            left: 19px;
+            background: #fff;
+        }
+
+        .toggle-label {
+            font-size: 13px;
+            color: var(--tx);
+        }
 
         /* ── Station / result card (module-specific layout) ── */
         .card-icon {
@@ -163,7 +208,7 @@
     </style>
 </head>
 
-<body class="sc-custom">
+<body>
 
     <div class="tabs-bar" id="tabsBar">
         <button class="tab active" data-tab="playback" data-i18n="tab_playback">Playback</button>
@@ -197,9 +242,10 @@
         </div>
         <div class="field">
             <div class="toggle-wrap">
-                <label class="toggle toggle-sm">
+                <label class="toggle">
                     <input type="checkbox" id="chkNormalize">
-                    <span class="slider"></span>
+                    <div class="toggle-track"></div>
+                    <div class="toggle-thumb"></div>
                 </label>
                 <span class="toggle-label" data-i18n="lbl_normalize">Normalize volume</span>
             </div>
@@ -280,7 +326,7 @@
             <div class="field">
                 <label data-i18n="lbl_paste_m3u">Paste M3U8 content</label>
                 <textarea id="inpM3UContent" rows="5"
-                    style="width:100%;font-size:11px;font-family:monospace;background:var(--sf2);color:var(--tx);border:1px solid var(--sf3);border-radius:4px;padding:6px;box-sizing:border-box;resize:vertical;"></textarea>
+                    style="width:100%;font-size:11px;font-family:monospace;background:var(--bg2);color:var(--tx1);border:1px solid var(--sf3);border-radius:4px;padding:6px;box-sizing:border-box;resize:vertical;"></textarea>
             </div>
             <button class="btn btn-sm" id="btnDoImport" onclick="importM3U()" data-i18n="btn_do_import">Import</button>
             <span id="importM3UResult" style="margin-left:8px;font-size:12px;color:var(--tx3);"></span>
@@ -343,9 +389,10 @@
         <div class="section-title" data-i18n="sec_usb_settings">USB / SD settings</div>
         <div class="field">
             <div class="toggle-wrap">
-                <label class="toggle toggle-sm">
+                <label class="toggle">
                     <input type="checkbox" id="chkAutoScan" checked>
-                    <span class="slider"></span>
+                    <div class="toggle-track"></div>
+                    <div class="toggle-thumb"></div>
                 </label>
                 <span class="toggle-label" data-i18n="lbl_auto_scan">Auto-scan on USB connect</span>
             </div>

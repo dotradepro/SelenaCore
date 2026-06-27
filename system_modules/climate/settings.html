@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Climate</title>
 <style>
-/* Module-specific: wider 980px wrap, help text, JSON state pre block. */
+body{margin:0;padding:0;background:transparent}
 .wrap{padding:14px;max-width:980px;margin:0 auto}
 .help{font-size:11px;color:var(--tx2);line-height:1.55;margin-bottom:10px}
 .muted{color:var(--tx2)}
@@ -21,7 +21,7 @@ pre{background:var(--sf2);padding:6px 8px;border-radius:5px;font-size:10px;font-
       Climate devices are added through Device Control. This page lists every
       device with entity_type=air_conditioner or thermostat plus its current state.
     </div>
-    <div class="row mb8">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div class="muted" data-i18n="detected">Detected climate devices</div>
       <button id="refreshBtn" class="btn btn-secondary" data-i18n="refresh">Refresh</button>
     </div>

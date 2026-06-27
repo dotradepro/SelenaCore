@@ -12,30 +12,9 @@ export interface Device {
   module_id: string | null;
   meta: Record<string, unknown>;
   entity_type?: string | null;
-  /** Backend-canonical room/location name. Used by intent regex builders
-   *  and the IntentRouter keyword filter, so renaming the column would
-   *  ripple too far — both `location` and `room` are kept. */
   location?: string | null;
-  /** Frontend-side alias of `location`. Populated by the store on every
-   *  device payload that lands from the API / WebSocket so dashboard code
-   *  can read `device.room` symmetrically with `module.room`. Always
-   *  mirrors `location`; treat the two as the same value. */
-  room?: string | null;
   keywords_user?: string[];
   keywords_en?: string[];
-}
-
-/** Mirror `location` → `room` when devices land from the API or WebSocket.
- *  Backend stays on `location` (intent regex builders depend on it), but
- *  the dashboard reads the unified `room` field. Idempotent: if a payload
- *  already carries `room`, it wins. */
-function normalizeDevice(d: Device): Device {
-  if (d.room !== undefined && d.room !== null) return d;
-  return { ...d, room: d.location ?? null };
-}
-
-function normalizeDevices(list: Device[]): Device[] {
-  return list.map(normalizeDevice);
 }
 
 export interface Module {
@@ -48,22 +27,9 @@ export interface Module {
   installed_at: number;
   ui?: {
     icon?: string;
-    widget?: {
-      file?: string;
-      size?: string;
-      min_size?: string;
-      max_size?: string;
-      // Dashboard recraft Phase 0 — template engine fields
-      kind?: 'template' | 'custom';
-      template?: 'metric' | 'sparkline' | 'toggle-list' | 'control-panel' | 'status';
-      data_endpoints?: Record<string, { path: string; cache_ttl_s?: number }>;
-      actions?: Record<string, { path: string }>;
-      refresh?: { events?: string[]; poll_interval_s?: number };
-    };
+    widget?: { file?: string; size?: string; min_size?: string; max_size?: string };
     settings?: string;
   };
-  /** Dashboard recraft Phase 0 — required room tag for room-tab filtering. */
-  room?: string;
 }
 
 export interface CloudProviderStatus {
@@ -136,57 +102,16 @@ export interface WidgetLayout {
   screens: number;
   positions: Record<string, number>; // widget name -> absolute slot index (screen * PER_SCREEN + slot)
   spans: Record<string, { cols: number; rows: number }>; // widget name -> grid span
-  /** Schema version. v1 = original 5×4 fixed-slot layout. v2 = bento auto-flow.
-   *  v1 layouts read identically into the V2 renderer; in-place migration to
-   *  v2 happens in dashboard recraft Phase 4 with an explicit "Reset layout"
-   *  escape hatch. Absent value is interpreted as 1. */
-  version?: 1 | 2;
 }
 function loadWidgetLayout(): WidgetLayout {
   // Initial value from localStorage (fast, synchronous); will be overridden
   // by the backend value once connectSyncStream() fetches it.
   try {
     const raw = localStorage.getItem('selena-widget-layout');
-    if (raw) {
-      const parsed = JSON.parse(raw) as WidgetLayout;
-      const merged: WidgetLayout = { hidden: [], screens: 1, positions: {}, spans: {}, version: 1, ...parsed };
-      return migrateLayoutToV2(merged);
-    }
+    if (raw) return { hidden: [], screens: 1, positions: {}, spans: {}, ...JSON.parse(raw) } as WidgetLayout;
   } catch { /* ignore */ }
-  return { pinned: [], sizes: {}, hidden: [], screens: 1, positions: {}, spans: {}, version: 2 };
+  return { pinned: [], sizes: {}, hidden: [], screens: 1, positions: {}, spans: {} };
 }
-
-/** Phase 4 in-place migration: V1's ``positions`` map encoded an absolute
- *  slot index (screen × 20 + cell). The V2 BentoGrid uses ``grid-auto-flow:
- *  dense`` so placement is determined by the order of ``pinned``. We sort
- *  ``pinned`` by V1 positions to preserve the user's spatial order, drop
- *  ``screens`` to 1, then mark the layout as ``version: 2``. ``spans`` is
- *  reused verbatim — both versions store ``{cols, rows}`` per widget. */
-export function migrateLayoutToV2(layout: WidgetLayout): WidgetLayout {
-  if (layout.version === 2) return layout;
-  const positions = layout.positions ?? {};
-  const reordered = [...layout.pinned].sort((a, b) => {
-    const pa = positions[a] ?? Number.MAX_SAFE_INTEGER;
-    const pb = positions[b] ?? Number.MAX_SAFE_INTEGER;
-    if (pa !== pb) return pa - pb;
-    return layout.pinned.indexOf(a) - layout.pinned.indexOf(b);
-  });
-  return {
-    ...layout,
-    pinned: reordered,
-    screens: 1,
-    version: 2,
-  };
-}
-
-// ── Dashboard V2 feature flag ──────────────────────────────────────────────
-// Phase 5: V1 has been retired. The flag is gone; the persisted localStorage
-// key ``selena-dashboard-v2`` is removed once on the first post-upgrade
-// load so the URL query knob ``?dashboardV2=1`` no longer surfaces in the
-// store config UI.
-(function _retireDashboardV2Flag() {
-  try { localStorage.removeItem('selena-dashboard-v2'); } catch { /* ignore */ }
-})();
 function saveWidgetLayout(layout: WidgetLayout) {
   // Mirror to localStorage for instant rehydration on next page load
   try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
@@ -225,18 +150,13 @@ function broadcastThemeToIframes() {
   document.querySelectorAll('iframe').forEach(f => {
     try { f.contentWindow?.postMessage({ type: 'theme_changed', theme }, '*'); } catch (_) { /* cross-origin */ }
   });
-  // Phase 4 — re-inject design tokens after a theme switch so custom-iframe
-  // widgets that author against `var(--tx)` etc. pick up the new values
-  // without reloading. Imported lazily because useStore loads before the
-  // wallpaper/theme stylesheets settle on first paint.
-  import('../lib/widgetMessages').then((m) => m.injectTokensIntoAllIframes()).catch(() => {});
 }
 
 // ── Custom Themes + Wallpapers ────────────────────────────────────────────────
 
 export interface CustomTheme {
   id: string;
-  name: string;
+  name: { en: string; uk: string };
   builtIn: boolean;
   dark: Record<string, string>;
   light: Record<string, string>;
@@ -272,8 +192,6 @@ function broadcastThemeVarsToIframes() {
   document.querySelectorAll('iframe').forEach(f => {
     try { f.contentWindow?.postMessage({ type: 'theme_vars_changed' }, '*'); } catch (_) { /* cross-origin */ }
   });
-  // Phase 4 — same token re-injection on custom-theme switches.
-  import('../lib/widgetMessages').then((m) => m.injectTokensIntoAllIframes()).catch(() => {});
 }
 
 export interface AuthUser {
@@ -320,7 +238,6 @@ interface AppState {
   updateDeviceState: (deviceId: string, state: Record<string, unknown>) => Promise<void>;
   voiceStatus: 'idle' | 'listening' | 'speaking';
   setVoiceStatus: (status: 'idle' | 'listening' | 'speaking') => void;
-
   widgetLayout: WidgetLayout;
   initWidgetLayout: (modules: Module[]) => void;
   pinModule: (name: string, preferredSlot?: number) => void;
@@ -331,10 +248,6 @@ interface AppState {
   moveWidgetToSlot: (name: string, slot: number) => void;
   setWidgetSpan: (name: string, cols: number, rows: number) => void;
   addScreen: () => void;
-  /** Phase 4 escape hatch — clears spans and unpins everything so the
-   *  bento grid renders from scratch. Backend layout is overwritten on the
-   *  next mutation; users that want to undo can re-pin from V1. */
-  resetWidgetLayout: () => void;
   connectSyncStream: () => () => void;
   lastServerContact: number;
   toast: Toast | null;
@@ -345,8 +258,8 @@ interface AppState {
   activeThemeId: string;
   fetchThemes: () => Promise<void>;
   activateTheme: (id: string) => Promise<void>;
-  createTheme: (name: string, dark: Record<string, string>, light: Record<string, string>) => Promise<CustomTheme | null>;
-  updateTheme: (id: string, name: string, dark: Record<string, string>, light: Record<string, string>) => Promise<void>;
+  createTheme: (name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<CustomTheme | null>;
+  updateTheme: (id: string, name: { en: string; uk: string }, dark: Record<string, string>, light: Record<string, string>) => Promise<void>;
   deleteTheme: (id: string) => Promise<void>;
 
   // Wallpapers
@@ -356,7 +269,6 @@ interface AppState {
   wallpaperOpacity: number;
   fetchWallpapers: () => Promise<void>;
   setWallpaper: (filename: string | null, blur?: number, opacity?: number) => Promise<void>;
-
 }
 
 // ── Request optimizations ─────────────────────────────────────────────────────
@@ -372,18 +284,18 @@ const CACHE_TTL: Record<string, number> = {
   '/api/ui/wizard/requirements': 60_000,
 };
 
-async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+async function apiFetch(path: string, opts?: RequestInit): Promise<unknown> {
   const isGet = !opts?.method || opts.method.toUpperCase() === 'GET';
   const ttl = isGet ? CACHE_TTL[path] : undefined;
 
   // Serve from TTL cache if still fresh
   if (ttl) {
     const hit = _cache.get(path);
-    if (hit && Date.now() - hit.ts < ttl) return hit.data as T;
+    if (hit && Date.now() - hit.ts < ttl) return hit.data;
   }
 
   // Reuse an already-in-flight GET request (dedup parallel mounts)
-  if (isGet && _inflight.has(path)) return _inflight.get(path)! as Promise<T>;
+  if (isGet && _inflight.has(path)) return _inflight.get(path)!;
 
   const promise = (async () => {
     const res = await fetch(path, opts);
@@ -550,7 +462,7 @@ export const useStore = create<AppState>((set, get) => ({
     const maxRetries = 5;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const data = await apiFetch<{ completed?: boolean }>('/api/ui/wizard/status');
+        const data = await apiFetch('/api/ui/wizard/status');
         set({ isConfigured: data?.completed === true, wizardLoading: false });
         return;
       } catch (e) {
@@ -567,7 +479,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchWizardRequirements: async () => {
     try {
-      const data = await apiFetch<WizardRequirements>('/api/ui/wizard/requirements');
+      const data: WizardRequirements = await apiFetch('/api/ui/wizard/requirements');
       set({ wizardRequirements: data });
     } catch (e) {
       console.error('fetchWizardRequirements failed', e);
@@ -577,17 +489,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   fetchStats: async () => {
     try {
-      type SystemPayload = {
-        hardware?: Record<string, unknown>;
-        core?: Record<string, unknown>;
-        llm_engine?: Record<string, unknown>;
-        native_services?: unknown;
-      };
-      const data = await apiFetch<SystemPayload>('/api/ui/system');
+      const data = await apiFetch('/api/ui/system');
       if (data) {
-        const hw = (data.hardware ?? {}) as Record<string, any>;
-        const core = (data.core ?? {}) as Record<string, any>;
-        const llm = (data.llm_engine ?? {}) as Record<string, any>;
+        const hw = data.hardware ?? {};
+        const core = data.core ?? {};
+        const llm = data.llm_engine ?? {};
         const nativeRaw: Array<Record<string, unknown>> = Array.isArray(data.native_services)
           ? data.native_services
           : [];
@@ -595,7 +501,7 @@ export const useStore = create<AppState>((set, get) => ({
           ? llm.cloud_providers
           : [];
         set({
-          health: (core as unknown as Health) ?? get().health,
+          health: core ?? get().health,
           stats: {
             cpuTemp: hw.cpu_temp ?? 0,
             cpuLoad: hw.cpu_load ?? [0, 0, 0],
@@ -644,8 +550,8 @@ export const useStore = create<AppState>((set, get) => ({
   fetchDevices: async () => {
     set({ devicesLoading: true });
     try {
-      const data = await apiFetch<{ devices?: Device[] }>('/api/ui/devices');
-      set({ devices: normalizeDevices(data?.devices ?? []) });
+      const data = await apiFetch('/api/ui/devices');
+      set({ devices: data?.devices ?? [] });
     } catch (e) {
       console.error('fetchDevices failed', e);
     } finally {
@@ -656,7 +562,7 @@ export const useStore = create<AppState>((set, get) => ({
   fetchModules: async () => {
     set({ modulesLoading: true });
     try {
-      const data = await apiFetch<{ modules?: Module[] }>('/api/ui/modules');
+      const data = await apiFetch('/api/ui/modules');
       const mods = data?.modules ?? [];
       set({ modules: mods });
       get().initWidgetLayout(mods);
@@ -778,33 +684,16 @@ export const useStore = create<AppState>((set, get) => ({
   },
   swapWidgets: (nameA, nameB) => {
     set(state => {
-      const layout = state.widgetLayout;
-      const positions = layout.positions ?? {};
+      const positions = state.widgetLayout.positions ?? {};
       const posA = positions[nameA];
       const posB = positions[nameB];
-
-      // V1 path: both widgets have an absolute slot — swap them.
-      if (posA !== undefined && posB !== undefined) {
-        const next: WidgetLayout = {
-          ...layout,
-          positions: { ...positions, [nameA]: posB, [nameB]: posA },
-        };
-        saveWidgetLayout(next);
-        return { widgetLayout: next };
-      }
-
-      // V2 path: bento auto-flow uses ``pinned[]`` order. Swap the indexes
-      // there so the visual order changes. New widgets pinned via the V2
-      // AddWidgetDrawer never get positions, so this branch is what edit-
-      // mode drag-and-drop actually hits in production.
-      const idxA = layout.pinned.indexOf(nameA);
-      const idxB = layout.pinned.indexOf(nameB);
-      if (idxA < 0 || idxB < 0) return state;
-      const newPinned = [...layout.pinned];
-      [newPinned[idxA], newPinned[idxB]] = [newPinned[idxB], newPinned[idxA]];
-      const next: WidgetLayout = { ...layout, pinned: newPinned };
-      saveWidgetLayout(next);
-      return { widgetLayout: next };
+      if (posA === undefined || posB === undefined) return state;
+      const layout: WidgetLayout = {
+        ...state.widgetLayout,
+        positions: { ...positions, [nameA]: posB, [nameB]: posA },
+      };
+      saveWidgetLayout(layout);
+      return { widgetLayout: layout };
     });
   },
   moveWidgetToSlot: (name, slotIdx) => {
@@ -833,19 +722,6 @@ export const useStore = create<AppState>((set, get) => ({
       saveWidgetLayout(layout);
       return { widgetLayout: layout };
     });
-  },
-  resetWidgetLayout: () => {
-    const fresh: WidgetLayout = {
-      pinned: [],
-      sizes: {},
-      hidden: [],
-      screens: 1,
-      positions: {},
-      spans: {},
-      version: 2,
-    };
-    saveWidgetLayout(fresh);
-    set({ widgetLayout: fresh });
   },
 
   connectSyncStream: () => {
@@ -891,18 +767,16 @@ export const useStore = create<AppState>((set, get) => ({
           try { f.contentWindow?.postMessage({ type: 'lang_changed' }, '*'); } catch (_) { /* cross-origin */ }
         });
       }
-      // Layout — migrate v1 → v2 on the way in so cross-device sync from
-      // a kiosk that hasn't been upgraded yet doesn't reintroduce the old
-      // shape locally.
+      // Layout
       if (layout && (Array.isArray(layout.pinned) || layout.hidden !== undefined)) {
-        const parsed = migrateLayoutToV2(parseLayout(layout));
+        const parsed = parseLayout(layout);
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(parsed)); } catch { /* ignore */ }
         set({ widgetLayout: parsed });
       }
 
       // Devices snapshot (from enriched hello)
       if (Array.isArray(msg.devices)) {
-        set({ devices: normalizeDevices(msg.devices as Device[]) });
+        set({ devices: msg.devices as Device[] });
       }
 
       // Modules snapshot
@@ -957,7 +831,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // ── Layout ──
       if (eventType === 'layout_changed') {
-        const layout = migrateLayoutToV2(parseLayout(payload));
+        const layout = parseLayout(payload);
         try { localStorage.setItem('selena-widget-layout', JSON.stringify(layout)); } catch { /* ignore */ }
         set({ widgetLayout: layout });
 
@@ -1240,7 +1114,6 @@ export const useStore = create<AppState>((set, get) => ({
   activeWallpaper: null,
   wallpaperBlur: 0,
   wallpaperOpacity: 0.15,
-
   fetchWallpapers: async () => {
     try {
       const data = await apiFetch('/api/ui/wallpapers') as WallpaperInfo[];

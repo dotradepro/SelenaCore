@@ -782,122 +782,88 @@ The handler is still needed in code (via `@intent` or `handle_api_request`). Man
 
 ## Widget and Settings HTML
 
-System modules serve `widget.html` and `settings.html` as iframes inside the SelenaCore dashboard. **For the full component library, shared classes, and layout guidance see [widget-development.md](widget-development.md#shared-component-library).** This section covers only the JS helpers and HTTP contract specific to the module API.
+System modules serve `widget.html` and `settings.html` as iframes inside the SelenaCore dashboard.
 
-### Required shared assets
+### Widget BASE URL
 
-Every widget and settings page must include both:
+Compute the base URL from the iframe location. Never hardcode `localhost:PORT`.
+
+```javascript
+// Correct — works in all environments
+var BASE = window.location.pathname.replace(/\/(widget|settings)(\.html)?$/, '');
+fetch(BASE + '/status')
+    .then(function(r) { return r.json(); })
+    .then(function(data) { /* ... */ });
+
+// Wrong — breaks in production
+var BASE = "http://localhost:8115";  // never do this
+```
+
+### Widget Theme CSS
+
+Include the shared theme stylesheet for consistent appearance:
 
 ```html
 <link rel="stylesheet" href="/api/shared/theme.css">
-<script src="/api/shared/widget-common.js"></script>
 ```
 
-`widget-common.js` provides everything below — do not reimplement `BASE`, `t()`, `applyLang`, the `message` listener, or a fetch wrapper in your module.
+### Widget Localization
 
-### BASE and fetch helpers
-
-`widget-common.js` auto-computes `BASE` from the iframe path (stripping `/widget.html` or `/settings.html`) and exposes four fetch wrappers that include auth headers automatically:
-
-```js
-apiGet('/status')                       // GET  → JSON
-apiPost('/settings', { city: 'Kyiv' })  // POST → JSON
-apiPatch('/config', { enabled: true })  // PATCH → JSON
-apiDelete('/items/42')                  // DELETE → JSON (or null on 204)
-```
-
-All four return a Promise. On non-2xx responses they reject with an `Error` whose `.message` is the server's `detail` field (or HTTP statusText). **Never hardcode `http://localhost:PORT`** — the helpers use relative paths from the iframe.
-
-### User feedback helpers
-
-```js
-showToast('Saved', 'success');        // green — also bridges to parent dashboard
-showToast('Connection failed', 'error');  // red
-showToast('Restarting…', 'info');     // blue
-
-// Button loading state — disables, shows spinner, catches and toasts errors
-withLoading(btnElement, function () {
-    return apiPost('/action');
-});
-```
-
-### Localization
-
-Every widget and settings page must implement EN/UK localization. `widget-common.js` provides `LANG`, `t(key)`, and `applyLang()` — define only the string table:
+Every widget and settings page must implement EN/UK localization:
 
 ```html
 <script>
+var LANG = (function () {
+    try { return localStorage.getItem('selena-lang') || 'en'; }
+    catch (e) { return 'en'; }
+})();
+
 var L = {
-    en: { title: 'Sensor Status', no_data: 'No data', refresh: 'Refresh' },
-    uk: { title: 'Стан сенсора',   no_data: 'Немає даних', refresh: 'Оновити' }
+    en: {
+        title: 'Sensor Status',
+        no_data: 'No data available',
+        refresh: 'Refresh'
+    },
+    uk: {
+        title: 'Стан сенсора',
+        no_data: 'Немає даних',
+        refresh: 'Оновити'
+    }
 };
+
+function t(k) { return (L[LANG] || L.en)[k] || k; }
+
+function applyLang() {
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+        el.textContent = t(el.getAttribute('data-i18n'));
+    });
+}
 </script>
 
-<h2 data-i18n="title"></h2>
-<p  data-i18n="no_data"></p>
-<button data-i18n="refresh"
-        data-i18n-title="refresh"
-        data-i18n-aria-label="refresh"
-        onclick="refresh()"></button>
-<input data-placeholder-i18n="ph_search">
+<h1 data-i18n="title"></h1>
+<p data-i18n="no_data"></p>
+<button data-i18n="refresh" onclick="refresh()"></button>
 ```
 
-Supported attributes:
+### Widget PostMessage Events
 
-| Attribute | Sets |
-|---|---|
-| `data-i18n` | `textContent` |
-| `data-placeholder-i18n` | `placeholder` |
-| `data-i18n-title` | `title` (tooltip) |
-| `data-i18n-aria-label` | `aria-label` (screen readers) |
+Listen for theme and language changes from the parent dashboard:
 
-Call `applyLang()` once during initialization (before the first `refresh()` / `load()` / `loadStatus()` call). When the user changes language in the parent dashboard, a `lang_changed` postMessage fires automatically — `widget-common.js` re-runs `applyLang()` and invokes your `refresh()` / `load()` / `loadStatus()` function if present, so you do not need to listen yourself.
-
-### PostMessage events (informational)
-
-`widget-common.js` already handles these — listen only if you need extra behavior beyond what it does. The canonical event names below come from the typed
-protocol in [src/lib/widgetMessages.ts](../src/lib/widgetMessages.ts); legacy aliases were removed in Phase 5.
-
-| Event (canonical) | Direction | Built-in handler |
-|---|---|---|
-| `theme_changed` | parent → widget | Toggles `.light` class on `<html>` |
-| `theme_vars_changed` | parent → widget | Reloads `/api/shared/theme.css` with a cache-bust |
-| `lang_changed` | parent → widget | Re-runs `applyLang()` + your `refresh`/`load`/`loadStatus` |
-| `modal_open` | widget → parent | Open a modal in the dashboard shell |
-| `modal_close` | widget → parent | Close the dashboard modal |
-| `open_settings` | widget → parent | Open the module's settings panel |
-| `request_refresh` | widget → parent | Ask parent to re-fetch widget data |
-
-> **Removed in Phase 5:** `openWidgetModal`, `closeWidgetModal`, `openSettings`, `refresh` (legacy aliases). Use the canonical names above.
-
----
-
-## Template Widget Contract
-
-For `kind: "template"` widgets, the dashboard renders the widget natively from a JSON payload — no `widget.html` is shipped. The module exposes data and action endpoints that the dashboard calls through the `/api/v1/modules/{name}/...` proxy.
-
-**Data endpoint (read):**
-
-```
-GET /api/v1/modules/{module}/data/{key}
+```javascript
+window.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'lang_changed') {
+        try { LANG = localStorage.getItem('selena-lang') || 'en'; } catch (ex) {}
+        applyLang();
+        refresh();  // reload data in the new language
+    }
+    if (e.data && e.data.type === 'theme_changed') {
+        // Theme CSS variables update automatically via theme.css
+        // Re-render any manually styled elements here
+    }
+});
 ```
 
-The dashboard fetches the payload declared in `manifest.json` under `ui.widget.data_endpoints[key].path` (relative to the module's mount point) and applies the optional `cache_ttl_s`. Response shape depends on the chosen template — see [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-templates).
-
-**Action endpoint (write):**
-
-```
-POST /api/v1/modules/{module}/action/{key}
-Content-Type: application/json
-
-{ "id": "...", "value": ... }
-```
-
-The dashboard POSTs to `ui.widget.actions[key].path` on the module. Common action keys: `toggle` (toggle-list), `set_mode` / `step` (control-panel), `transport` / `volume` (media), `select` (presence). Modules return any 2xx on success; non-2xx surfaces a toast in the dashboard.
-
-**Refresh hints:**
-
-`ui.widget.refresh.events` lists EventBus event types that should invalidate the cache and re-fetch immediately. `ui.widget.refresh.poll_interval_s` provides a fallback polling cadence when no events fire.
+Call `applyLang()` before the first `refresh()` or `load()` call during initialization.
 
 ---
 
@@ -914,8 +880,7 @@ The dashboard POSTs to `ui.widget.actions[key].path` on the module. Common actio
 | `port` | `integer` | No | **User modules only.** Listening port (8100-8200). SYSTEM modules must NOT have this field. |
 | `group` | `string` | No | Module group for UI grouping |
 | `permissions` | `array` | No | `["device.read", "device.write", "events.subscribe", "events.publish", "secrets.oauth", "secrets.proxy"]` |
-| `room` | `string` | Yes (UI) | Room tag — drives the dashboard's room-tab filter. `"system"`, `"home"`, or any custom room name. |
-| `ui` | `object` | No | `{icon, widget, settings}`. `widget` is either `{kind: "template", template, size, data_endpoints, actions?, refresh?}` (preferred) or `{kind: "custom", file, size}` (legacy iframe). See [widget-development.md](widget-development.md). |
+| `ui` | `object` | No | `{icon, widget: {file, size}, settings}` |
 | `intents` | `array` | No | Intent patterns for Module Bus registration |
 | `entities` | `array` | No | Entity definitions for registry |
 | `publishes` | `array` | No | Event types this module may publish |
@@ -937,7 +902,7 @@ The dashboard POSTs to `ui.widget.actions[key].path` on the module. Common actio
 }
 ```
 
-**User module example (template widget — preferred):**
+**User module example:**
 
 ```json
 {
@@ -947,22 +912,10 @@ The dashboard POSTs to `ui.widget.actions[key].path` on the module. Common actio
     "api_version": "1.0",
     "runtime_mode": "always_on",
     "port": 8101,
-    "room": "home",
     "permissions": ["device.read", "device.write", "events.subscribe", "events.publish"],
     "ui": {
         "icon": "icon.svg",
-        "widget": {
-            "kind": "template",
-            "template": "toggle-list",
-            "size": "2x2",
-            "data_endpoints": {
-                "state": {"path": "/widget/data/state", "cache_ttl_s": 5}
-            },
-            "actions": {
-                "toggle": {"path": "/widget/action/toggle"}
-            },
-            "refresh": {"events": ["devices.changed"]}
-        },
+        "widget": {"file": "widget.html", "size": "2x1"},
         "settings": "settings.html"
     },
     "intents": [

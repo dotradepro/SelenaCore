@@ -185,7 +185,7 @@ HTTPS :443 ---> TLS-проксі (asyncio, ~5 МБ RAM) ---> :80
 | `notify_push`        | Web Push (VAPID)                                                                   |
 | `network_scanner`    | ARP / mDNS / SSDP / Zigbee discovery                                               |
 | `clock`              | Будильники, таймери, нагадування, світовий годинник, секундомір                    |
-| `backup_manager`     | Локальний бекап (ручний + за розкладом); хмарний + QR — фаза 2                     |
+| `backup_manager`     | Локальний USB / SD і E2E хмарний бекап                                             |
 | `remote_access`      | Віддалений доступ через Tailscale                                                  |
 
 Повний довідник: [docs/modules.md](../modules.md).
@@ -332,13 +332,13 @@ pytest tests/ -x -q
 python -m mypy core/ --ignore-missing
 ```
 
-Повний робочий процес: [CONTRIBUTING.md](../../.github/CONTRIBUTING.md).
+Повний робочий процес: [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ---
 
 ## Безпека
 
-Будь ласка, **не відкривайте публічний issue** для повідомлень про вразливості. Використовуйте [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new). Повна політика: [SECURITY.md](../../.github/SECURITY.md).
+Будь ласка, **не відкривайте публічний issue** для повідомлень про вразливості. Використовуйте [GitHub Security Advisories](https://github.com/dotradepro/SelenaCore/security/advisories/new). Повна політика: [SECURITY.md](../../SECURITY.md).
 
 ---
 

@@ -35,7 +35,7 @@ Key characteristics:
 - **Direct database access** through a shared SQLAlchemy async session factory
 - **Optional FastAPI router** mounted at `/api/ui/modules/{name}/`
 - Located in the `system_modules/` directory
-- Currently **24 built-in** system modules ship with SelenaCore
+- Currently **21 built-in** system modules ship with SelenaCore
 
 Use a system module when you need tight integration with the core, low latency, or direct database access. Use a [user module](user-module-development.md) when you need isolation, independent deployment, or third-party extensibility.
 
@@ -97,7 +97,6 @@ from .module import MyModule as module_class
     "version": "1.0.0",
     "type": "SYSTEM",
     "runtime_mode": "always_on",
-    "room": "system",
     "group": "system",
     "intents": ["mymodule.do_action"],
     "entities": ["mydevice"],
@@ -111,13 +110,10 @@ from .module import MyModule as module_class
 | `version` | Yes | Semantic version string. |
 | `type` | Yes | Must be `"SYSTEM"` for system modules. |
 | `runtime_mode` | Yes | `"always_on"` (started at boot) or `"on_demand"` (started when needed). |
-| `room` | Yes | Room tag — drives the dashboard's room-tab filter. Diagnostic/infra system modules typically use `"system"`; user-facing aggregators (climate, lights, media) use `"home"`. |
 | `group` | Yes | Functional category: `media`, `automation`, `voice`, `security`, `energy`, `weather`, `presence`, `notification`, `network`, `backup`, `system`. |
 | `intents` | Yes | List of intent names the module handles (e.g., `["media.play", "media.stop"]`). Used by ModuleRegistry for routing. |
 | `entities` | Yes | List of entity types the module works with (e.g., `["radio", "music"]`). Used for device disambiguation. |
 | `permissions` | No | List of permission strings the module requires (e.g., `["devices.read", "devices.write"]`). |
-
-> **Widget endpoints.** A system module that ships a dashboard widget must mount a router (see [Adding a REST API](#adding-a-rest-api)) that exposes either `/widget/data/{key}` (for `kind: "template"` widgets — preferred) or `/widget` (for `kind: "custom"` iframes). Per-template payload schemas: [dashboard-recraft.md §3.3-3.8](dashboard-recraft.md#33-templates).
 
 System modules do **not** specify a `port` field. They share the core process and, if needed, mount a FastAPI router instead.
 
@@ -697,7 +693,7 @@ SelenaCore ships with 22 system modules:
 | `media_player` | Audio playback with VLC |
 | `presence_detection` | WiFi/BLE occupancy tracking |
 | `hw_monitor` | CPU, RAM, disk, and temperature monitoring |
-| `backup_manager` | Local manual + scheduled tar.gz backups (cloud + QR planned for phase 2) |
+| `backup_manager` | Local and cloud backups |
 | `remote_access` | Tailscale VPN integration |
 | `network_scanner` | Network device discovery (ARP, mDNS, SSDP) |
 | `device_control` | Smart device manager (Tuya via tuya-device-sharing-sdk) + `device.on/off` intents |

@@ -160,19 +160,6 @@ class DeviceRegistry:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_locations(self) -> list[str]:
-        """Return distinct non-null, non-empty ``Device.location`` values.
-
-        Shared across modules (e.g. the satellite-manager wizard) so dropdowns
-        show the same pool of room names users already assigned to other
-        devices.
-        """
-        from sqlalchemy import distinct
-
-        stmt = select(distinct(Device.location)).where(Device.location.isnot(None))
-        rows = (await self._session.execute(stmt)).scalars().all()
-        return sorted({r for r in rows if r})
-
     async def _trim_history(self, device_id: str) -> None:
         """Keep only the last STATE_HISTORY_LIMIT records for a device."""
         result = await self._session.execute(

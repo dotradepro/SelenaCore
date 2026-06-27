@@ -45,9 +45,6 @@ LOG_PATH = "/var/log/selena/integrity.log"
 STATE_FILE = Path(
     os.environ.get("CORE_DATA_DIR", "/var/lib/selena")
 ) / "integrity_state.json"
-UPDATE_FLAG_PATH = Path(
-    os.environ.get("UPDATE_IN_PROGRESS_FLAG", "/secure/.update_in_progress")
-)
 
 
 def _write_state(
@@ -85,15 +82,6 @@ def log_incident(reason: str, changed: list[dict]) -> None:
 
 
 async def run_check() -> None:
-    # Update in progress: skip integrity check entirely. The flag is set by
-    # scripts/apply-update.sh during rsync + manifest rebaseline; it is removed
-    # in trap EXIT. Without this guard, a 30-sec check would hit half-rsync'd
-    # files, trigger the response chain, and drive the hub into SAFE MODE.
-    if UPDATE_FLAG_PATH.exists():
-        _write_state("ok")
-        logger.info("Skipping integrity check — update in progress")
-        return
-
     # Step 1: Verify manifest itself
     if not verify_manifest_hash():
         await trigger_response("manifest_tampered", [{"path": MANIFEST_PATH}])

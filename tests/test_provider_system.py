@@ -42,7 +42,6 @@ if "greeclimate" not in sys.modules:
 
 
 from system_modules.device_control.providers.catalog import (  # noqa: E402
-    INTEGRATION_MODES,
     PROVIDERS,
     builtin_provider_ids,
     get_provider,
@@ -88,40 +87,6 @@ def test_every_provider_has_required_fields():
         # entity_types must be a non-empty list
         assert isinstance(spec["entity_types"], list)
         assert len(spec["entity_types"]) > 0
-
-
-def test_every_provider_has_valid_integration_mode():
-    """Phase 0 contract: UI groups providers by integration_mode, so every
-    catalog entry MUST declare one of the three known modes. Adding a new
-    provider without this field would silently fall into the default bucket
-    and confuse the Providers tab grouping — fail loudly instead."""
-    for pid, spec in PROVIDERS.items():
-        mode = spec.get("integration_mode")
-        assert mode is not None, f"{pid} missing integration_mode"
-        assert mode in INTEGRATION_MODES, (
-            f"{pid} has integration_mode={mode!r}; expected one of {INTEGRATION_MODES}"
-        )
-
-
-def test_integration_mode_assignments():
-    """Pin down the explicit mode for each shipped provider so accidental
-    edits to the catalog get caught in review."""
-    expected = {
-        "tuya_local":   "direct",
-        "tuya_cloud":   "cloud_fallback",
-        "gree":         "direct",
-        "mqtt":         "bridge",
-        "philips_hue":  "bridge",
-        "esphome":      "direct",
-        "zigbee2mqtt":  "bridge",
-        "matter":       "direct",
-        "plejd_native": "bridge",
-    }
-    for pid, mode in expected.items():
-        assert PROVIDERS[pid]["integration_mode"] == mode, (
-            f"{pid} expected integration_mode={mode!r}, "
-            f"got {PROVIDERS[pid].get('integration_mode')!r}"
-        )
 
 
 # ── Tuya entity_type classifier ────────────────────────────────────────────

@@ -1,6 +1,6 @@
 # Кодекс поведінки
 
-[English version](../../.github/CODE_OF_CONDUCT.md)
+[English version](../../CODE_OF_CONDUCT.md)
 
 ## Наша обіцянка
 

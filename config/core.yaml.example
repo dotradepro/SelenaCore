@@ -167,24 +167,3 @@ security:
   edit_mode_pin: true
   device_toggle_pin: false
   kiosk_mode: false
-
-# update_manager — OTA self-update via GitHub Releases.
-#   repo               GitHub "owner/name" the hub watches for releases.
-#   channel            "rc" sees both rc and stable releases; "stable"
-#                      sees only releases with prerelease=false.
-#   auto_check         If true, periodically polls the releases API in
-#                      the background. Installation always requires an
-#                      explicit /install POST — this flag does NOT
-#                      auto-install.
-#   check_interval_sec How often the auto-check runs. Minimum 60.
-#   backups_keep       Hardlink-deduplicated backups retained in
-#                      /opt/selena-backup/<timestamp>/ before rotation.
-# Runtime knobs flipped from the UI (channel selector, auto_check
-# toggle) are persisted to /var/lib/selena/update_manager.state.json
-# so they survive restarts without rewriting this YAML.
-update_manager:
-  repo: "dotradepro/SelenaCore"
-  channel: "rc"
-  auto_check: false
-  check_interval_sec: 21600
-  backups_keep: 3

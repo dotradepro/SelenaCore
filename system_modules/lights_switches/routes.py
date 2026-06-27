@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from core.api.widget_helpers import entity_icon
-
 if TYPE_CHECKING:
     from .module import LightsSwitchesModule
 
@@ -29,11 +27,6 @@ ALLOWED_STATE_KEYS: set[str] = {
 
 class CommandBody(BaseModel):
     state: dict[str, Any]
-
-
-class ToggleBody(BaseModel):
-    """Body for ``POST /widget/action/toggle`` (Dashboard V2)."""
-    id: str
 
 
 def build_router(svc: "LightsSwitchesModule") -> APIRouter:
@@ -82,76 +75,5 @@ def build_router(svc: "LightsSwitchesModule") -> APIRouter:
             )
             raise HTTPException(502, f"Command failed: {exc}")
         return {"status": "ok", "state": new_state}
-
-    # ── Dashboard V2 template-engine endpoints ──────────────────────────────
-    # Manifest declares these paths under ui.widget.data_endpoints / actions
-    # so the V2 dashboard renders this module as a `toggle-list` template
-    # instead of the legacy widget.html iframe. Icon mapping comes from the
-    # shared `core.api.widget_helpers.ENTITY_ICON` table — see file header.
-
-    @router.get("/widget/data/state")
-    async def widget_state() -> dict[str, Any]:
-        devices = await svc.list_devices()
-        items = []
-        on_count = 0
-        for d in devices:
-            if not d.get("enabled", True):
-                continue
-            state = d.get("state") or {}
-            is_on = bool(state.get("on") or state.get("power") == "on")
-            if is_on:
-                on_count += 1
-            secondary: str | None = None
-            if "brightness" in state and state["brightness"] is not None:
-                try:
-                    pct = round(float(state["brightness"]) / 255 * 100)
-                    secondary = f"{pct}%"
-                except (TypeError, ValueError):
-                    secondary = None
-            items.append({
-                "id": d["device_id"],
-                "name": d["name"],
-                "state": "on" if is_on else "off",
-                "secondary": secondary,
-                "icon": entity_icon(d.get("entity_type")),
-                "location": d.get("location") or None,
-            })
-        # i18n: emit a translation key alongside the raw English string so the
-        # frontend ToggleList template can localize via t(label_key) with the
-        # raw `label` as defaultValue. Modules without keys keep working as
-        # before — the template falls through to the raw string.
-        if items:
-            summary_key = "widgets.lightsSwitches.summarySomeOn"
-            summary = f"{on_count} of {len(items)} on"
-            summary_args = {"on": on_count, "total": len(items)}
-        else:
-            summary_key = "widgets.lightsSwitches.summaryEmpty"
-            summary = "No lights"
-            summary_args = None
-        out: dict[str, Any] = {
-            "label": "Lights",
-            "label_key": "widgets.lightsSwitches.label",
-            "summary": summary,
-            "summary_key": summary_key,
-            "items": items,
-        }
-        if summary_args is not None:
-            out["summary_args"] = summary_args
-        return out
-
-    @router.post("/widget/action/toggle")
-    async def widget_toggle(body: ToggleBody) -> dict[str, Any]:
-        # Look up current state, flip the `on` bit. Mirrors apply_command
-        # error handling so the proxy gets a deterministic 4xx/5xx surface.
-        for d in await svc.list_devices():
-            if d["device_id"] == body.id:
-                cur = d.get("state") or {}
-                next_on = not bool(cur.get("on") or cur.get("power") == "on")
-                try:
-                    await svc.apply_command(body.id, {"on": next_on})
-                except RuntimeError as exc:
-                    raise HTTPException(503, str(exc))
-                return {"status": "ok", "id": body.id, "on": next_on}
-        raise HTTPException(404, "Device not found")
 
     return router
